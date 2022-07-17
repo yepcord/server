@@ -4,8 +4,8 @@ from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
-from utils import b64encode, b64decode
-from classes import Session, User
+from .utils import b64encode, b64decode
+from .classes import Session, User
 from json import dumps as jdumps
 
 ERRORS = {

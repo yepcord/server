@@ -1,4 +1,4 @@
-from utils import b64encode
+from .utils import b64encode
 
 class Session:
     def __init__(self, uid, sid, sig):

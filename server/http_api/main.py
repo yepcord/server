@@ -1,8 +1,8 @@
 from quart import Quart, request, websocket
 from functools import wraps
-from core import Core
+from ..core import Core
+from ..utils import b64decode
 from os import environ
-from utils import b64decode
 from json import dumps as jdumps
 from asyncio import CancelledError
 
@@ -91,12 +91,12 @@ async def api_science():
 @app.websocket("/gateway")
 async def ws_gateway():
     while True:
+        await websocket.send(jdumps({"t": None, "s": None, "op": 10, "d": {"heartbeat_interval": 41250}}))
         try:
-            await websocket.send(jdumps({"t": None, "s": None, "op": 10, "d": {"heartbeat_interval": 41250}}))
             data = await websocket.receive()
             await core.processGatewayData(websocket, data)
         except CancelledError:
-            pass # Disconnect
+            pass # TODO: Disconnect
 
 if __name__ == "__main__":
     from uvicorn import run as urun
