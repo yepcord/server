@@ -1,8 +1,8 @@
 from quart import Quart, request
 from functools import wraps
-from ..core import Core, ERRORS
-from ..utils import b64decode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA
-from ..responses import userSettingsResponse, userdataResponse, userConsentResponse
+from ..core import Core
+from ..utils import b64decode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS
+from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
 from os import environ
 
 class YEPcord(Quart):
@@ -66,7 +66,7 @@ async def api_auth_register():
         data["date_of_birth"]
     )
     if type(res) == int:
-        return c_json(ERRORS[res], 400)
+        return c_json(ERRORS[res], ECODES[res])
     return c_json({"token": res.token})
 
 @app.route("/api/v9/auth/login", methods=["POST"])
@@ -74,10 +74,10 @@ async def api_auth_login():
     data = await request.get_json()
     res = await core.login(data["login"], data["password"])
     if type(res) == int:
-        return c_json(ERRORS[res], 400)
+        return c_json(ERRORS[res], ECODES[res])
     return c_json({"token": res.token, "user_settings": {"locale": res.locale, "theme": res.theme}, "user_id": str(res.id)})
 
-# Users
+# Users (@me)
 
 @app.route("/api/v9/users/@me", methods=["GET"])
 @getUser
@@ -100,7 +100,7 @@ async def api_users_me_patch(user):
                 v = t()
         settings[k] = v
     await core.setUserdata(user, settings)
-    return c_json(await formatUserdataResponse(user))
+    return c_json(await userdataResponse(user))
 
 @app.route("/api/v9/users/@me/consent", methods=["GET"])
 @getUser
@@ -145,15 +145,20 @@ async def api_users_me_settings_patch(user):
     await core.setSettings(user, settings)
     return c_json(await userSettingsResponse(user))
 
-@app.route("/api/v9/users/@me/profile", methods=["GET"])
-@getUser
-async def api_users_me_profile(user):
-
-
 @app.route("/api/v9/users/@me/harvest", methods=["GET"])
 @getUser
 async def api_users_me_harvest(user):
     return "", 204
+
+# Users
+
+@app.route("/api/v9/users/<int:t_user_id>/profile", methods=["GET"])
+@getUser
+async def api_users_user_profile(user, t_user_id):
+    user = await core.getUserProfile(t_user_id, user)
+    if isinstance(user, int):
+        return c_json(ERRORS[user], ECODES[user])
+    return c_json(await userProfileResponse(user))
 
 # Channels
 

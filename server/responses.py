@@ -73,3 +73,28 @@ async def userConsentResponse(user):
             "consented": settings["usage_statistics"]
         }
     }
+
+async def userProfileResponse(user):
+    data = await user.data
+    return {
+        "user": {
+            "id": str(user.id),
+            "username": data["username"],
+            "avatar": data["avatar"],
+            "avatar_decoration": data["avatar_decoration"],
+            "discriminator": str(data["discriminator"]).rjust(4, "0"),
+            "public_flags": data["public_flags"],
+            "flags": data["flags"],
+            "banner": data["banner"],
+            "banner_color": data["banner_color"],
+            "accent_color": data["accent_color"],
+            "bio": data["bio"]
+        },
+        "connected_accounts": [],
+        "premium_since": None, # TODO: get from db
+        "premium_guild_since": None, # TODO: get from db
+        "user_profile": {
+            "bio": data["bio"],
+            "accent_color": data["accent_color"]
+        }
+    }

@@ -109,3 +109,19 @@ ALLOWED_USERDATA = {
     "flags": int,
     "public_flags": int
 }
+
+ERRORS = {
+    1: jdumps({"code": 50035, "errors": {"email": {"_errors": [{"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}]}}, "message": "Invalid Form Body"}),
+    2: jdumps({"code": 50035, "errors": {"login": {"_errors": [{"code": "INVALID_LOGIN", "message": "Invalid login or password."}]}, "password": {"_errors": [{"code": "INVALID_LOGIN", "message": "Invalid login or password."}]}}, "message": "Invalid Form Body"}),
+    3: jdumps({"code": 50035, "errors": {"login": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "Too many users have this username, please try another.."}]}}, "message": "Invalid Form Body"}),
+    4: jdumps({"code": 10013, "message": "Unknown User"}),
+    5: jdumps({"code": 50001, "message": "Missing Access"}),
+}
+
+ECODES = {
+    1: 400,
+    2: 400,
+    3: 400,
+    4: 404,
+    5: 403,
+}

@@ -6,13 +6,6 @@ from os import urandom
 from Crypto.Cipher import AES
 from .utils import b64encode, b64decode, unpack_token
 from .classes import Session, User, LoginUser
-from json import dumps as jdumps
-
-ERRORS = {
-    1: jdumps({"code": 50035, "errors": {"email": {"_errors": [{"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}]}}, "message": "Invalid Form Body"}),
-    2: jdumps({"code": 50035, "errors": {"login": {"_errors": [{"code": "INVALID_LOGIN", "message": "Invalid login or password."}]}, "password": {"_errors": [{"code": "INVALID_LOGIN", "message": "Invalid login or password."}]}}, "message": "Invalid Form Body"}),
-    3: jdumps({"code": 50035, "errors": {"login": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "Too many users have this username, please try another.."}]}}, "message": "Invalid Form Body"}),
-}
 
 def _usingDB(f):
     async def wrapper(self, *args, **kwargs):
@@ -168,3 +161,10 @@ class Core:
         if not settings:
             return
         await cur.execute(f'UPDATE `userdata` SET {self._formatSettings(settings)} WHERE `uid`={user.id};')
+
+    @_usingDB
+    async def getUserProfile(self, uid, cUser, cur):
+        # TODO: check for relationship, mutual guilds or mutual friends
+        if not (user := await self.getUserById(uid, cur=cur)):
+            return 4
+        return user
