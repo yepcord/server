@@ -1,10 +1,7 @@
 from quart import Quart, websocket
-from ..core import Core
-from ..utils import b64decode, Compressor
-from os import environ
+from .gateway import Gateway
 from json import loads as jloads
 from asyncio import CancelledError
-from .gateway import Gateway
 
 class YEPcord(Quart):
     async def process_response(self, response, request_context):
@@ -17,34 +14,27 @@ class YEPcord(Quart):
         
         return response
 
-app = YEPcord("YEPcord-Gateway")
-core = Core(b64decode(environ.get("KEY")))
-gw = Gateway(core)
+app = YEPcord("YEPcord-RAG")
+gw = Gateway()
 
 @app.before_serving
 async def before_serving():
-    await core.initDB(
-        host=environ.get("DB_HOST"),
-        port=3306,
-        user=environ.get("DB_USER"),
-        password=environ.get("DB_PASS"),
-        db=environ.get("DB_NAME"),
-        autocommit=True
-    )
     await gw.init()
 
 @app.websocket("/")
 async def ws_gateway():
     ws = websocket._get_current_object()
-    setattr(ws, "zlib", Compressor() if websocket.args.get("compress") == "zlib-stream" else None)
+    setattr(ws, "connected", True)
     await gw.sendHello(ws)
     while True:
         try:
             data = await ws.receive()
+            #print(data)
             await gw.process(ws, jloads(data))
         except CancelledError:
-            pass # TODO: Disconnect
+            setattr(ws, "connected", False)
+            pass # TODO: Handle disconnect
 
 if __name__ == "__main__":
     from uvicorn import run as urun
-    urun('main:app', host="0.0.0.0", port=8001, reload=True, use_colors=False)
+    urun('main:app', host="0.0.0.0", port=8002, reload=True, use_colors=False)

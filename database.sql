@@ -12,15 +12,17 @@ CREATE TABLE `userdata` (
   `uid` bigint not null,
   `birth` longtext not null,
   `username` longtext not null,
+  `discriminator` int not null,
   `phone` longtext default null,
   `premium` bool default true,
-  `accent_color` longtext default null,
+  `accent_color` bigint default null,
   `avatar` longtext default null,
   `avatar_decoration` longtext default null,
   `banner` longtext default null,
-  `banner_color` longtext default null,
-  `bio` longtext default null,
-  `flags` bigint default null,
+  `banner_color` bigint default null,
+  `bio` longtext not null default "",
+  `flags` bigint default 0,
+  `public_flags` bigint default 0,
   UNIQUE KEY `uid` (`uid`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
@@ -28,7 +30,6 @@ DROP TABLE IF EXISTS `sessions`;
 CREATE TABLE `sessions` (
   `uid` bigint not null,
   `sid` bigint not null,
-  `key` longtext not null,
   `sig` longtext not null
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
@@ -39,7 +40,7 @@ CREATE TABLE `relationships` (
   `type` int not null
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
-DROP TABLE IF EXISTS `settings`;
+DROP TABLE IF EXISTS `settings`; /* TODO: add activity_restricted_guild_ids([]), friend_source_flags({all: true}), guild_positions([]), guild_folders([]), restricted_guilds([])*/
 CREATE TABLE `settings` (
   `uid` bigint not null,
   `inline_attachment_media` bool not null default true,
@@ -54,7 +55,7 @@ CREATE TABLE `settings` (
   `view_nsfw_commands` bool not null default false,
   `detect_platform_accounts` bool not null default true,
   `status` text not null default "online",
-  `explicit_content_filter` bigint not null default 1,
+  `explicit_content_filter` int not null default 1,
   `custom_status` longtext default null,
   `default_guilds_restricted` bool not null default false,
   `theme` text not null default "dark",
@@ -71,5 +72,8 @@ CREATE TABLE `settings` (
   `message_display_compact` bool not null default false,
   `convert_emoticons` bool not null default true,
   `passwordless` bool not null default true,
+
+  `personalization` bool not null default false,
+  `usage_statistics` bool not null default false,
   UNIQUE KEY `uid` (`uid`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
