@@ -3,7 +3,7 @@ async def userSettingsResponse(user):
     return {
         "locale": settings["locale"],
         "show_current_game": settings["show_current_game"],
-        "restricted_guilds": [], # TODO: get from db
+        "restricted_guilds": settings["restricted_guilds"],
         "default_guilds_restricted": settings["default_guilds_restricted"],
         "inline_attachment_media": settings["inline_attachment_media"],
         "inline_embed_media": settings["inline_embed_media"],
@@ -18,7 +18,7 @@ async def userSettingsResponse(user):
         "disable_games_tab": settings["disable_games_tab"],
         "theme": settings["theme"],
         "developer_mode": settings["developer_mode"],
-        "guild_positions": [], # TODO: get from db
+        "guild_positions": settings["guild_positions"],
         "detect_platform_accounts": settings["detect_platform_accounts"],
         "status": settings["status"],
         "afk_timeout": settings["afk_timeout"],
@@ -32,12 +32,10 @@ async def userSettingsResponse(user):
         "view_nsfw_guilds": settings["view_nsfw_guilds"],
         "view_nsfw_commands": settings["view_nsfw_commands"],
         "passwordless": settings["passwordless"],
-        "friend_source_flags": { # TODO: get from db
-            "all": True
-        },
-        "guild_folders": [], # TODO: get from db
+        "friend_source_flags": settings["friend_source_flags"],
+        "guild_folders": settings["guild_folders"],
         "custom_status": settings["custom_status"],
-        "activity_restricted_guild_ids": [] # TODO: get from db
+        "activity_restricted_guild_ids": settings["activity_restricted_guild_ids"]
     }
 
 async def userdataResponse(user):

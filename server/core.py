@@ -6,6 +6,8 @@ from os import urandom
 from Crypto.Cipher import AES
 from .utils import b64encode, b64decode, unpack_token
 from .classes import Session, User, LoginUser
+from .storage import _Storage
+from json import loads as jloads
 
 def _usingDB(f):
     async def wrapper(self, *args, **kwargs):
@@ -21,6 +23,11 @@ def _usingDB(f):
                     kwargs["cur"] = cur
                 return await f(self, *args, **kwargs)
     return wrapper
+
+class CDN(_Storage):
+    def __init__(self, storage, core):
+        self.storage = storage
+        self.core = core
 
 class Core:
     def __init__(self, key=None, loop=None):
@@ -118,7 +125,11 @@ class Core:
          r = await cur.fetchone()
          ret = []
          for idx, item in enumerate(r):
-             ret.append((cur.description[idx][0], item))
+            name = cur.description[idx][0]
+            if name.startswith("j_"):
+                name = name[2:]
+                item = jloads(item)
+            ret.append((name, item))
          ret = dict(ret)
          del ret["uid"]
          return ret

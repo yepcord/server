@@ -1,8 +1,9 @@
 from quart import Quart, request
 from functools import wraps
-from ..core import Core
+from ..core import Core, CDN
 from ..utils import b64decode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
+from ..storage import FileStorage
 from os import environ
 
 class YEPcord(Quart):
@@ -18,6 +19,7 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-api")
 core = Core(b64decode(environ.get("KEY")))
+cdn = CDN(FileStorage(), core)
 
 def NOT_IMP():
     print("Warning: route not implemented.")
@@ -98,6 +100,14 @@ async def api_users_me_patch(user):
                 v = t(v)
             except:
                 v = t()
+        if k == "avatar":
+            if not (img := await cdn.convertImgToWebp(v)):
+                continue
+            v = await cdn.setAvatarFromBytesIO(user.id, img)
+            if not v:
+                continue
+        elif k == "banner":
+            v = None # TODO: make banner upload
         settings[k] = v
     await core.setUserdata(user, settings)
     return c_json(await userdataResponse(user))

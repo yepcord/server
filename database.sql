@@ -40,7 +40,7 @@ CREATE TABLE `relationships` (
   `type` int not null
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
-DROP TABLE IF EXISTS `settings`; /* TODO: add activity_restricted_guild_ids([]), friend_source_flags({all: true}), guild_positions([]), guild_folders([]), restricted_guilds([])*/
+DROP TABLE IF EXISTS `settings`;
 CREATE TABLE `settings` (
   `uid` bigint not null,
   `inline_attachment_media` bool not null default true,
@@ -72,6 +72,12 @@ CREATE TABLE `settings` (
   `message_display_compact` bool not null default false,
   `convert_emoticons` bool not null default true,
   `passwordless` bool not null default true,
+  
+  `j_activity_restricted_guild_ids` JSON not null default "[]",
+  `j_friend_source_flags` JSON not null default '{"all": true}',
+  `j_guild_positions` JSON not null default "[]",
+  `j_guild_folders` JSON not null default "[]",
+  `j_restricted_guilds` JSON not null default "[]",
 
   `personalization` bool not null default false,
   `usage_statistics` bool not null default false,

@@ -83,7 +83,7 @@ class Gateway:
                 "email": userdata["email"],
                 "phone": userdata["phone"],
                 "username": userdata["username"],
-                "discriminator": str(userdata["discriminator"]).rjust(4, "0"), # TODO: get from db
+                "discriminator": str(userdata["discriminator"]).rjust(4, "0"),
                 "bio": userdata["bio"],
                 "avatar": userdata["avatar"],
                 "avatar_decoration": userdata["avatar_decoration"],
