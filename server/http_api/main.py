@@ -96,18 +96,24 @@ async def api_users_me_patch(user):
             continue
         t = ALLOWED_USERDATA[k]
         if not isinstance(v, t):
+            if isinstance(t, tuple):
+                t = t[-1]
             try:
                 v = t(v)
             except:
                 v = t()
         if k == "avatar":
-            if not (img := await cdn.convertImgToWebp(v)):
+            if not (img := await cdn.convertImgToWebp(v, True)):
                 continue
-            v = await cdn.setAvatarFromBytesIO(user.id, img)
+            v = await cdn.setBannerFromBytesIO(user.id, img)
             if not v:
                 continue
         elif k == "banner":
-            v = None # TODO: make banner upload
+            if not (img := await cdn.resizeImage(v, (600, 240))):
+                continue
+            v = await cdn.setBannerFromBytesIO(user.id, img)
+            if not v:
+                continue
         settings[k] = v
     await core.setUserdata(user, settings)
     return c_json(await userdataResponse(user))
@@ -225,6 +231,18 @@ async def api_users_me_billing_localizedpricingpromo():
 @app.route("/api/v9/users/@me/billing/user-trial-offer", methods=["GET"])
 async def api_users_me_billing_usertrialoffer():
     return c_json("{\"message\": \"404: Not Found\", \"code\": 0}", 404)
+
+@app.route("/api/v9/users/@me/billing/subscriptions", methods=["GET"])
+async def api_users_me_billing_subscriptions():
+    return c_json("[]")
+
+@app.route("/api/v9/outbound-promotions", methods=["GET"])
+async def api_outboundpromotions():
+    return c_json("[]")
+
+@app.route("/api/v9/users/@me/applications/<aid>/entitlements", methods=["GET"])
+async def api_users_me_applications_aid_entitlements(aid):
+    return c_json("[]")
 
 if __name__ == "__main__":
     from uvicorn import run as urun

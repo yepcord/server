@@ -43,6 +43,14 @@ async def avatars_uid_hash(uid, ahash):
         return b'', 404
     return avatar, 200, {"Content-Type": "image/webp"}
 
+@app.route("/banners/<int:uid>/<string:ahash>", methods=["GET"])
+async def banners_uid_hash(uid, bhash):
+    bhash = bhash.split(".")[0]
+    banner = await cdn.getBanner(uid, bhash)
+    if not banner:
+        return b'', 404
+    return banner, 200, {"Content-Type": "image/webp"}
+
 if __name__ == "__main__":
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8003, reload=True, use_colors=False)

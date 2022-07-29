@@ -27,17 +27,23 @@ _MAX_TIMESTAMP = 1 << 42
 _WORKER_ID = randint(0, 32)
 _PROCESS_ID = getpid()
 
+def _mksnowflake(ms, wr, pi, ic):
+    sf = (ms % _MAX_TIMESTAMP) << 22
+    sf += (wr % 32) << 17
+    sf += (pi % 32) << 12
+    sf += ic % 4096
+    return sf
+
 def mksnowflake():
     global _INCREMENT_ID
-
-    sf = ((int(time()*1000) - _EPOCH) % _MAX_TIMESTAMP) << 22
-    sf += (_WORKER_ID % 32) << 17
-    sf += (_PROCESS_ID % 32) << 12
-    sf += _INCREMENT_ID % 4096
+    sf = _mksnowflake(int(time()*1000) - _EPOCH, _WORKER_ID, _PROCESS_ID, _INCREMENT_ID)
     _INCREMENT_ID += 1
     return sf
 
 mksf = mksnowflake
+
+def snowflake_timestamp(sf):
+    return (sf >> 22) + _EPOCH
 
 def c_json(json, code=200, headers={}):
     if not isinstance(json, str):
@@ -59,6 +65,8 @@ def unpack_token(token):
     uid = int(b64decode(uid).decode("utf8"))
     sid = int.from_bytes(b64decode(sid), "big")
     return (uid, sid, sig)
+
+NoneType = type(None)
 
 ALLOWED_SETTINGS = {
     "inline_attachment_media": bool,
@@ -98,13 +106,13 @@ ALLOWED_USERDATA = {
     "birth": str,
     "username": str,
     "discriminator": int,
-    "phone": str,
+    "phone": (str, NoneType),
     "premium": bool,
-    "accent_color": int,
-    "avatar": str,
-    "avatar_decoration": str,
-    "banner": str,
-    "banner_color": int,
+    "accent_color": (int, NoneType),
+    "avatar": (str, NoneType),
+    "avatar_decoration": (str, NoneType),
+    "banner": (str, NoneType),
+    "banner_color": (int, NoneType),
     "bio": str,
     "flags": int,
     "public_flags": int

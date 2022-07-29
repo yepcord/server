@@ -1,3 +1,6 @@
+from datetime import datetime
+from .utils import snowflake_timestamp
+
 async def userSettingsResponse(user):
     settings = await user.settings
     return {
@@ -74,6 +77,8 @@ async def userConsentResponse(user):
 
 async def userProfileResponse(user):
     data = await user.data
+    s = snowflake_timestamp(user.id)
+    d = datetime.utcfromtimestamp(int(s/1000)).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "user": {
             "id": str(user.id),
@@ -89,8 +94,8 @@ async def userProfileResponse(user):
             "bio": data["bio"]
         },
         "connected_accounts": [],
-        "premium_since": None, # TODO: get from db
-        "premium_guild_since": None, # TODO: get from db
+        "premium_since": d, # TODO: get from db
+        "premium_guild_since": s, # TODO: get from db
         "user_profile": {
             "bio": data["bio"],
             "accent_color": data["accent_color"]

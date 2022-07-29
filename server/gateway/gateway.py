@@ -1,7 +1,8 @@
 from ..msg_client import Client
-from ..utils import unpack_token
+from ..utils import unpack_token, snowflake_timestamp
 from os import urandom
 from json import dumps as jdumps
+from datetime import datetime
 
 class OP:
     DISPATCH = 0
@@ -72,11 +73,8 @@ class Gateway:
         user = await self.core.getUserById(client.id)
         userdata = await user.data
         settings = await user.settings
-        settings["activity_restricted_guild_ids"] = []
-        settings["friend_source_flags"] = {"all": True}
-        settings["guild_positions"] = []
-        settings["guild_folders"] = []
-        settings["restricted_guilds"] = []
+        s = snowflake_timestamp(user.id)
+        d = datetime.utcfromtimestamp(int(s/1000)).strftime("%Y-%m-%dT%H:%M:%SZ")
         return {
             "v": 9,
             "user": {
@@ -90,7 +88,9 @@ class Gateway:
                 "accent_color": userdata["accent_color"],
                 "banner": userdata["banner"],
                 "banner_color": userdata["banner_color"],
-                "premium": userdata["premium"],
+                "premium": True,
+                "premium_type": 2,
+                "premium_since": d,
                 "verified":  True,
                 "purchased_flags": 0,
                 "nsfw_allowed":  True, # TODO: check

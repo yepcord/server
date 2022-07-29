@@ -14,7 +14,6 @@ CREATE TABLE `userdata` (
   `username` longtext not null,
   `discriminator` int not null,
   `phone` longtext default null,
-  `premium` bool default true,
   `accent_color` bigint default null,
   `avatar` longtext default null,
   `avatar_decoration` longtext default null,
@@ -72,7 +71,7 @@ CREATE TABLE `settings` (
   `message_display_compact` bool not null default false,
   `convert_emoticons` bool not null default true,
   `passwordless` bool not null default true,
-  
+
   `j_activity_restricted_guild_ids` JSON not null default "[]",
   `j_friend_source_flags` JSON not null default '{"all": true}',
   `j_guild_positions` JSON not null default "[]",

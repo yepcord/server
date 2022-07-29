@@ -13,11 +13,6 @@ class _Storage:
     def __init__(self, root_path="files/"):
         self.root = root_path
 
-    async def getAvatar(self, user_id, avatar_hash, size):
-        if type(self) == _Storage:
-            raise NotImplementedError
-        return await self.storage.getAvatar(user_id, avatar_hash, size)
-
     async def convertImgToWebp(self, image):
         def convert_task(image):
             if isinstance(image, bytes):
@@ -39,10 +34,25 @@ class _Storage:
         with ThreadPoolExecutor() as pool:
             return await get_event_loop().run_in_executor(pool, lambda: convert_task(image))
 
+    async def getAvatar(self, user_id, avatar_hash, size):
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.getAvatar(user_id, avatar_hash, size)
+
+    async def getBanner(self, user_id, avatar_hash):
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.getBanner(user_id, avatar_hash)
+
     async def setAvatarFromBytesIO(self, user_id, image):
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.setAvatarFromBytesIO(user_id, image)
+
+    async def setBannerFromBytesIO(self, user_id, image):
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.setBannerFromBytesIO(user_id, image)
 
 class FileStorage(_Storage):
     def __init__(self, *args, **kwargs):
@@ -61,13 +71,33 @@ class FileStorage(_Storage):
         avatar_hash.update(image.getvalue())
         avatar_hash = avatar_hash.hexdigest()
         image = Image.open(image)
-        makedirs(pjoin(self.root, "avatars", str(user_id)))
+        makedirs(pjoin(self.root, "avatars", str(user_id)), exist_ok=True)
         def save_task():
             for size in [32, 64, 80, 128, 256, 512, 1024]:
                 img = image.resize((size, size))
                 fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.webp")
                 img.save(fpath)
-                print(f"avatar with size {size} saved")
         with ThreadPoolExecutor() as pool:
             await get_event_loop().run_in_executor(pool, save_task)
         return avatar_hash
+
+    async def getBanner(self, user_id, banner_hash):
+        fpath = pjoin(self.root, "banners", str(user_id), f"{banner_hash}.webp")
+        if not isfile(fpath):
+            return
+        async with aopen(fpath, "rb") as f:
+            return await f.read()
+
+    async def setBannerFromBytesIO(self, user_id, image):
+        banner_hash = md5()
+        banner_hash.update(image.getvalue())
+        banner_hash = banner_hash.hexdigest()
+        image = Image.open(image)
+        makedirs(pjoin(self.root, "banners", str(user_id)), exist_ok=True)
+        def save_task():
+            img = image.resize((300, 120))
+            fpath = pjoin(self.root, "banners", str(user_id), f"{banner_hash}.webp")
+            img.save(fpath)
+        with ThreadPoolExecutor() as pool:
+            await get_event_loop().run_in_executor(pool, save_task)
+        return banner_hash
