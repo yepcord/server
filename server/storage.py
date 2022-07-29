@@ -5,42 +5,52 @@ from hashlib import md5
 from base64 import b64decode
 from PIL import Image
 from magic import from_buffer
+from asyncio import get_event_loop
+from concurrent.futures import ThreadPoolExecutor
+from os import makedirs
 
 class _Storage:
     def __init__(self, root_path="files/"):
         self.root = root_path
 
-    async def getAvatar(self, user_id, avatar_hash):
+    async def getAvatar(self, user_id, avatar_hash, size):
         if type(self) == _Storage:
             raise NotImplementedError
-        return await self.storage.getAvatar(user_id, avatar_hash)
+        return await self.storage.getAvatar(user_id, avatar_hash, size)
 
     async def convertImgToWebp(self, image):
-        if isinstance(image, bytes):
-            image = BytesIO(image)
-        elif isinstance(image, str) and image.startswith("data:image/") and "base64" in image.split(",")[0]:
-            image = BytesIO(b64decode(image.split(",")[1].encode("utf8")))
-            mime = from_buffer(image.read(1024), mime=True)
-            if not mime.startswith("image/"):
+        def convert_task(image):
+            if isinstance(image, bytes):
+                image = BytesIO(image)
+            elif isinstance(image, str) and image.startswith("data:image/") and "base64" in image.split(",")[0]:
+                image = BytesIO(b64decode(image.split(",")[1].encode("utf8")))
+                mime = from_buffer(image.read(1024), mime=True)
+                if not mime.startswith("image/"):
+                    return
+            elif not isinstance(image, BytesIO):
                 return
-        elif not isinstance(image, BytesIO):
-            return
-        out = BytesIO()
-        image = Image.open(image)
-        s = image.shape
-        if s[0] != s[1]:
-            return
-        image.save(out, format="WEBP", lossless=True)
-        return out
+            out = BytesIO()
+            image = Image.open(image)
+            s = image.size
+            if s[0] != s[1]:
+                return
+            image.save(out, format="WEBP", lossless=True)
+            return out
+        with ThreadPoolExecutor() as pool:
+            return await get_event_loop().run_in_executor(pool, lambda: convert_task(image))
 
     async def setAvatarFromBytesIO(self, user_id, image):
         if type(self) == _Storage:
             raise NotImplementedError
-        return await self.storage.setAvatarFromStream(user_id, image)
+        return await self.storage.setAvatarFromBytesIO(user_id, image)
 
 class FileStorage(_Storage):
-    async def getAvatar(self, user_id, avatar_hash):
-        fpath = pjoin(self.root, "avatars", str(user_id), avatar_hash+".webp")
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        makedirs(self.root, exist_ok=True)
+
+    async def getAvatar(self, user_id, avatar_hash, size):
+        fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.webp")
         if not isfile(fpath):
             return
         async with aopen(fpath, "rb") as f:
@@ -50,7 +60,14 @@ class FileStorage(_Storage):
         avatar_hash = md5()
         avatar_hash.update(image.getvalue())
         avatar_hash = avatar_hash.hexdigest()
-        fpath = pjoin(self.root, "avatars", str(user_id), avatar_hash+".webp")
-        async with aopen(fpath, "wb") as f:
-            await f.write(image.getvalue())
+        image = Image.open(image)
+        makedirs(pjoin(self.root, "avatars", str(user_id)))
+        def save_task():
+            for size in [32, 64, 80, 128, 256, 512, 1024]:
+                img = image.resize((size, size))
+                fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.webp")
+                img.save(fpath)
+                print(f"avatar with size {size} saved")
+        with ThreadPoolExecutor() as pool:
+            await get_event_loop().run_in_executor(pool, save_task)
         return avatar_hash

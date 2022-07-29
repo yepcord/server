@@ -1,8 +1,9 @@
 from quart import Quart, request
 from functools import wraps
-from ..core import Core
+from ..core import Core, CDN
 from ..utils import b64decode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
+from ..storage import FileStorage
 from os import environ
 
 class YEPcord(Quart):
@@ -18,10 +19,7 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-api")
 core = Core(b64decode(environ.get("KEY")))
-
-def NOT_IMP():
-    print("Warning: route not implemented.")
-    return ("405 Not implemented yet.", 405)
+cdn = CDN(FileStorage(), core)
 
 @app.before_serving
 async def before_serving():
@@ -34,34 +32,16 @@ async def before_serving():
         autocommit=True
     )
 
-# Decorators
-
-def getUser(f):
-    @wraps(f)
-    async def wrapped(*args, **kwargs):
-        if not (token := request.headers.get("Authorization")):
-            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
-        if not (user := await core.getUser(token)):
-            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
-        kwargs["user"] = user
-        return await f(*args, **kwargs)
-    return wrapped
-
 # Auth
 
-@app.route("/api/v9/auth/register", methods=["POST"])
-async def api_auth_register():
-    data = await request.get_json()
-    res = await core.register(
-        mksf(),
-        data["username"],
-        data["email"],
-        data["password"],
-        data["date_of_birth"]
-    )
-    if type(res) == int:
-        return c_json(ERRORS[res], ECODES[res])
-    return c_json({"token": res.token})
+@app.route("/avatars/<int:uid>/<string:ahash>", methods=["GET"])
+async def avatars_uid_hash(uid, ahash):
+    ahash = ahash.split(".")[0]
+    size = request.args.get("size", 1024)
+    avatar = await cdn.getAvatar(uid, ahash, size)
+    if not avatar:
+        return b'', 404
+    return avatar, 200, {"Content-Type": "image/webp"}
 
 if __name__ == "__main__":
     from uvicorn import run as urun
