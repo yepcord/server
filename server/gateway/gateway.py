@@ -104,8 +104,6 @@ class Gateway:
             "session_id": client.sid,
             "presences": [],
             "relationships": [],
-            "analytics_token": "MA.AA",
-            "auth_session_id_hash": "zZDamQ9DHuByuVpwZS7vfCHr5R6XSjCWEFexmMY8MuU=",
             "connected_accounts": [],
             "consents": {
                 "personalization": {

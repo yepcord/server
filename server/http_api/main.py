@@ -89,8 +89,31 @@ async def api_users_me_get(user):
 @app.route("/api/v9/users/@me", methods=["PATCH"])
 @getUser
 async def api_users_me_patch(user):
+    data = await user.data
+    _settings = await request.get_json()
+    d = "discriminator" in _settings and _settings.get("discriminator") != data["discriminator"]
+    u = "username" in _settings and _settings.get("username") != data["username"]
+    ures = dres = None
+    if d or u:
+        if "password" not in _settings:
+            return c_json(ERRORS[6], ECODES[6])
+        if not await core.checkUserPassword(user, _settings["password"]):
+            return c_json(ERRORS[6], ECODES[6])
+        if u:
+            ures = await core.changeUserName(user, str(_settings["username"]))
+            if type(ures) == int:
+                return c_json(ERRORS[ures], ECODES[ures])
+            del _settings["username"]
+        if d:
+            dres = await core.changeUserDiscriminator(user, int(_settings["discriminator"]))
+            if type(dres) == int:
+                if u and type(ures) != int:
+                    return c_json(await userdataResponse(user))
+                return c_json(ERRORS[dres], ECODES[dres])
+            del _settings["discriminator"]
+
     settings = {}
-    for k,v in (await request.get_json()).items():
+    for k,v in _settings.items():
         k = k.lower()
         if k not in ALLOWED_USERDATA:
             continue
@@ -109,7 +132,7 @@ async def api_users_me_patch(user):
             if not v:
                 continue
         elif k == "banner":
-            if not (img := await cdn.resizeImage(v, (600, 240))):
+            if not (img := await cdn.resizeImage(v, (300, 120))):
                 continue
             v = await cdn.setBannerFromBytesIO(user.id, img)
             if not v:
@@ -157,9 +180,21 @@ async def api_users_me_settings_patch(user):
                 v = t(v)
             except:
                 v = t()
+        if k == "friend_source_flags":
+            for _k,_v in list(v.items()):
+                if _k not in ["all", "mutual_friends", "mutual_guilds"]:
+                    del v[_k]
+                    continue
+                if type(_v) != bool:
+                    _v = bool(_v)
         settings[k] = v
     await core.setSettings(user, settings)
     return c_json(await userSettingsResponse(user))
+
+@app.route("/api/v9/users/@me/connections", methods=["GET"])
+@getUser
+async def api_users_me_connections(user):
+    return c_json("[]") # TODO
 
 @app.route("/api/v9/users/@me/harvest", methods=["GET"])
 @getUser
@@ -236,12 +271,54 @@ async def api_users_me_billing_usertrialoffer():
 async def api_users_me_billing_subscriptions():
     return c_json("[]")
 
+@app.route("/api/v9/users/@me/billing/subscription-slots", methods=["GET"])
+async def api_users_me_billing_subscriptionslots():
+    return c_json("[]")
+
+@app.route("/api/v9/users/@me/guilds/premium/subscription-slots", methods=["GET"])
+async def api_users_me_guilds_premium_subscriptionslots():
+    return c_json("[]")
+
 @app.route("/api/v9/outbound-promotions", methods=["GET"])
 async def api_outboundpromotions():
     return c_json("[]")
 
 @app.route("/api/v9/users/@me/applications/<aid>/entitlements", methods=["GET"])
-async def api_users_me_applications_aid_entitlements(aid):
+async def api_users_me_applications_id_entitlements(aid):
+    return c_json("[]")
+
+@app.route("/api/v9/store/published-listings/skus/<int:sku>/subscription-plans", methods=["GET"])
+async def api_store_publishedlistings_skus_id_subscriptionplans(sku):
+    if sku == 978380684370378762:
+        return c_json("[{\"id\": \"978380692553465866\",\"name\": \"Nitro Basic Monthly\",\"interval\": 1,\"interval_count\": 1,\"tax_inclusive\": true,\"sku_id\": \"978380684370378762\",\"currency\": \"usd\",\"price\": 0,\"price_tier\": null}]")
+    elif sku == 521846918637420545:
+        return c_json("[{\"id\":\"511651871736201216\",\"name\":\"Premium Classic Monthly\",\"interval\":1,\"interval_count\":1,\"tax_inclusive\":true,\"sku_id\":\"521846918637420545\",\"currency\":\"usd\",\"price\":0,\"price_tier\":null},{\"id\":\"511651876987469824\",\"name\":\"Premium Classic Yearly\",\"interval\":2,\"interval_count\":1,\"tax_inclusive\":true,\"sku_id\":\"521846918637420545\",\"currency\":\"usd\",\"price\":0,\"price_tier\":null}]")
+    elif sku == 521847234246082599:
+        return c_json("[{\"id\":\"642251038925127690\",\"name\":\"Premium Quarterly\",\"interval\":1,\"interval_count\":3,\"tax_inclusive\":true,\"sku_id\":\"521847234246082599\",\"currency\":\"usd\",\"price\":0,\"price_tier\":null},{\"id\":\"511651880837840896\",\"name\":\"Premium Monthly\",\"interval\":1,\"interval_count\":1,\"tax_inclusive\":true,\"sku_id\":\"521847234246082599\",\"currency\":\"usd\",\"price\":0,\"price_tier\":null},{\"id\":\"511651885459963904\",\"name\":\"Premium Yearly\",\"interval\":2,\"interval_count\":1,\"tax_inclusive\":true,\"sku_id\":\"521847234246082599\",\"currency\":\"usd\",\"price\":0,\"price_tier\":null}]")
+    elif sku == 590663762298667008:
+        return c_json("[{\"id\":\"590665532894740483\",\"name\":\"Server Boost Monthly\",\"interval\":1,\"interval_count\":1,\"tax_inclusive\":true,\"sku_id\":\"590663762298667008\",\"discount_price\":0,\"currency\":\"usd\",\"price\":0,\"price_tier\":null},{\"id\":\"590665538238152709\",\"name\":\"Server Boost Yearly\",\"interval\":2,\"interval_count\":1,\"tax_inclusive\":true,\"sku_id\":\"590663762298667008\",\"discount_price\":0,\"currency\":\"usd\",\"price\":0,\"price_tier\":null}]")
+    return c_json("[]")
+
+@app.route("/api/v9/users/@me/outbound-promotions/codes", methods=["GET"])
+async def api_users_me_outboundpromotions_codes():
+    return c_json("[]")
+
+@app.route("/api/v9/users/@me/entitlements/gifts", methods=["GET"])
+async def api_users_me_entitlements_gifts():
+    return c_json("[]")
+
+@app.route("/api/v9/users/@me/activities/statistics/applications", methods=["GET"])
+async def api_users_me_activities_statistics_applications():
+    return c_json("[]")
+
+@app.route("/api/v9/users/@me/billing/payments", methods=["GET"])
+async def api_users_me_billing_payments():
+    return c_json("[]")
+
+# OAuth
+
+@app.route("/api/v9/oauth2/tokens", methods=["GET"])
+async def api_oauth_tokens():
     return c_json("[]")
 
 if __name__ == "__main__":

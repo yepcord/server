@@ -99,7 +99,12 @@ ALLOWED_SETTINGS = {
     "convert_emoticons": bool,
     "passwordless": bool,
     "personalization": bool,
-    "usage_statistics": bool
+    "usage_statistics": bool,
+    "activity_restricted_guild_ids": list,
+    "friend_source_flags": dict,
+    "guild_positions": list,
+    "guild_folders": list,
+    "restricted_guilds": list,
 }
 
 ALLOWED_USERDATA = {
@@ -124,6 +129,10 @@ ERRORS = {
     3: jdumps({"code": 50035, "errors": {"login": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "Too many users have this username, please try another.."}]}}, "message": "Invalid Form Body"}),
     4: jdumps({"code": 10013, "message": "Unknown User"}),
     5: jdumps({"code": 50001, "message": "Missing Access"}),
+    6: jdumps({"code": 50035, "errors": {"password": {"_errors": [{"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}]}}, "message": "Invalid Form Body"}),
+    7: jdumps({"code": 50035, "errors": {"username": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "This name is used by too many users. Please enter something else or try again."}]}}, "message": "Invalid Form Body"}),
+    8: jdumps({"code": 50035, "errors": {"username": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "This discriminator already used by someone. Please enter something else."}]}}, "message": "Invalid Form Body"}),
+    9: jdumps({"code": 80004, "message": "No users with DiscordTag exist"}),
 }
 
 ECODES = {
@@ -132,4 +141,8 @@ ECODES = {
     3: 400,
     4: 404,
     5: 403,
+    6: 400,
+    7: 400,
+    8: 400,
+    9: 400,
 }

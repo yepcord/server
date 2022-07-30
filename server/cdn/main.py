@@ -43,7 +43,7 @@ async def avatars_uid_hash(uid, ahash):
         return b'', 404
     return avatar, 200, {"Content-Type": "image/webp"}
 
-@app.route("/banners/<int:uid>/<string:ahash>", methods=["GET"])
+@app.route("/banners/<int:uid>/<string:bhash>", methods=["GET"])
 async def banners_uid_hash(uid, bhash):
     bhash = bhash.split(".")[0]
     banner = await cdn.getBanner(uid, bhash)

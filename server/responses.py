@@ -9,7 +9,7 @@ async def userSettingsResponse(user):
         "restricted_guilds": settings["restricted_guilds"],
         "default_guilds_restricted": settings["default_guilds_restricted"],
         "inline_attachment_media": settings["inline_attachment_media"],
-        "inline_embed_media": settings["inline_embed_media"],
+        "inline_embed_media": settings["inline_attachment_media"],
         "gif_auto_play": settings["gif_auto_play"],
         "render_embeds": settings["render_embeds"],
         "render_reactions": settings["render_reactions"],

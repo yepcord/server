@@ -29,10 +29,33 @@ class _Storage:
             s = image.size
             if s[0] != s[1]:
                 return
-            image.save(out, format="WEBP", lossless=True)
+            image.save(out, format="WEBP", lossless=True, save_all=True)
             return out
         with ThreadPoolExecutor() as pool:
             return await get_event_loop().run_in_executor(pool, lambda: convert_task(image))
+
+    async def resizeImage(self, image, size=(300, 120)):
+        def res_image(image, size):
+            if isinstance(image, bytes):
+                image = BytesIO(image)
+            elif isinstance(image, str) and image.startswith("data:image/") and "base64" in image.split(",")[0]:
+                image = BytesIO(b64decode(image.split(",")[1].encode("utf8")))
+                mime = from_buffer(image.getvalue()[:1024], mime=True)
+                if not mime.startswith("image/"):
+                    return
+            elif not isinstance(image, BytesIO):
+                return
+            out = BytesIO()
+            image = Image.open(image).resize(size)
+            image.save(out, format="WEBP", lossless=True, save_all=True)
+            return out
+        with ThreadPoolExecutor() as pool:
+            return await get_event_loop().run_in_executor(pool, lambda: res_image(image, size))
+
+    async def imageType(self, image):
+        m = from_buffer(image.getvalue()[:1024], mime=True)
+        if m.startswith("image/"):
+            return m[6:]
 
     async def getAvatar(self, user_id, avatar_hash, size):
         if type(self) == _Storage:

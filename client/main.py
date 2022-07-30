@@ -1,4 +1,4 @@
-from quart import Quart
+from quart import Quart, redirect
 from os.path import realpath, dirname, join
 from aiohttp import ClientSession
 from aiofiles import open as aopen
@@ -25,12 +25,15 @@ app = Quart(
 )
 
 @app.route("/")
+async def index():
+    return redirect("/app")
+
 @app.route("/login")
 @app.route("/register")
 @app.route("/app")
 @app.route("/channels")
 @app.route("/channels/<channel>")
-async def discord(channel=None):
+async def discord(**kwargs):
     return HTML_DATA
 
 @app.route("/assets/<file>")

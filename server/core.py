@@ -7,7 +7,8 @@ from Crypto.Cipher import AES
 from .utils import b64encode, b64decode, unpack_token
 from .classes import Session, User, LoginUser
 from .storage import _Storage
-from json import loads as jloads
+from json import loads as jloads, dumps as jdumps
+from random import randint
 
 def _usingDB(f):
     async def wrapper(self, *args, **kwargs):
@@ -55,11 +56,12 @@ class Core:
         return bool(r)
 
     @_usingDB
-    async def getHighestDiscriminator(self, login, cur):
-        await cur.execute(f'SELECT `discriminator` FROM `userdata` WHERE `username`="{login}" ORDER BY discriminator DESC LIMIT 1;')
-        if (r := await cur.fetchone()):
-            return r[0]
-        return 0
+    async def getRandomDiscriminator(self, login, cur):
+        for _ in range(5):
+            d = randint(1, 9999)
+            await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={d} AND `username`="{login}";')
+            if not await cur.fetchone():
+                return d
 
     @_usingDB
     async def register(self, uid, login, email, password, birth, cur):
@@ -71,8 +73,8 @@ class Core:
         session = int.from_bytes(urandom(6), "big")
         signature = self.generateSessionSignature(uid, session, b64decode(key))
 
-        discrim = await self.getHighestDiscriminator(login, cur=cur)+1
-        if discrim >= 10000:
+        discrim = await self.getRandomDiscriminator(login, cur=cur)
+        if discrim is None:
             return 3
 
         await cur.execute(f'INSERT INTO `users` VALUES ({uid}, "{email}", "{password}", "{key}");')
@@ -158,6 +160,10 @@ class Core:
                 v = f'"{v}"'
             elif isinstance(v, bool):
                 v = "true" if v else "false"
+            elif isinstance(v, (dict, list)):
+                k = f"j_{k}"
+                v = jdumps(v).replace("\"", "\\\"")
+                v = f"\"{v}\""
             settings.append(f"`{k}`={v}")
         return ", ".join(settings)
 
@@ -179,3 +185,28 @@ class Core:
         if not (user := await self.getUserById(uid, cur=cur)):
             return 4
         return user
+
+    @_usingDB
+    async def checkUserPassword(self, user, password, cur):
+        password = self.encryptPassword(password)
+        await cur.execute(f'SELECT `password` FROM `users` WHERE `id`={user.id};')
+        passw = await cur.fetchone()
+        return passw[0] == password
+
+    @_usingDB
+    async def changeUserDiscriminator(self, user, discriminator, cur):
+        username = (await user.data)["username"]
+        await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discriminator} AND `username`="{username}";')
+        if await cur.fetchone():
+            return 8
+        await cur.execute(f'UPDATE `userdata` SET `discriminator`={discriminator} WHERE `uid`={user.id};')
+
+    @_usingDB
+    async def changeUserName(self, user, username, cur):
+        discrim = (await user.data)["discriminator"]
+        await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discrim} AND `username`="{username}";')
+        if await cur.fetchone():
+            discrim = await self.getRandomDiscriminator(username, cur=cur)
+            if discrim is None:
+                return 7
+        await cur.execute(f'UPDATE `userdata` SET `username`="{username}", `discriminator`={discrim} WHERE `uid`={user.id};')
