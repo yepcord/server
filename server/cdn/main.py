@@ -34,19 +34,24 @@ async def before_serving():
 
 # Auth
 
-@app.route("/avatars/<int:uid>/<string:ahash>", methods=["GET"])
-async def avatars_uid_hash(uid, ahash):
-    ahash = ahash.split(".")[0]
+@app.route("/avatars/<int:uid>/<string:name>", methods=["GET"])
+async def avatars_uid_hash(uid, name):
+    ahash = name.split(".")[0]
+    fmt = name.split(".")[1]
     size = request.args.get("size", 1024)
-    avatar = await cdn.getAvatar(uid, ahash, size)
+    avatar = await cdn.getAvatar(uid, ahash, size, fmt)
     if not avatar:
         return b'', 404
     return avatar, 200, {"Content-Type": "image/webp"}
 
-@app.route("/banners/<int:uid>/<string:bhash>", methods=["GET"])
-async def banners_uid_hash(uid, bhash):
-    bhash = bhash.split(".")[0]
-    banner = await cdn.getBanner(uid, bhash)
+@app.route("/banners/<int:uid>/<string:name>", methods=["GET"])
+async def banners_uid_hash(uid, name):
+    bhash = name.split(".")[0]
+    fmt = name.split(".")[1]
+    size = request.args.get("size", 600)
+    if fmt not in ["webp", "png", "jpg", "gif"]:
+        return b'', 404
+    banner = await cdn.getBanner(uid, bhash, size, fmt)
     if not banner:
         return b'', 404
     return banner, 200, {"Content-Type": "image/webp"}

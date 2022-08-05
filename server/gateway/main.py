@@ -37,13 +37,15 @@ async def before_serving():
 async def ws_gateway():
     ws = websocket._get_current_object()
     setattr(ws, "zlib", Compressor() if websocket.args.get("compress") == "zlib-stream" else None)
+    setattr(ws, "ws_connected", True)
     await gw.sendHello(ws)
     while True:
         try:
             data = await ws.receive()
             await gw.process(ws, jloads(data))
         except CancelledError:
-            pass # TODO: Disconnect
+            setattr(ws, "ws_connected", False)
+            break # TODO: Disconnect
 
 if __name__ == "__main__":
     from uvicorn import run as urun

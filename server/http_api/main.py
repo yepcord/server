@@ -1,7 +1,7 @@
 from quart import Quart, request
 from functools import wraps
 from ..core import Core, CDN
-from ..utils import b64decode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS
+from ..utils import b64decode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, validImage
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
 from ..storage import FileStorage
 from os import environ
@@ -35,6 +35,7 @@ async def before_serving():
         db=environ.get("DB_NAME"),
         autocommit=True
     )
+    await core.initMCL()
 
 # Decorators
 
@@ -126,16 +127,14 @@ async def api_users_me_patch(user):
             except:
                 v = t()
         if k == "avatar":
-            if not (img := await cdn.convertImgToWebp(v, True)):
+            if not (img := getImage(v)) or not validImage(img):
                 continue
-            v = await cdn.setBannerFromBytesIO(user.id, img)
-            if not v:
+            if not (v := await cdn.setAvatarFromBytesIO(user.id, img)):
                 continue
         elif k == "banner":
-            if not (img := await cdn.resizeImage(v, (300, 120))):
+            if not (img := getImage(v)) or not validImage(img):
                 continue
-            v = await cdn.setBannerFromBytesIO(user.id, img)
-            if not v:
+            if not (v := await cdn.setBannerFromBytesIO(user.id, img)):
                 continue
         settings[k] = v
     await core.setUserdata(user, settings)
@@ -195,6 +194,30 @@ async def api_users_me_settings_patch(user):
 @getUser
 async def api_users_me_connections(user):
     return c_json("[]") # TODO
+
+@app.route("/api/v9/users/@me/relationships", methods=["POST"])
+@getUser
+async def api_users_me_relationships_post(user):
+    udata = await request.get_json()
+    if not (rUser := await core.getUserByUsername(**udata)):
+        return c_json(ERRORS[9], ECODES[9])
+    if rUser == user:
+        return c_json(ERRORS[10], ECODES[10])
+    if (res := await core.relationShipAvailable(rUser, user)):
+        return c_json(ERRORS[res], ECODES[res])
+    await core.reqRelationship(rUser, user)
+    return "", 204
+
+@app.route("/api/v9/users/@me/relationships", methods=["GET"])
+@getUser
+async def api_users_me_relationships_get(user):
+    return c_json(await core.getRelationships(user, with_data=True))
+
+@app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["PUT"])
+@getUser
+async def api_users_me_relationships_put(uid, user):
+    await core.accRelationship(user, uid)
+    return "", 204
 
 @app.route("/api/v9/users/@me/harvest", methods=["GET"])
 @getUser

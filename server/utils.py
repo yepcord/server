@@ -4,6 +4,8 @@ from random import randint
 from os import getpid
 from json import dumps as jdumps
 from zlib import compressobj, Z_FULL_FLUSH
+from io import BytesIO
+from magic import from_buffer
 
 global _INCREMENT_ID
 
@@ -133,6 +135,8 @@ ERRORS = {
     7: jdumps({"code": 50035, "errors": {"username": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "This name is used by too many users. Please enter something else or try again."}]}}, "message": "Invalid Form Body"}),
     8: jdumps({"code": 50035, "errors": {"username": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "This discriminator already used by someone. Please enter something else."}]}}, "message": "Invalid Form Body"}),
     9: jdumps({"code": 80004, "message": "No users with DiscordTag exist"}),
+    10: jdumps({"code": 80007, "message": "You are already friends with that user."}),
+    11: jdumps({"code": 80000, "message": "Incoming friend requests disabled."}),
 }
 
 ECODES = {
@@ -145,4 +149,45 @@ ECODES = {
     7: 400,
     8: 400,
     9: 400,
+    10: 400,
+    11: 400,
 }
+
+def getImage(image):
+    if isinstance(image, bytes):
+        image = BytesIO(image)
+    elif isinstance(image, str) and (image.startswith("data:image/") or image.startswith("data:application/octet-stream")) and "base64" in image.split(",")[0]:
+        image = BytesIO(_b64decode(image.split(",")[1].encode("utf8")))
+        mime = from_buffer(image.read(1024), mime=True)
+        if not mime.startswith("image/"):
+            return
+    elif not isinstance(image, BytesIO):
+        return
+    return image
+
+def imageType(image):
+    m = from_buffer(image.getvalue()[:1024], mime=True)
+    if m.startswith("image/"):
+        return m[6:]
+
+def validImage(image):
+    return imageType(image) in ["png", "webp", "gif", "jpeg", "jpg"] and image.getbuffer().nbytes < 8*1024*1024*1024
+
+class RELATIONSHIP:
+    PENDING = 0
+    FRIEND = 1
+    BLOCK = 2
+
+class GATEWAY_OP:
+    DISPATCH = 0
+    HEARTBEAT = 1
+    IDENTIFY = 2
+    STATUS = 3
+    VOICE_STATE = 4
+    VOICE_PING = 5
+    RESUME = 6
+    RECONNECT = 7
+    GUILD_MEMBERS = 8
+    INV_SESSION = 9
+    HELLO = 10
+    HEARTBEAT_ACK = 11

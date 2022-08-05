@@ -1,22 +1,9 @@
 from ..msg_client import Client
-from ..utils import unpack_token, snowflake_timestamp
+from ..utils import unpack_token, snowflake_timestamp, GATEWAY_OP
+from ..core import Core
 from os import urandom
 from json import dumps as jdumps
 from datetime import datetime
-
-class OP:
-    DISPATCH = 0
-    HEARTBEAT = 1
-    IDENTIFY = 2
-    STATUS = 3
-    VOICE_STATE = 4
-    VOICE_PING = 5
-    RESUME = 6
-    RECONNECT = 7
-    GUILD_MEMBERS = 8
-    INV_SESSION = 9
-    HELLO = 10
-    HEARTBEAT_ACK = 11
 
 class VoiceStatus:
     def __init__(self):
@@ -45,24 +32,110 @@ class GatewayClient:
         return self.z(jdumps(json).encode("utf8"))
 
 class Gateway:
-    def __init__(self, core):
+    def __init__(self, core: Core):
         self.core = core
         self.mcl = Client()
         self.clients = []
 
     async def init(self):
         await self.mcl.start("ws://127.0.0.1:5050")
-        await self.mcl.subscribe("gateway", self.mclCallback)
+        await self.mcl.subscribe("user_events", self.mcl_userEventsCallback)
 
-    async def mclCallback(self, data):
-        ...
+    async def mcl_userEventsCallback(self, data: dict) -> None:
+        ev = data["e"]
+        if ev == "relationship_req":
+            tClient = [u for u in self.clients if u.id == data["target_user"] and u.ws.ws_connected]
+            cClient = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
+            tClient = None if not tClient else tClient[0]
+            cClient = None if not cClient else cClient[0]
+            if tClient:
+                uid = data["current_user"]
+                data = await self.core.getUserData(uid)
+                await self.send(tClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
+                    "user": {
+                        "username": data["username"],
+                        "public_flags": data["public_flags"],
+                        "id": str(uid),
+                        "discriminator": str(data["discriminator"]).rjust(4, "0"),
+                        "avatar_decoration": data["avatar_decoration"],
+                        "avatar": data["avatar"]
+                    },
+                    "type": 3, "should_notify": True, "nickname": None, "id": str(uid)
+                })
+            if cClient:
+                uid = data["target_user"]
+                data = await self.core.getUserData(uid)
+                await self.send(cClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
+                    "user": {
+                        "username": data["username"],
+                        "public_flags": data["public_flags"],
+                        "id": str(uid),
+                        "discriminator": data["discriminator"],
+                        "avatar_decoration": data["avatar_decoration"],
+                        "avatar": data["avatar"]
+                    },
+                    "type": 4, "nickname": None, "id": str(uid)
+                })
+        elif ev == "relationship_acc":
+            tClient = [u for u in self.clients if u.id == data["target_user"] and u.ws.ws_connected]
+            cClient = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
+            tClient = None if not tClient else tClient[0]
+            cClient = None if not cClient else cClient[0]
+            if tClient:
+                uid = data["current_user"]
+                d = await self.core.getUserData(uid)
+                await self.send(tClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
+                    "user": {
+                        "user": {
+                            "username": d["username"],
+                            "public_flags": d["public_flags"],
+                            "id": str(uid),
+                            "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                            "avatar_decoration": d["avatar_decoration"],
+                            "avatar": d["avatar"]
+                        },
+                        "type": 1, "should_notify": True, "nickname": None, "id": str(uid)
+                    }
+                })
+                await self.send(tClient, GATEWAY_OP.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
+                    "type": "friend_request_accepted",
+                    "other_user": {
+                        "username": d["username"],
+                            "public_flags": d["public_flags"],
+                            "id": str(uid),
+                            "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                            "avatar_decoration": d["avatar_decoration"],
+                            "avatar": d["avatar"]
+                    },
+                    "id": str(uid),
+                    "icon_url": f"https://127.0.0.1:8003/avatars/{uid}/{d['avatar']}.png",
+                    "deeplink": f"https://discord.com/users/{uid}",
+                    "body": f"**{d['username']}** accepts your friend request",
+                    "acked": False
+                })
+            if cClient:
+                uid = data["target_user"]
+                d = await self.core.getUserData(uid)
+                await self.send(cClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
+                    "user": {
+                        "user": {
+                            "username": d["username"],
+                            "public_flags": d["public_flags"],
+                            "id": str(uid),
+                            "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                            "avatar_decoration": d["avatar_decoration"],
+                            "avatar": d["avatar"]
+                        },
+                        "type": 1, "nickname": None, "id": str(uid)
+                    }
+                })
 
-    async def send(self, client, op, **data):
+    async def send(self, client: GatewayClient, op: int, **data) -> None:
         r = {"op": op}
         r.update(data)
         await client.send(r)
 
-    async def sendws(self, ws, op, **data):
+    async def sendws(self, ws, op: int, **data) -> None:
         r = {"op": op}
         r.update(data)
         if getattr(ws, "zlib", None):
@@ -91,19 +164,19 @@ class Gateway:
                 "premium": True,
                 "premium_type": 2,
                 "premium_since": d,
-                "verified":  True,
+                "verified": True,
                 "purchased_flags": 0,
-                "nsfw_allowed":  True, # TODO: check
-                "mobile":  True, # TODO: check
-                "mfa_enabled":  False, # TODO: get from db
+                "nsfw_allowed": True, # TODO: check
+                "mobile": True, # TODO: check
+                "mfa_enabled": False, # TODO: get from db
                 "id": str(client.id),
                 "flags": 0,
             },
-            "users": [],
+            "users": await self.core.getRelatedUsers(user),
             "guilds": [],
             "session_id": client.sid,
             "presences": [],
-            "relationships": [],
+            "relationships": await self.core.getRelationships(user),
             "connected_accounts": [],
             "consents": {
                 "personalization": {
@@ -147,7 +220,7 @@ class Gateway:
 
     async def process(self, ws, data):
         op = data["op"]
-        if op == OP.IDENTIFY:
+        if op == GATEWAY_OP.IDENTIFY:
             if [w for w in self.clients if w.ws == ws]:
                 print("close 1")
                 return await ws.close(4005)
@@ -160,11 +233,11 @@ class Gateway:
                 return await ws.close(4004)
             cl = GatewayClient(ws, uid)
             self.clients.append(cl)
-            await self.send(cl, OP.DISPATCH, t="READY", s=1, d=await self._generateReadyPayload(cl))
-        elif op == OP.RESUME:
+            await self.send(cl, GATEWAY_OP.DISPATCH, t="READY", s=1, d=await self._generateReadyPayload(cl))
+        elif op == GATEWAY_OP.RESUME:
             if not (cl := [w for w in self.clients if w.sid == data["d"]["session_id"]]):
-                await self.sendws(ws, OP.INV_SESSION)
-                await self.sendws(ws, OP.RECONNECT)
+                await self.sendws(ws, GATEWAY_OP.INV_SESSION)
+                await self.sendws(ws, GATEWAY_OP.RECONNECT)
                 print("close 4")
                 return await ws.close(4009)
             if not (token := data["d"]["token"]):
@@ -178,13 +251,13 @@ class Gateway:
             if cl.id != uid:
                 print("close 7")
                 return await ws.close(4004)
-            await self.send(cl, OP.DISPATCH, t="READY", s=1, d=await self._generateReadyPayload(cl))
-        elif op == OP.HEARTBEAT:
+            await self.send(cl, GATEWAY_OP.DISPATCH, t="READY", s=1, d=await self._generateReadyPayload(cl))
+        elif op == GATEWAY_OP.HEARTBEAT:
             if not (cl := [w for w in self.clients if w.ws == ws]):
                 print("close 8")
                 return await ws.close(4005)
             cl = cl[0]
-            await self.send(cl, OP.HEARTBEAT_ACK, t=None, d=None)
+            await self.send(cl, GATEWAY_OP.HEARTBEAT_ACK, t=None, d=None)
 
     async def sendHello(self, ws):
-        await self.sendws(ws, OP.HELLO, t=None, s=None, d={"heartbeat_interval": 45000})
+        await self.sendws(ws, GATEWAY_OP.HELLO, t=None, s=None, d={"heartbeat_interval": 45000})
