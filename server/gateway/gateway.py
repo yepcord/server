@@ -50,29 +50,29 @@ class Gateway:
             cClient = None if not cClient else cClient[0]
             if tClient:
                 uid = data["current_user"]
-                data = await self.core.getUserData(uid)
+                d = await self.core.getUserData(uid)
                 await self.send(tClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
                     "user": {
-                        "username": data["username"],
-                        "public_flags": data["public_flags"],
+                        "username": d["username"],
+                        "public_flags": d["public_flags"],
                         "id": str(uid),
-                        "discriminator": str(data["discriminator"]).rjust(4, "0"),
-                        "avatar_decoration": data["avatar_decoration"],
-                        "avatar": data["avatar"]
+                        "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                        "avatar_decoration": d["avatar_decoration"],
+                        "avatar": d["avatar"]
                     },
                     "type": 3, "should_notify": True, "nickname": None, "id": str(uid)
                 })
             if cClient:
                 uid = data["target_user"]
-                data = await self.core.getUserData(uid)
+                d = await self.core.getUserData(uid)
                 await self.send(cClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
                     "user": {
-                        "username": data["username"],
-                        "public_flags": data["public_flags"],
+                        "username": d["username"],
+                        "public_flags": d["public_flags"],
                         "id": str(uid),
-                        "discriminator": data["discriminator"],
-                        "avatar_decoration": data["avatar_decoration"],
-                        "avatar": data["avatar"]
+                        "discriminator": d["discriminator"],
+                        "avatar_decoration": d["avatar_decoration"],
+                        "avatar": d["avatar"]
                     },
                     "type": 4, "nickname": None, "id": str(uid)
                 })
