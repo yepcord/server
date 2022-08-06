@@ -4,3 +4,4 @@ env*
 files/
 .idea/
 *.txt
+endpoints.*
