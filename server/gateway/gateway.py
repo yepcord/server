@@ -129,6 +129,14 @@ class Gateway:
                         "type": 1, "nickname": None, "id": str(uid)
                     }
                 })
+        elif ev == "relationship_del":
+            cl = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
+            if cl:
+                cl = cl[0]
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_REMOVE", d={
+                    "type": data["type"],
+                    "id": str(data["target_user"])
+                })
 
     async def send(self, client: GatewayClient, op: int, **data) -> None:
         r = {"op": op}

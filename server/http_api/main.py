@@ -219,6 +219,12 @@ async def api_users_me_relationships_put(uid, user):
     await core.accRelationship(user, uid)
     return "", 204
 
+@app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["DELETE"])
+@getUser
+async def api_users_me_relationships_delete(uid, user):
+    await core.delRelationship(user, uid)
+    return "", 204
+
 @app.route("/api/v9/users/@me/harvest", methods=["GET"])
 @getUser
 async def api_users_me_harvest(user):

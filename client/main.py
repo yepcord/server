@@ -39,7 +39,6 @@ async def discord(**kwargs):
 @app.route("/assets/<file>")
 async def assets(file):
     await downloadAsset(file)
-    print(f"Downloaded: {file}")
     return await app.send_static_file(file)
 
 if __name__ == "__main__":

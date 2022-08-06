@@ -292,3 +292,22 @@ class Core:
     async def accRelationship(self, user: User, uid: int, cur) -> None:
         await cur.execute(f'UPDATE `relationships` SET `type`={RELATIONSHIP.FRIEND} WHERE `u1`={uid} AND `u2`={user.id} AND `type`={RELATIONSHIP.PENDING};')
         await self.mcl.broadcast("user_events", {"e": "relationship_acc", "target_user": uid, "current_user": user.id})
+
+    @_usingDB
+    async def delRelationship(self, user: User, uid: int, cur) -> None:
+        await cur.execute(f'SELECT `type`, `u1`, `u2` FROM `relationships` WHERE (`u1`={user.id} AND `u2`={uid}) OR (`u1`={uid} AND `u2`={user.id});')
+        if not (r := await cur.fetchone()):
+            return
+        t = r[0]
+        t1 = 0
+        t2 = 0
+        if r == RELATIONSHIP.PENDING:
+            if r[1] == user.id:
+                t1 = 4
+                t2 = 3
+            else:
+                t1 = 3
+                t2 = 4
+        await cur.execute(f"DELETE FROM `relationships` WHERE (`u1`={user.id} AND `u2`={uid}) OR (`u1`={uid} AND `u2`={user.id});")
+        await self.mcl.broadcast("user_events", {"e": "relationship_del", "current_user": user.id, "target_user": uid, "type": t or t1})
+        await self.mcl.broadcast("user_events", {"e": "relationship_del", "current_user": uid, "target_user": user.id, "type": t or t2})
