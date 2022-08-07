@@ -1,10 +1,12 @@
 from quart import Quart, request
 from functools import wraps
 from ..core import Core, CDN
-from ..utils import b64decode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, validImage
+from ..utils import b64decode, b64encode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, validImage, unpack_token, MFA, execute_after
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
 from ..storage import FileStorage
 from os import environ
+from json import dumps as jdumps
+from random import choice
 
 class YEPcord(Quart):
     async def process_response(self, response, request_context):
@@ -50,6 +52,17 @@ def getUser(f):
         return await f(*args, **kwargs)
     return wrapped
 
+def getSession(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (token := request.headers.get("Authorization")):
+            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+        if not (session := await core.getSession(*unpack_token(token))):
+            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+        kwargs["session"] = session
+        return await f(*args, **kwargs)
+    return wrapped
+
 def getChannel(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
@@ -78,7 +91,45 @@ async def api_auth_login():
     res = await core.login(data["login"], data["password"])
     if type(res) == int:
         return c_json(ERRORS[res], ECODES[res])
+    if type(res) == tuple:
+        if res[0] == 1:
+            ticket = b64encode(jdumps([res[1], "login"]))
+            ticket += f".{res[2]}.{res[3]}"
+            return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
     return c_json({"token": res.token, "user_settings": {"locale": res.locale, "theme": res.theme}, "user_id": str(res.id)})
+
+@app.route("/api/v9/auth/mfa/totp", methods=["POST"])
+async def api_auth_mfa_totp():
+    data = await request.get_json()
+    if not (ticket := data.get("ticket")):
+        return c_json(ERRORS[16], ECODES[16])
+    if not (code := data.get("code")):
+        return c_json(ERRORS[13], ECODES[13])
+    if not (mfa := await core.getMfaFromTicket(ticket)):
+        return c_json(ERRORS[16], ECODES[16])
+    code = code.replace("-", "").replace(" ", "")
+    if mfa.getCode() != code:
+        if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
+            return c_json(ERRORS[13], ECODES[13])
+    user = await core.getLoginUser(mfa.uid)
+    return c_json({"token": user.token, "user_settings": {"locale": user.locale, "theme": user.theme}, "user_id": str(user.id)})
+
+@app.route("/api/v9/auth/logout", methods=["POST"])
+@getSession
+async def api_auth_logout(session):
+    await core.logoutUser(session)
+    return "", 204
+
+@app.route("/api/v9/auth/verify/view-backup-codes-challenge", methods=["POST"])
+@getUser
+async def api_auth_verify_viewbackupcodeschallenge(user):
+    data = await request.get_json()
+    if not (password := data.get("password")):
+        return c_json(ERRORS[15], ECODES[15])
+    if not await core.checkUserPassword(user, password):
+        return c_json(ERRORS[15], ECODES[15])
+    nonce = await core.generateUserMfaNonce(user)
+    return c_json({"nonce": nonce[0], "regenerate_nonce": nonce[1]})
 
 # Users (@me)
 
@@ -112,6 +163,13 @@ async def api_users_me_patch(user):
                     return c_json(await userdataResponse(user))
                 return c_json(ERRORS[dres], ECODES[dres])
             del _settings["discriminator"]
+    if "new_password" in _settings:
+        if "password" not in _settings:
+            return c_json(ERRORS[6], ECODES[6])
+        if not await core.checkUserPassword(user, _settings["password"]):
+            return c_json(ERRORS[6], ECODES[6])
+        await core.changeUserPassword(user, _settings["new_password"])
+        del _settings["new_password"]
 
     settings = {}
     for k,v in _settings.items():
@@ -138,6 +196,7 @@ async def api_users_me_patch(user):
                 continue
         settings[k] = v
     await core.setUserdata(user, settings)
+    await core.sendUserUpdateEvent(user.id)
     return c_json(await userdataResponse(user))
 
 @app.route("/api/v9/users/@me/consent", methods=["GET"])
@@ -188,6 +247,7 @@ async def api_users_me_settings_patch(user):
                     _v = bool(_v)
         settings[k] = v
     await core.setSettings(user, settings)
+    await core.sendUserUpdateEvent(user.id)
     return c_json(await userSettingsResponse(user))
 
 @app.route("/api/v9/users/@me/connections", methods=["GET"])
@@ -212,6 +272,68 @@ async def api_users_me_relationships_post(user):
 @getUser
 async def api_users_me_relationships_get(user):
     return c_json(await core.getRelationships(user, with_data=True))
+
+@app.route("/api/v9/users/@me/mfa/totp/enable", methods=["POST"])
+@getSession
+async def api_users_me_mfa_totp_enable(session):
+    data = await request.get_json()
+    if not (password := data.get("password")):
+        return c_json(ERRORS[15], ECODES[15])
+    if not await core.checkUserPassword(session, password):
+        return c_json(ERRORS[15], ECODES[15])
+    if not (secret := data.get("secret")):
+        return c_json(ERRORS[12], ECODES[12])
+    mfa = MFA(secret, session.id)
+    if not mfa.valid:
+        return c_json(ERRORS[12], ECODES[12])
+    if not (code := data.get("code")):
+        return c_json(ERRORS[13], ECODES[13])
+    if mfa.getCode() != code:
+        return c_json(ERRORS[13], ECODES[13])
+    await core.setSettings(session, {"mfa": secret})
+    codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
+    #await execute_after(core.setBackupCodes(session, codes), 3)
+    codes = [{"user_id": str(session.id), "code": code, "consumed": False} for code in codes]
+    return c_json({"token": session.token, "codes": codes})
+
+@app.route("/api/v9/users/@me/mfa/totp/disable", methods=["POST"])
+@getSession
+async def api_users_me_mfa_totp_disable(session):
+    data = await request.get_json()
+    if not (code := data.get("code")):
+        return c_json(ERRORS[13], ECODES[13])
+    if not (mfa := await core.getMfa(session)):
+        return c_json(ERRORS[14], ECODES[14])
+    code = code.replace("-", "").replace(" ", "")
+    if mfa.getCode() != code:
+        if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
+            return c_json(ERRORS[13], ECODES[13])
+    await core.setSettings(session, {"mfa": None})
+    await core.clearBackupCodes(session)
+    await core.sendUserUpdateEvent(session.id)
+    return c_json({"token": session.token})
+
+@app.route("/api/v9/users/@me/mfa/codes-verification", methods=["POST"])
+@getUser
+async def api_users_me_mfa_codesverification(user):
+    data = await request.get_json()
+    if not (unonce := data.get("nonce")):
+        return c_json(ERRORS[17], ECODES[17])
+    reg = data.get("regenerate", False)
+    nonce = await core.generateUserMfaNonce(user)
+    nonce = nonce[1] if reg else nonce[0]
+    if nonce != unonce:
+        return c_json(ERRORS[17], ECODES[17])
+    if reg:
+        codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
+        await core.setBackupCodes(user, codes)
+        codes = [{"user_id": str(user.id), "code": code, "consumed": False} for code in codes]
+    else:
+        _codes = await core.getBackupCodes(user)
+        codes = []
+        for code, used in _codes:
+            codes.append({"user_id": str(user.id), "code": code, "consumed": used})
+    return c_json({"backup_codes": codes})
 
 @app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["PUT"])
 @getUser

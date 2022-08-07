@@ -48,10 +48,10 @@ class Gateway:
             cClient = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
             tClient = None if not tClient else tClient[0]
             cClient = None if not cClient else cClient[0]
-            if tClient:
-                uid = data["current_user"]
-                d = await self.core.getUserData(uid)
-                await self.send(tClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
+            uid = data["current_user"]
+            d = await self.core.getUserData(uid) if tClient else None
+            for cl in tClient:
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
                     "user": {
                         "username": d["username"],
                         "public_flags": d["public_flags"],
@@ -62,10 +62,10 @@ class Gateway:
                     },
                     "type": 3, "should_notify": True, "nickname": None, "id": str(uid)
                 })
-            if cClient:
-                uid = data["target_user"]
-                d = await self.core.getUserData(uid)
-                await self.send(cClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
+            uid = data["target_user"]
+            d = await self.core.getUserData(uid) if cClient else None
+            for cl in cClient:
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
                     "user": {
                         "username": d["username"],
                         "public_flags": d["public_flags"],
@@ -79,12 +79,10 @@ class Gateway:
         elif ev == "relationship_acc":
             tClient = [u for u in self.clients if u.id == data["target_user"] and u.ws.ws_connected]
             cClient = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
-            tClient = None if not tClient else tClient[0]
-            cClient = None if not cClient else cClient[0]
-            if tClient:
-                uid = data["current_user"]
-                d = await self.core.getUserData(uid)
-                await self.send(tClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
+            uid = data["current_user"]
+            d = await self.core.getUserData(uid) if tClient else None
+            for cl in tClient:
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
                     "user": {
                         "user": {
                             "username": d["username"],
@@ -97,7 +95,7 @@ class Gateway:
                         "type": 1, "should_notify": True, "nickname": None, "id": str(uid)
                     }
                 })
-                await self.send(tClient, GATEWAY_OP.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
                     "type": "friend_request_accepted",
                     "other_user": {
                         "username": d["username"],
@@ -113,10 +111,10 @@ class Gateway:
                     "body": f"**{d['username']}** accepts your friend request",
                     "acked": False
                 })
-            if cClient:
-                uid = data["target_user"]
-                d = await self.core.getUserData(uid)
-                await self.send(cClient, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
+            uid = data["target_user"]
+            d = await self.core.getUserData(uid) if cClient else None
+            for cl in cClient:
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
                     "user": {
                         "user": {
                             "username": d["username"],
@@ -130,13 +128,40 @@ class Gateway:
                     }
                 })
         elif ev == "relationship_del":
-            cl = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
-            if cl:
-                cl = cl[0]
+            cls = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
+            for cl in cls:
                 await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_REMOVE", d={
                     "type": data["type"],
                     "id": str(data["target_user"])
                 })
+        elif ev == "user_update":
+            cls = [u for u in self.clients if u.id == data["user"] and u.ws.ws_connected]
+            if not cls:
+                return
+            user = await self.core.getUserById(data["user"])
+            data = await user.data
+            settings = await user.settings
+            for cl in cls:
+                d = {
+                    "verified": True,
+                    "username": data["username"],
+                    "public_flags": data["public_flags"],
+                    "phone": data["phone"],
+                    "nsfw_allowed": True, # TODO: get from age
+                    "mfa_enabled": bool(settings["mfa"]),
+                    "locale": settings["locale"],
+                    "id": str(user.id),
+                    "flags": 0,
+                    "email": user.email,
+                    "discriminator": str(data["discriminator"]).rjust(4, "0"),
+                    "bio": data["bio"],
+                    "banner_color": data["banner_color"],
+                    "banner": data["banner"],
+                    "avatar_decoration": data["avatar_decoration"],
+                    "avatar": data["avatar"],
+                    "accent_color": data["accent_color"]
+                }
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="USER_UPDATE", d=d)
 
     async def send(self, client: GatewayClient, op: int, **data) -> None:
         r = {"op": op}
@@ -176,7 +201,7 @@ class Gateway:
                 "purchased_flags": 0,
                 "nsfw_allowed": True, # TODO: check
                 "mobile": True, # TODO: check
-                "mfa_enabled": False, # TODO: get from db
+                "mfa_enabled": bool(settings["mfa"]), # TODO: get from db
                 "id": str(client.id),
                 "flags": 0,
             },

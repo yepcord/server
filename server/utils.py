@@ -1,4 +1,4 @@
-from base64 import b64encode as _b64encode, b64decode as _b64decode
+from base64 import b64encode as _b64encode, b64decode as _b64decode, b32decode
 from time import time
 from random import randint
 from os import getpid
@@ -6,6 +6,10 @@ from json import dumps as jdumps
 from zlib import compressobj, Z_FULL_FLUSH
 from io import BytesIO
 from magic import from_buffer
+from hmac import new as hnew
+from struct import pack as spack, unpack as sunpack
+from re import compile as rcompile
+from asyncio import get_event_loop, sleep as asleep
 
 global _INCREMENT_ID
 
@@ -18,6 +22,8 @@ def b64decode(data):
     return _b64decode(data)
 
 def b64encode(data):
+    if isinstance(data, str):
+        data = data.encode("utf8")
     data = _b64encode(data).decode("utf8")
     for search, replace in (('+', '-'), ('/', '_'), ('=', '')):
         data = data.replace(search, replace)
@@ -137,6 +143,12 @@ ERRORS = {
     9: jdumps({"code": 80004, "message": "No users with DiscordTag exist"}),
     10: jdumps({"code": 80007, "message": "You are already friends with that user."}),
     11: jdumps({"code": 80000, "message": "Incoming friend requests disabled."}),
+    12: jdumps({"code": 60005, "message": "Invalid two-factor secret"}),
+    13: jdumps({"code": 60008, "message": "Invalid two-factor code"}),
+    14: jdumps({"code": 50018, "message": "This account is not enrolled in two factor authentication"}),
+    15: jdumps({"code": 60002, "message": "Password does not match"}),
+    16: jdumps({"code": 60006, "message": "Invalid two-factor auth ticket"}),
+    17: jdumps({"code": 60011, "message": "Invalid key"}),
 }
 
 ECODES = {
@@ -151,6 +163,12 @@ ECODES = {
     9: 400,
     10: 400,
     11: 400,
+    12: 400,
+    13: 400,
+    14: 400,
+    15: 404,
+    16: 400,
+    17: 400,
 }
 
 def getImage(image):
@@ -191,3 +209,28 @@ class GATEWAY_OP:
     INV_SESSION = 9
     HELLO = 10
     HEARTBEAT_ACK = 11
+
+class MFA:
+    _re = rcompile(r'^[A-Z0-9]{16}$')
+
+    def __init__(self, key: str, uid: int):
+        self.key = str(key).upper()
+        self.uid = self.id = uid
+
+    def getCode(self) -> str:
+        key = b32decode(self.key.upper() + '=' * ((8 - len(self.key)) % 8))
+        counter = spack('>Q', int(time() / 30))
+        mac = hnew(key, counter, "sha1").digest()
+        offset = mac[-1] & 0x0f
+        binary = sunpack('>L', mac[offset:offset + 4])[0] & 0x7fffffff
+        return str(binary)[-6:].zfill(6)
+
+    @property
+    def valid(self) -> bool:
+        return bool(self._re.match(self.key))
+
+async def execute_after(coro, seconds):
+    async def _wait_exec(coro, seconds):
+        await asleep(seconds)
+        await coro
+    get_event_loop().create_task(_wait_exec(coro, seconds))

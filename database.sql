@@ -71,6 +71,7 @@ CREATE TABLE `settings` (
   `message_display_compact` bool not null default false,
   `convert_emoticons` bool not null default true,
   `passwordless` bool not null default true,
+  `mfa` text default null,
 
   `j_activity_restricted_guild_ids` JSON not null default "[]",
   `j_friend_source_flags` JSON not null default '{"all": true}',
@@ -81,4 +82,11 @@ CREATE TABLE `settings` (
   `personalization` bool not null default false,
   `usage_statistics` bool not null default false,
   UNIQUE KEY `uid` (`uid`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `mfa_codes`;
+CREATE TABLE `mfa_codes` (
+  `uid` bigint not null,
+  `code` text not null,
+  `used` bool not null default false
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

@@ -5,6 +5,7 @@ class _User:
 
 class Session(_User):
     def __init__(self, uid, sid, sig):
+        self.id = uid
         self.uid = uid
         self.sid = sid
         self.sig = sig

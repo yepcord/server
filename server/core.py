@@ -4,13 +4,14 @@ from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
-from .utils import b64encode, b64decode, unpack_token, RELATIONSHIP
+from .utils import b64encode, b64decode, unpack_token, RELATIONSHIP, MFA, NoneType
 from .classes import Session, User, LoginUser
 from .storage import _Storage
 from json import loads as jloads, dumps as jdumps
 from random import randint
 from .msg_client import Broadcaster
 from typing import Optional, Union
+from time import time
 
 def _usingDB(f):
     async def wrapper(self, *args, **kwargs):
@@ -46,7 +47,7 @@ class Core:
     async def mclCallback(self, data: dict) -> None:
         ...
 
-    async def initDB(self, *db_args, **db_kwargs) -> None:
+    async def initDB(self, *db_args, **db_kwargs):
         self.pool = await create_pool(*db_args, **db_kwargs)
         return self
 
@@ -94,7 +95,7 @@ class Core:
         return Session(uid, session, signature)
 
     @_usingDB
-    async def login(self, email: str, password: str, cur) -> Union[LoginUser, int]:
+    async def login(self, email: str, password: str, cur) -> Union[LoginUser, int, tuple]:
         email = email.lower()
         await cur.execute(f'SELECT `password`, `key`, `id` FROM `users` WHERE `email`="{email}"')
         r = await cur.fetchone()
@@ -102,12 +103,37 @@ class Core:
             return 2
         if self.encryptPassword(password) != r[0]:
             return 2
-        session = int.from_bytes(urandom(6), "big")
-        signature = self.generateSessionSignature(r[2], session, b64decode(r[1]))
-        await cur.execute(f'INSERT INTO `sessions` VALUES ({r[2]}, {session}, "{signature}");')
+        await cur.execute(f'SELECT `mfa` FROM `settings` WHERE `uid`={r[2]}')
+        mr = await cur.fetchone()
+        if mr[0]:
+            _sid = bytes.fromhex(r[0][:12])
+            sid = int.from_bytes(_sid, "big")
+            return 1, r[2], b64encode(_sid), self.generateSessionSignature(r[2], sid, b64decode(r[1]))
+        session = await self.createSession(r[2], r[1], cur=cur)
         await cur.execute(f'SELECT `theme`, `locale` FROM `settings` WHERE `uid`="{r[2]}"')
         sr = await cur.fetchone()
-        return LoginUser(r[2], Session(r[2], session, signature), sr[0], sr[1])
+        return LoginUser(r[2], session, sr[0], sr[1])
+
+    @_usingDB
+    async def createSession(self, uid: int, key: str, cur) -> Session:
+        session = int.from_bytes(urandom(6), "big")
+        signature = self.generateSessionSignature(uid, session, b64decode(key))
+        await cur.execute(f'INSERT INTO `sessions` VALUES ({uid}, {session}, "{signature}");')
+        return Session(uid, session, signature)
+
+    @_usingDB
+    async def createSessionWithoutKey(self, uid: int, cur):
+        await cur.execute(f'SELECT `key` FROM `users` WHERE `id`={uid}')
+        key = await cur.fetchone()
+        key = key[0]
+        return await self.createSession(uid, key, cur=cur)
+
+    @_usingDB
+    async def getLoginUser(self, uid: int, cur):
+        sess = await self.createSessionWithoutKey(uid, cur=cur)
+        await cur.execute(f'SELECT `theme`, `locale` FROM `settings` WHERE `uid`="{uid}"')
+        r = await cur.fetchone()
+        return LoginUser(uid, sess, r[0], r[1])
 
     @_usingDB
     async def getSession(self, uid: int, sid: int, sig: str, cur) -> Optional[Session]:
@@ -117,7 +143,7 @@ class Core:
             return Session(r[0], sid, sig)
 
     @_usingDB
-    async def getUser(self, token: str, cur) -> User:
+    async def getUser(self, token: str, cur) -> Optional[User]:
         uid, sid, sig = unpack_token(token)
         if not await self.getSession(uid, sid, sig, cur=cur):
             return None
@@ -174,6 +200,8 @@ class Core:
                 k = f"j_{k}"
                 v = jdumps(v).replace("\"", "\\\"")
                 v = f"\"{v}\""
+            elif isinstance(v, NoneType):
+                v = "null"
             settings.append(f"`{k}`={v}")
         return ", ".join(settings)
 
@@ -308,6 +336,81 @@ class Core:
             else:
                 t1 = 3
                 t2 = 4
-        await cur.execute(f"DELETE FROM `relationships` WHERE (`u1`={user.id} AND `u2`={uid}) OR (`u1`={uid} AND `u2`={user.id});")
+        await cur.execute(f"DELETE FROM `relationships` WHERE (`u1`={user.id} AND `u2`={uid}) OR (`u1`={uid} AND `u2`={user.id}) LIMIT 1;")
         await self.mcl.broadcast("user_events", {"e": "relationship_del", "current_user": user.id, "target_user": uid, "type": t or t1})
         await self.mcl.broadcast("user_events", {"e": "relationship_del", "current_user": uid, "target_user": user.id, "type": t or t2})
+
+    @_usingDB
+    async def changeUserPassword(self, user: User, new_password: str, cur) -> None:
+        new_password = self.encryptPassword(new_password)
+        await cur.execute(f'UPDATE `users` SET `password`="{new_password}" WHERE `id`={user.id}')
+
+    @_usingDB
+    async def logoutUser(self, sess: Session, cur) -> None:
+        await cur.execute(f'DELETE FROM `sessions` WHERE `uid`={sess.uid} AND `sid`={sess.sid} AND `sig`="{sess.sig}" LIMIT 1;')
+
+    def sessionToUser(self, session: Session):
+        return User(session.id, core=self)
+
+    async def getMfa(self, user: Union[User, Session]) -> Optional[MFA]:
+        if type(user) == Session:
+            user = self.sessionToUser(user)
+        settings = await user.settings
+        mfa = MFA(settings.get("mfa"), user.id)
+        if mfa.valid:
+            return mfa
+
+    @_usingDB
+    async def setBackupCodes(self, user, codes: list, cur) -> None:
+        codes = [(str(user.id), code) for code in codes]
+        await self.clearBackupCodes(user, cur=cur)
+        await cur.executemany('INSERT INTO `mfa_codes` (`uid`, `code`) VALUES (%s, %s)', codes)
+
+    @_usingDB
+    async def clearBackupCodes(self, user, cur) -> None:
+        await cur.execute(f'DELETE FROM `mfa_codes` WHERE `uid`={user.id} LIMIT 10;')
+
+    @_usingDB
+    async def getBackupCodes(self, user, cur) -> list:
+        await cur.execute(f'SELECT `code`, `used` FROM `mfa_codes` WHERE `uid`={user.id} LIMIT 10;')
+        return await cur.fetchall()
+
+    @_usingDB
+    async def getMfaFromTicket(self, ticket: str, cur) -> Optional[MFA]:
+        try:
+            uid, sid, sig = ticket.split(".")
+            uid = jloads(b64decode(uid).decode("utf8"))[0]
+            sid = b64decode(sid)
+        except (ValueError, IndexError):
+            return
+        await cur.execute(f'SELECT `password`, `key` FROM `users` WHERE `id`={uid}')
+        if not (r := await cur.fetchone()):
+            return
+        if sid != bytes.fromhex(r[0][:12]):
+            return
+        if sig != self.generateSessionSignature(uid, int.from_bytes(sid, "big"), b64decode(r[1])):
+            return
+        await cur.execute(f'SELECT `mfa` FROM `settings` WHERE `uid`={uid}')
+        r = await cur.fetchone()
+        return MFA(r[0], uid)
+
+    async def generateUserMfaNonce(self, user: User) -> tuple:
+        mfa = await self.getMfa(user)
+        nonce = f"{mfa.key}.{int(time() // 300)}"
+        nonce = b64encode(new(self.key, nonce.encode('utf-8'), sha256).digest())
+        rnonce = f"{int(time() // 300)}.{mfa.key}"
+        rnonce = b64encode(new(self.key, rnonce.encode('utf-8'), sha256).digest())
+        return nonce, rnonce
+
+    @_usingDB
+    async def useMfaCode(self, uid: int, code: str, cur) -> bool:
+        codes = dict(await self.getBackupCodes(User(uid), cur=cur))
+        if code not in codes:
+            return False
+        if codes[code]:
+            return False
+        await cur.execute(f'UPDATE `mfa_codes` SET `used`=true WHERE `code`="{code}" AND `uid`={uid} LIMIT 1;')
+        return True
+
+    async def sendUserUpdateEvent(self, uid):
+        await self.mcl.broadcast("user_events", {"e": "user_update", "user": uid})

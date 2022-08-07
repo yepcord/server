@@ -50,7 +50,7 @@ async def userdataResponse(user):
         "avatar": data["avatar"],
         "avatar_decoration": data["avatar_decoration"],
         "discriminator": str(data["discriminator"]).rjust(4, "0"),
-        "public_flags": 0, # TODO: get from db
+        "public_flags": data["public_flags"],
         "flags": data["flags"],
         "banner": data["banner"],
         "banner_color": data["banner_color"],
@@ -58,7 +58,7 @@ async def userdataResponse(user):
         "bio": data["bio"],
         "locale": settings["locale"],
         "nsfw_allowed": True, # TODO: get from age
-        "mfa_enabled": False, # TODO: get from db
+        "mfa_enabled": bool(settings["mfa"]),
         "email": user.email,
         "verified": True,
         "phone": data["phone"]
@@ -94,8 +94,8 @@ async def userProfileResponse(user):
             "bio": data["bio"]
         },
         "connected_accounts": [],
-        "premium_since": d, # TODO: get from db
-        "premium_guild_since": s, # TODO: get from db
+        "premium_since": d,
+        "premium_guild_since": s,
         "user_profile": {
             "bio": data["bio"],
             "accent_color": data["accent_color"]
