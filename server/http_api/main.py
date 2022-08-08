@@ -292,9 +292,12 @@ async def api_users_me_mfa_totp_enable(session):
         return c_json(ERRORS[13], ECODES[13])
     await core.setSettings(session, {"mfa": secret})
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
-    #await execute_after(core.setBackupCodes(session, codes), 3)
+    await core.setBackupCodes(session, codes)
+    await execute_after(core.sendUserUpdateEvent(session.id), 3)
     codes = [{"user_id": str(session.id), "code": code, "consumed": False} for code in codes]
-    return c_json({"token": session.token, "codes": codes})
+    await core.logoutUser(session)
+    session = await core.createSessionWithoutKey(session.id)
+    return c_json({"token": session.token, "backup_codes": codes})
 
 @app.route("/api/v9/users/@me/mfa/totp/disable", methods=["POST"])
 @getSession
@@ -311,6 +314,8 @@ async def api_users_me_mfa_totp_disable(session):
     await core.setSettings(session, {"mfa": None})
     await core.clearBackupCodes(session)
     await core.sendUserUpdateEvent(session.id)
+    await core.logoutUser(session)
+    session = await core.createSessionWithoutKey(session.id)
     return c_json({"token": session.token})
 
 @app.route("/api/v9/users/@me/mfa/codes-verification", methods=["POST"])
@@ -332,7 +337,7 @@ async def api_users_me_mfa_codesverification(user):
         _codes = await core.getBackupCodes(user)
         codes = []
         for code, used in _codes:
-            codes.append({"user_id": str(user.id), "code": code, "consumed": used})
+            codes.append({"user_id": str(user.id), "code": code, "consumed": bool(used)})
     return c_json({"backup_codes": codes})
 
 @app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["PUT"])
