@@ -3,5 +3,5 @@ __pycache__
 env*
 files/
 .idea/
-*.txt
 endpoints.*
+.local

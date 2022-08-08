@@ -1,0 +1,6 @@
+quart==0.17.0
+aiomysql==0.0.22
+aiofiles
+jinja2==3.0.1
+websockets==10.1
+uvicorn
