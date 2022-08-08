@@ -90,3 +90,42 @@ CREATE TABLE `mfa_codes` (
   `code` text not null,
   `used` bool not null default false
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `channels`;
+CREATE TABLE `channels` (
+  `id` bigint not null,
+  `type` int not null,
+  UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `dm_channels`;
+CREATE TABLE `dm_channels` (
+  `id` bigint not null,
+  `recipients` JSON not null default "[]",
+  `name` text default null,
+  `icon` text default null,
+  `owner_id` bigint default null,
+  UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `messages`;
+CREATE TABLE `messages` (
+  `id` bigint not null,
+  `content` longtext not null default "",
+  `channel_id` bigint not null,
+  `author` bigint not null,
+  `edit_timestamp` bigint default null,
+  `attachments` JSON not null default "[]",
+  `embeds` JSON not null default "[]",
+  `reactions` JSON not null default "[]",
+  `pinned` bool not null default false,
+  `webhook_id` bigint default null,
+  `application_id` bigint default null,
+  `type` int default 0,
+  `flags` int default 0,
+  `message_reference` bigint default null,
+  `thread` bigint default null,
+  `components` JSON not null default "[]",
+  `sticker_items` JSON not null default "[]",
+  UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

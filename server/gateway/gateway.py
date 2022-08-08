@@ -79,10 +79,11 @@ class Gateway:
         elif ev == "relationship_acc":
             tClient = [u for u in self.clients if u.id == data["target_user"] and u.ws.ws_connected]
             cClient = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
+            channel = await self.core.getChannel(data["channel_id"])
+            cinfo = await channel.info
             uid = data["current_user"]
             d = await self.core.getUserData(uid) if tClient else None
             for cl in tClient:
-                print(f"sent RELATIONSHIP_ADD to {cl.id}")
                 await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
                     "user": {
                             "username": d["username"],
@@ -93,6 +94,19 @@ class Gateway:
                             "avatar": d["avatar"]
                         },
                     "type": 1, "should_notify": True, "nickname": None, "id": str(uid)
+                })
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="CHANNEL_CREATE", d={
+                    "type": 1,
+                    "recipients": [{
+                        "username": d["username"],
+                         "public_flags": d["public_flags"],
+                         "id": str(uid),
+                         "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                         "avatar_decoration": d["avatar_decoration"],
+                         "avatar": d["avatar"]
+                    }],
+                    "last_message_id": str(cinfo["last_message_id"]),
+                    "id": data["channel_id"]
                 })
                 await self.send(cl, GATEWAY_OP.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
                     "type": "friend_request_accepted",
@@ -113,7 +127,6 @@ class Gateway:
             uid = data["target_user"]
             d = await self.core.getUserData(uid) if cClient else None
             for cl in cClient:
-                print(f"sent RELATIONSHIP_ADD to {cl.id}")
                 await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
                     "user": {
                             "username": d["username"],
@@ -124,6 +137,19 @@ class Gateway:
                             "avatar": d["avatar"]
                         },
                     "type": 1, "nickname": None, "id": str(uid)
+                })
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="CHANNEL_CREATE", d={
+                    "type": 1,
+                    "recipients": [{
+                        "username": d["username"],
+                        "public_flags": d["public_flags"],
+                        "id": str(uid),
+                        "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                        "avatar_decoration": d["avatar_decoration"],
+                        "avatar": d["avatar"]
+                    }],
+                    "last_message_id": str(cinfo["last_message"]),
+                    "id": data["channel_id"]
                 })
         elif ev == "relationship_del":
             cls = [u for u in self.clients if u.id == data["current_user"] and u.ws.ws_connected]
@@ -220,7 +246,7 @@ class Gateway:
             "guild_experiments": [],
             "guild_join_requests": [],
             "merged_members": [],
-            "private_channels": [],
+            "private_channels": await self.core.getPrivateChannels(user),
             "read_state": {
                 "version": 871,
                 "partial":  False,
