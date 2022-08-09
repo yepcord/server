@@ -110,7 +110,7 @@ CREATE TABLE `dm_channels` (
 DROP TABLE IF EXISTS `messages`;
 CREATE TABLE `messages` (
   `id` bigint not null,
-  `content` longtext not null default "",
+  `content` longtext default null,
   `channel_id` bigint not null,
   `author` bigint not null,
   `edit_timestamp` bigint default null,

@@ -149,6 +149,8 @@ ERRORS = {
     15: jdumps({"code": 60002, "message": "Password does not match"}),
     16: jdumps({"code": 60006, "message": "Invalid two-factor auth ticket"}),
     17: jdumps({"code": 60011, "message": "Invalid key"}),
+    18: jdumps({"code": 10003, "message": "Unknown Channel"}),
+    19: jdumps({"code": 50006, "message": "Cannot send an empty message"}),
 }
 
 ECODES = {
@@ -169,6 +171,8 @@ ECODES = {
     15: 404,
     16: 400,
     17: 400,
+    18: 404,
+    19: 400,
 }
 
 def getImage(image):

@@ -225,6 +225,10 @@ class Gateway:
                     "client_status": {} if st["status"] == "offline" else {"desktop": st["status"]},
                     "activities": st.get("activities", [])
                 })
+        elif ev == "message_create":
+            clients = [c for c in self.clients if c.id in data["users"] and c.connected]
+            for cl in clients:
+                await self.send(cl, GATEWAY_OP.DISPATCH, t="MESSAGE_CREATE", d=data["message_obj"])
 
     async def send(self, client: GatewayClient, op: int, **data) -> None:
         r = {"op": op}

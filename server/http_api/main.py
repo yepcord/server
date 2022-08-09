@@ -1,7 +1,8 @@
 from quart import Quart, request
 from functools import wraps
 from ..core import Core, CDN
-from ..utils import b64decode, b64encode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, validImage, unpack_token, MFA, execute_after
+from ..utils import b64decode, b64encode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, \
+    validImage, unpack_token, MFA, execute_after, ChannelType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
 from ..storage import FileStorage
 from os import environ
@@ -66,6 +67,16 @@ def getSession(f):
 def getChannel(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
+        if not (channel := kwargs.get("channel")):
+            return c_json(ERRORS[17], ECODES[17])
+        if not (user := kwargs.get("user")):
+            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+        if not (channel := await core.getChannel(channel)):
+            return c_json(ERRORS[17], ECODES[17])
+        if channel.type == ChannelType.DM:
+            if user.id not in channel.recipients:
+                return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+        kwargs["channel"] = channel
         return await f(*args, **kwargs)
     return wrapped
 
@@ -380,6 +391,27 @@ async def api_users_user_profile(user, t_user_id):
 @app.route("/api/v9/channels/<channel>", methods=["GET"])
 async def api_channels_channel(channel):
     return NOT_IMP()
+
+@app.route("/api/v9/channels/<int:channel>/messages", methods=["GET"])
+@getUser
+@getChannel
+async def api_channels_channel_messages_get(user, channel):
+    messages = await channel.messages(request.args.get("limit", 50))
+    messages = [await m.json for m in messages]
+    return c_json(messages)
+
+@app.route("/api/v9/channels/<int:channel>/messages", methods=["POST"])
+@getUser
+@getChannel
+async def api_channels_channel_messages_post(user, channel):
+    data = await request.get_json()
+    if not (content := data.get("content")):
+        return c_json(ERRORS[19], ECODES[19])
+    message = await core.sendMessage(channel, content=content, nonce=data.get("nonce"), author=user)
+    message = await message.json
+    if (nonce := data.get("nonce")):
+        message["nonce"] = nonce
+    return c_json(message)
 
 # Other
 

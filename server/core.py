@@ -1,20 +1,18 @@
 from datetime import datetime
-
 from aiomysql import create_pool, Cursor
 from asyncio import get_event_loop
 from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
-from .utils import b64encode, b64decode, unpack_token, RELATIONSHIP, MFA, NoneType, ChannelType, mksf
-from .classes import Session, User, LoginUser, DMChannel, UserId
+from .utils import b64encode, b64decode, unpack_token, RELATIONSHIP, MFA, NoneType, ChannelType, mksf, execute_after
+from .classes import Session, User, LoginUser, DMChannel, UserId, Message
 from .storage import _Storage
 from json import loads as jloads, dumps as jdumps
 from random import randint
 from .msg_client import Broadcaster
 from typing import Optional, Union
 from time import time, mktime
-
 
 def _usingDB(f):
     async def wrapper(self, *args, **kwargs):
@@ -564,3 +562,27 @@ class Core:
 
     async def sendPresenceUpdateEvent(self, uid: int, status: dict):
         await self.mcl.broadcast("user_events", {"e": "presence_update", "user": uid, "status": status})
+
+    @_usingDB
+    async def getChannelMessages(self, channel, limit: int, cur: Cursor) -> list:
+        messages = []
+        await cur.execute(f'SELECT '+
+                          f'`id`, `content`, `channel_id`, `author`, `edit_timestamp`, `attachments`, `embeds`, `reactions`, `pinned`,'+
+                          f'`webhook_id`, `application_id`, `type`, `flags`, `message_reference`, `thread`, `components`'+
+                          f'FROM `messages` WHERE `channel_id`={channel.id} ORDER BY `id` DESC LIMIT {limit};')
+        for r in await cur.fetchall():
+            messages.append(Message(r[0], r[1], r[2], r[3], r[4], jloads(r[5]), jloads(r[6]), jloads(r[7]), r[8], r[9], r[10], r[11], r[12], r[13], r[14], jloads(r[15]), self))
+        return messages
+
+    @_usingDB
+    async def sendMessage(self, channel, author, content: str, nonce: str, cur: Cursor):
+        mid = mksf()
+        await cur.execute(f'INSERT INTO `messages` (`id`, `content`, `channel_id`, `author`) VALUES ({mid}, "{content}", {channel.id}, {author.id});')
+        msg = Message(mid, content, channel.id, author.id, core=self)
+        if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
+            users = channel.recipients
+        m = await msg.json
+        if nonce:
+            m["nonce"] = nonce
+        await execute_after(self.mcl.broadcast("user_events", {"e": "message_create", "users": users, "message_obj": m}), 0)
+        return msg
