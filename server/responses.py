@@ -3,6 +3,8 @@ from .utils import snowflake_timestamp
 
 async def userSettingsResponse(user):
     settings = await user.settings
+    if settings["status"] == "offline":
+        settings["status"] = "invisible"
     return {
         "locale": settings["locale"],
         "show_current_game": settings["show_current_game"],

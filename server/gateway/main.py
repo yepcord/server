@@ -45,6 +45,7 @@ async def ws_gateway():
             await gw.process(ws, jloads(data))
         except CancelledError:
             setattr(ws, "ws_connected", False)
+            await gw.disconnect(ws)
             break # TODO: Disconnect
 
 if __name__ == "__main__":

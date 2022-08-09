@@ -216,7 +216,6 @@ async def api_users_me_consent_set(user):
         for r in data["revoke"]:
             settings[r] = False
         await core.setSettings(user, settings)
-    settings = await user.settings
     return c_json(await userConsentResponse(user))
 
 @app.route("/api/v9/users/@me/settings", methods=["GET"])
@@ -227,8 +226,17 @@ async def api_users_me_settings_get(user):
 @app.route("/api/v9/users/@me/settings", methods=["PATCH"])
 @getUser
 async def api_users_me_settings_patch(user):
+    _settings = await request.get_json()
+    if "status" in _settings:
+        await core.updatePresence(user.id, {"status": _settings["status"]})
+        await core.sendPresenceUpdateEvent(user.id, {"status": _settings["status"]})
+        del _settings["status"]
+    if "custom_status" in _settings:
+        presence = await core.updatePresence(user.id, {"custom_status": _settings["custom_status"]})
+        await core.sendPresenceUpdateEvent(user.id, presence)
+        del _settings["custom_status"]
     settings = {}
-    for k,v in (await request.get_json()).items():
+    for k,v in _settings.items():
         k = k.lower()
         if k not in ALLOWED_SETTINGS:
             continue

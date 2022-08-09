@@ -53,7 +53,6 @@ CREATE TABLE `settings` (
   `afk_timeout` bigint not null default 600,
   `view_nsfw_commands` bool not null default false,
   `detect_platform_accounts` bool not null default true,
-  `status` text not null default "online",
   `explicit_content_filter` int not null default 1,
   `custom_status` longtext default null,
   `default_guilds_restricted` bool not null default false,
@@ -128,4 +127,14 @@ CREATE TABLE `messages` (
   `components` JSON not null default "[]",
   `sticker_items` JSON not null default "[]",
   UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `presences`;
+CREATE TABLE `presences` (
+  `uid` bigint not null,
+  `status` text not null default "online",
+  `online` bool not null default true,
+  `modified` bigint not null default 0,
+  `activities` JSON not null default "[]",
+  UNIQUE KEY `uid` (`uid`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

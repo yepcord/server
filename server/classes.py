@@ -44,6 +44,10 @@ class LoginUser(_User):
         self.locale = locale
         self.token = session.token
 
+class UserId(_User):
+    def __init__(self, uid):
+        self.id = uid
+
 class _Channel:
     def __eq__(self, other):
         return isinstance(other, _Channel) and self.id == other.id

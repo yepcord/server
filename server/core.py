@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from aiomysql import create_pool, Cursor
 from asyncio import get_event_loop
 from hmac import new
@@ -5,13 +7,14 @@ from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
 from .utils import b64encode, b64decode, unpack_token, RELATIONSHIP, MFA, NoneType, ChannelType, mksf
-from .classes import Session, User, LoginUser, _Channel, DMChannel
+from .classes import Session, User, LoginUser, DMChannel, UserId
 from .storage import _Storage
 from json import loads as jloads, dumps as jdumps
 from random import randint
 from .msg_client import Broadcaster
 from typing import Optional, Union
-from time import time
+from time import time, mktime
+
 
 def _usingDB(f):
     async def wrapper(self, *args, **kwargs):
@@ -160,7 +163,7 @@ class Core:
 
     @_usingDB
     async def getSettings(self, uid: int, cur: Cursor) -> dict:
-        await cur.execute(f'SELECT * FROM `settings` WHERE `uid`={uid};')
+        await cur.execute(f'SELECT settings.*, presences.status as status FROM settings INNER JOIN presences ON settings.uid = presences.uid WHERE settings.uid={uid};')
         r = await cur.fetchone()
         ret = []
         for idx, item in enumerate(r):
@@ -301,11 +304,14 @@ class Core:
         return rel
 
     @_usingDB
-    async def getRelatedUsers(self, user: User, cur: Cursor) -> list:
+    async def getRelatedUsers(self, user: User, cur: Cursor, only_ids=False) -> list:
         users = []
         await cur.execute(f'SELECT `u1`, `u2` FROM `relationships` WHERE `u1`={user.id} OR `u2`={user.id};')
         for r in await cur.fetchall():
             uid = r[0] if r[0] != user.id else r[1]
+            if only_ids:
+                users.append(uid)
+                continue
             d = await self.getUserData(uid)
             users.append({
                 "username": d["username"],
@@ -320,6 +326,10 @@ class Core:
             uids = jloads(r[0])
             uids.remove(user.id)
             for uid in uids:
+                if only_ids:
+                    if [u for u in users if u == uid]: continue
+                    users.append(uid)
+                    continue
                 if [u for u in users if u["id"] == str(uid)]:
                     continue
                 d = await self.getUserData(uid)
@@ -469,7 +479,7 @@ class Core:
     @_usingDB
     async def getPrivateChannels(self, user, cur: Cursor):
         channels = []
-        await cur.execute(f'select dm_channels.*, channels.type from dm_channels inner join channels on dm_channels.id = channels.id WHERE JSON_CONTAINS(dm_channels.recipients, {user.id}, "$");')
+        await cur.execute(f'SELECT dm_channels.*, channels.type FROM dm_channels INNER JOIN channels ON dm_channels.id = channels.id WHERE JSON_CONTAINS(dm_channels.recipients, {user.id}, "$");')
         for r in await cur.fetchall():
             ids = jloads(r[1])
             ids.remove(user.id)
@@ -493,3 +503,64 @@ class Core:
                     "icon": r[3]
                 })
         return channels
+
+    @_usingDB
+    async def getFriendsPresences(self, uid: int, cur: Cursor) -> list:
+        pr = []
+        fr = await self.getRelationships(UserId(uid), cur=cur)
+        fr = [int(u["user_id"]) for u in fr if u["type"] == 1]
+        for f in fr:
+            await cur.execute(f'SELECT `status`, `modified`, `activities`, `online` FROM `presences` WHERE presences.uid={f};')
+            if not (r := await cur.fetchone()):
+                continue
+            pr.append({
+                "user_id": str(f),
+                "status": r[0] if r[3] else "offline",
+                "last_modified": r[1],
+                "client_status": {"desktop": r[0]} if r[0] != "offline" and not r[3] else {},
+                "activities": jloads(r[2]) if r[3] else []
+            })
+        return pr
+
+    @_usingDB
+    async def updatePresence(self, uid: int, status: dict, cur: Cursor) -> Optional[dict]:
+        if status.get("status") == "offline":
+            await cur.execute(f'UPDATE `presences` SET `online`=false WHERE `uid`={uid};')
+        else:
+            r = {}
+            q = []
+            if (st := status.get("status")):
+                if st == "invisible":
+                    st = "offline"
+                q.append(f'`status`="{st}"')
+                r["status"] = st
+            cs = status.get("custom_status", 0)
+            if cs != 0:
+                if cs is None:
+                    cs = []
+                else:
+                    if (ex := cs.get("expires_at")):
+                        ex = mktime(datetime.strptime(ex, '%Y-%m-%dT%H:%M:%S.000Z').timetuple())
+                    cs = [{"type":4, "state": cs["text"], "name": "Custom Status", "id": "custom","created_at": int(time()*1000)}]
+                    r["activities"] = cs.copy()
+                    if ex: cs[0]["expire"] = ex
+                q.append(f'`activities`="{jloads(cs)}"')
+            q = ", ".join(q)
+            await cur.execute(f'UPDATE `presences` SET {q} WHERE `uid`={uid};')
+            return r
+
+    @_usingDB
+    async def getUserPresence(self, uid: int, cur: Cursor):
+        await cur.execute(f'SELECT `status`, `online`, `modified`, `activities` FROM `presences` WHERE `uid`={uid};')
+        if not (r := await cur.fetchone()):
+            await cur.execute(f'INSERT INTO `presences` (`uid`, `modified`) VALUES ({uid}, {int(time()*1000)});')
+            return {"status": "offline", "last_modified": int(time()*1000), "activities": []}
+        ac = jloads(r[3])
+        if ac and (ex := ac[0].get("expire")):
+            if time() > ex:
+                await self.updatePresence(uid, {"custom_status": None}, cur=cur)
+            del ac[0]["expire"]
+        return {"status": r[0] if r[1] else "offline", "last_modified": r[2], "activities": ac if r[1] else []}
+
+    async def sendPresenceUpdateEvent(self, uid: int, status: dict):
+        await self.mcl.broadcast("user_events", {"e": "presence_update", "user": uid, "status": status})
