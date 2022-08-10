@@ -100,7 +100,7 @@ class FileStorage(_Storage):
             image.seek(image.tell()+1)
         makedirs(pjoin(self.root, "avatars", str(user_id)), exist_ok=True)
         def save_task():
-            for size in [32, 48, 64, 80, 128, 256, 512, 1024]:
+            for size in [32, 40, 48, 64, 80, 128, 256, 512, 1024]:
                 img = image.resize((size, size)) if not a else _resizeAnimated(image, (size, size))
                 for form in formats:
                     fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.{form}")

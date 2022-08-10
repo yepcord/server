@@ -152,7 +152,6 @@ class GatewayEvents:
         users = await self.core.getRelatedUsersToChannel(channel)
         clients = [c for c in self.clients if c.id in users and c.connected]
         for cl in clients:
-            print(f"sending typing to {cl.id}")
             await cl.esend(TypingEvent(user, channel))
 
 class Gateway:
@@ -190,6 +189,9 @@ class Gateway:
         user = await self.core.getUserById(client.id)
         userdata = await user.data
         settings = await user.settings
+        _settings = settings.copy()
+        if "mfa" in settings:
+            del settings["mfa"]
         if settings["status"] == "offline":
             settings["status"] = "invisible"
         s = snowflake_timestamp(user.id)
@@ -214,7 +216,7 @@ class Gateway:
                 "purchased_flags": 0,
                 "nsfw_allowed": True, # TODO: check
                 "mobile": True, # TODO: check
-                "mfa_enabled": bool(settings["mfa"]), # TODO: get from db
+                "mfa_enabled": bool(_settings["mfa"]), # TODO: get from db
                 "id": str(client.id),
                 "flags": 0,
             },
@@ -304,7 +306,7 @@ class Gateway:
             cl.replace(ws)
             self.statuses[cl.id] = st = ClientStatus(cl.id, await self.core.getUserPresence(cl.id))
             await self.ev.presence_update(cl.id, st.status)
-            await self.send(cl, GATEWAY_OP.DISPATCH, t="READY", d=await self._generateReadyPayload(cl))
+            await self.send(cl, GATEWAY_OP.DISPATCH, t="READY")
         elif op == GATEWAY_OP.HEARTBEAT:
             if not (cl := [w for w in self.clients if w.ws == ws]):
                 return await ws.close(4005)

@@ -1,5 +1,5 @@
 from datetime import datetime
-from aiomysql import create_pool, Cursor
+from aiomysql import create_pool, Cursor, escape_string
 from asyncio import get_event_loop
 from hmac import new
 from hashlib import sha256
@@ -64,7 +64,7 @@ class Core:
 
     @_usingDB
     async def userExists(self, email: str, cur: Cursor) -> bool:
-        await cur.execute(f"SELECT id FROM `users` WHERE `email`=\"{email}\";")
+        await cur.execute(f'SELECT id FROM `users` WHERE `email`="{escape_string(email)}";')
         r = await cur.fetchone()
         return bool(r)
 
@@ -72,7 +72,7 @@ class Core:
     async def getRandomDiscriminator(self, login: str, cur) -> Optional[int]:
         for _ in range(5):
             d = randint(1, 9999)
-            await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={d} AND `username`="{login}";')
+            await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={d} AND `username`="{escape_string(login)}";')
             if not await cur.fetchone():
                 return d
 
@@ -90,7 +90,7 @@ class Core:
         if discrim is None:
             return 3
 
-        await cur.execute(f'INSERT INTO `users` VALUES ({uid}, "{email}", "{password}", "{key}");')
+        await cur.execute(f'INSERT INTO `users` VALUES ({uid}, "{escape_string(email)}", "{password}", "{key}");')
         await cur.execute(f'INSERT INTO `sessions` VALUES ({uid}, {session}, "{signature}");')
         await cur.execute(f'INSERT INTO `settings`(`uid`) VALUES ({uid});')
         await cur.execute(f'INSERT INTO `userdata`(`uid`, `birth`, `username`, `discriminator`) VALUES ({uid}, "{birth}", "{login}", {discrim});')
@@ -99,7 +99,7 @@ class Core:
     @_usingDB
     async def login(self, email: str, password: str, cur: Cursor) -> Union[LoginUser, int, tuple]:
         email = email.lower()
-        await cur.execute(f'SELECT `password`, `key`, `id` FROM `users` WHERE `email`="{email}"')
+        await cur.execute(f'SELECT `password`, `key`, `id` FROM `users` WHERE `email`="{escape_string(email)}"')
         r = await cur.fetchone()
         if not r:
             return 2
@@ -195,12 +195,12 @@ class Core:
         settings = []
         for k,v in _settings.items():
             if isinstance(v, str):
-                v = f'"{v}"'
+                v = f'"{escape_string(v)}"'
             elif isinstance(v, bool):
                 v = "true" if v else "false"
             elif isinstance(v, (dict, list)):
                 k = f"j_{k}"
-                v = jdumps(v).replace("\"", "\\\"")
+                v = escape_string(jdumps(v))
                 v = f"\"{v}\""
             elif isinstance(v, NoneType):
                 v = "null"
@@ -244,12 +244,12 @@ class Core:
     @_usingDB
     async def changeUserName(self, user: User, username: str, cur: Cursor) -> Optional[int]:
         discrim = (await user.data)["discriminator"]
-        await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discrim} AND `username`="{username}";')
+        await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discrim} AND `username`="{escape_string(username)}";')
         if await cur.fetchone():
             discrim = await self.getRandomDiscriminator(username, cur=cur)
             if discrim is None:
                 return 7
-        await cur.execute(f'UPDATE `userdata` SET `username`="{username}", `discriminator`={discrim} WHERE `uid`={user.id};')
+        await cur.execute(f'UPDATE `userdata` SET `username`="{escape_string(username)}", `discriminator`={discrim} WHERE `uid`={user.id};')
 
     @_usingDB
     async def getUserByUsername(self, username: str, discriminator: str, cur: Cursor) -> Optional[User]:
@@ -542,7 +542,7 @@ class Core:
                     cs = [{"type":4, "state": cs["text"], "name": "Custom Status", "id": "custom","created_at": int(time()*1000)}]
                     r["activities"] = cs.copy()
                     if ex: cs[0]["expire"] = ex
-                q.append(f'`activities`="{jloads(cs)}"')
+                q.append(f'`activities`="{escape_string(jdumps(cs))}"')
             q = ", ".join(q)
             await cur.execute(f'UPDATE `presences` SET {q} WHERE `uid`={uid};')
             return r
@@ -577,7 +577,7 @@ class Core:
     @_usingDB
     async def sendMessage(self, channel, author, content: str, nonce: str, cur: Cursor):
         mid = mksf()
-        await cur.execute(f'INSERT INTO `messages` (`id`, `content`, `channel_id`, `author`) VALUES ({mid}, "{content}", {channel.id}, {author.id});')
+        await cur.execute(f'INSERT INTO `messages` (`id`, `content`, `channel_id`, `author`) VALUES ({mid}, "{escape_string(content)}", {channel.id}, {author.id});')
         msg = Message(mid, content, channel.id, author.id, core=self)
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             users = channel.recipients
