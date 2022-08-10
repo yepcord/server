@@ -1,14 +1,13 @@
-from aiofiles import open as aopen
-from os.path import join as pjoin, isfile
-from io import BytesIO
-from hashlib import md5
-from base64 import b64decode
-from PIL import Image, ImageSequence
-from magic import from_buffer
 from asyncio import get_event_loop
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import md5
+from io import BytesIO
 from os import makedirs
-from .utils import imageType
+from os.path import join as pjoin, isfile
+
+from PIL import Image
+from aiofiles import open as aopen
+
 
 class _Storage:
     def __init__(self, root_path="files/"):
@@ -101,7 +100,7 @@ class FileStorage(_Storage):
             image.seek(image.tell()+1)
         makedirs(pjoin(self.root, "avatars", str(user_id)), exist_ok=True)
         def save_task():
-            for size in [32, 64, 80, 128, 256, 512, 1024]:
+            for size in [32, 48, 64, 80, 128, 256, 512, 1024]:
                 img = image.resize((size, size)) if not a else _resizeAnimated(image, (size, size))
                 for form in formats:
                     fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.{form}")

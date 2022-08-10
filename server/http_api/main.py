@@ -413,6 +413,13 @@ async def api_channels_channel_messages_post(user, channel):
         message["nonce"] = nonce
     return c_json(message)
 
+@app.route("/api/v9/channels/<int:channel>/typing", methods=["POST"])
+@getUser
+@getChannel
+async def api_channels_channel_messages_typing(user, channel):
+    await core.sendTypingEvent(user, channel)
+    return "", 204
+
 # Other
 
 @app.route("/api/v9/auth/location-metadata", methods=["GET"])

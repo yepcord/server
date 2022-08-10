@@ -267,7 +267,7 @@ class Core:
     @_usingDB
     async def reqRelationship(self, tUser: User, cUser: User, cur: Cursor) -> None:
         await cur.execute(f'INSERT INTO `relationships` VALUES ({cUser.id}, {tUser.id}, {RELATIONSHIP.PENDING});')
-        await self.mcl.broadcast("user_events", {"e": "relationship_req", "target_user": tUser.id, "current_user": cUser.id})
+        await self.mcl.broadcast("user_events", {"e": "relationship_req", "data": {"target_user": tUser.id, "current_user": cUser.id}})
 
     @_usingDB
     async def getRelationships(self, user: User, cur: Cursor, with_data=False) -> list:
@@ -345,7 +345,7 @@ class Core:
     async def accRelationship(self, user: User, uid: int, cur: Cursor) -> None:
         await cur.execute(f'UPDATE `relationships` SET `type`={RELATIONSHIP.FRIEND} WHERE `u1`={uid} AND `u2`={user.id} AND `type`={RELATIONSHIP.PENDING};')
         channel = await self.getDMChannelOrCreate(user.id, uid, cur=cur)
-        await self.mcl.broadcast("user_events", {"e": "relationship_acc", "target_user": uid, "current_user": user.id, "channel_id": channel.id})
+        await self.mcl.broadcast("user_events", {"e": "relationship_acc", "data": {"target_user": uid, "current_user": user.id, "channel_id": channel.id}})
 
     @_usingDB
     async def delRelationship(self, user: User, uid: int, cur: Cursor) -> None:
@@ -363,8 +363,8 @@ class Core:
                 t1 = 3
                 t2 = 4
         await cur.execute(f"DELETE FROM `relationships` WHERE (`u1`={user.id} AND `u2`={uid}) OR (`u1`={uid} AND `u2`={user.id}) LIMIT 1;")
-        await self.mcl.broadcast("user_events", {"e": "relationship_del", "current_user": user.id, "target_user": uid, "type": t or t1})
-        await self.mcl.broadcast("user_events", {"e": "relationship_del", "current_user": uid, "target_user": user.id, "type": t or t2})
+        await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": user.id, "target_user": uid, "type": t or t1}})
+        await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": t or t2}})
 
     @_usingDB
     async def changeUserPassword(self, user: User, new_password: str, cur: Cursor) -> None:
@@ -439,14 +439,14 @@ class Core:
         return True
 
     async def sendUserUpdateEvent(self, uid):
-        await self.mcl.broadcast("user_events", {"e": "user_update", "user": uid})
+        await self.mcl.broadcast("user_events", {"e": "user_update", "data": {"user": uid}})
 
     @_usingDB
     async def getChannel(self, channel_id: int, cur: Cursor):
         await cur.execute(f'SELECT `type` FROM `channels` WHERE `id`={channel_id};')
         if not (r := await cur.fetchone()):
             return
-        if r[0] == ChannelType.DM:
+        if r[0] in [ChannelType.DM, ChannelType.GROUP_DM]:
             await cur.execute(f'SELECT `recipients` FROM `dm_channels` WHERE `id`={channel_id};')
             r = await cur.fetchone()
             r = jloads(r[0])
@@ -561,7 +561,7 @@ class Core:
         return {"status": r[0] if r[1] else "offline", "last_modified": r[2], "activities": ac if r[1] else []}
 
     async def sendPresenceUpdateEvent(self, uid: int, status: dict):
-        await self.mcl.broadcast("user_events", {"e": "presence_update", "user": uid, "status": status})
+        await self.mcl.broadcast("user_events", {"e": "presence_update", "data": {"user": uid, "status": status}})
 
     @_usingDB
     async def getChannelMessages(self, channel, limit: int, cur: Cursor) -> list:
@@ -584,5 +584,15 @@ class Core:
         m = await msg.json
         if nonce:
             m["nonce"] = nonce
-        await execute_after(self.mcl.broadcast("user_events", {"e": "message_create", "users": users, "message_obj": m}), 0)
+        await self.mcl.broadcast("message_events", {"e": "message_create", "data": {"users": users, "message_obj": m}})
         return msg
+
+    @_usingDB
+    async def getRelatedUsersToChannel(self, channel: int, cur: Cursor):
+        channel = await self.getChannel(channel, cur=cur)
+        if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
+            return channel.recipients
+
+    @_usingDB
+    async def sendTypingEvent(self, user, channel):
+        await self.mcl.broadcast("message_events", {"e": "typing", "data": {"user": user.id, "channel": channel.id}})

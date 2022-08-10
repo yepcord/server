@@ -1,3 +1,4 @@
+from .events import *
 from ..msg_client import Client
 from ..utils import unpack_token, snowflake_timestamp, GATEWAY_OP
 from ..core import Core
@@ -5,7 +6,6 @@ from ..classes import UserId
 from os import urandom
 from json import dumps as jdumps
 from datetime import datetime
-from time import time
 
 class VoiceStatus:
     def __init__(self):
@@ -35,6 +35,9 @@ class GatewayClient:
             return await self.ws.send(self.compress(data))
         await self.ws.send_json(data)
 
+    async def esend(self, event):
+        await self.send(event.json)
+
     def compress(self, json):
         return self.z(jdumps(json).encode("utf8"))
 
@@ -48,187 +51,128 @@ class ClientStatus:
         self.id = uid
         self.status = status
 
+class GatewayEvents:
+    def __init__(self, gw):
+        self.gw = gw
+        self.send = gw.send
+        self.core = gw.core
+        self.clients = gw.clients
+        self.statuses = gw.statuses
+
+    async def relationship_req(self, current_user, target_user):
+        tClient = [u for u in self.clients if u.id == target_user and u.connected]
+        cClient = [u for u in self.clients if u.id == current_user and u.connected]
+        d = await self.core.getUserData(current_user) if tClient else None
+        for cl in tClient:
+            await cl.esent(RelationshipAddEvent(current_user, d, 3))
+        d = await self.core.getUserData(target_user) if cClient else None
+        for cl in cClient:
+            await cl.esent(RelationshipAddEvent(target_user, d, 4))
+
+    async def relationship_acc(self, current_user, target_user, channel_id):
+        tClient = [u for u in self.clients if u.id == target_user and u.connected]
+        cClient = [u for u in self.clients if u.id == current_user and u.connected]
+        channel = await self.core.getChannel(channel_id)
+        cinfo = await channel.info
+        d = await self.core.getUserData(current_user) if tClient else None
+        for cl in tClient:
+            await cl.esent(RelationshipAddEvent(current_user, d, 1))
+            recipients = [{
+                "username": d["username"],
+                "public_flags": d["public_flags"],
+                "id": str(current_user),
+                "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                "avatar_decoration": d["avatar_decoration"],
+                "avatar": d["avatar"]
+            }]
+            await cl.esent(DMChannelCreate(channel_id, recipients, 1, cinfo))
+            await self.send(cl, GATEWAY_OP.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
+                "type": "friend_request_accepted",
+                "other_user": {
+                    "username": d["username"],
+                    "public_flags": d["public_flags"],
+                    "id": str(current_user),
+                    "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                    "avatar_decoration": d["avatar_decoration"],
+                    "avatar": d["avatar"]
+                },
+                "id": str(current_user),
+                "icon_url": f"https://127.0.0.1:8003/avatars/{current_user}/{d['avatar']}.png",
+                "deeplink": f"https://yepcord.ml/users/{current_user}",
+                "body": f"**{d['username']}** accepts your friend request",
+                "acked": False
+            })
+        d = await self.core.getUserData(target_user) if cClient else None
+        for cl in cClient:
+            await cl.esent(RelationshipAddEvent(target_user, d, 1))
+            recipients = [{
+                "username": d["username"],
+                "public_flags": d["public_flags"],
+                "id": str(target_user),
+                "discriminator": str(d["discriminator"]).rjust(4, "0"),
+                "avatar_decoration": d["avatar_decoration"],
+                "avatar": d["avatar"]
+            }]
+            await cl.esent(DMChannelCreate(channel_id, recipients, 1, cinfo))
+
+    async def relationship_del(self, current_user, target_user, type):
+        cls = [u for u in self.clients if u.id == current_user and u.connected]
+        for cl in cls:
+            await cl.esend(RelationshipRemoveEvent(target_user, type))
+
+    async def user_update(self, user):
+        cls = [u for u in self.clients if u.id == user and u.connected]
+        if not cls:
+            return
+        user = await self.core.getUserById(user)
+        data = await user.data
+        settings = await user.settings
+        for cl in cls:
+            await cl.esend(UserUpdateEvent(user, data, settings))
+
+    async def presence_update(self, user, status):
+        user = UserId(user)
+        d = await self.core.getUserData(user.id)
+        users = await self.core.getRelatedUsers(user, only_ids=True)
+        clients = [c for c in self.clients if c.id in users and c.connected]
+        st = self.statuses.get(user.id)
+        if not st:
+            self.statuses[user.id] = st = ClientStatus(user.id, {"status": "online"})
+        st.status.update(status)
+        st = st.status
+        for cl in clients:
+            await cl.esend(PresenceUpdateEvent(user.id, d, st))
+
+    async def message_create(self, users, message_obj):
+        clients = [c for c in self.clients if c.id in users and c.connected]
+        for cl in clients:
+            await cl.esend(MessageCreateEvent(message_obj))
+
+    async def typing(self, user, channel):
+        users = await self.core.getRelatedUsersToChannel(channel)
+        clients = [c for c in self.clients if c.id in users and c.connected]
+        for cl in clients:
+            print(f"sending typing to {cl.id}")
+            await cl.esend(TypingEvent(user, channel))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core
         self.mcl = Client()
         self.clients = []
         self.statuses = {}
+        self.ev = GatewayEvents(self)
 
     async def init(self):
         await self.mcl.start("ws://127.0.0.1:5050")
-        await self.mcl.subscribe("user_events", self.mcl_userEventsCallback)
+        await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
+        await self.mcl.subscribe("message_events", self.mcl_eventsCallback)
 
-    async def mcl_userEventsCallback(self, data: dict) -> None:
+    async def mcl_eventsCallback(self, data: dict) -> None:
         ev = data["e"]
-        if ev == "relationship_req":
-            tClient = [u for u in self.clients if u.id == data["target_user"] and u.connected]
-            cClient = [u for u in self.clients if u.id == data["current_user"] and u.connected]
-            uid = data["current_user"]
-            d = await self.core.getUserData(uid) if tClient else None
-            for cl in tClient:
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
-                    "user": {
-                        "username": d["username"],
-                        "public_flags": d["public_flags"],
-                        "id": str(uid),
-                        "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                        "avatar_decoration": d["avatar_decoration"],
-                        "avatar": d["avatar"]
-                    },
-                    "type": 3, "should_notify": True, "nickname": None, "id": str(uid)
-                })
-            uid = data["target_user"]
-            d = await self.core.getUserData(uid) if cClient else None
-            for cl in cClient:
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
-                    "user": {
-                        "username": d["username"],
-                        "public_flags": d["public_flags"],
-                        "id": str(uid),
-                        "discriminator": d["discriminator"],
-                        "avatar_decoration": d["avatar_decoration"],
-                        "avatar": d["avatar"]
-                    },
-                    "type": 4, "nickname": None, "id": str(uid)
-                })
-        elif ev == "relationship_acc":
-            tClient = [u for u in self.clients if u.id == data["target_user"] and u.connected]
-            cClient = [u for u in self.clients if u.id == data["current_user"] and u.connected]
-            channel = await self.core.getChannel(data["channel_id"])
-            cinfo = await channel.info
-            uid = data["current_user"]
-            d = await self.core.getUserData(uid) if tClient else None
-            for cl in tClient:
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
-                    "user": {
-                            "username": d["username"],
-                            "public_flags": d["public_flags"],
-                            "id": str(uid),
-                            "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                            "avatar_decoration": d["avatar_decoration"],
-                            "avatar": d["avatar"]
-                        },
-                    "type": 1, "should_notify": True, "nickname": None, "id": str(uid)
-                })
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="CHANNEL_CREATE", d={
-                    "type": 1,
-                    "recipients": [{
-                        "username": d["username"],
-                         "public_flags": d["public_flags"],
-                         "id": str(uid),
-                         "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                         "avatar_decoration": d["avatar_decoration"],
-                         "avatar": d["avatar"]
-                    }],
-                    "last_message_id": str(cinfo["last_message_id"]),
-                    "id": data["channel_id"]
-                })
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
-                    "type": "friend_request_accepted",
-                    "other_user": {
-                        "username": d["username"],
-                            "public_flags": d["public_flags"],
-                            "id": str(uid),
-                            "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                            "avatar_decoration": d["avatar_decoration"],
-                            "avatar": d["avatar"]
-                    },
-                    "id": str(uid),
-                    "icon_url": f"https://127.0.0.1:8003/avatars/{uid}/{d['avatar']}.png",
-                    "deeplink": f"https://discord.com/users/{uid}",
-                    "body": f"**{d['username']}** accepts your friend request",
-                    "acked": False
-                })
-            uid = data["target_user"]
-            d = await self.core.getUserData(uid) if cClient else None
-            for cl in cClient:
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_ADD", d={
-                    "user": {
-                            "username": d["username"],
-                            "public_flags": d["public_flags"],
-                            "id": str(uid),
-                            "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                            "avatar_decoration": d["avatar_decoration"],
-                            "avatar": d["avatar"]
-                        },
-                    "type": 1, "nickname": None, "id": str(uid)
-                })
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="CHANNEL_CREATE", d={
-                    "type": 1,
-                    "recipients": [{
-                        "username": d["username"],
-                        "public_flags": d["public_flags"],
-                        "id": str(uid),
-                        "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                        "avatar_decoration": d["avatar_decoration"],
-                        "avatar": d["avatar"]
-                    }],
-                    "last_message_id": str(cinfo["last_message"]),
-                    "id": data["channel_id"]
-                })
-        elif ev == "relationship_del":
-            cls = [u for u in self.clients if u.id == data["current_user"] and u.connected]
-            for cl in cls:
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="RELATIONSHIP_REMOVE", d={
-                    "type": data["type"],
-                    "id": str(data["target_user"])
-                })
-        elif ev == "user_update":
-            cls = [u for u in self.clients if u.id == data["user"] and u.connected]
-            if not cls:
-                return
-            user = await self.core.getUserById(data["user"])
-            d = await user.data
-            settings = await user.settings
-            for cl in cls:
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="USER_UPDATE", d={
-                    "verified": True,
-                    "username": d["username"],
-                    "public_flags": d["public_flags"],
-                    "phone": d["phone"],
-                    "nsfw_allowed": True, # TODO: get from age
-                    "mfa_enabled": bool(settings["mfa"]),
-                    "locale": settings["locale"],
-                    "id": str(user.id),
-                    "flags": 0,
-                    "email": user.email,
-                    "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                    "bio": d["bio"],
-                    "banner_color": d["banner_color"],
-                    "banner": d["banner"],
-                    "avatar_decoration": d["avatar_decoration"],
-                    "avatar": d["avatar"],
-                    "accent_color": d["accent_color"]
-                })
-        elif ev == "presence_update":
-            user = UserId(data["user"])
-            d = await self.core.getUserData(user.id)
-            users = await self.core.getRelatedUsers(user, only_ids=True)
-            clients = [c for c in self.clients if c.id in users and c.connected]
-            st = self.statuses.get(user.id)
-            if not st:
-                self.statuses[user.id] = st = ClientStatus(user.id, {"status": "online"})
-            st.status.update(data["status"])
-            st = st.status
-            for cl in clients:
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="PRESENCE_UPDATE", d={
-                    "user": {
-                        "username": d["username"],
-                        "public_flags": d["public_flags"],
-                        "id": str(user.id),
-                        "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                        "avatar": d["avatar"]
-                    },
-                    "status": st["status"],
-                    "last_modified": st.get("last_modified", int(time()*1000)),
-                    "client_status": {} if st["status"] == "offline" else {"desktop": st["status"]},
-                    "activities": st.get("activities", [])
-                })
-        elif ev == "message_create":
-            clients = [c for c in self.clients if c.id in data["users"] and c.connected]
-            for cl in clients:
-                await self.send(cl, GATEWAY_OP.DISPATCH, t="MESSAGE_CREATE", d=data["message_obj"])
+        func = getattr(self.ev, ev)
+        if func:
+            await func(**data["data"])
 
     async def send(self, client: GatewayClient, op: int, **data) -> None:
         r = {"op": op}
@@ -333,7 +277,7 @@ class Gateway:
             cl = GatewayClient(ws, uid)
             self.clients.append(cl)
             self.statuses[cl.id] = ClientStatus(cl.id, await self.core.getUserPresence(cl.id))
-            await self.mcl_userEventsCallback({"e": "presence_update", "user": cl.id, "status": {"status": "online"}})
+            await self.ev.presence_update(cl.id, {"status": "online"})
             await self.send(cl, GATEWAY_OP.DISPATCH, t="READY", d=await self._generateReadyPayload(cl))
             fr = await self.core.getFriendsPresences(cl.id)
             await self.send(cl, GATEWAY_OP.DISPATCH, t="READY_SUPPLEMENTAL", d={
@@ -359,7 +303,7 @@ class Gateway:
                 return await ws.close(4004)
             cl.replace(ws)
             self.statuses[cl.id] = st = ClientStatus(cl.id, await self.core.getUserPresence(cl.id))
-            await self.mcl_userEventsCallback({"e": "presence_update", "user": cl.id, "status": st.status})
+            await self.ev.presence_update(cl.id, st.status)
             await self.send(cl, GATEWAY_OP.DISPATCH, t="READY", d=await self._generateReadyPayload(cl))
         elif op == GATEWAY_OP.HEARTBEAT:
             if not (cl := [w for w in self.clients if w.ws == ws]):
@@ -377,4 +321,4 @@ class Gateway:
         cl._connected = False
         if not [w for w in self.clients if w.id == cl.id and w != cl]:
             await self.core.updatePresence(cl.id, {"status": "offline"})
-            await self.mcl_userEventsCallback({"e": "presence_update", "user": cl.id, "status": {"status": "offline"}})
+            await self.ev.presence_update(cl.id, {"status": "offline"})
