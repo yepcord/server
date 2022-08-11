@@ -1,10 +1,9 @@
-from quart import Quart, request
-from functools import wraps
-from ..core import Core, CDN
-from ..utils import b64decode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS
-from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
-from ..storage import FileStorage
 from os import environ
+from quart import Quart, request
+from ..core import Core, CDN
+from ..storage import FileStorage
+from ..utils import b64decode
+
 
 class YEPcord(Quart):
     async def process_response(self, response, request_context):

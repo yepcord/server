@@ -5,8 +5,9 @@ from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
-from .utils import b64encode, b64decode, unpack_token, RELATIONSHIP, MFA, NoneType, ChannelType, mksf, execute_after
-from .classes import Session, User, LoginUser, DMChannel, UserId, Message
+from .utils import b64encode, b64decode, unpack_token, RELATIONSHIP, MFA, NoneType, ChannelType, mksf, execute_after, \
+    json_to_sql, result_to_json
+from .classes import Session, User, DMChannel, UserId, Message, _User, UserSettings, UserData
 from .storage import _Storage
 from json import loads as jloads, dumps as jdumps
 from random import randint
@@ -97,7 +98,7 @@ class Core:
         return Session(uid, session, signature)
 
     @_usingDB
-    async def login(self, email: str, password: str, cur: Cursor) -> Union[LoginUser, int, tuple]:
+    async def login(self, email: str, password: str, cur: Cursor) -> Union[Session, int, tuple]:
         email = email.lower()
         await cur.execute(f'SELECT `password`, `key`, `id` FROM `users` WHERE `email`="{escape_string(email)}"')
         r = await cur.fetchone()
@@ -111,10 +112,7 @@ class Core:
             _sid = bytes.fromhex(r[0][:12])
             sid = int.from_bytes(_sid, "big")
             return 1, r[2], b64encode(_sid), self.generateSessionSignature(r[2], sid, b64decode(r[1]))
-        session = await self.createSession(r[2], r[1], cur=cur)
-        await cur.execute(f'SELECT `theme`, `locale` FROM `settings` WHERE `uid`="{r[2]}"')
-        sr = await cur.fetchone()
-        return LoginUser(r[2], session, sr[0], sr[1])
+        return await self.createSession(r[2], r[1], cur=cur)
 
     @_usingDB
     async def createSession(self, uid: int, key: str, cur) -> Session:
@@ -126,103 +124,53 @@ class Core:
     @_usingDB
     async def createSessionWithoutKey(self, uid: int, cur: Cursor) -> Session:
         await cur.execute(f'SELECT `key` FROM `users` WHERE `id`={uid}')
-        key = await cur.fetchone()
-        key = key[0]
+        key = (await cur.fetchone())[0]
         return await self.createSession(uid, key, cur=cur)
 
     @_usingDB
-    async def getLoginUser(self, uid: int, cur: Cursor) -> LoginUser:
-        sess = await self.createSessionWithoutKey(uid, cur=cur)
-        await cur.execute(f'SELECT `theme`, `locale` FROM `settings` WHERE `uid`="{uid}"')
-        r = await cur.fetchone()
-        return LoginUser(uid, sess, r[0], r[1])
-
-    @_usingDB
-    async def getSession(self, uid: int, sid: int, sig: str, cur: Cursor) -> Optional[Session]:
-        await cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={uid} AND `sid`={sid} AND `sig`="{sig}";')
-        r = await cur.fetchone()
-        if r:
-            return Session(r[0], sid, sig)
-
-    @_usingDB
-    async def getUser(self, token: str, cur: Cursor) -> Optional[User]:
-        uid, sid, sig = unpack_token(token)
-        if not await self.getSession(uid, sid, sig, cur=cur):
-            return None
+    async def getUser(self, uid: int, cur: Cursor) -> Optional[User]:
         await cur.execute(f'SELECT `email` FROM `users` WHERE `id`={uid};')
-        r = await cur.fetchone()
-        return User(uid, r[0], self)
+        if (r := await cur.fetchone()):
+            return User(uid, r[0], self)
 
-    @_usingDB
-    async def getUserById(self, uid: int, cur: Cursor) -> User:
-        await cur.execute(f'SELECT `email` FROM `users` WHERE `id`={uid};')
-        r = await cur.fetchone()
-        return User(uid, r[0], self)
-
-    @_usingDB
-    async def getSettings(self, uid: int, cur: Cursor) -> dict:
-        await cur.execute(f'SELECT settings.*, presences.status as status FROM settings INNER JOIN presences ON settings.uid = presences.uid WHERE settings.uid={uid};')
-        r = await cur.fetchone()
-        ret = []
-        for idx, item in enumerate(r):
-           name = cur.description[idx][0]
-           if name.startswith("j_"):
-               name = name[2:]
-               item = jloads(item)
-           ret.append((name, item))
-        ret = dict(ret)
-        del ret["uid"]
-        return ret
-
-    async def getSettingsForUser(self, user: User) -> dict:
-        return await self.getSettings(user.id)
-
-    @_usingDB
-    async def getUserData(self, uid: int, cur: Cursor) -> dict:
-        await cur.execute(f'SELECT userdata.*, users.email FROM userdata INNER JOIN users on userdata.uid = users.id WHERE `uid`={uid};')
-        r = await cur.fetchone()
-        ret = []
-        for idx, item in enumerate(r):
-            ret.append((cur.description[idx][0], item))
-        ret = dict(ret)
-        del ret["uid"]
-        return ret
-
-    async def getDataForUser(self, user: User) -> dict:
-        return await self.getUserData(user.id)
-
-    def _formatSettings(self, _settings: dict) -> str:
-        settings = []
-        for k,v in _settings.items():
-            if isinstance(v, str):
-                v = f'"{escape_string(v)}"'
-            elif isinstance(v, bool):
-                v = "true" if v else "false"
-            elif isinstance(v, (dict, list)):
-                k = f"j_{k}"
-                v = escape_string(jdumps(v))
-                v = f"\"{v}\""
-            elif isinstance(v, NoneType):
-                v = "null"
-            settings.append(f"`{k}`={v}")
-        return ", ".join(settings)
-
-    @_usingDB
-    async def setSettings(self, user: User, settings: dict, cur: Cursor) -> None:
-        if not settings:
-            return        
-        await cur.execute(f'UPDATE `settings` SET {self._formatSettings(settings)} WHERE `uid`={user.id};')
-
-    @_usingDB
-    async def setUserdata(self, user: User, userdata: dict, cur: Cursor) -> None:
-        if not userdata:
+    async def getUserFromSession(self, session: Session) -> Optional[User]:
+        if not await self.validSession(session):
             return
-        await cur.execute(f'UPDATE `userdata` SET {self._formatSettings(userdata)} WHERE `uid`={user.id};')
+        return await self.getUser(session.id)
+
+    @_usingDB
+    async def validSession(self, session: Session, cur: Cursor) -> bool:
+        await cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{session.sig}";')
+        return bool(await cur.fetchone())
+
+    @_usingDB
+    async def getUserSettings(self, user: _User, cur: Cursor) -> UserSettings:
+        await cur.execute(f'SELECT * FROM `settings` WHERE `uid`={user.id};')
+        r = await cur.fetchone()
+        return UserSettings(**result_to_json(cur.description, r))
+
+    @_usingDB
+    async def getUserData(self, user: _User, cur: Cursor) -> UserData:
+        await cur.execute(f'SELECT * FROM `userdata` WHERE `uid`={user.id};')
+        r = await cur.fetchone()
+        return UserData(**result_to_json(cur.description, r))
+
+    @_usingDB
+    async def setSettings(self, settings: UserSettings, cur: Cursor) -> None:
+        if not (j := settings.to_json(mfa_key=True)):
+            return
+        await cur.execute(f'UPDATE `settings` SET {json_to_sql(j)} WHERE `uid`={settings.uid};')
+
+    @_usingDB
+    async def setUserdata(self, userdata: UserData, cur: Cursor) -> None:
+        if not (j := userdata.to_json()):
+            return
+        await cur.execute(f'UPDATE `userdata` SET {json_to_sql(j)} WHERE `uid`={userdata.id};')
 
     @_usingDB
     async def getUserProfile(self, uid: int, cUser: User, cur: Cursor) -> Union[User, int]:
         # TODO: check for relationship, mutual guilds or mutual friends
-        if not (user := await self.getUserById(uid, cur=cur)):
+        if not (user := await self.getUser(uid, cur=cur)):
             return 4
         return user
 
@@ -274,14 +222,14 @@ class Core:
         async def _d(uid, t):
             u = {"user_id": str(uid), "type": t, "nickname": None, "id": str(uid)}
             if with_data:
-                d = await self.getUserData(uid)
+                d = await self.getUserData(UserId(uid))
                 u["user"] = {
                     "id": str(uid),
-                    "username": d["username"],
-                    "avatar": d["avatar"],
-                    "avatar_decoration": d["avatar_decoration"],
-                    "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                    "public_flags": d["public_flags"]
+                    "username": d.username,
+                    "avatar": d.avatar,
+                    "avatar_decoration": d.avatar_decoration,
+                    "discriminator": str(d.discriminator).rjust(4, "0"),
+                    "public_flags": d.public_flags
                 }
             return u
         rel = []
@@ -310,16 +258,16 @@ class Core:
             if only_ids:
                 users.append(uid)
                 continue
-            d = await self.getUserData(uid)
+            d = await self.getUserData(UserId(uid))
             users.append({
-                "username": d["username"],
-                "public_flags": d["public_flags"],
+                "username": d.username,
+                "public_flags": d.public_flags,
                 "id": str(uid),
-                "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                "avatar_decoration": d["avatar_decoration"],
-                "avatar": d["avatar"]
+                "discriminator": str(d.discriminator).rjust(4, "0"),
+                "avatar_decoration": d.avatar_decoration,
+                "avatar": d.avatar
             })
-        await cur.execute(f'SELECT `recipients` FROM `dm_channels` WHERE JSON_CONTAINS(recipients, {user.id}, "$");')
+        await cur.execute(f'SELECT `j_recipients` FROM `dm_channels` WHERE JSON_CONTAINS(j_recipients, {user.id}, "$");')
         for r in await cur.fetchall():
             uids = jloads(r[0])
             uids.remove(user.id)
@@ -330,14 +278,14 @@ class Core:
                     continue
                 if [u for u in users if u["id"] == str(uid)]:
                     continue
-                d = await self.getUserData(uid)
+                d = await self.getUserData(UserId(uid))
                 users.append({
-                    "username": d["username"],
-                    "public_flags": d["public_flags"],
+                    "username": d.username,
+                    "public_flags": d.public_flags,
                     "id": str(uid),
-                    "discriminator": str(d["discriminator"]).rjust(4, "0"),
-                    "avatar_decoration": d["avatar_decoration"],
-                    "avatar": d["avatar"]
+                    "discriminator": str(d.discriminator).rjust(4, "0"),
+                    "avatar_decoration": d.avatar_decoration,
+                    "avatar": d.avatar
                 })
         return users
 
@@ -375,12 +323,12 @@ class Core:
     async def logoutUser(self, sess: Session, cur: Cursor) -> None:
         await cur.execute(f'DELETE FROM `sessions` WHERE `uid`={sess.uid} AND `sid`={sess.sid} AND `sig`="{sess.sig}" LIMIT 1;')
 
-    def sessionToUser(self, session: Session):
+    def _sessionToUser(self, session: Session):
         return User(session.id, core=self)
 
     async def getMfa(self, user: Union[User, Session]) -> Optional[MFA]:
         if type(user) == Session:
-            user = self.sessionToUser(user)
+            user = self._sessionToUser(user)
         settings = await user.settings
         mfa = MFA(settings.get("mfa"), user.id)
         if mfa.valid:
@@ -447,14 +395,14 @@ class Core:
         if not (r := await cur.fetchone()):
             return
         if r[0] in [ChannelType.DM, ChannelType.GROUP_DM]:
-            await cur.execute(f'SELECT `recipients` FROM `dm_channels` WHERE `id`={channel_id};')
+            await cur.execute(f'SELECT `j_recipients` FROM `dm_channels` WHERE `id`={channel_id};')
             r = await cur.fetchone()
             r = jloads(r[0])
             return DMChannel(channel_id, r, self)
 
     @_usingDB
     async def getDMChannelOrCreate(self, u1: int, u2: int, cur: Cursor) -> DMChannel:
-        await cur.execute(f'SELECT `id` FROM `dm_channels` WHERE JSON_CONTAINS(recipients, {u1}, "$") AND JSON_CONTAINS(recipients, {u2}, "$");')
+        await cur.execute(f'SELECT `id` FROM `dm_channels` WHERE JSON_CONTAINS(j_recipients, {u1}, "$") AND JSON_CONTAINS(j_recipients, {u2}, "$");')
         if not (r := await cur.fetchone()):
             return await self.createDMChannel(u1, u2, cur=cur)
         return DMChannel(r[0], [u1, u2], self)
@@ -463,7 +411,7 @@ class Core:
     async def createDMChannel(self, u1: int, u2: int, cur: Cursor) -> DMChannel:
         cid = mksf()
         recipients = jdumps([u1, u2])
-        await cur.execute(f'INSERT INTO `dm_channels` (`id`, `recipients`) VALUES ({cid}, "{recipients}");')
+        await cur.execute(f'INSERT INTO `dm_channels` (`id`, `j_recipients`) VALUES ({cid}, "{recipients}");')
         await cur.execute(f'INSERT INTO `channels` (`id`, `type`) VALUES ({cid}, "{ChannelType.DM}");')
         return DMChannel(cid, recipients, self)
 
@@ -477,7 +425,7 @@ class Core:
     @_usingDB
     async def getPrivateChannels(self, user, cur: Cursor):
         channels = []
-        await cur.execute(f'SELECT dm_channels.*, channels.type FROM dm_channels INNER JOIN channels ON dm_channels.id = channels.id WHERE JSON_CONTAINS(dm_channels.recipients, {user.id}, "$");')
+        await cur.execute(f'SELECT dm_channels.*, channels.type FROM dm_channels INNER JOIN channels ON dm_channels.id = channels.id WHERE JSON_CONTAINS(dm_channels.j_recipients, {user.id}, "$");')
         for r in await cur.fetchall():
             ids = jloads(r[1])
             ids.remove(user.id)
@@ -508,7 +456,7 @@ class Core:
         fr = await self.getRelationships(UserId(uid), cur=cur)
         fr = [int(u["user_id"]) for u in fr if u["type"] == 1]
         for f in fr:
-            await cur.execute(f'SELECT `status`, `modified`, `activities`, `online` FROM `presences` WHERE presences.uid={f};')
+            await cur.execute(f'SELECT "online", `modified`, `j_activities`, `online` FROM `presences` WHERE presences.uid={f};')
             if not (r := await cur.fetchone()):
                 continue
             pr.append({
@@ -542,14 +490,14 @@ class Core:
                     cs = [{"type":4, "state": cs["text"], "name": "Custom Status", "id": "custom","created_at": int(time()*1000)}]
                     r["activities"] = cs.copy()
                     if ex: cs[0]["expire"] = ex
-                q.append(f'`activities`="{escape_string(jdumps(cs))}"')
+                q.append(f'`j_activities`="{escape_string(jdumps(cs))}"')
             q = ", ".join(q)
             await cur.execute(f'UPDATE `presences` SET {q} WHERE `uid`={uid};')
             return r
 
     @_usingDB
     async def getUserPresence(self, uid: int, cur: Cursor):
-        await cur.execute(f'SELECT `status`, `online`, `modified`, `activities` FROM `presences` WHERE `uid`={uid};')
+        await cur.execute(f'SELECT "online", `online`, `modified`, `j_activities` FROM `presences` WHERE `uid`={uid};')
         if not (r := await cur.fetchone()):
             await cur.execute(f'INSERT INTO `presences` (`uid`, `modified`) VALUES ({uid}, {int(time()*1000)});')
             return {"status": "offline", "last_modified": int(time()*1000), "activities": []}
@@ -567,12 +515,21 @@ class Core:
     async def getChannelMessages(self, channel, limit: int, cur: Cursor) -> list:
         messages = []
         await cur.execute(f'SELECT '+
-                          f'`id`, `content`, `channel_id`, `author`, `edit_timestamp`, `attachments`, `embeds`, `reactions`, `pinned`,'+
-                          f'`webhook_id`, `application_id`, `type`, `flags`, `message_reference`, `thread`, `components`'+
+                          f'`id`, `content`, `channel_id`, `author`, `edit_timestamp`, `j_attachments`, `j_embeds`, `j_reactions`, `pinned`,'+
+                          f'`webhook_id`, `application_id`, `type`, `flags`, `message_reference`, `thread`, `j_components`'+
                           f'FROM `messages` WHERE `channel_id`={channel.id} ORDER BY `id` DESC LIMIT {limit};')
         for r in await cur.fetchall():
             messages.append(Message(r[0], r[1], r[2], r[3], r[4], jloads(r[5]), jloads(r[6]), jloads(r[7]), r[8], r[9], r[10], r[11], r[12], r[13], r[14], jloads(r[15]), self))
         return messages
+
+    @_usingDB
+    async def getMessage(self, channel, message_id: int, cur: Cursor):
+        await cur.execute(f'SELECT ' +
+                          f'`id`, `content`, `channel_id`, `author`, `edit_timestamp`, `j_attachments`, `j_embeds`, `j_reactions`, `pinned`,' +
+                          f'`webhook_id`, `application_id`, `type`, `flags`, `message_reference`, `thread`, `j_components`' +
+                          f'FROM `messages` WHERE `channel_id`={channel.id} AND `id`={message_id};')
+        if (r := await cur.fetchone()):
+            return Message(r[0], r[1], r[2], r[3], r[4], jloads(r[5]), jloads(r[6]), jloads(r[7]), r[8], r[9], r[10], r[11], r[12], r[13], r[14], jloads(r[15]), self)
 
     @_usingDB
     async def sendMessage(self, channel, author, content: str, nonce: str, cur: Cursor):
@@ -596,3 +553,8 @@ class Core:
     @_usingDB
     async def sendTypingEvent(self, user, channel):
         await self.mcl.broadcast("message_events", {"e": "typing", "data": {"user": user.id, "channel": channel.id}})
+
+    @_usingDB
+    async def deleteMessage(self, message: Message, cur: Cursor):
+        await cur.execute(f'DELETE FROM `messages` WHERE `id`={message.id};')
+        await self.mcl.broadcast("message_events", {"e": "message_delete", "data": {"message": message.id, "channel": message.channel_id}})

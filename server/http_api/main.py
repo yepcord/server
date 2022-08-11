@@ -1,5 +1,7 @@
 from quart import Quart, request
 from functools import wraps
+
+from ..classes import Session, UserSettings, Null, UserData
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, \
     validImage, unpack_token, MFA, execute_after, ChannelType
@@ -45,9 +47,9 @@ async def before_serving():
 def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (token := request.headers.get("Authorization")):
+        if not (session := Session.from_token(request.headers.get("Authorization", ""))):
             return c_json({"message": "401: Unauthorized", "code": 0}, 401)
-        if not (user := await core.getUser(token)):
+        if not (user := await core.getUserFromSession(session)):
             return c_json({"message": "401: Unauthorized", "code": 0}, 401)
         kwargs["user"] = user
         return await f(*args, **kwargs)
@@ -56,9 +58,9 @@ def getUser(f):
 def getSession(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (token := request.headers.get("Authorization")):
+        if not (session := Session.from_token(request.headers.get("Authorization", ""))):
             return c_json({"message": "401: Unauthorized", "code": 0}, 401)
-        if not (session := await core.getSession(*unpack_token(token))):
+        if not await core.validSession(session):
             return c_json({"message": "401: Unauthorized", "code": 0}, 401)
         kwargs["session"] = session
         return await f(*args, **kwargs)
@@ -68,15 +70,30 @@ def getChannel(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (channel := kwargs.get("channel")):
-            return c_json(ERRORS[17], ECODES[17])
+            return c_json(ERRORS[18], ECODES[18])
         if not (user := kwargs.get("user")):
             return c_json({"message": "401: Unauthorized", "code": 0}, 401)
         if not (channel := await core.getChannel(channel)):
-            return c_json(ERRORS[17], ECODES[17])
+            return c_json(ERRORS[18], ECODES[18])
         if channel.type == ChannelType.DM:
             if user.id not in channel.recipients:
                 return c_json({"message": "401: Unauthorized", "code": 0}, 401)
         kwargs["channel"] = channel
+        return await f(*args, **kwargs)
+    return wrapped
+
+def getMessage(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (channel := kwargs.get("channel")):
+            return c_json(ERRORS[18], ECODES[18])
+        if not (kwargs.get("user")):
+            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+        if not (message := kwargs.get("message")):
+            return c_json(ERRORS[20], ECODES[20])
+        if not (message := await core.getMessage(channel, message)):
+            return c_json(ERRORS[20], ECODES[20])
+        kwargs["message"] = message
         return await f(*args, **kwargs)
     return wrapped
 
@@ -107,7 +124,10 @@ async def api_auth_login():
             ticket = b64encode(jdumps([res[1], "login"]))
             ticket += f".{res[2]}.{res[3]}"
             return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
-    return c_json({"token": res.token, "user_settings": {"locale": res.locale, "theme": res.theme}, "user_id": str(res.id)})
+    sess = res
+    user = await core.getUserFromSession(sess)
+    sett = await user.settings
+    return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
 
 @app.route("/api/v9/auth/mfa/totp", methods=["POST"])
 async def api_auth_mfa_totp():
@@ -122,8 +142,10 @@ async def api_auth_mfa_totp():
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
             return c_json(ERRORS[13], ECODES[13])
-    user = await core.getLoginUser(mfa.uid)
-    return c_json({"token": user.token, "user_settings": {"locale": user.locale, "theme": user.theme}, "user_id": str(user.id)})
+    sess = await core.createSessionWithoutKey(mfa.uid)
+    user = await core.getUserFromSession(sess)
+    sett = await user.settings
+    return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
 
 @app.route("/api/v9/auth/logout", methods=["POST"])
 @getSession
@@ -206,14 +228,14 @@ async def api_users_me_patch(user):
             if not (v := await cdn.setBannerFromBytesIO(user.id, img)):
                 continue
         settings[k] = v
-    await core.setUserdata(user, settings)
+    if settings:
+        await core.setUserdata(UserData(user.id, **settings))
     await core.sendUserUpdateEvent(user.id)
     return c_json(await userdataResponse(user))
 
 @app.route("/api/v9/users/@me/consent", methods=["GET"])
 @getUser
 async def api_users_me_consent_get(user):
-    settings = await user.settings
     return c_json(await userdataResponse(user))
 
 @app.route("/api/v9/users/@me/consent", methods=["POST"])
@@ -226,7 +248,8 @@ async def api_users_me_consent_set(user):
             settings[g] = True
         for r in data["revoke"]:
             settings[r] = False
-        await core.setSettings(user, settings)
+        s = UserSettings(user.id, **settings)
+        await core.setSettings(s)
     return c_json(await userConsentResponse(user))
 
 @app.route("/api/v9/users/@me/settings", methods=["GET"])
@@ -238,14 +261,6 @@ async def api_users_me_settings_get(user):
 @getUser
 async def api_users_me_settings_patch(user):
     _settings = await request.get_json()
-    if "status" in _settings:
-        await core.updatePresence(user.id, {"status": _settings["status"]})
-        await core.sendPresenceUpdateEvent(user.id, {"status": _settings["status"]})
-        del _settings["status"]
-    if "custom_status" in _settings:
-        presence = await core.updatePresence(user.id, {"custom_status": _settings["custom_status"]})
-        await core.sendPresenceUpdateEvent(user.id, presence)
-        del _settings["custom_status"]
     settings = {}
     for k,v in _settings.items():
         k = k.lower()
@@ -265,7 +280,8 @@ async def api_users_me_settings_patch(user):
                 if type(_v) != bool:
                     _v = bool(_v)
         settings[k] = v
-    await core.setSettings(user, settings)
+    s = UserSettings(user.id, **settings)
+    await core.setSettings(s)
     await core.sendUserUpdateEvent(user.id)
     return c_json(await userSettingsResponse(user))
 
@@ -309,7 +325,7 @@ async def api_users_me_mfa_totp_enable(session):
         return c_json(ERRORS[13], ECODES[13])
     if mfa.getCode() != code:
         return c_json(ERRORS[13], ECODES[13])
-    await core.setSettings(session, {"mfa": secret})
+    await core.setSettings(UserSettings(session.id, mfa=secret))
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
     await core.setBackupCodes(session, codes)
     await execute_after(core.sendUserUpdateEvent(session.id), 3)
@@ -330,7 +346,7 @@ async def api_users_me_mfa_totp_disable(session):
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
             return c_json(ERRORS[13], ECODES[13])
-    await core.setSettings(session, {"mfa": None})
+    await core.setSettings(UserSettings(session.id, mfa=Null))
     await core.clearBackupCodes(session)
     await core.sendUserUpdateEvent(session.id)
     await core.logoutUser(session)
@@ -412,6 +428,16 @@ async def api_channels_channel_messages_post(user, channel):
     if (nonce := data.get("nonce")):
         message["nonce"] = nonce
     return c_json(message)
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>", methods=["DELETE"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_delete(user, channel, message):
+    if message.author != user.id:
+        return c_json(ERRORS[21], ECODES[21])
+    await core.deleteMessage(message)
+    return "", 204
 
 @app.route("/api/v9/channels/<int:channel>/typing", methods=["POST"])
 @getUser

@@ -19,12 +19,12 @@ class RelationshipAddEvent(Event):
             "op": GATEWAY_OP.DISPATCH,
             "d": {
                 "user": {
-                    "username": self.userdata["username"],
-                    "public_flags": self.userdata["public_flags"],
+                    "username": self.userdata.username,
+                    "public_flags": self.userdata.public_flags,
                     "id": str(self.user_id),
-                    "discriminator": str(self.userdata["discriminator"]).rjust(4, "0"),
-                    "avatar_decoration": self.userdata["avatar_decoration"],
-                    "avatar": self.userdata["avatar"]
+                    "discriminator": str(self.userdata.discriminator).rjust(4, "0"),
+                    "avatar_decoration": self.userdata.avatar_decoration,
+                    "avatar": self.userdata.avatar
                 },
                 "type": self.type,
                 "should_notify": True,
@@ -88,22 +88,22 @@ class UserUpdateEvent(Event):
             "op": GATEWAY_OP.DISPATCH,
             "d": {
                 "verified": True,
-                "username": self.userdata["username"],
-                "public_flags": self.userdata["public_flags"],
-                "phone": self.userdata["phone"],
+                "username": self.userdata.username,
+                "public_flags": self.userdata.public_flags,
+                "phone": self.userdata.phone,
                 "nsfw_allowed": True, # TODO: get from age
-                "mfa_enabled": bool(self.settings["mfa"]),
-                "locale": self.settings["locale"],
+                "mfa_enabled": bool(self.settings.mfa),
+                "locale": self.settings.locale,
                 "id": str(self.user.id),
                 "flags": 0,
                 "email": self.user.email,
-                "discriminator": str(self.userdata["discriminator"]).rjust(4, "0"),
-                "bio": self.userdata["bio"],
-                "banner_color": self.userdata["banner_color"],
-                "banner": self.userdata["banner"],
-                "avatar_decoration": self.userdata["avatar_decoration"],
-                "avatar": self.userdata["avatar"],
-                "accent_color": self.userdata["accent_color"]
+                "discriminator": str(self.userdata.discriminator).rjust(4, "0"),
+                "bio": self.userdata.bio,
+                "banner_color": self.userdata.banner_color,
+                "banner": self.userdata.banner,
+                "avatar_decoration": self.userdata.avatar_decoration,
+                "avatar": self.userdata.avatar,
+                "accent_color": self.userdata.accent_color
             }
         }
 
@@ -122,11 +122,11 @@ class PresenceUpdateEvent(Event):
             "op": GATEWAY_OP.DISPATCH,
             "d": {
                 "user": {
-                    "username": self.userdata["username"],
-                    "public_flags": self.userdata["public_flags"],
+                    "username": self.userdata.username,
+                    "public_flags": self.userdata.public_flags,
                     "id": str(self.user),
-                    "discriminator": str(self.userdata["discriminator"]).rjust(4, "0"),
-                    "avatar": self.userdata["avatar"]
+                    "discriminator": str(self.userdata.discriminator).rjust(4, "0"),
+                    "avatar": self.userdata.avatar
                 },
                 "status": self.status["status"],
                 "last_modified": self.status.get("last_modified", int(time() * 1000)),
@@ -164,6 +164,24 @@ class TypingEvent(Event):
             "d": {
                 "user_id": str(self.user),
                 "timestamp": int(time()),
+                "channel_id": str(self.channel)
+            }
+        }
+
+class MessageDeleteEvent(Event):
+    NAME = "MESSAGE_DELETE"
+
+    def __init__(self, message, channel):
+        self.message = message
+        self.channel = channel
+
+    @property
+    def json(self):
+        return {
+            "t": self.NAME,
+            "op": GATEWAY_OP.DISPATCH,
+            "d": {
+                "id": str(self.message),
                 "channel_id": str(self.channel)
             }
         }

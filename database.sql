@@ -14,6 +14,7 @@ CREATE TABLE `userdata` (
   `username` longtext not null,
   `discriminator` int not null,
   `phone` longtext default null,
+  `premium` bool default null,
   `accent_color` bigint default null,
   `avatar` longtext default null,
   `avatar_decoration` longtext default null,
@@ -54,6 +55,7 @@ CREATE TABLE `settings` (
   `view_nsfw_commands` bool not null default false,
   `detect_platform_accounts` bool not null default true,
   `explicit_content_filter` int not null default 1,
+  `status` longtext not null default "online",
   `custom_status` longtext default null,
   `default_guilds_restricted` bool not null default false,
   `theme` text not null default "dark",
@@ -100,7 +102,7 @@ CREATE TABLE `channels` (
 DROP TABLE IF EXISTS `dm_channels`;
 CREATE TABLE `dm_channels` (
   `id` bigint not null,
-  `recipients` JSON not null default "[]",
+  `j_recipients` JSON not null default "[]",
   `name` text default null,
   `icon` text default null,
   `owner_id` bigint default null,
@@ -114,9 +116,9 @@ CREATE TABLE `messages` (
   `channel_id` bigint not null,
   `author` bigint not null,
   `edit_timestamp` bigint default null,
-  `attachments` JSON not null default "[]",
-  `embeds` JSON not null default "[]",
-  `reactions` JSON not null default "[]",
+  `j_attachments` JSON not null default "[]",
+  `j_embeds` JSON not null default "[]",
+  `j_reactions` JSON not null default "[]",
   `pinned` bool not null default false,
   `webhook_id` bigint default null,
   `application_id` bigint default null,
@@ -124,17 +126,16 @@ CREATE TABLE `messages` (
   `flags` int default 0,
   `message_reference` bigint default null,
   `thread` bigint default null,
-  `components` JSON not null default "[]",
-  `sticker_items` JSON not null default "[]",
+  `j_components` JSON not null default "[]",
+  `j_sticker_items` JSON not null default "[]",
   UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `presences`;
 CREATE TABLE `presences` (
   `uid` bigint not null,
-  `status` text not null default "online",
   `online` bool not null default true,
   `modified` bigint not null default 0,
-  `activities` JSON not null default "[]",
+  `j_activities` JSON not null default "[]",
   UNIQUE KEY `uid` (`uid`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

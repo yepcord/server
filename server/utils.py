@@ -2,7 +2,7 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode, b32decode
 from time import time
 from random import randint
 from os import getpid
-from json import dumps as jdumps
+from json import dumps as jdumps, loads as jloads
 from zlib import compressobj, Z_FULL_FLUSH
 from io import BytesIO
 from magic import from_buffer
@@ -10,10 +10,12 @@ from hmac import new as hnew
 from struct import pack as spack, unpack as sunpack
 from re import compile as rcompile
 from asyncio import get_event_loop, sleep as asleep
+from typing import Union
+from aiomysql import escape_string
 
 global _INCREMENT_ID
 
-def b64decode(data):
+def b64decode(data: Union[str, bytes]) -> bytes:
     if isinstance(data, str):
         data = data.encode("utf8")
     data += b'=' * (-len(data) % 4)
@@ -21,7 +23,7 @@ def b64decode(data):
         data = data.replace(search, replace)
     return _b64decode(data)
 
-def b64encode(data):
+def b64encode(data: Union[str, bytes]) -> str:
     if isinstance(data, str):
         data = data.encode("utf8")
     data = _b64encode(data).decode("utf8")
@@ -151,6 +153,8 @@ ERRORS = {
     17: jdumps({"code": 60011, "message": "Invalid key"}),
     18: jdumps({"code": 10003, "message": "Unknown Channel"}),
     19: jdumps({"code": 50006, "message": "Cannot send an empty message"}),
+    20: jdumps({"code": 10008, "message": "Unknown Message"}),
+    21: jdumps({"code": 50003, "message": "Cannot execute action on a DM channel"}),
 }
 
 ECODES = {
@@ -173,6 +177,8 @@ ECODES = {
     17: 400,
     18: 404,
     19: 400,
+    20: 404,
+    21: 403,
 }
 
 def getImage(image):
@@ -246,8 +252,40 @@ class MFA:
     def valid(self) -> bool:
         return bool(self._re.match(self.key))
 
+class _Null:
+    pass
+
+Null = _Null()
+
 async def execute_after(coro, seconds):
     async def _wait_exec(coro, seconds):
         await asleep(seconds)
         await coro
     get_event_loop().create_task(_wait_exec(coro, seconds))
+
+def json_to_sql(json: dict) -> str:
+    query = []
+    for k,v in json:
+        if isinstance(v, str):
+            v = f"\"{escape_string(v)}\""
+        elif isinstance(v, bool):
+            v = "true" if v else "false"
+        elif isinstance(v, (dict, list)):
+            k = f"j_{k}"
+            v = escape_string(jdumps(v))
+            v = f"\"{v}\""
+        elif isinstance(v, NoneType):
+            v = "null"
+        query.append(f"`{k}`={v}")
+    return ", ".join(query)
+
+def result_to_json(desc: list, result: list):
+    j = {}
+    for idx, value in enumerate(result):
+        name = desc[idx][0]
+        if name.startswith("j_"):
+            name = name[2:]
+            if value:
+                value = jloads(value)
+        j[name] = value
+    return j
