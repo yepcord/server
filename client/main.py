@@ -6,6 +6,18 @@ from aiofiles import open as aopen
 STATIC_FOLDER = join(dirname(realpath(__file__)), "assets/")
 HTML_FILE = join(dirname(realpath(__file__)), "discord.html")
 
+CONFIG = {
+    "CLIENT_HOST": "127.0.0.1:8080",
+    "API_HOST": "127.0.0.1:8000",
+    "GATEWAY_HOST": "127.0.0.1:8001",
+    "REMOTEAUTH_HOST": "127.0.0.1:8002",
+    "CDN_HOST": "127.0.0.1:8003",
+    "MEDIAPROXY_HOST": "127.0.0.1:8004",
+    "NETWORKING_HOST": "127.0.0.1:8005",
+    "RTCLATENCY_HOST": "127.0.0.1:8006",
+    "ACTIVITYAPPLICATION_HOST": "127.0.0.1:8007",
+}
+
 async def downloadAsset(file):
     if file.endswith(".js.map"):
         return
@@ -17,6 +29,9 @@ async def downloadAsset(file):
 
 with open(HTML_FILE, "r", encoding="utf8") as f:
     HTML_DATA = f.read()
+
+for k,v in CONFIG.items():
+    HTML_DATA = HTML_DATA.replace("{%s}" % k, v)
 
 app = Quart(
     "YEPCord",

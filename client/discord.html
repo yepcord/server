@@ -9,28 +9,27 @@
 
     <script>
       window.GLOBAL_ENV = {
-        API_ENDPOINT: '//127.0.0.1:8000/api',
+        API_ENDPOINT: '//{API_HOST}/api',
         API_VERSION: 9,
-        GATEWAY_ENDPOINT: 'wss://127.0.0.1:8001',
-        WEBAPP_ENDPOINT: '//127.0.0.1:8080',
-        CDN_HOST: '127.0.0.1:8003',
-        //CDN_HOST: '127.0.0.1:8003',
-        ASSET_ENDPOINT: '//127.0.0.1:8080',
-        MEDIA_PROXY_ENDPOINT: '//media.discordapp.net',
-        WIDGET_ENDPOINT: '//127.0.0.1:8080/widget',
-        INVITE_HOST: '127.0.0.1:8080',
-        GUILD_TEMPLATE_HOST: '127.0.0.1:8080',
-        GIFT_CODE_HOST: '127.0.0.1:8080',
+        GATEWAY_ENDPOINT: 'wss://{GATEWAY_HOST}',
+        WEBAPP_ENDPOINT: '//{CLIENT_HOST}',
+        CDN_HOST: '{CDN_HOST}',
+        ASSET_ENDPOINT: '//{CLIENT_HOST}',
+        MEDIA_PROXY_ENDPOINT: '//{MEDIAPROXY_HOST}',
+        WIDGET_ENDPOINT: '//{CLIENT_HOST}/widget',
+        INVITE_HOST: '{CLIENT_HOST}',
+        GUILD_TEMPLATE_HOST: '{CLIENT_HOST}',
+        GIFT_CODE_HOST: '{CLIENT_HOST}',
         RELEASE_CHANNEL: 'stable',
-        MARKETING_ENDPOINT: '//127.0.0.1:8080.com',
-        NETWORKING_ENDPOINT: '//127.0.0.1:8005',
-        RTC_LATENCY_ENDPOINT: '//127.0.0.1:8006/rtc',
-        ACTIVITY_APPLICATION_HOST: '127.0.0.1:8007',
+        MARKETING_ENDPOINT: '//{CLIENT_HOST}',
+        NETWORKING_ENDPOINT: '//{NETWORKING_HOST}',
+        RTC_LATENCY_ENDPOINT: '//{RTCLATENCY_HOST}/rtc',
+        ACTIVITY_APPLICATION_HOST: '{ACTIVITYAPPLICATION_HOST}',
         PROJECT_ENV: 'production',
-        REMOTE_AUTH_ENDPOINT: '//127.0.0.1:8002',
+        REMOTE_AUTH_ENDPOINT: '//{REMOTEAUTH_HOST}',
         SENTRY_TAGS: {"buildId": "8e7d8092492aee7bc5fa65796306e462a9f333a5", "buildType": "normal"},
-        MIGRATION_SOURCE_ORIGIN: 'https://127.0.0.1:8080',
-        MIGRATION_DESTINATION_ORIGIN: 'https://127.0.0.1:8080',
+        MIGRATION_SOURCE_ORIGIN: 'https://{CLIENT_HOST}',
+        MIGRATION_DESTINATION_ORIGIN: 'https://{CLIENT_HOST}',
         HTML_TIMESTAMP: Date.now()
       };
     </script>
@@ -45,7 +44,7 @@
                 return null
               }
             }("token") && !window.__OVERLAY__) {
-            var n = null != window.DiscordNative || null != window.require ? "etf" : "json";
+            var n = (null != window.DiscordNative || null != window.require) ? "etf" : "json";
             var e = window.GLOBAL_ENV.GATEWAY_ENDPOINT + "/?encoding=" + n + "&v=" + window.GLOBAL_ENV.API_VERSION + "&compress=zlib-stream";
             console.log("[FAST CONNECT] Connecting to: " + e);
             var ws = new WebSocket(e);
@@ -64,48 +63,48 @@
       }();
     </script>
 
-    <link rel="prefetch" as="script" href="/assets/771dcd97bfd5f9b77ef6.js"></link>
-    <link rel="prefetch" as="script" href="/assets/b4499d2a6b9046b1b402.js"></link>
-    <link rel="prefetch" as="script" href="/assets/4b58fa778cc38e586a72.js"></link>
-    <link rel="prefetch" as="script" href="/assets/cc8f15f64e6aa626796f.js"></link>
-    <link rel="prefetch" as="script" href="/assets/38c96749096ac4dbb7f0.js"></link>
-    <link rel="prefetch" as="script" href="/assets/a20c46bd659294422d41.js"></link>
-    <link rel="prefetch" as="script" href="/assets/89c07f6464c4df65e564.js"></link>
-    <link rel="prefetch" as="script" href="/assets/dc27e9f8c501ecdfe290.js"></link>
-    <link rel="prefetch" as="script" href="/assets/e562e8d483d8ed775251.js"></link>
-    <link rel="prefetch" as="script" href="/assets/deed4f29c12377445043.js"></link>
-    <link rel="prefetch" as="script" href="/assets/9d53675b8235734abe16.js"></link>
-    <link rel="prefetch" as="script" href="/assets/c98ca80300be9bc3f3f9.js"></link>
-    <link rel="prefetch" as="script" href="/assets/bce9a1647959f7c50aa5.js"></link>
-    <link rel="prefetch" as="script" href="/assets/9d8234c303a58363c5e5.js"></link>
-    <link rel="prefetch" as="script" href="/assets/715fcbbeb3298e1c35dd.js"></link>
-    <link rel="prefetch" as="script" href="/assets/7abeba57ac13430901d3.js"></link>
-    <link rel="prefetch" as="script" href="/assets/57cd585992f3b7461a3c.js"></link>
-    <link rel="prefetch" as="script" href="/assets/d430816bb906e02520cd.js"></link>
-    <link rel="prefetch" as="script" href="/assets/db6ac5d7bb3cf1f19afd.js"></link>
-    <link rel="prefetch" as="script" href="/assets/0628c418c30f1934eceb.js"></link>
-    <link rel="prefetch" as="script" href="/assets/d198a019616b6a139df0.js"></link>
-    <link rel="prefetch" as="script" href="/assets/904f83ac1a65f7baa376.js"></link>
-    <link rel="prefetch" as="script" href="/assets/5a4faeb51d12de22b469.js"></link>
-    <link rel="prefetch" as="script" href="/assets/508ebf8fd09e4d7dfc8d.js"></link>
-    <link rel="prefetch" as="script" href="/assets/bc7a293897da27a3d333.js"></link>
-    <link rel="prefetch" as="script" href="/assets/98ace94cfa9f17fcf2d9.js"></link>
-    <link rel="prefetch" as="script" href="/assets/2f3df31e4d3c20ac9801.js"></link>
-    <link rel="prefetch" as="script" href="/assets/56e84e6594169001fc88.js"></link>
-    <link rel="prefetch" as="script" href="/assets/f23e0876952bef79f0f1.js"></link>
-    <link rel="prefetch" as="script" href="/assets/2bbcc08cac2c9a5c33f2.js"></link>
-    <link rel="prefetch" as="script" href="/assets/553a01001e21a6cd1c7c.js"></link>
-    <link rel="prefetch" as="script" href="/assets/a6bbf04cc9f7dae4df02.js"></link>
-    <link rel="prefetch" as="script" href="/assets/152c589f6521fb4ad8a2.js"></link>
-    <link rel="prefetch" as="script" href="/assets/e3f3f87e95765da62f43.js"></link>
-    <link rel="prefetch" as="script" href="/assets/9ad6610fbedc218dde60.js"></link>
-    <link rel="prefetch" as="script" href="/assets/cf96fb2220c6c256e486.js"></link>
-    <link rel="prefetch" as="script" href="/assets/f7586181b1b31250ac79.js"></link>
-    <link rel="prefetch" as="script" href="/assets/968bcd0442ba9bfd211a.js"></link>
-    <link rel="prefetch" as="script" href="/assets/29f4b275feaf7c998457.js"></link>
-    <link rel="prefetch" as="script" href="/assets/3c80724ff0e1cf799a0d.js"></link>
-    <link rel="prefetch" as="script" href="/assets/3200ede2ca29ab9ca9ab.js"></link>
-    <link rel="prefetch" as="script" href="/assets/f6c88b8e955068d6d971.js"></link>
+    <link rel="prefetch" as="script" href="/assets/771dcd97bfd5f9b77ef6.js"/>
+    <link rel="prefetch" as="script" href="/assets/b4499d2a6b9046b1b402.js"/>
+    <link rel="prefetch" as="script" href="/assets/4b58fa778cc38e586a72.js"/>
+    <link rel="prefetch" as="script" href="/assets/cc8f15f64e6aa626796f.js"/>
+    <link rel="prefetch" as="script" href="/assets/38c96749096ac4dbb7f0.js"/>
+    <link rel="prefetch" as="script" href="/assets/a20c46bd659294422d41.js"/>
+    <link rel="prefetch" as="script" href="/assets/89c07f6464c4df65e564.js"/>
+    <link rel="prefetch" as="script" href="/assets/dc27e9f8c501ecdfe290.js"/>
+    <link rel="prefetch" as="script" href="/assets/e562e8d483d8ed775251.js"/>
+    <link rel="prefetch" as="script" href="/assets/deed4f29c12377445043.js"/>
+    <link rel="prefetch" as="script" href="/assets/9d53675b8235734abe16.js"/>
+    <link rel="prefetch" as="script" href="/assets/c98ca80300be9bc3f3f9.js"/>
+    <link rel="prefetch" as="script" href="/assets/bce9a1647959f7c50aa5.js"/>
+    <link rel="prefetch" as="script" href="/assets/9d8234c303a58363c5e5.js"/>
+    <link rel="prefetch" as="script" href="/assets/715fcbbeb3298e1c35dd.js"/>
+    <link rel="prefetch" as="script" href="/assets/7abeba57ac13430901d3.js"/>
+    <link rel="prefetch" as="script" href="/assets/57cd585992f3b7461a3c.js"/>
+    <link rel="prefetch" as="script" href="/assets/d430816bb906e02520cd.js"/>
+    <link rel="prefetch" as="script" href="/assets/db6ac5d7bb3cf1f19afd.js"/>
+    <link rel="prefetch" as="script" href="/assets/0628c418c30f1934eceb.js"/>
+    <link rel="prefetch" as="script" href="/assets/d198a019616b6a139df0.js"/>
+    <link rel="prefetch" as="script" href="/assets/904f83ac1a65f7baa376.js"/>
+    <link rel="prefetch" as="script" href="/assets/5a4faeb51d12de22b469.js"/>
+    <link rel="prefetch" as="script" href="/assets/508ebf8fd09e4d7dfc8d.js"/>
+    <link rel="prefetch" as="script" href="/assets/bc7a293897da27a3d333.js"/>
+    <link rel="prefetch" as="script" href="/assets/98ace94cfa9f17fcf2d9.js"/>
+    <link rel="prefetch" as="script" href="/assets/2f3df31e4d3c20ac9801.js"/>
+    <link rel="prefetch" as="script" href="/assets/56e84e6594169001fc88.js"/>
+    <link rel="prefetch" as="script" href="/assets/f23e0876952bef79f0f1.js"/>
+    <link rel="prefetch" as="script" href="/assets/2bbcc08cac2c9a5c33f2.js"/>
+    <link rel="prefetch" as="script" href="/assets/553a01001e21a6cd1c7c.js"/>
+    <link rel="prefetch" as="script" href="/assets/a6bbf04cc9f7dae4df02.js"/>
+    <link rel="prefetch" as="script" href="/assets/152c589f6521fb4ad8a2.js"/>
+    <link rel="prefetch" as="script" href="/assets/e3f3f87e95765da62f43.js"/>
+    <link rel="prefetch" as="script" href="/assets/9ad6610fbedc218dde60.js"/>
+    <link rel="prefetch" as="script" href="/assets/cf96fb2220c6c256e486.js"/>
+    <link rel="prefetch" as="script" href="/assets/f7586181b1b31250ac79.js"/>
+    <link rel="prefetch" as="script" href="/assets/968bcd0442ba9bfd211a.js"/>
+    <link rel="prefetch" as="script" href="/assets/29f4b275feaf7c998457.js"/>
+    <link rel="prefetch" as="script" href="/assets/3c80724ff0e1cf799a0d.js"/>
+    <link rel="prefetch" as="script" href="/assets/3200ede2ca29ab9ca9ab.js"/>
+    <link rel="prefetch" as="script" href="/assets/f6c88b8e955068d6d971.js"/>
     <link rel="stylesheet" href="/assets/40532.c4171775c92b93f54b2e.css"/>
     <link rel="icon" href="/assets/ec2c34cadd4b5f4594415127380a85e6.ico"/>
 
