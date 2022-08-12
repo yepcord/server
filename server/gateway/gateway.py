@@ -1,6 +1,6 @@
 from .events import *
 from ..msg_client import Client
-from ..utils import unpack_token, snowflake_timestamp, GATEWAY_OP
+from ..utils import snowflake_timestamp, GATEWAY_OP
 from ..core import Core
 from ..classes import UserId, Session
 from os import urandom

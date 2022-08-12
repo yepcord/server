@@ -96,16 +96,25 @@ DROP TABLE IF EXISTS `channels`;
 CREATE TABLE `channels` (
   `id` bigint not null,
   `type` int not null,
-  UNIQUE KEY `id` (`id`) USING HASH
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
-DROP TABLE IF EXISTS `dm_channels`;
-CREATE TABLE `dm_channels` (
-  `id` bigint not null,
-  `j_recipients` JSON not null default "[]",
+  `guild_id` bigint default null,
+  `position` int default null,
+  `j_permission_overwrites` JSON default null,
   `name` text default null,
+  `topic` text default null,
+  `nsfw` bool default null,
+  `bitrate` int default null,
+  `user_limit` int default null,
+  `rate_limit` int default null,
+  `j_recipients` JSON default null,
   `icon` text default null,
   `owner_id` bigint default null,
+  `application_id` bigint default null,
+  `parent_id` bigint default null,
+  `rtc_region` text default null,
+  `video_quality_mode` int default null,
+  `j_thread_metadata` JSON default null,
+  `default_auto_archive` int default null,
+  `flags` int default null,
   UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 

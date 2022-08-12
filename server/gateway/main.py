@@ -1,6 +1,8 @@
 from quart import Quart, websocket
+from ..database import MySqlDatabase
+from ..classes import ZlibCompressor
 from ..core import Core
-from ..utils import b64decode, Compressor
+from ..utils import b64decode
 from os import environ
 from json import loads as jloads
 from asyncio import CancelledError
@@ -18,7 +20,7 @@ class YEPcord(Quart):
         return response
 
 app = YEPcord("YEPcord-Gateway")
-core = Core(b64decode(environ.get("KEY")))
+core = Core(MySqlDatabase(), b64decode(environ.get("KEY")))
 gw = Gateway(core)
 
 @app.before_serving
@@ -36,7 +38,7 @@ async def before_serving():
 @app.websocket("/")
 async def ws_gateway():
     ws = websocket._get_current_object()
-    setattr(ws, "zlib", Compressor() if websocket.args.get("compress") == "zlib-stream" else None)
+    setattr(ws, "zlib", ZlibCompressor() if websocket.args.get("compress") == "zlib-stream" else None)
     setattr(ws, "ws_connected", True)
     await gw.sendHello(ws)
     while True:

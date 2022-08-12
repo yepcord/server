@@ -3,15 +3,14 @@ from time import time
 from random import randint
 from os import getpid
 from json import dumps as jdumps, loads as jloads
-from zlib import compressobj, Z_FULL_FLUSH
 from io import BytesIO
 from magic import from_buffer
 from hmac import new as hnew
 from struct import pack as spack, unpack as sunpack
-from re import compile as rcompile
 from asyncio import get_event_loop, sleep as asleep
 from typing import Union
 from aiomysql import escape_string
+from re import compile as rcompile
 
 global _INCREMENT_ID
 
@@ -62,19 +61,6 @@ def c_json(json, code=200, headers={}):
     for k,v in headers.items():
         h[k] = v
     return json, code, h
-
-class Compressor:
-    def __init__(self):
-        self.cObj = compressobj()
-
-    def __call__(self, data):
-        return self.cObj.compress(data)+self.cObj.flush(Z_FULL_FLUSH)
-
-def unpack_token(token):
-    uid, sid, sig = token.split(".")
-    uid = int(b64decode(uid).decode("utf8"))
-    sid = int.from_bytes(b64decode(sid), "big")
-    return (uid, sid, sig)
 
 NoneType = type(None)
 
@@ -252,18 +238,13 @@ class MFA:
     def valid(self) -> bool:
         return bool(self._re.match(self.key))
 
-class _Null:
-    pass
-
-Null = _Null()
-
 async def execute_after(coro, seconds):
     async def _wait_exec(coro, seconds):
         await asleep(seconds)
         await coro
     get_event_loop().create_task(_wait_exec(coro, seconds))
 
-def json_to_sql(json: dict) -> str:
+def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
     query = []
     for k,v in json:
         if isinstance(v, str):
@@ -276,7 +257,12 @@ def json_to_sql(json: dict) -> str:
             v = f"\"{v}\""
         elif isinstance(v, NoneType):
             v = "null"
-        query.append(f"`{k}`={v}")
+        if as_tuples:
+            query.append((k,v))
+        else:
+            query.append(f"`{k}`={v}")
+    if as_list or as_tuples:
+        return query
     return ", ".join(query)
 
 def result_to_json(desc: list, result: list):
@@ -289,3 +275,5 @@ def result_to_json(desc: list, result: list):
                 value = jloads(value)
         j[name] = value
     return j
+
+ping_regex = rcompile(r'\<@((?:!|&){0,1}\d{17,32})\>')

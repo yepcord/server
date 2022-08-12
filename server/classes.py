@@ -1,8 +1,15 @@
 from datetime import datetime
-from .utils import b64encode, b64decode, ChannelType, snowflake_timestamp, Null
+from zlib import compressobj, Z_FULL_FLUSH
+from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json
+
+class _Null:
+    pass
+
+Null = _Null()
 
 class DBModel:
     FIELDS = ()
+    ID_FIELD = None
 
     def _checkNulls(self):
         args = list(self.__init__.__code__.co_varnames)
@@ -11,13 +18,20 @@ class DBModel:
             if getattr(self, arg) == Null:
                 delattr(self, arg)
 
-    def to_json(self):
+    def to_json(self, with_id=False, with_values=False):
         j = {}
+        f = list(self.FIELDS)
+        if with_id and self.ID_FIELD:
+            f.append(self.ID_FIELD)
         for k in self.FIELDS:
             if (v := getattr(self, k, Null)) == Null:
                 continue
             j[k] = v
         return j
+
+    @classmethod
+    def from_result(cls, desc, result):
+        return cls(**result_to_json(desc, result))
 
 class _User:
     def __init__(self):
@@ -50,13 +64,20 @@ class Session(_User, DBModel):
             return
         return cls(uid, sid, sig)
 
-class User(_User):
-    def __init__(self, uid, email=None, core=None):
-        self.id = uid
+class User(_User, DBModel):
+    FIELDS = ("email", "password", "key")
+    ID_FIELD = "id"
+
+    def __init__(self, id, email=Null, password=Null, key=Null, core=None):
+        self.id = id
         self.email = email
+        self.password = password
+        self.key = key
         self._core = core
         self._uSettings = None
         self._uData = None
+
+        self._checkNulls()
 
     @property
     def settings(self):
@@ -89,6 +110,7 @@ class UserSettings(DBModel):
                   "disable_games_tab", "developer_mode", "render_embeds", "animate_stickers", "message_display_compact",
                   "convert_emoticons", "passwordless", "mfa", "activity_restricted_guild_ids", "friend_source_flags",
                   "guild_positions", "guild_folders", "restricted_guilds", "personalization", "usage_statistics")
+    ID_FIELD = "uid"
 
     def __init__(self,
                  uid, inline_attachment_media=Null, show_current_game=Null, view_nsfw_guilds=Null,
@@ -143,17 +165,18 @@ class UserSettings(DBModel):
 
         self._checkNulls()
 
-    def to_json(self, mfa_key=False):
-        j = super().to_json()
-        if not mfa_key:
+    def to_json(self, with_id=False, with_values=False):
+        j = super().to_json(with_id=with_id, with_values=with_values)
+        if not with_values:
             return j
         if "mfa" in j:
             j["mfa"] = self.mfa_key
         return j
 
 class UserData(DBModel):
-    FIELDS = ("uid", "birth", "username", "discriminator", "phone", "premium", "accent_color", "avatar", "avatar_decoration",
+    FIELDS = ("birth", "username", "discriminator", "phone", "premium", "accent_color", "avatar", "avatar_decoration",
               "banner", "banner_color", "bio", "flags", "public_flags")
+    ID_FIELD = "uid"
 
     def __init__(self, uid, birth=Null, username=Null, discriminator=Null, phone=Null, accent_color=Null, premium=Null,
                  avatar=Null, avatar_decoration=Null, banner=Null, banner_color=Null, bio=Null, flags=Null, public_flags=Null):
@@ -182,12 +205,41 @@ class _Channel:
     def __eq__(self, other):
         return isinstance(other, _Channel) and self.id == other.id
 
-class DMChannel(_Channel):
-    def __init__(self, cid, recipients, core):
-        self.id = cid
-        self.type = ChannelType.DM
+class Channel(_Channel, DBModel):
+    FIELDS = ("guild_id", "position", "permission_overwrites", "name", "topic", "nsfw", "bitrate", "user_limit",
+              "rate_limit", "recipients", "icon", "owner_id", "application_id", "parent_id", "rtc_region",
+              "video_quality_mode", "thread_metadata", "default_auto_archive", "flags")
+    ID_FIELD = "id"
+
+    def __init__(self, id, type, core, guild_id=Null, position=Null, permission_overwrites=Null, name=Null, topic=Null,
+                 nsfw=Null, bitrate=Null, user_limit=Null, rate_limit=Null, recipients=Null, icon=Null, owner_id=Null,
+                 application_id=Null, parent_id=Null, rtc_region=Null, video_quality_mode=Null, thread_metadata=Null,
+                 default_auto_archive=Null, flags=Null, last_message_id=Null):
+        self.id = id
+        self.type = type
+        self.guild_id = guild_id
+        self.position = position
+        self.permission_overwrites = permission_overwrites
+        self.name = name
+        self.topic = topic
+        self.nsfw = nsfw
+        self.bitrate = bitrate
+        self.user_limit = user_limit
+        self.rate_limit = rate_limit
         self.recipients = recipients
+        self.icon = icon
+        self.owner_id = owner_id
+        self.application_id = application_id
+        self.parent_id = parent_id
+        self.rtc_region = rtc_region
+        self.video_quality_mode = video_quality_mode
+        self.thread_metadata = thread_metadata
+        self.default_auto_archive = default_auto_archive
+        self.flags = flags
+        self.last_message_id = last_message_id
         self._core = core
+
+        self._checkNulls()
 
     @property
     def info(self):
@@ -199,32 +251,37 @@ class DMChannel(_Channel):
             limit = 100
         return await self._core.getChannelMessages(self, limit)
 
-    async def _info(self):
-        return await self._core.getChannelInfo(self)
-
 class _Message:
     def __eq__(self, other):
         return isinstance(other, _Message) and self.id == other.id
 
-class Message(_Message):
-    def __init__(self, mid, content, channel_id, author, edit=None, attachments=[], embeds=[], reactions=[], pinned=False, webhook=None, application=None, mtype=0, flags=0, reference=None, thread=None, components=[], core=None):
-        self.id = mid
+class Message(_Message, DBModel):
+    FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "reactions", "pinned",
+              "webhook", "application", "type", "flags", "reference", "thread", "components", "core")
+    ID_FIELD = "id"
+
+    def __init__(self, id, channel_id, author, core, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
+                 reactions=Null, pinned=Null, webhook_id=Null, application_id=Null, type=Null, flags=Null,
+                 message_reference=Null, thread=Null, components=Null):
+        self.id = id
         self.content = content
         self.channel_id = channel_id
         self.author = author
-        self.edit = edit
+        self.edit_timestamp = edit_timestamp
         self.attachments = attachments
         self.embeds = embeds
         self.reactions = reactions
         self.pinned = pinned
-        self.webhook = webhook
-        self.application = application
-        self.type = mtype
+        self.webhook = webhook_id
+        self.application = application_id
+        self.type = type
         self.flags = flags
-        self.reference = reference
+        self.reference = message_reference
         self.thread = thread
         self.components = components
         self._core = core
+
+        self._checkNulls()
 
     @property
     def json(self):
@@ -232,8 +289,27 @@ class Message(_Message):
 
     async def _json(self):
         author = await self._core.getUserData(UserId(self.author))
-        d = datetime.utcfromtimestamp(int(snowflake_timestamp(self.id) / 1000)).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
-        e = datetime.utcfromtimestamp(int(snowflake_timestamp(self.edit) / 1000)).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00") if self.edit else None
+        timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.id) / 1000))
+        timestamp = timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        edit_timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.edit_timestamp) / 1000))
+        edit_timestamp = edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00") if self.edit_timestamp else None
+        mentions = []
+        role_mentions = []
+        for m in ping_regex.findall(self.content):
+            if m.startswith("!"):
+                m = m[1:]
+            if m.startswith("&"):
+                role_mentions.append(m[1:])
+            if (mem := await self._core.getUserByChannel(self.channel_id, int(m))):
+                mentions.append({
+                    "id": m,
+                    "username": mem.username,
+                    "avatar": mem.avatar,
+                    "avatar_decoration": mem.avatar_decoration,
+                    "discriminator": str(mem.discriminator).rjust(4, "0"),
+                    "public_flags": mem.public_flags
+                })
+
         return {
             "id": str(self.id),
             "type": self.type,
@@ -249,13 +325,30 @@ class Message(_Message):
             },
             "attachments": self.attachments, # TODO: parse attachments
             "embeds": self.embeds, # TODO: parse embeds
-            "mentions": [], # TODO: parse mentions
-            "mention_roles": [], # TODO: parse mention_roles
+            "mentions": mentions,
+            "mention_roles": role_mentions,
             "pinned": self.pinned,
-            "mention_everyone": False, # TODO: parse mention_everyone
+            "mention_everyone": "@everyone" in self.content or "@here" in self.content,
             "tts": False,
-            "timestamp": d,
-            "edited_timestamp": e,
+            "timestamp": timestamp,
+            "edited_timestamp": edit_timestamp,
             "flags": self.flags,
             "components": self.components, # TODO: parse components
         }
+
+class ZlibCompressor:
+    def __init__(self):
+        self.cObj = compressobj()
+
+    def __call__(self, data):
+        return self.cObj.compress(data)+self.cObj.flush(Z_FULL_FLUSH)
+
+class Relationship(DBModel):
+    FIELDS = ("u1", "u2", "type")
+
+    def __init__(self, u1=Null, u2=Null, type=Null):
+        self.u1 = u1
+        self.u2 = u2
+        self.type = type
+
+        self._checkNulls()

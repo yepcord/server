@@ -1,15 +1,15 @@
 from quart import Quart, request
 from functools import wraps
-
-from ..classes import Session, UserSettings, Null, UserData
+from ..classes import Session, UserSettings, UserData
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, \
-    validImage, unpack_token, MFA, execute_after, ChannelType
+    validImage, MFA, execute_after, ChannelType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
 from ..storage import FileStorage
 from os import environ
 from json import dumps as jdumps
 from random import choice
+from ..database import MySqlDatabase
 
 class YEPcord(Quart):
     async def process_response(self, response, request_context):
@@ -23,7 +23,7 @@ class YEPcord(Quart):
         return response
 
 app = YEPcord("YEPcord-api")
-core = Core(b64decode(environ.get("KEY")))
+core = Core(MySqlDatabase(), b64decode(environ.get("KEY")))
 cdn = CDN(FileStorage(), core)
 
 def NOT_IMP():
@@ -346,7 +346,7 @@ async def api_users_me_mfa_totp_disable(session):
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
             return c_json(ERRORS[13], ECODES[13])
-    await core.setSettings(UserSettings(session.id, mfa=Null))
+    await core.setSettings(UserSettings(session.id, mfa=None))
     await core.clearBackupCodes(session)
     await core.sendUserUpdateEvent(session.id)
     await core.logoutUser(session)
