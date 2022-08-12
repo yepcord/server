@@ -1,5 +1,4 @@
 from quart import Quart, websocket
-from ..database import MySqlDatabase
 from ..classes import ZlibCompressor
 from ..core import Core
 from ..utils import b64decode
@@ -20,7 +19,7 @@ class YEPcord(Quart):
         return response
 
 app = YEPcord("YEPcord-Gateway")
-core = Core(MySqlDatabase(), b64decode(environ.get("KEY")))
+core = Core(b64decode(environ.get("KEY")))
 gw = Gateway(core)
 
 @app.before_serving

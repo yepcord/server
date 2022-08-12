@@ -9,7 +9,6 @@ from ..storage import FileStorage
 from os import environ
 from json import dumps as jdumps
 from random import choice
-from ..database import MySqlDatabase
 
 class YEPcord(Quart):
     async def process_response(self, response, request_context):
@@ -23,7 +22,7 @@ class YEPcord(Quart):
         return response
 
 app = YEPcord("YEPcord-api")
-core = Core(MySqlDatabase(), b64decode(environ.get("KEY")))
+core = Core(b64decode(environ.get("KEY")))
 cdn = CDN(FileStorage(), core)
 
 def NOT_IMP():

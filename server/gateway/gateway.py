@@ -193,6 +193,7 @@ class Gateway:
 
     async def _generateReadyPayload(self, client):
         user = await self.core.getUser(client.id)
+        print(user)
         userdata = await user.data
         settings = await user.settings
         s = snowflake_timestamp(user.id)

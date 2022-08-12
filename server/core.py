@@ -5,9 +5,8 @@ from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
-from .utils import b64encode, b64decode, unpack_token, RELATIONSHIP, MFA, NoneType, ChannelType, mksf, execute_after, \
-    json_to_sql, result_to_json
-from .classes import Session, User, DMChannel, UserId, Message, _User, UserSettings, UserData
+from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json
+from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData
 from .storage import _Storage
 from json import loads as jloads, dumps as jdumps
 from random import randint
@@ -131,7 +130,7 @@ class Core:
     async def getUser(self, uid: int, cur: Cursor) -> Optional[User]:
         await cur.execute(f'SELECT `email` FROM `users` WHERE `id`={uid};')
         if (r := await cur.fetchone()):
-            return User(uid, r[0], self)
+            return User(uid, r[0], self).setCore(self)
 
     async def getUserFromSession(self, session: Session) -> Optional[User]:
         if not await self.validSession(session):
@@ -203,7 +202,7 @@ class Core:
     async def getUserByUsername(self, username: str, discriminator: str, cur: Cursor) -> Optional[User]:
         await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discriminator} AND `username`="{username}";')
         if (r := await cur.fetchone()):
-            return User(r[0], core=self)
+            return User(r[0], core=self).setCore(self)
 
     @_usingDB
     async def relationShipAvailable(self, tUser: User, cUser: User, cur: Cursor) -> Optional[int]:
@@ -267,7 +266,7 @@ class Core:
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             })
-        await cur.execute(f'SELECT `j_recipients` FROM `dm_channels` WHERE JSON_CONTAINS(j_recipients, {user.id}, "$");')
+        await cur.execute(f'SELECT `j_recipients` FROM `channels` WHERE JSON_CONTAINS(j_recipients, {user.id}, "$");')
         for r in await cur.fetchall():
             uids = jloads(r[0])
             uids.remove(user.id)
@@ -324,7 +323,7 @@ class Core:
         await cur.execute(f'DELETE FROM `sessions` WHERE `uid`={sess.uid} AND `sid`={sess.sid} AND `sig`="{sess.sig}" LIMIT 1;')
 
     def _sessionToUser(self, session: Session):
-        return User(session.id, core=self)
+        return User(session.id, core=self).setCore(self)
 
     async def getMfa(self, user: Union[User, Session]) -> Optional[MFA]:
         if type(user) == Session:
@@ -378,7 +377,7 @@ class Core:
 
     @_usingDB
     async def useMfaCode(self, uid: int, code: str, cur: Cursor) -> bool:
-        codes = dict(await self.getBackupCodes(User(uid), cur=cur))
+        codes = dict(await self.getBackupCodes(UserId(uid), cur=cur))
         if code not in codes:
             return False
         if codes[code]:
@@ -390,59 +389,54 @@ class Core:
         await self.mcl.broadcast("user_events", {"e": "user_update", "data": {"user": uid}})
 
     @_usingDB
-    async def getChannel(self, channel_id: int, cur: Cursor):
-        await cur.execute(f'SELECT `type` FROM `channels` WHERE `id`={channel_id};')
+    async def getChannel(self, channel_id: int, cur: Cursor) -> Optional[Channel]:
+        await cur.execute(f'SELECT * FROM `channels` WHERE `id`={channel_id};')
         if not (r := await cur.fetchone()):
             return
-        if r[0] in [ChannelType.DM, ChannelType.GROUP_DM]:
-            await cur.execute(f'SELECT `j_recipients` FROM `dm_channels` WHERE `id`={channel_id};')
-            r = await cur.fetchone()
-            r = jloads(r[0])
-            return DMChannel(channel_id, r, self)
+        return await self.getLastMessageId(Channel(**result_to_json(cur.description, r)).setCore(self), cur=cur)
 
     @_usingDB
-    async def getDMChannelOrCreate(self, u1: int, u2: int, cur: Cursor) -> DMChannel:
-        await cur.execute(f'SELECT `id` FROM `dm_channels` WHERE JSON_CONTAINS(j_recipients, {u1}, "$") AND JSON_CONTAINS(j_recipients, {u2}, "$");')
+    async def getDMChannelOrCreate(self, u1: int, u2: int, cur: Cursor) -> Channel:
+        await cur.execute(f'SELECT `id` FROM `channels` WHERE JSON_CONTAINS(j_recipients, {u1}, "$") AND JSON_CONTAINS(j_recipients, {u2}, "$");')
         if not (r := await cur.fetchone()):
-            return await self.createDMChannel(u1, u2, cur=cur)
-        return DMChannel(r[0], [u1, u2], self)
+            return await self.createDMChannel([u1, u2], cur=cur)
+        return await self.getLastMessageId(Channel(id=r[0], type=ChannelType.DM, recipients=[u1, u2]).setCore(self), cur=cur)
 
     @_usingDB
-    async def createDMChannel(self, u1: int, u2: int, cur: Cursor) -> DMChannel:
-        cid = mksf()
-        recipients = jdumps([u1, u2])
-        await cur.execute(f'INSERT INTO `dm_channels` (`id`, `j_recipients`) VALUES ({cid}, "{recipients}");')
-        await cur.execute(f'INSERT INTO `channels` (`id`, `type`) VALUES ({cid}, "{ChannelType.DM}");')
-        return DMChannel(cid, recipients, self)
-
-    @_usingDB
-    async def getChannelInfo(self, channel, cur: Cursor):
+    async def getLastMessageId(self, channel: Channel, cur: Cursor) -> Channel:
         await cur.execute(f'SELECT `id` FROM `messages` WHERE `channel_id`={channel.id} ORDER BY `id` DESC LIMIT 1;')
-        if not (r := await cur.fetchone()):
-            return {"last_message_id": None}
-        return {"last_message_id": r[0]}
+        l = None
+        if (r := await cur.fetchone()):
+            l = r[0]
+        return channel.set(last_message_id=l)
 
     @_usingDB
-    async def getPrivateChannels(self, user, cur: Cursor):
+    async def createDMChannel(self, recipients: list, cur: Cursor) -> Channel:
+        cid = mksf()
+        await cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`) VALUES ({cid}, {ChannelType.DM}, "{recipients}");')
+        return Channel(cid, ChannelType.DM, recipients=recipients).setCore(self).set(last_message_id=None)
+
+    @_usingDB
+    async def getPrivateChannels(self, user, cur: Cursor) -> list:
         channels = []
-        await cur.execute(f'SELECT dm_channels.*, channels.type FROM dm_channels INNER JOIN channels ON dm_channels.id = channels.id WHERE JSON_CONTAINS(dm_channels.j_recipients, {user.id}, "$");')
+        await cur.execute(f'SELECT * FROM channels WHERE JSON_CONTAINS(channels.j_recipients, {user.id}, "$");')
         for r in await cur.fetchall():
-            ids = jloads(r[1])
+            ch = await self.getLastMessageId(Channel(**result_to_json(cur.description, r)).setCore(self), cur=cur)
+            ids = ch.recipients.copy()
             ids.remove(user.id)
             ids = [str(i) for i in ids]
-            info = await self.getChannelInfo(DMChannel(r[0], ids, self), cur=cur)
             if r[5] == ChannelType.DM:
                 channels.append({
                     "type": r[5],
                     "recipient_ids": ids,
-                    "last_message_id": info["last_message_id"],
+                    "last_message_id": ch.last_message_id,
                     "id": str(r[0])
                 })
             elif r[5] == ChannelType.GROUP_DM:
                 channels.append({
                     "type": r[5],
                     "recipient_ids": ids,
-                    "last_message_id": info["last_message_id"],
+                    "last_message_id": ch.last_message_id,
                     "id": str(r[0]),
                     "owner_id": str(r[4]),
                     "name": r[2],

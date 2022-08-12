@@ -10,9 +10,10 @@ Null = _Null()
 class DBModel:
     FIELDS = ()
     ID_FIELD = None
+    NOT_DB_FIELDS = ()
 
     def _checkNulls(self):
-        args = list(self.__init__.__code__.co_varnames)
+        args = list(self.__init__.__code__.co_varnames) # TODO: replace with self.FIELDS
         args.remove("self")
         for arg in args:
             if getattr(self, arg) == Null:
@@ -32,6 +33,17 @@ class DBModel:
     @classmethod
     def from_result(cls, desc, result):
         return cls(**result_to_json(desc, result))
+
+    def setCore(self, core):
+        self._core = core
+        return self
+
+    def set(self, **kwargs):
+        for k,v in kwargs.items():
+            if k not in list(self.FIELDS) + list(self.NOT_DB_FIELDS):
+                continue
+            setattr(self, k, v)
+        return self
 
 class _User:
     def __init__(self):
@@ -68,12 +80,12 @@ class User(_User, DBModel):
     FIELDS = ("email", "password", "key")
     ID_FIELD = "id"
 
-    def __init__(self, id, email=Null, password=Null, key=Null, core=None):
+    def __init__(self, id, email=Null, password=Null, key=Null):
         self.id = id
         self.email = email
         self.password = password
         self.key = key
-        self._core = core
+        self._core = None
         self._uSettings = None
         self._uData = None
 
@@ -210,11 +222,12 @@ class Channel(_Channel, DBModel):
               "rate_limit", "recipients", "icon", "owner_id", "application_id", "parent_id", "rtc_region",
               "video_quality_mode", "thread_metadata", "default_auto_archive", "flags")
     ID_FIELD = "id"
+    NOT_DB_FIELDS = ("last_message_id",)
 
-    def __init__(self, id, type, core, guild_id=Null, position=Null, permission_overwrites=Null, name=Null, topic=Null,
+    def __init__(self, id, type, guild_id=Null, position=Null, permission_overwrites=Null, name=Null, topic=Null,
                  nsfw=Null, bitrate=Null, user_limit=Null, rate_limit=Null, recipients=Null, icon=Null, owner_id=Null,
                  application_id=Null, parent_id=Null, rtc_region=Null, video_quality_mode=Null, thread_metadata=Null,
-                 default_auto_archive=Null, flags=Null, last_message_id=Null):
+                 default_auto_archive=Null, flags=Null, last_message_id=None):
         self.id = id
         self.type = type
         self.guild_id = guild_id
@@ -237,13 +250,9 @@ class Channel(_Channel, DBModel):
         self.default_auto_archive = default_auto_archive
         self.flags = flags
         self.last_message_id = last_message_id
-        self._core = core
+        self._core = None
 
         self._checkNulls()
-
-    @property
-    def info(self):
-        return self._info()
 
     async def messages(self, limit=50, before=None, after=None):
         limit = int(limit)
@@ -260,7 +269,7 @@ class Message(_Message, DBModel):
               "webhook", "application", "type", "flags", "reference", "thread", "components", "core")
     ID_FIELD = "id"
 
-    def __init__(self, id, channel_id, author, core, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
+    def __init__(self, id, channel_id, author, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
                  reactions=Null, pinned=Null, webhook_id=Null, application_id=Null, type=Null, flags=Null,
                  message_reference=Null, thread=Null, components=Null):
         self.id = id
@@ -279,7 +288,7 @@ class Message(_Message, DBModel):
         self.reference = message_reference
         self.thread = thread
         self.components = components
-        self._core = core
+        self._core = None
 
         self._checkNulls()
 
