@@ -1,6 +1,8 @@
+from time import time
+
 from quart import Quart, request
 from functools import wraps
-from ..classes import Session, UserSettings, UserData
+from ..classes import Session, UserSettings, UserData, Message
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, \
     validImage, MFA, execute_after, ChannelType
@@ -422,10 +424,9 @@ async def api_channels_channel_messages_post(user, channel):
     data = await request.get_json()
     if not (content := data.get("content")):
         return c_json(ERRORS[19], ECODES[19])
-    message = await core.sendMessage(channel, content=content, nonce=data.get("nonce"), author=user)
+    message = Message(id=mksf(), content=content, channel_id=channel.id, author=user.id).set(nonce=data.get("nonce"))
+    message = await core.sendMessage(message)
     message = await message.json
-    if (nonce := data.get("nonce")):
-        message["nonce"] = nonce
     return c_json(message)
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>", methods=["DELETE"])
@@ -436,6 +437,19 @@ async def api_channels_channel_messages_message_delete(user, channel, message):
     if message.author != user.id:
         return c_json(ERRORS[21], ECODES[21])
     await core.deleteMessage(message)
+    return "", 204
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>", methods=["PATCH"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_patch(user, channel, message):
+    data = await request.get_json()
+    if message.author != user.id:
+        return c_json(ERRORS[22], ECODES[22])
+    before = message
+    after = Message(id=before.id, edit_timestamp=int(time()), **data)
+    await core.editMessage(before, after)
     return "", 204
 
 @app.route("/api/v9/channels/<int:channel>/typing", methods=["POST"])

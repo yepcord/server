@@ -141,6 +141,7 @@ ERRORS = {
     19: jdumps({"code": 50006, "message": "Cannot send an empty message"}),
     20: jdumps({"code": 10008, "message": "Unknown Message"}),
     21: jdumps({"code": 50003, "message": "Cannot execute action on a DM channel"}),
+    22: jdumps({"code": 50005, "message": "Cannot edit a message authored by another user"}),
 }
 
 ECODES = {
@@ -165,6 +166,7 @@ ECODES = {
     19: 400,
     20: 404,
     21: 403,
+    22: 403,
 }
 
 def getImage(image):
@@ -246,7 +248,7 @@ async def execute_after(coro, seconds):
 
 def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
     query = []
-    for k,v in json:
+    for k,v in json.items():
         if isinstance(v, str):
             v = f"\"{escape_string(v)}\""
         elif isinstance(v, bool):

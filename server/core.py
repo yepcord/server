@@ -11,7 +11,7 @@ from .storage import _Storage
 from json import loads as jloads, dumps as jdumps
 from random import randint
 from .msg_client import Broadcaster
-from typing import Optional, Union
+from typing import Optional, Union, List
 from time import time, mktime
 
 def _usingDB(f):
@@ -421,26 +421,26 @@ class Core:
         channels = []
         await cur.execute(f'SELECT * FROM channels WHERE JSON_CONTAINS(channels.j_recipients, {user.id}, "$");')
         for r in await cur.fetchall():
-            ch = await self.getLastMessageId(Channel(**result_to_json(cur.description, r)).setCore(self), cur=cur)
-            ids = ch.recipients.copy()
+            channel = await self.getLastMessageId(Channel(**result_to_json(cur.description, r)).setCore(self), cur=cur)
+            ids = channel.recipients.copy()
             ids.remove(user.id)
             ids = [str(i) for i in ids]
-            if r[5] == ChannelType.DM:
+            if channel.type == ChannelType.DM:
                 channels.append({
-                    "type": r[5],
+                    "type": channel.type,
                     "recipient_ids": ids,
-                    "last_message_id": ch.last_message_id,
-                    "id": str(r[0])
+                    "last_message_id": channel.last_message_id,
+                    "id": str(channel.id)
                 })
-            elif r[5] == ChannelType.GROUP_DM:
+            elif channel.type == ChannelType.GROUP_DM:
                 channels.append({
-                    "type": r[5],
+                    "type": channel.tye,
                     "recipient_ids": ids,
-                    "last_message_id": ch.last_message_id,
-                    "id": str(r[0]),
-                    "owner_id": str(r[4]),
-                    "name": r[2],
-                    "icon": r[3]
+                    "last_message_id": channel.last_message_id,
+                    "id": str(channel.id),
+                    "owner_id": str(channel.owner_id),
+                    "name": channel.name,
+                    "icon": channel.icon
                 })
         return channels
 
@@ -506,37 +506,43 @@ class Core:
         await self.mcl.broadcast("user_events", {"e": "presence_update", "data": {"user": uid, "status": status}})
 
     @_usingDB
-    async def getChannelMessages(self, channel, limit: int, cur: Cursor) -> list:
+    async def getChannelMessages(self, channel, limit: int, cur: Cursor) -> List[Message]:
         messages = []
-        await cur.execute(f'SELECT '+
-                          f'`id`, `content`, `channel_id`, `author`, `edit_timestamp`, `j_attachments`, `j_embeds`, `j_reactions`, `pinned`,'+
-                          f'`webhook_id`, `application_id`, `type`, `flags`, `message_reference`, `thread`, `j_components`'+
-                          f'FROM `messages` WHERE `channel_id`={channel.id} ORDER BY `id` DESC LIMIT {limit};')
+        await cur.execute(f'SELECT * FROM `messages` WHERE `channel_id`={channel.id} ORDER BY `id` DESC LIMIT {limit};')
         for r in await cur.fetchall():
-            messages.append(Message(r[0], r[1], r[2], r[3], r[4], jloads(r[5]), jloads(r[6]), jloads(r[7]), r[8], r[9], r[10], r[11], r[12], r[13], r[14], jloads(r[15]), self))
+            messages.append(Message.from_result(cur.description, r).setCore(self))
         return messages
 
     @_usingDB
-    async def getMessage(self, channel, message_id: int, cur: Cursor):
-        await cur.execute(f'SELECT ' +
-                          f'`id`, `content`, `channel_id`, `author`, `edit_timestamp`, `j_attachments`, `j_embeds`, `j_reactions`, `pinned`,' +
-                          f'`webhook_id`, `application_id`, `type`, `flags`, `message_reference`, `thread`, `j_components`' +
-                          f'FROM `messages` WHERE `channel_id`={channel.id} AND `id`={message_id};')
+    async def getMessage(self, channel, message_id: int, cur: Cursor) -> Optional[Message]:
+        await cur.execute(f'SELECT * FROM `messages` WHERE `channel_id`={channel.id} AND `id`={message_id};')
         if (r := await cur.fetchone()):
-            return Message(r[0], r[1], r[2], r[3], r[4], jloads(r[5]), jloads(r[6]), jloads(r[7]), r[8], r[9], r[10], r[11], r[12], r[13], r[14], jloads(r[15]), self)
+            return Message.from_result(cur.description, r).setCore(self)
 
     @_usingDB
-    async def sendMessage(self, channel, author, content: str, nonce: str, cur: Cursor):
-        mid = mksf()
-        await cur.execute(f'INSERT INTO `messages` (`id`, `content`, `channel_id`, `author`) VALUES ({mid}, "{escape_string(content)}", {channel.id}, {author.id});')
-        msg = Message(mid, content, channel.id, author.id, core=self)
+    async def sendMessage(self, message: Message, cur: Cursor) -> Message:
+        q = json_to_sql(message.to_json(with_id=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f,v in q])
+        values = ", ".join([f"{v}" for f,v in q])
+        await cur.execute(f'INSERT INTO `messages` ({fields}) VALUES ({values});')
+        message.fill_defaults().setCore(self)
+        channel = await self.getChannel(message.channel_id)
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             users = channel.recipients
-        m = await msg.json
-        if nonce:
-            m["nonce"] = nonce
+        m = await message.json
         await self.mcl.broadcast("message_events", {"e": "message_create", "data": {"users": users, "message_obj": m}})
-        return msg
+        return message
+
+    @_usingDB
+    async def editMessage(self, before: Message, after: Message, cur: Cursor) -> Message:
+        b = before.to_json()
+        a = after.to_json()
+        changes = {}
+        for k,v in b.items():
+            if (l := a.get(k, v)) != b[k]:
+                changes[k] = l
+        changes = changes.update(a)
+        
 
     @_usingDB
     async def getRelatedUsersToChannel(self, channel: int, cur: Cursor):

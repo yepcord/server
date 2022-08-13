@@ -1,19 +1,10 @@
 from .events import *
 from ..msg_client import Client
-from ..utils import snowflake_timestamp, GATEWAY_OP
+from ..utils import GATEWAY_OP
 from ..core import Core
 from ..classes import UserId, Session
 from os import urandom
 from json import dumps as jdumps
-from datetime import datetime
-
-class VoiceStatus:
-    def __init__(self):
-        channel_id = None
-        guild_id = None
-        self_deaf = False
-        self_mute = False
-        self_video = False
 
 class GatewayClient:
     def __init__(self, ws, uid):
@@ -36,7 +27,7 @@ class GatewayClient:
         await self.ws.send_json(data)
 
     async def esend(self, event):
-        await self.send(event.json)
+        await self.send(await event.json())
 
     def compress(self, json):
         return self.z(jdumps(json).encode("utf8"))
@@ -57,7 +48,6 @@ class GatewayEvents:
         self.send = gw.send
         self.core = gw.core
         self.clients = gw.clients
-        self.statuses = gw.statuses
 
     async def relationship_req(self, current_user, target_user):
         tClient = [u for u in self.clients if u.id == target_user and u.connected]
@@ -135,13 +125,8 @@ class GatewayEvents:
         d = await self.core.getUserData(user)
         users = await self.core.getRelatedUsers(user, only_ids=True)
         clients = [c for c in self.clients if c.id in users and c.connected]
-        st = self.statuses.get(user.id)
-        if not st:
-            self.statuses[user.id] = st = ClientStatus(user.id, {"status": "online"})
-        st.status.update(status)
-        st = st.status
         for cl in clients:
-            await cl.esend(PresenceUpdateEvent(user.id, d, st))
+            await cl.esend(PresenceUpdateEvent(user.id, d, None))
 
     async def message_create(self, users, message_obj):
         clients = [c for c in self.clients if c.id in users and c.connected]
@@ -165,7 +150,6 @@ class Gateway:
         self.core = core
         self.mcl = Client()
         self.clients = []
-        self.statuses = {}
         self.ev = GatewayEvents(self)
 
     async def init(self):
@@ -191,83 +175,6 @@ class Gateway:
             return await ws.send(ws.zlib(jdumps(r).encode("utf8")))
         await ws.send_json(r)
 
-    async def _generateReadyPayload(self, client):
-        user = await self.core.getUser(client.id)
-        print(user)
-        userdata = await user.data
-        settings = await user.settings
-        s = snowflake_timestamp(user.id)
-        d = datetime.utcfromtimestamp(int(s/1000)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        return {
-            "v": 9,
-            "user": {
-                "email": user.email,
-                "phone": userdata.phone,
-                "username": userdata.username,
-                "discriminator": str(userdata.discriminator).rjust(4, "0"),
-                "bio": userdata.bio,
-                "avatar": userdata.avatar,
-                "avatar_decoration": userdata.avatar_decoration,
-                "accent_color": userdata.accent_color,
-                "banner": userdata.banner,
-                "banner_color": userdata.banner_color,
-                "premium": True,
-                "premium_type": 2,
-                "premium_since": d,
-                "verified": True,
-                "purchased_flags": 0,
-                "nsfw_allowed": True, # TODO: check
-                "mobile": True, # TODO: check
-                "mfa_enabled": settings.mfa,
-                "id": str(client.id),
-                "flags": 0,
-            },
-            "users": await self.core.getRelatedUsers(user),
-            "guilds": [],
-            "session_id": client.sid,
-            "presences": [],
-            "relationships": await self.core.getRelationships(user),
-            "connected_accounts": [],
-            "consents": {
-                "personalization": {
-                    "consented":  True
-                }
-            },
-            "country_code": "US",
-            "experiments": [],
-            "friend_suggestion_count": 0,
-            "geo_ordered_rtc_regions": ["yepcord"],
-            "guild_experiments": [],
-            "guild_join_requests": [],
-            "merged_members": [],
-            "private_channels": await self.core.getPrivateChannels(user),
-            "read_state": {
-                "version": 871,
-                "partial":  False,
-                "entries": []
-            },
-            "resume_gateway_url": "wss://127.0.0.1/",
-            "session_type": "normal",
-            "sessions": [{
-                "status": "online",
-                "session_id": client.sid,
-                "client_info": {
-                    "version": 0,
-                    "os": "windows",
-                    "client": "web"
-                },
-                "activities": []
-            }],
-            "tutorial": None,
-            "user_guild_settings": {
-                "version": 0,
-                "partial": False,
-                "entries": []
-            },
-            "user_settings": settings.to_json(),
-            "user_settings_proto": "CgIYBCILCgkRAAEAAAAAAIAqDTIDCNgEOgIIAUICCAEyL0oCCAFSAggBWgIIAWICCAFqAggBcgIIAXoAggECCAGKAQCaAQIIAaIBAKoBAggBQhBCAggBSgIIAVIAWgIIDmIAUgIaAFoOCggKBm9ubGluZRoCCAFiEwoECgJydRILCMz+/////////wFqAggBcgA="
-        }
-
     async def process(self, ws, data):
         op = data["op"]
         if op == GATEWAY_OP.IDENTIFY:
@@ -280,18 +187,8 @@ class Gateway:
                 return await ws.close(4004)
             cl = GatewayClient(ws, sess.id)
             self.clients.append(cl)
-            self.statuses[cl.id] = ClientStatus(cl.id, await self.core.getUserPresence(cl.id))
-            await self.ev.presence_update(cl.id, {"status": "online"})
-            await self.send(cl, GATEWAY_OP.DISPATCH, t="READY", d=await self._generateReadyPayload(cl))
-            fr = await self.core.getFriendsPresences(cl.id)
-            await self.send(cl, GATEWAY_OP.DISPATCH, t="READY_SUPPLEMENTAL", d={
-                "merged_presences": {
-                    "guilds": [], # TODO
-                    "friends": fr
-                },
-                "merged_members": [], # TODO
-                "guilds": [] # TODO
-            })
+            await cl.esend(ReadyEvent(await self.core.getUser(cl.id), cl, self.core))
+            await cl.esend(ReadySupplementalEvent(await self.core.getFriendsPresences(cl.id)))
         elif op == GATEWAY_OP.RESUME:
             if not (cl := [w for w in self.clients if w.sid == data["d"]["session_id"]]):
                 await self.sendws(ws, GATEWAY_OP.INV_SESSION)
@@ -306,8 +203,6 @@ class Gateway:
             if cl.id != sess.id:
                 return await ws.close(4004)
             cl.replace(ws)
-            self.statuses[cl.id] = st = ClientStatus(cl.id, await self.core.getUserPresence(cl.id))
-            await self.ev.presence_update(cl.id, st.status)
             await self.send(cl, GATEWAY_OP.DISPATCH, t="READY")
         elif op == GATEWAY_OP.HEARTBEAT:
             if not (cl := [w for w in self.clients if w.ws == ws]):
@@ -324,5 +219,5 @@ class Gateway:
         cl = cl[0]
         cl._connected = False
         if not [w for w in self.clients if w.id == cl.id and w != cl]:
+            pass # TODO
             #await self.core.updatePresence(cl.id, {"status": "offline"})
-            await self.ev.presence_update(cl.id, {"status": "offline"})

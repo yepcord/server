@@ -11,6 +11,7 @@ class DBModel:
     FIELDS = ()
     ID_FIELD = None
     NOT_DB_FIELDS = ()
+    DEFAULTS = {}
 
     def _checkNulls(self):
         args = list(self.__init__.__code__.co_varnames) # TODO: replace with self.FIELDS
@@ -24,7 +25,7 @@ class DBModel:
         f = list(self.FIELDS)
         if with_id and self.ID_FIELD:
             f.append(self.ID_FIELD)
-        for k in self.FIELDS:
+        for k in f:
             if (v := getattr(self, k, Null)) == Null:
                 continue
             j[k] = v
@@ -43,6 +44,12 @@ class DBModel:
             if k not in list(self.FIELDS) + list(self.NOT_DB_FIELDS):
                 continue
             setattr(self, k, v)
+        return self
+
+    def fill_defaults(self):
+        for k,v in self.DEFAULTS.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
         return self
 
 class _User:
@@ -266,12 +273,16 @@ class _Message:
 
 class Message(_Message, DBModel):
     FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "reactions", "pinned",
-              "webhook", "application", "type", "flags", "reference", "thread", "components", "core")
+              "webhook_id", "application_id", "type", "flags", "message_reference", "thread", "components", "sticker_items")
     ID_FIELD = "id"
+    NOT_DB_FIELDS = ("nonce",)
+    DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "reactions": [], "pinned": False,
+                "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
+                "thread": None, "components": [], "sticker_items": []}
 
     def __init__(self, id, channel_id, author, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
                  reactions=Null, pinned=Null, webhook_id=Null, application_id=Null, type=Null, flags=Null,
-                 message_reference=Null, thread=Null, components=Null):
+                 message_reference=Null, thread=Null, components=Null, sticker_items=Null, **kwargs):
         self.id = id
         self.content = content
         self.channel_id = channel_id
@@ -281,13 +292,14 @@ class Message(_Message, DBModel):
         self.embeds = embeds
         self.reactions = reactions
         self.pinned = pinned
-        self.webhook = webhook_id
-        self.application = application_id
+        self.webhook_id = webhook_id
+        self.application_id = application_id
         self.type = type
         self.flags = flags
-        self.reference = message_reference
+        self.message_reference = message_reference
         self.thread = thread
         self.components = components
+        self.sticker_items = sticker_items
         self._core = None
 
         self._checkNulls()
@@ -300,8 +312,10 @@ class Message(_Message, DBModel):
         author = await self._core.getUserData(UserId(self.author))
         timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.id) / 1000))
         timestamp = timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
-        edit_timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.edit_timestamp) / 1000))
-        edit_timestamp = edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00") if self.edit_timestamp else None
+        edit_timestamp = None
+        if self.edit_timestamp:
+            edit_timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.edit_timestamp) / 1000))
+            edit_timestamp = edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         mentions = []
         role_mentions = []
         for m in ping_regex.findall(self.content):
@@ -318,8 +332,7 @@ class Message(_Message, DBModel):
                     "discriminator": str(mem.discriminator).rjust(4, "0"),
                     "public_flags": mem.public_flags
                 })
-
-        return {
+        j = {
             "id": str(self.id),
             "type": self.type,
             "content": self.content,
@@ -344,6 +357,9 @@ class Message(_Message, DBModel):
             "flags": self.flags,
             "components": self.components, # TODO: parse components
         }
+        if (nonce := getattr(self, "nonce", None)):
+            j["nonce"] = nonce
+        return j
 
 class ZlibCompressor:
     def __init__(self):

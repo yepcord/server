@@ -1,8 +1,115 @@
-from ..utils import GATEWAY_OP
+from datetime import datetime
+
+from ..utils import GATEWAY_OP, snowflake_timestamp
 from time import time
 
 class Event:
     pass
+
+class ReadyEvent(Event):
+    NAME = "READY"
+
+    def __init__(self, user, client, core):
+        self.user = user
+        self.client = client
+        self.core = core
+
+    async def json(self) -> dict:
+        userdata = await self.user.userdata
+        settings = await self.user.settings
+        return {
+            "t": self.NAME,
+            "op": GATEWAY_OP.DISPATCH,
+            "d": {
+                "v": 9,
+                "user": {
+                    "email": self.user.email,
+                    "phone": userdata.phone,
+                    "username": userdata.username,
+                    "discriminator": str(userdata.discriminator).rjust(4, "0"),
+                    "bio": userdata.bio,
+                    "avatar": userdata.avatar,
+                    "avatar_decoration": userdata.avatar_decoration,
+                    "accent_color": userdata.accent_color,
+                    "banner": userdata.banner,
+                    "banner_color": userdata.banner_color,
+                    "premium": True,
+                    "premium_type": 2,
+                    "premium_since": datetime.utcfromtimestamp(int(snowflake_timestamp(self.user.id)/1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "verified": True,
+                    "purchased_flags": 0,
+                    "nsfw_allowed": True,  # TODO: check
+                    "mobile": True,  # TODO: check
+                    "mfa_enabled": settings.mfa,
+                    "id": str(self.user.id),
+                    "flags": 0,
+                },
+                "users": await self.core.getRelatedUsers(self.user),
+                "guilds": [],
+                "session_id": self.client.sid,
+                "presences": [],
+                "relationships": await self.core.getRelationships(self.user),
+                "connected_accounts": [],
+                "consents": {
+                    "personalization": {
+                        "consented": True
+                    }
+                },
+                "country_code": "US",
+                "experiments": [],
+                "friend_suggestion_count": 0,
+                "geo_ordered_rtc_regions": ["yepcord"],
+                "guild_experiments": [],
+                "guild_join_requests": [],
+                "merged_members": [],
+                "private_channels": await self.core.getPrivateChannels(self.user),
+                "read_state": {
+                    "version": 871,
+                    "partial": False,
+                    "entries": []
+                },
+                "resume_gateway_url": "wss://127.0.0.1/",
+                "session_type": "normal",
+                "sessions": [{
+                    "status": "online",
+                    "session_id": self.client.sid,
+                    "client_info": {
+                        "version": 0,
+                        "os": "windows",
+                        "client": "web"
+                    },
+                    "activities": []
+                }],
+                "tutorial": None,
+                "user_guild_settings": {
+                    "version": 0,
+                    "partial": False,
+                    "entries": []
+                },
+                "user_settings": settings.to_json(),
+                #"user_settings_proto": "CgIYBCILCgkRAAEAAAAAAIAqDTIDCNgEOgIIAUICCAEyL0oCCAFSAggBWgIIAWICCAFqAggBcgIIAXoAggECCAGKAQCaAQIIAaIBAKoBAggBQhBCAggBSgIIAVIAWgIIDmIAUgIaAFoOCggKBm9ubGluZRoCCAFiEwoECgJydRILCMz+/////////wFqAggBcgA="
+            }
+        }
+
+class ReadySupplementalEvent(Event):
+    NAME = "READY_SUPPLEMENTAL"
+
+    def __init__(self, friends_presences):
+        self.friends_presences = friends_presences
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": GATEWAY_OP.DISPATCH,
+            "d": {
+                "merged_presences": {
+                    "guilds": [], # TODO
+                    "friends": self.friends_presences
+                },
+                "merged_members": [], # TODO
+                "guilds": [] # TODO
+            }
+        }
 
 class RelationshipAddEvent(Event):
     NAME = "RELATIONSHIP_ADD"
@@ -12,8 +119,7 @@ class RelationshipAddEvent(Event):
         self.userdata = userdata
         self.type = type
 
-    @property
-    def json(self):
+    async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": GATEWAY_OP.DISPATCH,
@@ -42,8 +148,7 @@ class DMChannelCreate(Event):
         self.type = type
         self.info = info
 
-    @property
-    def json(self):
+    async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": GATEWAY_OP.DISPATCH,
@@ -62,8 +167,7 @@ class RelationshipRemoveEvent(Event):
         self.user = user
         self.type = type
 
-    @property
-    def json(self):
+    async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": GATEWAY_OP.DISPATCH,
@@ -81,8 +185,7 @@ class UserUpdateEvent(Event):
         self.userdata = userdata
         self.settings = settings
 
-    @property
-    def json(self):
+    async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": GATEWAY_OP.DISPATCH,
@@ -115,8 +218,7 @@ class PresenceUpdateEvent(Event):
         self.userdata = userdata
         self.status = status
 
-    @property
-    def json(self):
+    async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": GATEWAY_OP.DISPATCH,
@@ -141,8 +243,7 @@ class MessageCreateEvent(Event):
     def __init__(self, message):
         self.message = message
 
-    @property
-    def json(self):
+    async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": GATEWAY_OP.DISPATCH,
@@ -156,8 +257,7 @@ class TypingEvent(Event):
         self.user = user
         self.channel = channel
 
-    @property
-    def json(self):
+    async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": GATEWAY_OP.DISPATCH,
@@ -175,8 +275,7 @@ class MessageDeleteEvent(Event):
         self.message = message
         self.channel = channel
 
-    @property
-    def json(self):
+    async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": GATEWAY_OP.DISPATCH,
