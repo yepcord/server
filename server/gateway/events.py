@@ -1,10 +1,11 @@
 from datetime import datetime
-
 from ..utils import GATEWAY_OP, snowflake_timestamp
 from time import time
 
+
 class Event:
     pass
+
 
 class ReadyEvent(Event):
     NAME = "READY"
@@ -87,9 +88,10 @@ class ReadyEvent(Event):
                     "entries": []
                 },
                 "user_settings": settings.to_json(),
-                #"user_settings_proto": "CgIYBCILCgkRAAEAAAAAAIAqDTIDCNgEOgIIAUICCAEyL0oCCAFSAggBWgIIAWICCAFqAggBcgIIAXoAggECCAGKAQCaAQIIAaIBAKoBAggBQhBCAggBSgIIAVIAWgIIDmIAUgIaAFoOCggKBm9ubGluZRoCCAFiEwoECgJydRILCMz+/////////wFqAggBcgA="
+                # "user_settings_proto": "CgIYBCILCgkRAAEAAAAAAIAqDTIDCNgEOgIIAUICCAEyL0oCCAFSAggBWgIIAWICCAFqAggBcgIIAXoAggECCAGKAQCaAQIIAaIBAKoBAggBQhBCAggBSgIIAVIAWgIIDmIAUgIaAFoOCggKBm9ubGluZRoCCAFiEwoECgJydRILCMz+/////////wFqAggBcgA="
             }
         }
+
 
 class ReadySupplementalEvent(Event):
     NAME = "READY_SUPPLEMENTAL"
@@ -110,6 +112,7 @@ class ReadySupplementalEvent(Event):
                 "guilds": [] # TODO
             }
         }
+
 
 class RelationshipAddEvent(Event):
     NAME = "RELATIONSHIP_ADD"
@@ -139,6 +142,7 @@ class RelationshipAddEvent(Event):
             }
         }
 
+
 class DMChannelCreate(Event):
     NAME = "CHANNEL_CREATE"
 
@@ -160,6 +164,7 @@ class DMChannelCreate(Event):
             }
         }
 
+
 class RelationshipRemoveEvent(Event):
     NAME = "RELATIONSHIP_REMOVE"
 
@@ -176,6 +181,7 @@ class RelationshipRemoveEvent(Event):
                 "id": str(self.user)
             }
         }
+
 
 class UserUpdateEvent(Event):
     NAME = "USER_UPDATE"
@@ -194,7 +200,7 @@ class UserUpdateEvent(Event):
                 "username": self.userdata.username,
                 "public_flags": self.userdata.public_flags,
                 "phone": self.userdata.phone,
-                "nsfw_allowed": True, # TODO: get from age
+                "nsfw_allowed": True,  # TODO: get from age
                 "mfa_enabled": bool(self.settings.mfa),
                 "locale": self.settings.locale,
                 "id": str(self.user.id),
@@ -209,6 +215,7 @@ class UserUpdateEvent(Event):
                 "accent_color": self.userdata.accent_color
             }
         }
+
 
 class PresenceUpdateEvent(Event):
     NAME = "PRESENCE_UPDATE"
@@ -237,6 +244,7 @@ class PresenceUpdateEvent(Event):
             }
         }
 
+
 class MessageCreateEvent(Event):
     NAME = "MESSAGE_CREATE"
 
@@ -249,6 +257,7 @@ class MessageCreateEvent(Event):
             "op": GATEWAY_OP.DISPATCH,
             "d": self.message
         }
+
 
 class TypingEvent(Event):
     NAME = "TYPING_START"
@@ -268,8 +277,10 @@ class TypingEvent(Event):
             }
         }
 
+
 class MessageUpdateEvent(MessageCreateEvent):
     NAME = "MESSAGE_UPDATE"
+
 
 class MessageDeleteEvent(Event):
     NAME = "MESSAGE_DELETE"

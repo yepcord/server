@@ -1,4 +1,3 @@
-from datetime import datetime
 from aiomysql import create_pool, Cursor, escape_string
 from asyncio import get_event_loop
 from hmac import new
@@ -8,11 +7,12 @@ from Crypto.Cipher import AES
 from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData
 from .storage import _Storage
-from json import loads as jloads, dumps as jdumps
+from json import loads as jloads
 from random import randint
 from .msg_client import Broadcaster
 from typing import Optional, Union, List
-from time import time, mktime
+from time import time
+
 
 def _usingDB(f):
     async def wrapper(self, *args, **kwargs):
@@ -29,10 +29,12 @@ def _usingDB(f):
                 return await f(self, *args, **kwargs)
     return wrapper
 
+
 class CDN(_Storage):
     def __init__(self, storage, core):
         self.storage = storage
         self.core = core
+
 
 class Core:
     def __init__(self, key=None, loop=None):
@@ -164,7 +166,7 @@ class Core:
     async def setUserdata(self, userdata: UserData, cur: Cursor) -> None:
         if not (j := userdata.to_sql_json(userdata.to_typed_json)):
             return
-        await cur.execute(f'UPDATE `userdata` SET {json_to_sql(j)} WHERE `uid`={userdata.id};')
+        await cur.execute(f'UPDATE `userdata` SET {json_to_sql(j)} WHERE `uid`={userdata.uid};')
 
     @_usingDB
     async def getUserProfile(self, uid: int, cUser: User, cur: Cursor) -> Union[User, int]:
@@ -202,7 +204,7 @@ class Core:
     async def getUserByUsername(self, username: str, discriminator: str, cur: Cursor) -> Optional[User]:
         await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discriminator} AND `username`="{username}";')
         if (r := await cur.fetchone()):
-            return User(r[0], core=self).setCore(self)
+            return User(r[0]).setCore(self)
 
     @_usingDB
     async def relationShipAvailable(self, tUser: User, cUser: User, cur: Cursor) -> Optional[int]:
@@ -323,7 +325,7 @@ class Core:
         await cur.execute(f'DELETE FROM `sessions` WHERE `uid`={sess.uid} AND `sid`={sess.sid} AND `sig`="{sess.sig}" LIMIT 1;')
 
     def _sessionToUser(self, session: Session):
-        return User(session.id, core=self).setCore(self)
+        return User(session.id).setCore(self)
 
     async def getMfa(self, user: Union[User, Session]) -> Optional[MFA]:
         if type(user) == Session:
@@ -443,49 +445,6 @@ class Core:
                     "icon": channel.icon
                 })
         return channels
-
-    @_usingDB
-    async def updatePresence(self, uid: int, status: dict, cur: Cursor) -> Optional[dict]:
-        if status.get("status") == "offline":
-            await cur.execute(f'UPDATE `presences` SET `online`=false WHERE `uid`={uid};')
-        else:
-            r = {}
-            q = []
-            if (st := status.get("status")):
-                if st == "invisible":
-                    st = "offline"
-                q.append(f'`status`="{st}"')
-                r["status"] = st
-            cs = status.get("custom_status", 0)
-            if cs != 0:
-                if cs is None:
-                    cs = []
-                else:
-                    if (ex := cs.get("expires_at")):
-                        ex = mktime(datetime.strptime(ex, '%Y-%m-%dT%H:%M:%S.000Z').timetuple())
-                    cs = [{"type":4, "state": cs["text"], "name": "Custom Status", "id": "custom","created_at": int(time()*1000)}]
-                    r["activities"] = cs.copy()
-                    if ex: cs[0]["expire"] = ex
-                q.append(f'`j_activities`="{escape_string(jdumps(cs))}"')
-            q = ", ".join(q)
-            await cur.execute(f'UPDATE `presences` SET {q} WHERE `uid`={uid};')
-            return r
-
-    @_usingDB
-    async def getUserPresence(self, uid: int, cur: Cursor):
-        await cur.execute(f'SELECT "online", `online`, `modified`, `j_activities` FROM `presences` WHERE `uid`={uid};')
-        if not (r := await cur.fetchone()):
-            await cur.execute(f'INSERT INTO `presences` (`uid`, `modified`) VALUES ({uid}, {int(time()*1000)});')
-            return {"status": "offline", "last_modified": int(time()*1000), "activities": []}
-        ac = jloads(r[3])
-        if ac and (ex := ac[0].get("expire")):
-            if time() > ex:
-                await self.updatePresence(uid, {"custom_status": None}, cur=cur)
-            del ac[0]["expire"]
-        return {"status": r[0] if r[1] else "offline", "last_modified": r[2], "activities": ac if r[1] else []}
-
-    async def sendPresenceUpdateEvent(self, uid: int, status: dict):
-        await self.mcl.broadcast("user_events", {"e": "presence_update", "data": {"user": uid, "status": status}})
 
     @_usingDB
     async def getChannelMessages(self, channel, limit: int, before: int=None, after: int=None, cur: Cursor=None) -> List[Message]:

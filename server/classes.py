@@ -1,12 +1,14 @@
 from datetime import datetime
-from typing import Optional, Union
 from zlib import compressobj, Z_FULL_FLUSH
 from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json
+
 
 class _Null:
     pass
 
+
 Null = _Null()
+
 
 class DBModel:
     FIELDS = ()
@@ -94,12 +96,14 @@ class DBModel:
         diff.update(other)
         return diff
 
+
 class _User:
     def __init__(self):
         self.id = None
 
     def __eq__(self, other):
         return isinstance(other, _User) and self.id == other.id
+
 
 class Session(_User, DBModel):
     FIELDS = ("uid", "sid", "sig")
@@ -125,6 +129,7 @@ class Session(_User, DBModel):
         except:
             return
         return cls(uid, sid, sig)
+
 
 class User(_User, DBModel):
     FIELDS = ("email", "password", "key")
@@ -162,6 +167,7 @@ class User(_User, DBModel):
         if not self._uData:
             self._uData = await self._core.getUserData(self)
         return self._uData
+
 
 class UserSettings(DBModel):
     FIELDS = ("inline_attachment_media", "show_current_game", "view_nsfw_guilds", "enable_tts_command",
@@ -239,6 +245,7 @@ class UserSettings(DBModel):
             j["mfa"] = self.mfa_key
         return j
 
+
 class UserData(DBModel):
     FIELDS = ("birth", "username", "discriminator", "phone", "premium", "accent_color", "avatar", "avatar_decoration",
               "banner", "banner_color", "bio", "flags", "public_flags")
@@ -266,13 +273,17 @@ class UserData(DBModel):
 
         self._checkNulls()
 
+
 class UserId(_User):
     def __init__(self, uid):
         self.id = uid
 
+
 class _Channel:
+    id = None
     def __eq__(self, other):
         return isinstance(other, _Channel) and self.id == other.id
+
 
 class Channel(_Channel, DBModel):
     FIELDS = ("guild_id", "position", "permission_overwrites", "name", "topic", "nsfw", "bitrate", "user_limit",
@@ -326,9 +337,12 @@ class Channel(_Channel, DBModel):
             limit = 100
         return await self._core.getChannelMessages(self, limit, before, after)
 
+
 class _Message:
+    id = None
     def __eq__(self, other):
         return isinstance(other, _Message) and self.id == other.id
+
 
 class Message(_Message, DBModel):
     FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "reactions", "pinned",
@@ -428,12 +442,14 @@ class Message(_Message, DBModel):
             j["nonce"] = nonce
         return j
 
+
 class ZlibCompressor:
     def __init__(self):
         self.cObj = compressobj()
 
     def __call__(self, data):
         return self.cObj.compress(data)+self.cObj.flush(Z_FULL_FLUSH)
+
 
 class Relationship(DBModel):
     FIELDS = ("u1", "u2", "type")

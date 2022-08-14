@@ -7,6 +7,7 @@ from json import loads as jloads
 from asyncio import CancelledError
 from .gateway import Gateway
 
+
 class YEPcord(Quart):
     async def process_response(self, response, request_context):
         response = await super(YEPcord, self).process_response(response, request_context)
@@ -18,9 +19,11 @@ class YEPcord(Quart):
         
         return response
 
+
 app = YEPcord("YEPcord-Gateway")
 core = Core(b64decode(environ.get("KEY")))
 gw = Gateway(core)
+
 
 @app.before_serving
 async def before_serving():
@@ -33,6 +36,7 @@ async def before_serving():
         autocommit=True
     )
     await gw.init()
+
 
 @app.websocket("/")
 async def ws_gateway():

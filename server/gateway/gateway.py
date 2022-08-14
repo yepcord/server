@@ -6,6 +6,7 @@ from ..classes import UserId, Session
 from os import urandom
 from json import dumps as jdumps
 
+
 class GatewayClient:
     def __init__(self, ws, uid):
         self.ws = ws
@@ -36,6 +37,7 @@ class GatewayClient:
         self.ws = ws
         self.z = getattr(ws, "zlib", None)
         self._connected = True
+
 
 class ClientStatus:
     def __init__(self, uid, status, activities):
@@ -88,6 +90,7 @@ class ClientStatus:
         if hasattr(self, item):
             return self.__getitem__(item)
         return default
+
 
 class GatewayEvents:
     def __init__(self, gw):
@@ -198,8 +201,8 @@ class GatewayEvents:
             await cl.esend(MessageUpdateEvent(message_obj))
 
     async def message_ack(self, message, channel):
-        pass
-        #{"t": "MESSAGE_ACK", "s": 4, "op": 0, "d": {"version": 23, "message_id": "1008402012314021938", "channel_id": "1002258287061901434"}}
+        pass  # {"t": "MESSAGE_ACK", "s": 4, "op": 0, "d": {"version": 23, "message_id": "1008402012314021938", "channel_id": "1002258287061901434"}}
+
 
 class Gateway:
     def __init__(self, core: Core):

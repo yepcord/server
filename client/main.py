@@ -2,21 +2,24 @@ from quart import Quart, redirect
 from os.path import realpath, dirname, join
 from aiohttp import ClientSession
 from aiofiles import open as aopen
+from os import environ
 
 STATIC_FOLDER = join(dirname(realpath(__file__)), "assets/")
 HTML_FILE = join(dirname(realpath(__file__)), "discord.html")
 
+_domain = environ.get("DOMAIN", "127.0.0.1")
 CONFIG = {
-    "CLIENT_HOST": "127.0.0.1:8080",
-    "API_HOST": "127.0.0.1:8000",
-    "GATEWAY_HOST": "127.0.0.1:8001",
-    "REMOTEAUTH_HOST": "127.0.0.1:8002",
-    "CDN_HOST": "127.0.0.1:8003",
-    "MEDIAPROXY_HOST": "127.0.0.1:8004",
-    "NETWORKING_HOST": "127.0.0.1:8005",
-    "RTCLATENCY_HOST": "127.0.0.1:8006",
-    "ACTIVITYAPPLICATION_HOST": "127.0.0.1:8007",
+    "CLIENT_HOST": environ.get("PUBLIC_DOMAIN", f"{_domain}:8080"),
+    "API_HOST": f"{_domain}:8000",
+    "GATEWAY_HOST": f"{_domain}:8001",
+    "REMOTEAUTH_HOST": f"{_domain}:8002",
+    "CDN_HOST": f"{_domain}:8003",
+    "MEDIAPROXY_HOST": f"{_domain}:8004",
+    "NETWORKING_HOST": f"{_domain}:8005",
+    "RTCLATENCY_HOST": f"{_domain}:8006",
+    "ACTIVITYAPPLICATION_HOST": f"{_domain}:8007",
 }
+
 
 async def downloadAsset(file):
     if file.endswith(".js.map"):
@@ -39,9 +42,11 @@ app = Quart(
     static_folder=STATIC_FOLDER
 )
 
+
 @app.route("/")
 async def index():
     return redirect("/app")
+
 
 @app.route("/login")
 @app.route("/register")
@@ -52,6 +57,7 @@ async def index():
 @app.route("/connections/<connection>")
 async def discord(**kwargs):
     return HTML_DATA
+
 
 @app.route("/assets/<file>")
 async def assets(file):

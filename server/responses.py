@@ -1,5 +1,6 @@
 from datetime import datetime
-from .utils import snowflake_timestamp
+from .utils import snowflake_timestamp, ChannelType
+
 
 async def userSettingsResponse(user):
     settings = await user.settings
@@ -43,6 +44,7 @@ async def userSettingsResponse(user):
         "activity_restricted_guild_ids": settings.activity_restricted_guild_ids
     }
 
+
 async def userdataResponse(user):
     data = await user.data
     settings = await user.settings
@@ -59,12 +61,13 @@ async def userdataResponse(user):
         "accent_color": data.accent_color,
         "bio": data.bio,
         "locale": settings.locale,
-        "nsfw_allowed": True, # TODO: get from age
+        "nsfw_allowed": True,  # TODO: get from age
         "mfa_enabled": settings.mfa,
         "email": user.email,
         "verified": True,
         "phone": data.phone
     }
+
 
 async def userConsentResponse(user):
     settings = await user.settings
@@ -76,6 +79,7 @@ async def userConsentResponse(user):
             "consented": settings.usage_statistics
         }
     }
+
 
 async def userProfileResponse(user):
     data = await user.data
@@ -95,7 +99,7 @@ async def userProfileResponse(user):
             "accent_color": data.accent_color,
             "bio": data.bio
         },
-        "connected_accounts": [], # TODO
+        "connected_accounts": [],  # TODO
         "premium_since": d,
         "premium_guild_since": s,
         "user_profile": {
@@ -103,3 +107,37 @@ async def userProfileResponse(user):
             "accent_color": data.accent_color
         }
     }
+
+
+async def channelInfoResponse(channel, user):
+    _recipients = channel.recipients.copy()
+    _recipients.remove(user.id)
+    recipients = []
+    for user in _recipients:
+        user = await channel._core.getUser(user)
+        data = await user.data
+        recipients.append({
+            "id": str(user.id),
+            "username": data.username,
+            "avatar": data.avatar,
+            "avatar_decoration": data.avatar_decoration,
+            "discriminator": str(data.discriminator).rjust(4, "0"),
+            "public_flags": data.public_flags
+        })
+    if channel.type == ChannelType.DM:
+        return {
+            "type": channel.type,
+            "recipients": recipients,
+            "last_message_id": channel.last_message_id,
+            "id": str(channel.id)
+        }
+    elif channel.type == ChannelType.GROUP_DM:
+        return {
+            "type": channel.tye,
+            "recipient_ids": recipients,
+            "last_message_id": channel.last_message_id,
+            "id": str(channel.id),
+            "owner_id": str(channel.owner_id),
+            "name": channel.name,
+            "icon": channel.icon
+        }

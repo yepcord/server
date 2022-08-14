@@ -14,6 +14,7 @@ from re import compile as rcompile
 
 global _INCREMENT_ID
 
+
 def b64decode(data: Union[str, bytes]) -> bytes:
     if isinstance(data, str):
         data = data.encode("utf8")
@@ -21,6 +22,7 @@ def b64decode(data: Union[str, bytes]) -> bytes:
     for search, replace in ((b'-', b'+'), (b'_', b'/'), (b',', b'')):
         data = data.replace(search, replace)
     return _b64decode(data)
+
 
 def b64encode(data: Union[str, bytes]) -> str:
     if isinstance(data, str):
@@ -30,11 +32,13 @@ def b64encode(data: Union[str, bytes]) -> str:
         data = data.replace(search, replace)
     return data
 
+
 _EPOCH = 1640995200_000
 _INCREMENT_ID = 0
 _MAX_TIMESTAMP = 1 << 42
 _WORKER_ID = randint(0, 32)
 _PROCESS_ID = getpid()
+
 
 def _mksnowflake(ms, wr, pi, ic):
     sf = (ms % _MAX_TIMESTAMP) << 22
@@ -43,16 +47,20 @@ def _mksnowflake(ms, wr, pi, ic):
     sf += ic % 4096
     return sf
 
+
 def mksnowflake():
     global _INCREMENT_ID
     sf = _mksnowflake(int(time()*1000) - _EPOCH, _WORKER_ID, _PROCESS_ID, _INCREMENT_ID)
     _INCREMENT_ID += 1
     return sf
 
+
 mksf = mksnowflake
+
 
 def snowflake_timestamp(sf):
     return (sf >> 22) + _EPOCH
+
 
 def c_json(json, code=200, headers={}):
     if not isinstance(json, str):
@@ -62,7 +70,9 @@ def c_json(json, code=200, headers={}):
         h[k] = v
     return json, code, h
 
+
 NoneType = type(None)
+
 
 ERRORS = {
     1: jdumps({"code": 50035, "errors": {"email": {"_errors": [{"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}]}}, "message": "Invalid Form Body"}),
@@ -89,6 +99,7 @@ ERRORS = {
     22: jdumps({"code": 50005, "message": "Cannot edit a message authored by another user"}),
 }
 
+
 ECODES = {
     1: 400,
     2: 400,
@@ -114,6 +125,7 @@ ECODES = {
     22: 403,
 }
 
+
 def getImage(image):
     if isinstance(image, bytes):
         image = BytesIO(image)
@@ -126,18 +138,22 @@ def getImage(image):
         return
     return image
 
+
 def imageType(image):
     m = from_buffer(image.getvalue()[:1024], mime=True)
     if m.startswith("image/"):
         return m[6:]
 
+
 def validImage(image):
     return imageType(image) in ["png", "webp", "gif", "jpeg", "jpg"] and image.getbuffer().nbytes < 8*1024*1024*1024
+
 
 class RELATIONSHIP:
     PENDING = 0
     FRIEND = 1
     BLOCK = 2
+
 
 class GATEWAY_OP:
     DISPATCH = 0
@@ -153,6 +169,7 @@ class GATEWAY_OP:
     HELLO = 10
     HEARTBEAT_ACK = 11
 
+
 class ChannelType:
     GUILD_TEXT = 0
     DM = 1
@@ -165,6 +182,7 @@ class ChannelType:
     GUILD_PRIVATE_THREAD = 12
     GUILD_STAGE_VOICE = 13
     GUILD_DIRECTORY = 14
+
 
 class MFA:
     _re = rcompile(r'^[A-Z0-9]{16}$')
@@ -185,11 +203,13 @@ class MFA:
     def valid(self) -> bool:
         return bool(self._re.match(self.key))
 
+
 async def execute_after(coro, seconds):
     async def _wait_exec(coro, seconds):
         await asleep(seconds)
         await coro
     get_event_loop().create_task(_wait_exec(coro, seconds))
+
 
 def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
     query = []
@@ -213,6 +233,7 @@ def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
         return query
     return ", ".join(query)
 
+
 def result_to_json(desc: list, result: list):
     j = {}
     for idx, value in enumerate(result):
@@ -224,4 +245,5 @@ def result_to_json(desc: list, result: list):
         j[name] = value
     return j
 
-ping_regex = rcompile(r'\<@((?:!|&){0,1}\d{17,32})\>')
+
+ping_regex = rcompile(r'<@((?:!|&){0,1}\d{17,32})>')
