@@ -38,9 +38,56 @@ class GatewayClient:
         self._connected = True
 
 class ClientStatus:
-    def __init__(self, uid, status):
+    def __init__(self, uid, status, activities):
         self.id = uid
-        self.status = status
+        self._status = status
+        self._activities = activities
+        self._modified = int(time())
+
+    @property
+    def status(self):
+        return self._status if self._status != "invisible" else "offline"
+
+    @property
+    def activities(self):
+        return self._activities if self.status != "offline" else []
+
+    @property
+    def last_modified(self):
+        return self._modified
+
+    def setStatus(self, status):
+        self._modified = int(time())
+        if status not in ["online", "idle", "offline", "dnd", "invisible"]:
+            return
+        self._status = status
+
+    def setActivities(self, activities):
+        self._modified = int(time())
+        self._activities = activities
+
+    @property
+    def client_status(self):
+        return {"desktop": self.status} if self.status != "offline" else {}
+
+    @staticmethod
+    def custom_status(status):
+        if status is None:
+            return []
+        return [{
+            'name': 'Custom Status',
+            'type': 4,
+            'state': status["text"],
+            'emoji': {'id': None, 'name': status["emoji_name"], 'animated': False} if "emoji_name" in status else {}
+        }]
+
+    def __getitem__(self, item):
+        return getattr(self, item, None)
+
+    def get(self, item, default=None):
+        if hasattr(self, item):
+            return self.__getitem__(item)
+        return default
 
 class GatewayEvents:
     def __init__(self, gw):
@@ -114,7 +161,7 @@ class GatewayEvents:
         cls = [u for u in self.clients if u.id == user and u.connected]
         if not cls:
             return
-        user = await self.core.getUserById(user)
+        user = await self.core.getUser(user)
         data = await user.data
         settings = await user.settings
         for cl in cls:
@@ -126,7 +173,7 @@ class GatewayEvents:
         users = await self.core.getRelatedUsers(user, only_ids=True)
         clients = [c for c in self.clients if c.id in users and c.connected]
         for cl in clients:
-            await cl.esend(PresenceUpdateEvent(user.id, d, None))
+            await cl.esend(PresenceUpdateEvent(user.id, d, status))
 
     async def message_create(self, users, message_obj):
         clients = [c for c in self.clients if c.id in users and c.connected]
@@ -155,6 +202,7 @@ class Gateway:
         self.core = core
         self.mcl = Client()
         self.clients = []
+        self.statuses = {}
         self.ev = GatewayEvents(self)
 
     async def init(self):
@@ -192,8 +240,11 @@ class Gateway:
                 return await ws.close(4004)
             cl = GatewayClient(ws, sess.id)
             self.clients.append(cl)
+            settings = await self.core.getUserSettings(UserId(cl.id))
+            self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
+            await self.ev.presence_update(cl.id, st)
             await cl.esend(ReadyEvent(await self.core.getUser(cl.id), cl, self.core))
-            await cl.esend(ReadySupplementalEvent(await self.core.getFriendsPresences(cl.id)))
+            await cl.esend(ReadySupplementalEvent(await self.getFriendsPresences(cl.id)))
         elif op == GATEWAY_OP.RESUME:
             if not (cl := [w for w in self.clients if w.sid == data["d"]["session_id"]]):
                 await self.sendws(ws, GATEWAY_OP.INV_SESSION)
@@ -208,12 +259,28 @@ class Gateway:
             if cl.id != sess.id:
                 return await ws.close(4004)
             cl.replace(ws)
+            settings = await self.core.getUserSettings(UserId(cl.id))
+            self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
+            await self.ev.presence_update(cl.id, st)
             await self.send(cl, GATEWAY_OP.DISPATCH, t="READY")
         elif op == GATEWAY_OP.HEARTBEAT:
             if not (cl := [w for w in self.clients if w.ws == ws]):
                 return await ws.close(4005)
             cl = cl[0]
             await self.send(cl, GATEWAY_OP.HEARTBEAT_ACK, t=None, d=None)
+        elif op == GATEWAY_OP.STATUS:
+            d = data["d"]
+            if not (cl := [w for w in self.clients if w.ws == ws]):
+                return await ws.close(4005)
+            cl = cl[0]
+            if not (st := self.statuses.get(cl.id)):
+                settings = await self.core.getUserSettings(UserId(cl.id))
+                self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
+            if (status := d.get("status")):
+                st.setStatus(status)
+            if (activities := d.get("activities")):
+                st.setActivities(activities)
+            await self.ev.presence_update(cl.id, st)
 
     async def sendHello(self, ws):
         await self.sendws(ws, GATEWAY_OP.HELLO, t=None, s=None, d={"heartbeat_interval": 45000})
@@ -224,5 +291,27 @@ class Gateway:
         cl = cl[0]
         cl._connected = False
         if not [w for w in self.clients if w.id == cl.id and w != cl]:
-            pass # TODO
-            #await self.core.updatePresence(cl.id, {"status": "offline"})
+            await self.ev.presence_update(cl.id, {"status": "offline"})
+
+    async def getFriendsPresences(self, uid: int):
+        pr = []
+        friends = await self.core.getRelationships(UserId(uid))
+        friends = [int(u["user_id"]) for u in friends if u["type"] == 1]
+        for friend in friends:
+            if (status := self.statuses.get(friend)):
+                pr.append({
+                    "user_id": str(friend),
+                    "status": status.status,
+                    "last_modified": status.last_modified,
+                    "client_status": status.client_status,
+                    "activities": status.activities
+                })
+                continue
+            pr.append({
+                "user_id": str(friend),
+                "status": "offline",
+                "last_modified": int(time()),
+                "client_status": {},
+                "activities": []
+            })
+        return pr

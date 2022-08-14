@@ -156,13 +156,13 @@ class Core:
 
     @_usingDB
     async def setSettings(self, settings: UserSettings, cur: Cursor) -> None:
-        if not (j := settings.to_json(mfa_key=True)):
+        if not (j := settings.to_sql_json(settings.to_typed_json, with_values=True)):
             return
         await cur.execute(f'UPDATE `settings` SET {json_to_sql(j)} WHERE `uid`={settings.uid};')
 
     @_usingDB
     async def setUserdata(self, userdata: UserData, cur: Cursor) -> None:
-        if not (j := userdata.to_json()):
+        if not (j := userdata.to_sql_json(userdata.to_typed_json)):
             return
         await cur.execute(f'UPDATE `userdata` SET {json_to_sql(j)} WHERE `uid`={userdata.id};')
 
@@ -217,7 +217,7 @@ class Core:
         await self.mcl.broadcast("user_events", {"e": "relationship_req", "data": {"target_user": tUser.id, "current_user": cUser.id}})
 
     @_usingDB
-    async def getRelationships(self, user: User, cur: Cursor, with_data=False) -> list:
+    async def getRelationships(self, user: _User, cur: Cursor, with_data=False) -> list:
         async def _d(uid, t):
             u = {"user_id": str(uid), "type": t, "nickname": None, "id": str(uid)}
             if with_data:
@@ -445,24 +445,6 @@ class Core:
         return channels
 
     @_usingDB
-    async def getFriendsPresences(self, uid: int, cur: Cursor) -> list:
-        pr = []
-        fr = await self.getRelationships(UserId(uid), cur=cur)
-        fr = [int(u["user_id"]) for u in fr if u["type"] == 1]
-        for f in fr:
-            await cur.execute(f'SELECT "online", `modified`, `j_activities`, `online` FROM `presences` WHERE presences.uid={f};')
-            if not (r := await cur.fetchone()):
-                continue
-            pr.append({
-                "user_id": str(f),
-                "status": r[0] if r[3] else "offline",
-                "last_modified": r[1],
-                "client_status": {"desktop": r[0]} if r[0] != "offline" and not r[3] else {},
-                "activities": jloads(r[2]) if r[3] else []
-            })
-        return pr
-
-    @_usingDB
     async def updatePresence(self, uid: int, status: dict, cur: Cursor) -> Optional[dict]:
         if status.get("status") == "offline":
             await cur.execute(f'UPDATE `presences` SET `online`=false WHERE `uid`={uid};')
@@ -527,7 +509,7 @@ class Core:
 
     @_usingDB
     async def sendMessage(self, message: Message, cur: Cursor) -> Message:
-        q = json_to_sql(message.to_json(with_id=True), as_tuples=True)
+        q = json_to_sql(message.to_sql_json(message.to_typed_json, with_id=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f,v in q])
         values = ", ".join([f"{v}" for f,v in q])
         await cur.execute(f'INSERT INTO `messages` ({fields}) VALUES ({values});')

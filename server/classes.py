@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional, Union
 from zlib import compressobj, Z_FULL_FLUSH
 from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json
 
@@ -10,8 +11,10 @@ Null = _Null()
 class DBModel:
     FIELDS = ()
     ID_FIELD = None
-    NOT_DB_FIELDS = ()
+    ALLOWED_FIELDS = ()
     DEFAULTS = {}
+    TYPES = {}
+    DB_FIELDS = {}
 
     def _checkNulls(self):
         for f in self.FIELDS:
@@ -29,6 +32,35 @@ class DBModel:
             j[k] = v
         return j
 
+    def _typed(self, value, T):
+        if isinstance(T, type):
+            return T(value)
+        elif isinstance(T, dict):
+            value = dict(value)
+            v = {}
+            for key in [k for k in value.keys() if k in T.keys()]:
+                v[key] = self._typed(value[key], T.get(key))
+            return v
+        elif isinstance(T, tuple):
+            if "nullable" in T and not value:
+                return None
+            return self._typed(value, T[0])
+        return value
+
+    def to_typed_json(self, **json_args):
+        json = self.to_json(**json_args)
+        for key in json.keys():
+            json[key] = self._typed(json[key], self.TYPES.get(key))
+        return json
+
+    def to_sql_json(self, json_func, **json_args):
+        json = json_func(**json_args)
+        for key in list(json.keys()):
+            if (newkey := self.DB_FIELDS.get(key, key)) != key:
+                json[newkey] = json[key]
+                del json[key]
+        return json
+
     @classmethod
     def from_result(cls, desc, result):
         return cls(**result_to_json(desc, result))
@@ -39,7 +71,7 @@ class DBModel:
 
     def set(self, **kwargs):
         for k,v in kwargs.items():
-            if k not in list(self.FIELDS) + list(self.NOT_DB_FIELDS):
+            if k not in list(self.FIELDS) + list(self.ALLOWED_FIELDS):
                 continue
             setattr(self, k, v)
         return self
@@ -71,6 +103,7 @@ class _User:
 
 class Session(_User, DBModel):
     FIELDS = ("uid", "sid", "sig")
+    TYPES = {"uid": int, "sid": int, "sig": str}
 
     def __init__(self, uid, sid, sig):
         self.id = uid
@@ -140,6 +173,10 @@ class UserSettings(DBModel):
                   "convert_emoticons", "passwordless", "mfa", "activity_restricted_guild_ids", "friend_source_flags",
                   "guild_positions", "guild_folders", "restricted_guilds", "personalization", "usage_statistics")
     ID_FIELD = "uid"
+    DB_FIELDS = {"custom_status": "j_custom_status", "activity_restricted_guild_ids": "j_activity_restricted_guild_ids",
+                 "friend_source_flags": "j_friend_source_flags", "guild_positions": "j_guild_positions",
+                 "guild_folders": "j_guild_folders", "restricted_guilds": "j_restricted_guilds"}
+    TYPES = {"custom_status": (dict, "nullable",), "friend_source_flags": {"all": bool, "mutual_friends": bool, "mutual_guilds": bool}}
 
     def __init__(self,
                  uid, inline_attachment_media=Null, show_current_game=Null, view_nsfw_guilds=Null,
@@ -151,7 +188,7 @@ class UserSettings(DBModel):
                  developer_mode=Null, render_embeds=Null, animate_stickers=Null, message_display_compact=Null,
                  convert_emoticons=Null, passwordless=Null, mfa=Null, activity_restricted_guild_ids=Null,
                  friend_source_flags=Null, guild_positions=Null, guild_folders=Null, restricted_guilds=Null,
-                 personalization=Null, usage_statistics=Null):
+                 personalization=Null, usage_statistics=Null, **kwargs):
         self.uid = uid
         self.inline_attachment_media = inline_attachment_media
         self.show_current_game = show_current_game
@@ -166,7 +203,7 @@ class UserSettings(DBModel):
         self.detect_platform_accounts = detect_platform_accounts
         self.explicit_content_filter = explicit_content_filter
         self.status = status
-        self.custom_status = custom_status
+        self.custom_status = custom_status if custom_status else None
         self.default_guilds_restricted = default_guilds_restricted
         self.theme = theme
         self.allow_accessibility_detection = allow_accessibility_detection
@@ -206,6 +243,9 @@ class UserData(DBModel):
     FIELDS = ("birth", "username", "discriminator", "phone", "premium", "accent_color", "avatar", "avatar_decoration",
               "banner", "banner_color", "bio", "flags", "public_flags")
     ID_FIELD = "uid"
+    TYPES = {"phone": (str, "nullable",), "premium": (bool, "nullable",), "accent_color": (int, "nullable",),
+             "avatar": (str, "nullable",), "avatar_decoration": (str, "nullable",), "banner": (str, "nullable",),
+             "banner_color": (int, "nullable",)}
 
     def __init__(self, uid, birth=Null, username=Null, discriminator=Null, phone=Null, accent_color=Null, premium=Null,
                  avatar=Null, avatar_decoration=Null, banner=Null, banner_color=Null, bio=Null, flags=Null, public_flags=Null):
@@ -239,7 +279,16 @@ class Channel(_Channel, DBModel):
               "rate_limit", "recipients", "icon", "owner_id", "application_id", "parent_id", "rtc_region",
               "video_quality_mode", "thread_metadata", "default_auto_archive", "flags")
     ID_FIELD = "id"
-    NOT_DB_FIELDS = ("last_message_id",)
+    ALLOWED_FIELDS = ("last_message_id",)
+    DB_FIELDS = {"permission_overwrites": "j_permission_overwrites", "recipients": "j_recipients",
+                 "thread_metadata": "j_thread_metadata"}
+    TYPES = {"guild_id": (int, "nullable",), "position": (int, "nullable",), "j_permission_overwrites": (list, "nullable",),
+             "name": (str, "nullable",), "topic": (str, "nullable",), "nsfw": (bool, "nullable",),
+             "bitrate": (int, "nullable",), "user_limit": (int, "nullable",), "rate_limit": (int, "nullable",),
+             "j_recipients": (list, "nullable",), "icon": (str, "nullable",), "owner_id": (int, "nullable",),
+             "application_id": (int, "nullable",), "parent_id": (int, "nullable",), "rtc_region": (str, "nullable",),
+             "video_quality_mode": (int, "nullable",), "j_thread_metadata": (dict, "nullable",),
+             "default_auto_archive": (int, "nullable",), "flags": (int, "nullable",)}
 
     def __init__(self, id, type, guild_id=Null, position=Null, permission_overwrites=Null, name=Null, topic=Null,
                  nsfw=Null, bitrate=Null, user_limit=Null, rate_limit=Null, recipients=Null, icon=Null, owner_id=Null,
@@ -285,10 +334,16 @@ class Message(_Message, DBModel):
     FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "reactions", "pinned",
               "webhook_id", "application_id", "type", "flags", "message_reference", "thread", "components", "sticker_items")
     ID_FIELD = "id"
-    NOT_DB_FIELDS = ("nonce",)
+    ALLOWED_FIELDS = ("nonce",)
     DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "reactions": [], "pinned": False,
                 "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
                 "thread": None, "components": [], "sticker_items": []}
+    TYPES = {"content": (str, "nullable",), "edit_timestamp": (int, "nullable",), "attachments": list, "embeds": list,
+             "reactions": list, "pinned": bool,"webhook_id": (int, "nullable",), "application_id": (int, "nullable",),
+             "type": int, "flags": int, "message_reference": (int, "nullable",),"thread": (int, "nullable",),
+             "components": list, "sticker_items": list}
+    DB_FIELDS = {"attachments": "j_attachments", "embeds": "j_embeds", "reactions": "j_reactions", "components": "j_components",
+                 "sticker_items": "j_sticker_items"}
 
     def __init__(self, id, channel_id, author, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
                  reactions=Null, pinned=Null, webhook_id=Null, application_id=Null, type=Null, flags=Null,

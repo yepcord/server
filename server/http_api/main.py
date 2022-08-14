@@ -4,7 +4,7 @@ from quart import Quart, request
 from functools import wraps
 from ..classes import Session, UserSettings, UserData, Message
 from ..core import Core, CDN
-from ..utils import b64decode, b64encode, mksf, c_json, ALLOWED_SETTINGS, ALLOWED_USERDATA, ECODES, ERRORS, getImage, \
+from ..utils import b64decode, b64encode, mksf, c_json, ECODES, ERRORS, getImage, \
     validImage, MFA, execute_after, ChannelType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse
 from ..storage import FileStorage
@@ -208,16 +208,6 @@ async def api_users_me_patch(user):
     settings = {}
     for k,v in _settings.items():
         k = k.lower()
-        if k not in ALLOWED_USERDATA:
-            continue
-        t = ALLOWED_USERDATA[k]
-        if not isinstance(v, t):
-            if isinstance(t, tuple):
-                t = t[-1]
-            try:
-                v = t(v)
-            except:
-                v = t()
         if k == "avatar":
             if not (img := getImage(v)) or not validImage(img):
                 continue
@@ -261,26 +251,7 @@ async def api_users_me_settings_get(user):
 @app.route("/api/v9/users/@me/settings", methods=["PATCH"])
 @getUser
 async def api_users_me_settings_patch(user):
-    _settings = await request.get_json()
-    settings = {}
-    for k,v in _settings.items():
-        k = k.lower()
-        if k not in ALLOWED_SETTINGS:
-            continue
-        t = ALLOWED_SETTINGS[k]
-        if not isinstance(v, t):
-            try:
-                v = t(v)
-            except:
-                v = t()
-        if k == "friend_source_flags":
-            for _k,_v in list(v.items()):
-                if _k not in ["all", "mutual_friends", "mutual_guilds"]:
-                    del v[_k]
-                    continue
-                if type(_v) != bool:
-                    _v = bool(_v)
-        settings[k] = v
+    settings = await request.get_json()
     s = UserSettings(user.id, **settings)
     await core.setSettings(s)
     await core.sendUserUpdateEvent(user.id)

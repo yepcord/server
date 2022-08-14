@@ -56,7 +56,7 @@ CREATE TABLE `settings` (
   `detect_platform_accounts` bool not null default true,
   `explicit_content_filter` int not null default 1,
   `status` longtext not null default "online",
-  `custom_status` longtext default null,
+  `j_custom_status` JSON default null,
   `default_guilds_restricted` bool not null default false,
   `theme` text not null default "dark",
   `allow_accessibility_detection` bool not null default false,

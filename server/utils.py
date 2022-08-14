@@ -64,61 +64,6 @@ def c_json(json, code=200, headers={}):
 
 NoneType = type(None)
 
-ALLOWED_SETTINGS = {
-    "inline_attachment_media": bool,
-    "show_current_game": bool,
-    "view_nsfw_guilds": bool,
-    "enable_tts_command": bool,
-    "render_reactions": bool,
-    "gif_auto_play": bool,
-    "stream_notifications_enabled": bool,
-    "animate_emoji": bool,
-    "afk_timeout": int,
-    "view_nsfw_commands": bool,
-    "detect_platform_accounts": bool,
-    "status": str,
-    "explicit_content_filter": int,
-    "custom_status": str,
-    "default_guilds_restricted": bool,
-    "theme": str,
-    "allow_accessibility_detection": bool,
-    "locale": str,
-    "native_phone_integration_enabled": bool,
-    "timezone_offset": int,
-    "friend_discovery_flags": int,
-    "contact_sync_enabled": bool,
-    "disable_games_tab": bool,
-    "developer_mode": bool,
-    "render_embeds": bool,
-    "animate_stickers": int,
-    "message_display_compact": bool,
-    "convert_emoticons": bool,
-    "passwordless": bool,
-    "personalization": bool,
-    "usage_statistics": bool,
-    "activity_restricted_guild_ids": list,
-    "friend_source_flags": dict,
-    "guild_positions": list,
-    "guild_folders": list,
-    "restricted_guilds": list,
-}
-
-ALLOWED_USERDATA = {
-    "birth": str,
-    "username": str,
-    "discriminator": int,
-    "phone": (str, NoneType),
-    "premium": bool,
-    "accent_color": (int, NoneType),
-    "avatar": (str, NoneType),
-    "avatar_decoration": (str, NoneType),
-    "banner": (str, NoneType),
-    "banner_color": (int, NoneType),
-    "bio": str,
-    "flags": int,
-    "public_flags": int
-}
-
 ERRORS = {
     1: jdumps({"code": 50035, "errors": {"email": {"_errors": [{"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}]}}, "message": "Invalid Form Body"}),
     2: jdumps({"code": 50035, "errors": {"login": {"_errors": [{"code": "INVALID_LOGIN", "message": "Invalid login or password."}]}, "password": {"_errors": [{"code": "INVALID_LOGIN", "message": "Invalid login or password."}]}}, "message": "Invalid Form Body"}),
@@ -254,7 +199,8 @@ def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
         elif isinstance(v, bool):
             v = "true" if v else "false"
         elif isinstance(v, (dict, list)):
-            k = f"j_{k}"
+            if not k.startswith("j_"):
+                k = f"j_{k}"
             v = escape_string(jdumps(v))
             v = f"\"{v}\""
         elif isinstance(v, NoneType):
