@@ -14,11 +14,9 @@ class DBModel:
     DEFAULTS = {}
 
     def _checkNulls(self):
-        args = list(self.__init__.__code__.co_varnames) # TODO: replace with self.FIELDS
-        args.remove("self")
-        for arg in args:
-            if getattr(self, arg) == Null:
-                delattr(self, arg)
+        for f in self.FIELDS:
+            if getattr(self, f) == Null:
+                delattr(self, f)
 
     def to_json(self, with_id=False, with_values=False):
         j = {}
@@ -51,6 +49,18 @@ class DBModel:
             if not hasattr(self, k):
                 setattr(self, k, v)
         return self
+
+    def get_diff(self, other) -> dict:
+        this = self.to_json()
+        other = other.to_json()
+        diff = {}
+        for k, v in this.items():
+            if (l := other.get(k, v)) != this[k]:
+                diff[k] = l
+            if k in other:
+                del other[k]
+        diff.update(other)
+        return diff
 
 class _User:
     def __init__(self):
@@ -265,7 +275,7 @@ class Channel(_Channel, DBModel):
         limit = int(limit)
         if limit > 100:
             limit = 100
-        return await self._core.getChannelMessages(self, limit)
+        return await self._core.getChannelMessages(self, limit, before, after)
 
 class _Message:
     def __eq__(self, other):
@@ -301,6 +311,8 @@ class Message(_Message, DBModel):
         self.components = components
         self.sticker_items = sticker_items
         self._core = None
+
+        self.set(**kwargs)
 
         self._checkNulls()
 

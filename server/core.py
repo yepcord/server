@@ -506,9 +506,15 @@ class Core:
         await self.mcl.broadcast("user_events", {"e": "presence_update", "data": {"user": uid, "status": status}})
 
     @_usingDB
-    async def getChannelMessages(self, channel, limit: int, cur: Cursor) -> List[Message]:
+    async def getChannelMessages(self, channel, limit: int, before: int=None, after: int=None, cur: Cursor=None) -> List[Message]:
         messages = []
-        await cur.execute(f'SELECT * FROM `messages` WHERE `channel_id`={channel.id} ORDER BY `id` DESC LIMIT {limit};')
+        where = [f"`channel_id`={channel.id}"]
+        if before:
+            where.append(f"`id` < {before}")
+        if after:
+            where.append(f"`id` > {after}")
+        where = " AND ".join(where)
+        await cur.execute(f'SELECT * FROM `messages` WHERE {where} ORDER BY `id` DESC LIMIT {limit};')
         for r in await cur.fetchall():
             messages.append(Message.from_result(cur.description, r).setCore(self))
         return messages
@@ -526,26 +532,29 @@ class Core:
         values = ", ".join([f"{v}" for f,v in q])
         await cur.execute(f'INSERT INTO `messages` ({fields}) VALUES ({values});')
         message.fill_defaults().setCore(self)
-        channel = await self.getChannel(message.channel_id)
-        if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
-            users = channel.recipients
         m = await message.json
+        users = await self.getRelatedUsersToChannel(message.channel_id, cur=cur)
         await self.mcl.broadcast("message_events", {"e": "message_create", "data": {"users": users, "message_obj": m}})
         return message
 
     @_usingDB
     async def editMessage(self, before: Message, after: Message, cur: Cursor) -> Message:
-        b = before.to_json()
-        a = after.to_json()
-        changes = {}
-        for k,v in b.items():
-            if (l := a.get(k, v)) != b[k]:
-                changes[k] = l
-        changes = changes.update(a)
-        
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        await cur.execute(f'UPDATE `messages` SET {diff} WHERE `id`={before.id} AND `channel_id`={before.channel_id}')
+        after.fill_defaults().setCore(self)
+        m = await after.json
+        users = await self.getRelatedUsersToChannel(after.channel_id, cur=cur)
+        await self.mcl.broadcast("message_events", {"e": "message_update", "data": {"users": users, "message_obj": m}})
+        return after
 
     @_usingDB
-    async def getRelatedUsersToChannel(self, channel: int, cur: Cursor):
+    async def deleteMessage(self, message: Message, cur: Cursor):
+        await cur.execute(f'DELETE FROM `messages` WHERE `id`={message.id};')
+        await self.mcl.broadcast("message_events", {"e": "message_delete", "data": {"message": message.id, "channel": message.channel_id}})
+
+    @_usingDB
+    async def getRelatedUsersToChannel(self, channel: int, cur: Cursor) -> list:
         channel = await self.getChannel(channel, cur=cur)
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             return channel.recipients
@@ -553,8 +562,3 @@ class Core:
     @_usingDB
     async def sendTypingEvent(self, user, channel):
         await self.mcl.broadcast("message_events", {"e": "typing", "data": {"user": user.id, "channel": channel.id}})
-
-    @_usingDB
-    async def deleteMessage(self, message: Message, cur: Cursor):
-        await cur.execute(f'DELETE FROM `messages` WHERE `id`={message.id};')
-        await self.mcl.broadcast("message_events", {"e": "message_delete", "data": {"message": message.id, "channel": message.channel_id}})

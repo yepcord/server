@@ -413,7 +413,8 @@ async def api_channels_channel(channel):
 @getUser
 @getChannel
 async def api_channels_channel_messages_get(user, channel):
-    messages = await channel.messages(request.args.get("limit", 50))
+    args = request.args
+    messages = await channel.messages(args.get("limit", 50), int(args.get("before", 0)), int(args.get("after", 0)))
     messages = [await m.json for m in messages]
     return c_json(messages)
 
@@ -422,12 +423,11 @@ async def api_channels_channel_messages_get(user, channel):
 @getChannel
 async def api_channels_channel_messages_post(user, channel):
     data = await request.get_json()
-    if not (content := data.get("content")):
+    if "content" not in data and "embeds" not in data:
         return c_json(ERRORS[19], ECODES[19])
-    message = Message(id=mksf(), content=content, channel_id=channel.id, author=user.id).set(nonce=data.get("nonce"))
+    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data)
     message = await core.sendMessage(message)
-    message = await message.json
-    return c_json(message)
+    return c_json(await message.json)
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>", methods=["DELETE"])
 @getUser
@@ -448,9 +448,9 @@ async def api_channels_channel_messages_message_patch(user, channel, message):
     if message.author != user.id:
         return c_json(ERRORS[22], ECODES[22])
     before = message
-    after = Message(id=before.id, edit_timestamp=int(time()), **data)
-    await core.editMessage(before, after)
-    return "", 204
+    after = Message(id=before.id, channel_id=before.channel_id, author=before.author, edit_timestamp=int(time()), **data)
+    after = await core.editMessage(before, after)
+    return c_json(await after.json)
 
 @app.route("/api/v9/channels/<int:channel>/typing", methods=["POST"])
 @getUser

@@ -268,6 +268,9 @@ class TypingEvent(Event):
             }
         }
 
+class MessageUpdateEvent(MessageCreateEvent):
+    NAME = "MESSAGE_UPDATE"
+
 class MessageDeleteEvent(Event):
     NAME = "MESSAGE_DELETE"
 

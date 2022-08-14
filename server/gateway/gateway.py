@@ -145,6 +145,11 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(MessageDeleteEvent(message, channel))
 
+    async def message_update(self, users, message_obj):
+        clients = [c for c in self.clients if c.id in users and c.connected]
+        for cl in clients:
+            await cl.esend(MessageUpdateEvent(message_obj))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core
