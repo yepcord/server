@@ -1,6 +1,8 @@
 from time import time
 from quart import Quart, request
 from functools import wraps
+
+from server.errors import EmbedException
 from ..classes import Session, UserSettings, UserData, Message
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, ECODES, ERRORS, getImage, validImage, MFA, execute_after, ChannelType
@@ -462,7 +464,10 @@ async def api_channels_channel_messages_post(user, channel):
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
-    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data)
+    try:
+        message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data)
+    except EmbedException as e:
+        return c_json(e.error, 400)
     message = await core.sendMessage(message)
     return c_json(await message.json)
 
