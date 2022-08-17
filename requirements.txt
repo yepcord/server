@@ -8,5 +8,5 @@ aiohttp==3.8.1
 asyncio==3.4.3
 DateTime==4.3
 python-magic==0.4.25
-Pillow==9.0.0
+Pillow==9.0.1
 cryptography==3.4.7
