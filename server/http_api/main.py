@@ -457,7 +457,7 @@ async def api_channels_channel_messages_get(user, channel):
 @getChannel
 async def api_channels_channel_messages_post(user, channel):
     data = await request.get_json()
-    if "content" not in data and "embeds" not in data:
+    if not data.get("content") or not data.get("embeds"):
         return c_json(ERRORS[19], ECODES[19])
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]

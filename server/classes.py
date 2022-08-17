@@ -1,6 +1,9 @@
 from datetime import datetime
+from time import mktime
 from zlib import compressobj, Z_FULL_FLUSH
+from .errors import EmbedException
 from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json
+from dateutil.parser import parse as dparse
 
 
 class _Null:
@@ -384,6 +387,173 @@ class Message(_Message, DBModel):
         self.set(**kwargs)
 
         self._checkNulls()
+        self._checkEmbeds()
+
+    def _checkEmbedImage(self, image, idx):
+        if (url := image.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
+            raise EmbedException(24, {"embed_index": idx, "scheme": scheme})
+        if image.get("proxy_url"):  # Not supported
+            del image["proxy_url"]
+        if (w := image.get("width")):
+            try:
+                w = int(w)
+                image["width"] = w
+            except:
+                del image["width"]
+        if (w := image.get("height")):
+            try:
+                w = int(w)
+                image["height"] = w
+            except:
+                del image["height"]
+
+    def _formatEmbedError(self, code, path, replace={}):
+        def _mkTree(o, p, e):
+            _tmp = o["errors"]["embeds"]
+            if p is None:
+                _tmp["_errors"] = e
+                return
+            for s in p.split("."):
+                _tmp[s] = {}
+                _tmp = _tmp[s]
+            _tmp["_errors"] = e
+
+        e = {"code": 50035, "errors": {"embeds": {}}, "message": "Invalid Form Body"}
+        if code == 23:
+            _mkTree(e, path, [{"code": "BASE_TYPE_REQUIRED", "message": "This field is required"}])
+            return e
+        elif code == 24:
+            m = "Scheme \"%SCHEME%\" is not supported. Scheme must be one of ('http', 'https')."
+            for k,v in replace.items():
+                m = m.replace(f"%{k.upper()}%", v)
+            _mkTree(e, path, [{"code": "URL_TYPE_INVALID_SCHEME", "message": m}])
+            return e
+        elif code == 25:
+            m = "Could not parse %VALUE%. Should be ISO8601."
+            for k, v in replace.items():
+                m = m.replace(f"%{k.upper()}%", v)
+            _mkTree(e, path, [{"code": "DATE_TIME_TYPE_PARSE", "message": m}])
+            return e
+        elif code == 26:
+            _mkTree(e, path, [{"code": "NUMBER_TYPE_MAX", "message": "int value should be <= 16777215 and >= 0."}])
+            return e
+        elif code == 27:
+            m = "Must be %LENGTH% or fewer in length."
+            for k, v in replace.items():
+                m = m.replace(f"%{k.upper()}%", v)
+            _mkTree(e, path, [{"code": "BASE_TYPE_MAX_LENGTH", "message": m}])
+            return e
+        elif code == 28:
+            _mkTree(e, path, [{"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or fewer in length."}])
+            return e
+
+
+    def _checkEmbeds(self):  # TODO: Check for total lenght
+        def _delIfEmpty(i, a):
+            if (v := self.embeds[i].get(a)) and bool(v):
+                del self.embeds[i][a]
+
+        if not hasattr(self, "embeds"):
+            return
+        if len(self.embeds) > 10:
+            raise EmbedException(28)
+        if type(self.embeds) != list:
+            delattr(self, "embeds")
+            return
+        for idx, embed in enumerate(self.embeds):
+            if type(embed) != dict:
+                delattr(self, "embeds")
+                return
+            if not embed.get("title"):
+                raise EmbedException(self._formatEmbedError(23, f"{idx}"))
+            embed["title"] = str(embed["title"])
+            _delIfEmpty(idx, "description")
+            _delIfEmpty(idx, "url")
+            _delIfEmpty(idx, "timestamp")
+            _delIfEmpty(idx, "color")
+            _delIfEmpty(idx, "footer")
+            _delIfEmpty(idx, "image")
+            _delIfEmpty(idx, "thumbnail")
+            _delIfEmpty(idx, "video")
+            _delIfEmpty(idx, "provider")
+            _delIfEmpty(idx, "author")
+            if len(embed.get("title")) > 256:
+                raise EmbedException(self._formatEmbedError(27, f"{idx}.title", {"length": "256"}))
+            if (desc := embed.get("description")):
+                embed["description"] = str(desc)
+                if len(str(desc)) > 2048:
+                    raise EmbedException(self._formatEmbedError(27, f"{idx}.description", {"length": "2048"}))
+            if (url := embed.get("url")):
+                url = str(url)
+                embed["url"] = url
+                if (scheme := url.split(":")[0]) not in ["http", "https"]:
+                    raise EmbedException(self._formatEmbedError(24, f"{idx}.url", {"scheme": scheme}))
+            if (ts := embed.get("timestamp")):
+                ts = str(ts)
+                embed["timestamp"] = ts
+                try:
+                    ts = mktime(dparse(ts).timetuple())
+                except ValueError:
+                    raise EmbedException(self._formatEmbedError(25, f"{idx}.timestamp", {"value": ts}))
+            try:
+                if (color := int(embed.get("color"))):
+                    if color > 0xffffff or color < 0:
+                        raise EmbedException(self._formatEmbedError(26, f"{idx}.color"))
+            except ValueError:
+                del self.embeds[idx]["color"]
+            if (footer := embed.get("footer")):
+                if not footer.get("text"):
+                    del self.embeds[idx]["footer"]
+                else:
+                    if len(footer.get("text")) > 2048:
+                        raise EmbedException(self._formatEmbedError(27, f"{idx}.footer.text", {"length": "2048"}))
+                    if (url := footer.get("icon_url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
+                        raise EmbedException(self._formatEmbedError(24, f"{idx}.footer.icon_url", {"scheme": scheme}))
+                    if footer.get("proxy_icon_url"):  # Not supported
+                        del footer["proxy_icon_url"]
+            if (image := embed.get("image")):
+                if not image.get("url"):
+                    del self.embeds[idx]["image"]
+                else:
+                    self._checkEmbedImage(image, idx)
+            if (thumbnail := embed.get("thumbnail")):
+                if not thumbnail.get("url"):
+                    del self.embeds[idx]["thumbnail"]
+                else:
+                    self._checkEmbedImage(thumbnail, idx)
+            if (video := embed.get("video")):
+                if not video.get("url"):
+                    del self.embeds[idx]["video"]
+                else:
+                    self._checkEmbedImage(video, idx)
+            if embed.get("provider"):
+                del self.embeds[idx]["provider"]
+            if (author := embed.get("author")):
+                if not (aname := author.get("name")):
+                    del self.embeds[idx]["author"]
+                else:
+                    if len(aname) > 256:
+                        raise EmbedException(self._formatEmbedError(27, f"{idx}.author.name", {"length": "256"}))
+                    if (url := author.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
+                        raise EmbedException(self._formatEmbedError(24, f"{idx}.author.url", {"scheme": scheme}))
+                    if (url := author.get("icon_url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
+                        raise EmbedException(self._formatEmbedError(24, f"{idx}.author.icon_url", {"scheme": scheme}))
+                    if author.get("proxy_icon_url"):  # Not supported
+                        del author["proxy_icon_url"]
+            if (fields := embed.get("fields")):
+                embed["fields"] = fields = fields[:25]
+                for fidx, field in enumerate(fields):
+                    if not (name := field.get("name")):
+                        raise EmbedException(self._formatEmbedError(23, f"{idx}.fields.{fidx}.name"))
+                    if len(name) > 256:
+                        raise EmbedException(self._formatEmbedError(27, f"{idx}.fields.{fidx}.name", {"length": "256"}))
+                    if not (value := field.get("value")):
+                        raise EmbedException(self._formatEmbedError(23, f"{idx}.fields.{fidx}.value"))
+                    if len(value) > 1024:
+                        raise EmbedException(self._formatEmbedError(27, f"{idx}.fields.{fidx}.value", {"length": "1024"}))
+                    if not field.get("inline"):
+                        field["inline"] = False
+
 
     @property
     def json(self):
