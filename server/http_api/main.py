@@ -2,7 +2,7 @@ from time import time
 from quart import Quart, request
 from functools import wraps
 
-from server.errors import EmbedException
+from ..errors import EmbedException
 from ..classes import Session, UserSettings, UserData, Message
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, ECODES, ERRORS, getImage, validImage, MFA, execute_after, ChannelType

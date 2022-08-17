@@ -407,7 +407,7 @@ class Message(_Message, DBModel):
             except:
                 del image["height"]
 
-    def _formatEmbedError(self, code, path, replace={}):
+    def _formatEmbedError(self, code, path=None, replace={}):
         def _mkTree(o, p, e):
             _tmp = o["errors"]["embeds"]
             if p is None:
