@@ -65,9 +65,9 @@ class ReadyEvent(Event):
                 "merged_members": [],
                 "private_channels": await self.core.getPrivateChannels(self.user),
                 "read_state": {
-                    "version": 871,
+                    "version": 1,
                     "partial": False,
-                    "entries": []
+                    "entries": [] # TODO (await self.core.getReadStates(self.user))
                 },
                 "resume_gateway_url": "wss://127.0.0.1/",
                 "session_type": "normal",

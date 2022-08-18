@@ -404,7 +404,7 @@ async def api_users_me_harvest(user):
 
 @app.route("/api/v9/connections/<string:connection>/authorize", methods=["GET"])
 @getUser
-async def api_users_me_harvest(user, connection):
+async def api_connections_connection_authorize(user, connection):
     url = ""
     if connection == "github":
         CLIENT_ID = ""
@@ -415,7 +415,7 @@ async def api_users_me_harvest(user, connection):
 
 @app.route("/api/v9/connections/<string:connection>/callback", methods=["POST"])
 @getUser
-async def api_users_me_harvest(user, connection):
+async def api_connections_connection_callback(user, connection):
     data = await request.get_json()
     if connection == "github":
         ...
@@ -459,7 +459,7 @@ async def api_channels_channel_messages_get(user, channel):
 @getChannel
 async def api_channels_channel_messages_post(user, channel):
     data = await request.get_json()
-    if not data.get("content") or not data.get("embeds"):
+    if not data.get("content") and not data.get("embeds"):
         return c_json(ERRORS[19], ECODES[19])
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
@@ -499,6 +499,19 @@ async def api_channels_channel_messages_message_patch(user, channel, message):
     after = Message(id=before.id, channel_id=before.channel_id, author=before.author, edit_timestamp=int(time()), **data)
     after = await core.editMessage(before, after)
     return c_json(await after.json)
+
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/ack", methods=["POST"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_ack(user, channel, message):
+    #data = await request.get_json()
+    #if data.get("manual") and (ct := int(data.get("mention_count"))):
+    #    await core.setReadState(user.id, channel.id, ct)
+    #else:
+    #    await core.setReadState(user.id, channel.id, 0)
+    return c_json({"token": None})
 
 
 @app.route("/api/v9/channels/<int:channel>/typing", methods=["POST"])

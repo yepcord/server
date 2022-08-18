@@ -5,7 +5,7 @@ from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
 from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json
-from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData
+from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState
 from .storage import _Storage
 from json import loads as jloads
 from random import randint
@@ -42,6 +42,7 @@ class Core:
         self.pool = None
         self.loop = loop or get_event_loop()
         self.mcl = Broadcaster("http")
+        self._cache = {}
 
     async def initMCL(self):
         await self.mcl.start("ws://127.0.0.1:5050")
@@ -476,6 +477,12 @@ class Core:
         m = await message.json
         users = await self.getRelatedUsersToChannel(message.channel_id, cur=cur)
         await self.mcl.broadcast("message_events", {"e": "message_create", "data": {"users": users, "message_obj": m}})
+        async def _addToReadStates():
+            _u = await self.getRelatedUsersToChannel(message.channel_id)
+            _u.remove(message.author)
+            for u in _u:
+                await self.addMessageToReadStates(u, message.channel_id)
+        get_event_loop().create_task(_addToReadStates())
         return message
 
     @_usingDB
@@ -501,5 +508,33 @@ class Core:
             return channel.recipients
 
     @_usingDB
-    async def sendTypingEvent(self, user, channel):
+    async def sendTypingEvent(self, user: _User, channel: Channel) -> None:
         await self.mcl.broadcast("message_events", {"e": "typing", "data": {"user": user.id, "channel": channel.id}})
+
+    @_usingDB
+    async def addMessageToReadStates(self, uid: int, channel_id: int, cur: Cursor) -> None:
+        await self.setReadState(uid, channel_id, "`count`+1", cur=cur)
+
+    @_usingDB
+    async def setReadState(self, uid: int, channel_id: int, count: Union[int, str], cur: Cursor) -> None:
+        await cur.execute(f'UPDATE `read_states` set `count`={count} where `uid`={uid} and `channel_id`={channel_id};')
+        if cur.rowcount == 0:
+            if type(count) == str:
+                count = 1
+            await cur.execute(f'INSERT INTO `read_states` (`uid`, `channel_id`, `count`) values ({uid}, {channel_id}, {count});')
+
+    @_usingDB
+    async def getReadStates(self, user: _User, cur: Cursor) -> list:
+        states = []
+        await cur.execute(f'SELECT * FROM `read_states` WHERE `uid`={user.id};')
+        for r in await cur.fetchall():
+            st = ReadState.from_result(cur.description, r)
+            channel = await self.getLastMessageId(Channel(st.channel_id, -1), cur=cur)
+            st.set(last_message_id=channel.last_message_id)
+            states.append({
+                "mention_count": st.count,
+                "last_pin_timestamp": "1970-01-01T00:00:00+00:00",  # TODO
+                "last_message_id": str(st.last_message_id),
+                "id": str(st.channel_id),
+            })
+        return states

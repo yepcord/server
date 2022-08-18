@@ -39,7 +39,7 @@ class Process:
         if not self.app:
             cmd = f"python -u {self.file}"
         else:
-            cmd = f"python -u -m uvicorn {self.app} --ssl-keyfile=ssl/key.pem --ssl-certfile=ssl/cert.pem --reload --reload-dir server" + (f" --port {self.port}" if self.port else "")
+            cmd = f"python -u -m uvicorn {self.app} --ssl-keyfile=ssl/key.pem --ssl-certfile=ssl/cert.pem --reload --reload-dir server --host 0.0.0.0" + (f" --port {self.port}" if self.port else "")
         self.running = True
         Thread(target=self._run, args=(cmd,)).start()
 

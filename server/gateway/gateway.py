@@ -201,7 +201,7 @@ class GatewayEvents:
             await cl.esend(MessageUpdateEvent(message_obj))
 
     async def message_ack(self, message, channel):
-        pass  # {"t": "MESSAGE_ACK", "s": 4, "op": 0, "d": {"version": 23, "message_id": "1008402012314021938", "channel_id": "1002258287061901434"}}
+        pass  # TODO {"t": "MESSAGE_ACK", "s": 4, "op": 0, "d": {"version": 23, "message_id": "1008402012314021938", "channel_id": "1002258287061901434"}}
 
 
 class Gateway:

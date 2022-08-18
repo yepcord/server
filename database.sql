@@ -139,3 +139,11 @@ CREATE TABLE `messages` (
   `j_sticker_items` JSON not null default "[]",
   UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `read_states`;
+CREATE TABLE `read_states` (
+  `uid` bigint not null,
+  `channel_id` bigint not null,
+  `last_message` bigint not null,
+  `count` int not null default 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

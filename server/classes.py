@@ -450,7 +450,7 @@ class Message(_Message, DBModel):
 
     def _checkEmbeds(self):  # TODO: Check for total lenght
         def _delIfEmpty(i, a):
-            if (v := self.embeds[i].get(a)) and bool(v):
+            if (v := self.embeds[i].get(a)) and not bool(v):
                 del self.embeds[i][a]
 
         if not hasattr(self, "embeds"):
@@ -466,6 +466,7 @@ class Message(_Message, DBModel):
                 return
             if not embed.get("title"):
                 raise EmbedException(self._formatEmbedError(23, f"{idx}"))
+            embed["type"] = "rich"
             embed["title"] = str(embed["title"])
             _delIfEmpty(idx, "description")
             _delIfEmpty(idx, "url")
@@ -496,7 +497,8 @@ class Message(_Message, DBModel):
                 except ValueError:
                     raise EmbedException(self._formatEmbedError(25, f"{idx}.timestamp", {"value": ts}))
             try:
-                if (color := int(embed.get("color"))):
+                if (color := embed.get("color")):
+                    color = int(color)
                     if color > 0xffffff or color < 0:
                         raise EmbedException(self._formatEmbedError(26, f"{idx}.color"))
             except ValueError:
@@ -628,5 +630,20 @@ class Relationship(DBModel):
         self.u1 = u1
         self.u2 = u2
         self.type = type
+
+        self._checkNulls()
+
+
+class ReadState(DBModel):
+    FIELDS = ("channel_id", "count",)
+    ID_FIELD = "uid"
+    ALLOWED_FIELDS = ("last_message_id",)
+
+    def __init__(self, uid, channel_id, count=Null, last_message_id=None):
+        self.uid = uid
+        self.channel_id = channel_id
+        self.count = count
+        self.last_message_id = last_message_id
+        self._core = None
 
         self._checkNulls()
