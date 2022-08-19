@@ -292,11 +292,11 @@ message StatusSettings {
 	ShowCurrentGame show_current_game = 3;
 }
 
-message Locale { // not sure
+message Locale {
 	string locale_code = 1;
 }
 
-message TimezoneOffset { // not sure
+message TimezoneOffset {
 	int32 offset = 1;
 }
 
