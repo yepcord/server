@@ -161,5 +161,5 @@ CREATE TABLE `attachments` (
   `content_type` text not null,
   `filename` text not null,
   `size` bigint not null,
-  `uuid` text not null,
+  `uuid` text not null
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
