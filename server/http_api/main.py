@@ -92,17 +92,23 @@ def getChannel(f):
     return wrapped
 
 
+async def _getMessage(user, channel, message_id):
+    if not channel:
+        return c_json(ERRORS[18], ECODES[18])
+    if not user:
+        return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+    if not message_id:
+        return c_json(ERRORS[20], ECODES[20])
+    if not (message := await core.getMessage(channel, message_id)):
+        return c_json(ERRORS[20], ECODES[20])
+    return message
+
+
 def getMessage(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (channel := kwargs.get("channel")):
-            return c_json(ERRORS[18], ECODES[18])
-        if not (kwargs.get("user")):
-            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
-        if not (message := kwargs.get("message")):
-            return c_json(ERRORS[20], ECODES[20])
-        if not (message := await core.getMessage(channel, message)):
-            return c_json(ERRORS[20], ECODES[20])
+        if isinstance((message := await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))), tuple):
+            return message
         kwargs["message"] = message
         return await f(*args, **kwargs)
     return wrapped
@@ -469,6 +475,8 @@ async def api_channels_channel_messages_post(user, channel):
     except EmbedException as e:
         return c_json(e.error, 400)
     message = await core.sendMessage(message)
+    if await core.delReadStateIfExists(user.id, channel.id):
+        await core.sendMessageAck(user.id, channel.id, message.id)
     return c_json(await message.json)
 
 
@@ -500,17 +508,19 @@ async def api_channels_channel_messages_message_patch(user, channel, message):
     after = await core.editMessage(before, after)
     return c_json(await after.json)
 
-
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>/ack", methods=["POST"])
 @getUser
 @getChannel
-@getMessage
 async def api_channels_channel_messages_message_ack(user, channel, message):
-    #data = await request.get_json()
-    #if data.get("manual") and (ct := int(data.get("mention_count"))):
-    #    await core.setReadState(user.id, channel.id, ct)
-    #else:
-    #    await core.setReadState(user.id, channel.id, 0)
+    data = await request.get_json()
+    if data.get("manual") and (ct := int(data.get("mention_count"))):
+        if isinstance((message := await _getMessage(user, channel, message)), tuple):
+            return message
+        await core.setReadState(user.id, channel.id, ct, message.id)
+        await core.sendMessageAck(user.id, channel.id, message.id, ct, True)
+    else:
+        await core.delReadStateIfExists(user.id, channel.id)
+        await core.sendMessageAck(user.id, channel.id, message)
     return c_json({"token": None})
 
 

@@ -48,14 +48,19 @@ def _mksnowflake(ms, wr, pi, ic):
     return sf
 
 
-def mksnowflake():
+def mkSnowflake():
     global _INCREMENT_ID
     sf = _mksnowflake(int(time()*1000) - _EPOCH, _WORKER_ID, _PROCESS_ID, _INCREMENT_ID)
     _INCREMENT_ID += 1
     return sf
 
 
-mksf = mksnowflake
+def lastSnowflake():
+    return _mksnowflake(int(time()*1000) - _EPOCH, _WORKER_ID, _PROCESS_ID, _INCREMENT_ID)
+
+
+mksf = mkSnowflake
+lsf = lastSnowflake
 
 
 def snowflake_timestamp(sf):

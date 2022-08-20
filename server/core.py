@@ -4,13 +4,13 @@ from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
-from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json
-from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState
+from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json, lsf
+from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, ChannelId
 from .storage import _Storage
 from json import loads as jloads
 from random import randint
 from .msg_client import Broadcaster
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Dict
 from time import time
 
 
@@ -396,22 +396,31 @@ class Core:
         await cur.execute(f'SELECT * FROM `channels` WHERE `id`={channel_id};')
         if not (r := await cur.fetchone()):
             return
-        return await self.getLastMessageId(Channel(**result_to_json(cur.description, r)).setCore(self), cur=cur)
+        return await self.getLastMessageIdForChannel(Channel(**result_to_json(cur.description, r)).setCore(self), cur=cur)
 
     @_usingDB
     async def getDMChannelOrCreate(self, u1: int, u2: int, cur: Cursor) -> Channel:
         await cur.execute(f'SELECT `id` FROM `channels` WHERE JSON_CONTAINS(j_recipients, {u1}, "$") AND JSON_CONTAINS(j_recipients, {u2}, "$");')
         if not (r := await cur.fetchone()):
             return await self.createDMChannel([u1, u2], cur=cur)
-        return await self.getLastMessageId(Channel(id=r[0], type=ChannelType.DM, recipients=[u1, u2]).setCore(self), cur=cur)
+        return await self.getLastMessageIdForChannel(Channel(id=r[0], type=ChannelType.DM, recipients=[u1, u2]).setCore(self), cur=cur)
 
     @_usingDB
-    async def getLastMessageId(self, channel: Channel, cur: Cursor) -> Channel:
-        await cur.execute(f'SELECT `id` FROM `messages` WHERE `channel_id`={channel.id} ORDER BY `id` DESC LIMIT 1;')
-        l = None
+    async def getLastMessageIdForChannel(self, channel: Channel, cur: Cursor) -> Channel:
+        return channel.set(last_message_id=await self.getLastMessageId(channel, lsf()+1, 0, cur=cur))
+
+    @_usingDB
+    async def getLastMessageId(self, channel: Channel, before: int, after: int, cur: Cursor) -> Channel:
+        await cur.execute(f'SELECT `id` FROM `messages` WHERE `channel_id`={channel.id} AND `id` > {after} AND `id` < {before} ORDER BY `id` DESC LIMIT 1;')
+        last = None
         if (r := await cur.fetchone()):
-            l = r[0]
-        return channel.set(last_message_id=l)
+            last = r[0]
+        return last
+
+    @_usingDB
+    async def getChannelMessagesCount(self, channel: Channel, before: int, after: int, cur: Cursor) -> Channel:
+        await cur.execute(f'SELECT COUNT(`id`) as count FROM `messages` WHERE `channel_id`={channel.id} AND `id` > {after} AND `id` < {before};')
+        return (await cur.fetchone())[0]
 
     @_usingDB
     async def createDMChannel(self, recipients: list, cur: Cursor) -> Channel:
@@ -424,7 +433,7 @@ class Core:
         channels = []
         await cur.execute(f'SELECT * FROM channels WHERE JSON_CONTAINS(channels.j_recipients, {user.id}, "$");')
         for r in await cur.fetchall():
-            channel = await self.getLastMessageId(Channel(**result_to_json(cur.description, r)).setCore(self), cur=cur)
+            channel = await self.getLastMessageIdForChannel(Channel(**result_to_json(cur.description, r)).setCore(self), cur=cur)
             ids = channel.recipients.copy()
             ids.remove(user.id)
             ids = [str(i) for i in ids]
@@ -462,7 +471,7 @@ class Core:
         return messages
 
     @_usingDB
-    async def getMessage(self, channel, message_id: int, cur: Cursor) -> Optional[Message]:
+    async def getMessage(self, channel: Channel, message_id: int, cur: Cursor) -> Optional[Message]:
         await cur.execute(f'SELECT * FROM `messages` WHERE `channel_id`={channel.id} AND `id`={message_id};')
         if (r := await cur.fetchone()):
             return Message.from_result(cur.description, r).setCore(self)
@@ -516,12 +525,18 @@ class Core:
         await self.setReadState(uid, channel_id, "`count`+1", cur=cur)
 
     @_usingDB
-    async def setReadState(self, uid: int, channel_id: int, count: Union[int, str], cur: Cursor) -> None:
-        await cur.execute(f'UPDATE `read_states` set `count`={count} where `uid`={uid} and `channel_id`={channel_id};')
+    async def setReadState(self, uid: int, channel_id: int, count: Union[int, str], cur: Cursor, _last: int=None) -> None:
+        last = _last
+        if not _last:
+            last = "`last_read_id`"
+        await cur.execute(f'UPDATE `read_states` set `count`={count}, `last_read_id`={last} WHERE `uid`={uid} and `channel_id`={channel_id};')
         if cur.rowcount == 0:
             if type(count) == str:
                 count = 1
-            await cur.execute(f'INSERT INTO `read_states` (`uid`, `channel_id`, `count`) values ({uid}, {channel_id}, {count});')
+            last = _last
+            if not _last:
+                last = await self.getLastMessageId(ChannelId(channel_id), before=lsf()+1, after=0)
+            await cur.execute(f'INSERT INTO `read_states` (`uid`, `channel_id`, `last_read_id`, `count`) VALUES ({uid}, {channel_id}, {last}, {count});')
 
     @_usingDB
     async def getReadStates(self, user: _User, cur: Cursor) -> list:
@@ -529,12 +544,31 @@ class Core:
         await cur.execute(f'SELECT * FROM `read_states` WHERE `uid`={user.id};')
         for r in await cur.fetchall():
             st = ReadState.from_result(cur.description, r)
-            channel = await self.getLastMessageId(Channel(st.channel_id, -1), cur=cur)
-            st.set(last_message_id=channel.last_message_id)
             states.append({
                 "mention_count": st.count,
                 "last_pin_timestamp": "1970-01-01T00:00:00+00:00",  # TODO
-                "last_message_id": str(st.last_message_id),
+                "last_message_id": str(st.last_read_id),
                 "id": str(st.channel_id),
             })
         return states
+
+    @_usingDB
+    async def delReadStateIfExists(self, uid: int, channel_id: int, cur: Cursor) -> bool:
+        await cur.execute(f'DELETE FROM `read_states` WHERE `uid`={uid} and `channel_id`={channel_id};')
+        return cur.rowcount > 0
+
+    async def sendMessageAck(self, uid: int, channel_id: int, message_id: int, mention_count: int=None, manual: bool=None) -> None:
+        d = {
+            "user": uid,
+            "data": {
+                "version": 1,
+                "message_id": str(message_id),
+                "channel_id": str(channel_id),
+            }
+        }
+        if mention_count:
+            d["data"]["mention_count"] = mention_count
+        if manual:
+            d["data"]["manual"] = True
+            d["data"]["ack_type"] = 0
+        await self.mcl.broadcast("message_ack", {"e": "typing", "data": d})

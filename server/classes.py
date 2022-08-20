@@ -288,6 +288,11 @@ class _Channel:
         return isinstance(other, _Channel) and self.id == other.id
 
 
+class ChannelId(_Channel):
+    def __init__(self, cid):
+        self.id = cid
+
+
 class Channel(_Channel, DBModel):
     FIELDS = ("guild_id", "position", "permission_overwrites", "name", "topic", "nsfw", "bitrate", "user_limit",
               "rate_limit", "recipients", "icon", "owner_id", "application_id", "parent_id", "rtc_region",
@@ -635,15 +640,14 @@ class Relationship(DBModel):
 
 
 class ReadState(DBModel):
-    FIELDS = ("channel_id", "count",)
+    FIELDS = ("channel_id", "last_read_id", "count",)
     ID_FIELD = "uid"
-    ALLOWED_FIELDS = ("last_message_id",)
 
-    def __init__(self, uid, channel_id, count=Null, last_message_id=None):
+    def __init__(self, uid, channel_id, last_read_id, count=Null):
         self.uid = uid
         self.channel_id = channel_id
         self.count = count
-        self.last_message_id = last_message_id
+        self.last_read_id = last_read_id
         self._core = None
 
         self._checkNulls()

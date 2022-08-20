@@ -144,6 +144,15 @@ DROP TABLE IF EXISTS `read_states`;
 CREATE TABLE `read_states` (
   `uid` bigint not null,
   `channel_id` bigint not null,
-  `last_message` bigint not null,
+  `last_read_id` bigint not null,
   `count` int not null default 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `attachments`;
+CREATE TABLE `attachments` (
+  `id` bigint not null,
+  `content_type` text not null,
+  `filename` text not null,
+  `size` bigint not null,
+  `uuid` text not null,
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

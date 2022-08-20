@@ -67,7 +67,7 @@ class ReadyEvent(Event):
                 "read_state": {
                     "version": 1,
                     "partial": False,
-                    "entries": [] # TODO (await self.core.getReadStates(self.user))
+                    "entries": await self.core.getReadStates(self.user)
                 },
                 "resume_gateway_url": "wss://127.0.0.1/",
                 "session_type": "normal",
@@ -297,4 +297,18 @@ class MessageDeleteEvent(Event):
                 "id": str(self.message),
                 "channel_id": str(self.channel)
             }
+        }
+
+
+class MessageAckEvent(Event):
+    NAME = "MESSAGE_ACK"
+
+    def __init__(self, ack_object):
+        self.ack_object = ack_object
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": GATEWAY_OP.DISPATCH,
+            "d": self.ack_object
         }
