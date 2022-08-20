@@ -3,7 +3,7 @@ from quart import Quart, request
 from functools import wraps
 
 from ..errors import EmbedException
-from ..classes import Session, UserSettings, UserData, Message
+from ..classes import Session, UserSettings, UserData, Message, UserNote
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, ECODES, ERRORS, getImage, validImage, MFA, execute_after, ChannelType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
@@ -313,6 +313,23 @@ async def api_users_me_relationships_post(user):
 @getUser
 async def api_users_me_relationships_get(user):
     return c_json(await core.getRelationships(user, with_data=True))
+
+
+@app.route("/api/v9/users/@me/notes/<int:target_uid>", methods=["GET"])
+@getUser
+async def api_users_me_notes_get(user, target_uid):
+    if not (note := await core.getUserNote(user.id, target_uid)):
+        return c_json(ERRORS[23], ECODES[23])
+    return c_json(note.to_response())
+
+
+@app.route("/api/v9/users/@me/notes/<int:target_uid>", methods=["PUT"])
+@getUser
+async def api_users_me_notes_put(user, target_uid):
+    data = await request.get_json()
+    if (note := data.get("note")):
+        await core.putUserNote(UserNote(user.id, target_uid, note))
+    return "", 204
 
 
 @app.route("/api/v9/users/@me/mfa/totp/enable", methods=["POST"])

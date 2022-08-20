@@ -5,7 +5,8 @@ from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
 from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json, lsf
-from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, ChannelId
+from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, ChannelId, \
+    UserNote
 from .storage import _Storage
 from json import loads as jloads
 from random import randint
@@ -572,3 +573,18 @@ class Core:
             d["data"]["manual"] = True
             d["data"]["ack_type"] = 0
         await self.mcl.broadcast("message_ack", {"e": "typing", "data": d})
+
+    @_usingDB
+    async def getUserNote(self, uid: int, target_uid: int, cur: Cursor) -> Optional[UserNote]:
+        await cur.execute(f'SELECT * FROM `notes` WHERE `uid`={uid} AND `target_uid`={target_uid};')
+        if (r := await cur.fetchone()):
+            return UserNote.from_result(cur.description, r)
+
+    @_usingDB
+    async def putUserNote(self, note: UserNote, cur: Cursor) -> None:
+        await cur.execute(f'UPDATE `notes` SET `note`="{note.note}" WHERE `uid`={note.uid} AND `target_uid`={note.target_uid}')
+        if cur.rowcount == 0:
+            q = json_to_sql(note.to_sql_json(note.to_typed_json), as_tuples=True)
+            fields = ", ".join([f"`{f}`" for f, v in q])
+            values = ", ".join([f"{v}" for f, v in q])
+            await cur.execute(f'INSERT INTO `notes` ({fields}) VALUES ({values});')

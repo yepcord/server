@@ -148,6 +148,13 @@ CREATE TABLE `read_states` (
   `count` int not null default 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
+DROP TABLE IF EXISTS `notes`;
+CREATE TABLE `notes` (
+  `uid` bigint not null,
+  `target_uid` bigint not null,
+  `note` text not null
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
 DROP TABLE IF EXISTS `attachments`;
 CREATE TABLE `attachments` (
   `id` bigint not null,

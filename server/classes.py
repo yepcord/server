@@ -651,3 +651,21 @@ class ReadState(DBModel):
         self._core = None
 
         self._checkNulls()
+
+
+class UserNote(DBModel):
+    FIELDS = ("uid", "target_uid", "note",)
+
+    def __init__(self, uid, target_uid, note):
+        self.uid = uid
+        self.target_uid = target_uid
+        self.note = note
+
+        self._checkNulls()
+
+    def to_response(self):
+        return {
+            "note": self.note,
+            "user_id": str(self.uid),
+            "note_user_id": str(self.target_uid)
+        }

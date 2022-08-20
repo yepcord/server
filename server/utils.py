@@ -102,6 +102,7 @@ ERRORS = {
     20: jdumps({"code": 10008, "message": "Unknown Message"}),
     21: jdumps({"code": 50003, "message": "Cannot execute action on a DM channel"}),
     22: jdumps({"code": 50005, "message": "Cannot edit a message authored by another user"}),
+    23: jdumps({"code": 10013, "message": "Unknown User"}),
 }
 
 
@@ -128,6 +129,7 @@ ECODES = {
     20: 404,
     21: 403,
     22: 403,
+    23: 404,
 }
 
 
