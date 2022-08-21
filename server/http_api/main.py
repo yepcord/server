@@ -3,7 +3,7 @@ from quart import Quart, request
 from functools import wraps
 
 from ..errors import EmbedException
-from ..classes import Session, UserSettings, UserData, Message, UserNote
+from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, ECODES, ERRORS, getImage, validImage, MFA, execute_after, ChannelType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
@@ -429,10 +429,13 @@ async def api_users_me_harvest(user):
 @getUser
 async def api_connections_connection_authorize(user, connection):
     url = ""
+    kwargs = {}
     if connection == "github":
         CLIENT_ID = ""
         state = urandom(16).hex()
+        kwargs["state"] = state
         url = f"https://github.com/login/oauth/authorize?client_id={CLIENT_ID}&redirect_uri=https%3A%2F%2F127.0.0.1:8080%2Fapi%2Fconnections%2Fgithub%2Fcallback&scope=read%3Auser&state={state}"
+    await core.putUserConnection(UserConnection(user, connection, **kwargs))
     return c_json({"url": url})
 
 

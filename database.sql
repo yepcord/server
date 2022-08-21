@@ -163,3 +163,19 @@ CREATE TABLE `attachments` (
   `size` bigint not null,
   `uuid` text not null
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `connections`;
+CREATE TABLE `connections` (
+  `uid` bigint not null,
+  `type` text not null,
+  `state` text default null,
+  `username` text default null,
+  `service_uid` bigint default null,
+  `friend_sync` bool not null default false,
+  `j_integrations` JSON not null default "[]",
+  `visible` bool not null default true,
+  `verified` bool not null default true,
+  `revoked` bool not null default false,
+  `show_activity` bool not null default true,
+  `two_way_link` bool not null default false
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

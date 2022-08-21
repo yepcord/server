@@ -6,7 +6,7 @@ from os import urandom
 from Crypto.Cipher import AES
 from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json, lsf
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, ChannelId, \
-    UserNote
+    UserNote, UserConnection
 from .storage import _Storage
 from json import loads as jloads
 from random import randint
@@ -588,3 +588,10 @@ class Core:
             fields = ", ".join([f"`{f}`" for f, v in q])
             values = ", ".join([f"{v}" for f, v in q])
             await cur.execute(f'INSERT INTO `notes` ({fields}) VALUES ({values});')
+
+    @_usingDB
+    async def putUserConnection(self, uc: UserConnection, cur: Cursor) -> None:
+        q = json_to_sql(uc.to_sql_json(uc.to_typed_json, with_id=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await cur.execute(f'INSERT INTO `connections` ({fields}) VALUES ({values});')

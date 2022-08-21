@@ -669,3 +669,27 @@ class UserNote(DBModel):
             "user_id": str(self.uid),
             "note_user_id": str(self.target_uid)
         }
+
+
+class UserConnection(DBModel):
+    FIELDS = ("type", "state", "username", "service_uid", "friend_sync", "integrations", "visible",
+              "verified", "revoked", "show_activity", "two_way_link",)
+    ID_FIELD = "uid"
+    DB_FIELDS = {"integrations": "j_integrations"}
+
+    def __init__(self, uid, type, state=Null, username=Null, service_uid=Null, friend_sync=Null, integrations=Null,
+                 visible=Null, verified=Null, revoked=Null, show_activity=Null, two_way_link=Null):
+        self.uid = uid
+        self.type = type
+        self.state = state
+        self.username = username
+        self.service_uid = service_uid
+        self.friend_sync = friend_sync
+        self.integrations = integrations
+        self.visible = visible
+        self.verified = verified
+        self.revoked = revoked
+        self.show_activity = show_activity
+        self.two_way_link = two_way_link
+
+        self._checkNulls()
