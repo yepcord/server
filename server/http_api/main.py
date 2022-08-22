@@ -2,10 +2,10 @@ from time import time
 from quart import Quart, request
 from functools import wraps
 
-from ..errors import EmbedException
+from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection
 from ..core import Core, CDN
-from ..utils import b64decode, b64encode, mksf, c_json, ECODES, ERRORS, getImage, validImage, MFA, execute_after, ChannelType
+from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, ChannelType, mkError
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
 from os import environ, urandom
@@ -14,7 +14,7 @@ from random import choice
 
 
 class YEPcord(Quart):
-    async def process_response(self, response, request_context):
+    async def process_response(self, response, request_context=None):
         response = await super(YEPcord, self).process_response(response, request_context)
         response.headers['Server'] = "YEPcord"
         response.headers['Access-Control-Allow-Origin'] = "*"
@@ -30,11 +30,6 @@ core = Core(b64decode(environ.get("KEY")))
 cdn = CDN(FileStorage(), core)
 
 
-def NOT_IMP():
-    print("Warning: route not implemented.")
-    return ("405 Not implemented yet.", 405)
-
-
 @app.before_serving
 async def before_serving():
     await core.initDB(
@@ -48,6 +43,18 @@ async def before_serving():
     await core.initMCL()
 
 
+@app.errorhandler(YDataError)
+async def ydataerror_handler(e):
+    if isinstance(e, EmbedErr):
+        return c_json(e.error, 400)
+    elif isinstance(e, InvalidDataErr):
+        return c_json(e.error, e.code)
+    elif isinstance(e, MfaRequiredErr):
+        ticket = b64encode(jdumps([e.uid, "login"]))
+        ticket += f".{e.sid}.{e.sig}"
+        return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
+
+
 # Decorators
 
 
@@ -55,9 +62,9 @@ def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (session := Session.from_token(request.headers.get("Authorization", ""))):
-            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (user := await core.getUserFromSession(session)):
-            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         kwargs["user"] = user
         return await f(*args, **kwargs)
     return wrapped
@@ -67,9 +74,9 @@ def getSession(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (session := Session.from_token(request.headers.get("Authorization", ""))):
-            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not await core.validSession(session):
-            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
@@ -79,14 +86,14 @@ def getChannel(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (channel := kwargs.get("channel")):
-            return c_json(ERRORS[18], ECODES[18])
+            raise InvalidDataErr(404, mkError(10003))
         if not (user := kwargs.get("user")):
-            return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (channel := await core.getChannel(channel)):
-            return c_json(ERRORS[18], ECODES[18])
+            raise InvalidDataErr(404, mkError(10003))
         if channel.type == ChannelType.DM:
             if user.id not in channel.recipients:
-                return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+                raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         kwargs["channel"] = channel
         return await f(*args, **kwargs)
     return wrapped
@@ -94,13 +101,13 @@ def getChannel(f):
 
 async def _getMessage(user, channel, message_id):
     if not channel:
-        return c_json(ERRORS[18], ECODES[18])
+        raise InvalidDataErr(404, mkError(10003))
     if not user:
-        return c_json({"message": "401: Unauthorized", "code": 0}, 401)
+        raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
     if not message_id:
-        return c_json(ERRORS[20], ECODES[20])
+        raise InvalidDataErr(404, mkError(10008))
     if not (message := await core.getMessage(channel, message_id)):
-        return c_json(ERRORS[20], ECODES[20])
+        raise InvalidDataErr(404, mkError(10008))
     return message
 
 
@@ -120,30 +127,14 @@ def getMessage(f):
 @app.route("/api/v9/auth/register", methods=["POST"])
 async def api_auth_register():
     data = await request.get_json()
-    res = await core.register(
-        mksf(),
-        data["username"],
-        data["email"],
-        data["password"],
-        data["date_of_birth"]
-    )
-    if type(res) == int:
-        return c_json(ERRORS[res], ECODES[res])
-    return c_json({"token": res.token})
+    sess = await core.register(mksf(), data["username"], data["email"], data["password"], data["date_of_birth"])
+    return c_json({"token": sess.token})
 
 
 @app.route("/api/v9/auth/login", methods=["POST"])
 async def api_auth_login():
     data = await request.get_json()
-    res = await core.login(data["login"], data["password"])
-    if type(res) == int:
-        return c_json(ERRORS[res], ECODES[res])
-    if type(res) == tuple:
-        if res[0] == 1:
-            ticket = b64encode(jdumps([res[1], "login"]))
-            ticket += f".{res[2]}.{res[3]}"
-            return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
-    sess = res
+    sess = await core.login(data["login"], data["password"])
     user = await core.getUserFromSession(sess)
     sett = await user.settings
     return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
@@ -153,15 +144,15 @@ async def api_auth_login():
 async def api_auth_mfa_totp():
     data = await request.get_json()
     if not (ticket := data.get("ticket")):
-        return c_json(ERRORS[16], ECODES[16])
+        raise InvalidDataErr(400, mkError(60006))
     if not (code := data.get("code")):
-        return c_json(ERRORS[13], ECODES[13])
+        raise InvalidDataErr(400, mkError(60008))
     if not (mfa := await core.getMfaFromTicket(ticket)):
-        return c_json(ERRORS[16], ECODES[16])
+        raise InvalidDataErr(400, mkError(60006))
     code = code.replace("-", "").replace(" ", "")
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
-            return c_json(ERRORS[13], ECODES[13])
+            raise InvalidDataErr(400, mkError(60008))
     sess = await core.createSessionWithoutKey(mfa.uid)
     user = await core.getUserFromSession(sess)
     sett = await user.settings
@@ -180,9 +171,9 @@ async def api_auth_logout(session):
 async def api_auth_verify_viewbackupcodeschallenge(user):
     data = await request.get_json()
     if not (password := data.get("password")):
-        return c_json(ERRORS[15], ECODES[15])
+        raise InvalidDataErr(400, mkError(50018))
     if not await core.checkUserPassword(user, password):
-        return c_json(ERRORS[15], ECODES[15])
+        raise InvalidDataErr(400, mkError(50018))
     nonce = await core.generateUserMfaNonce(user)
     return c_json({"nonce": nonce[0], "regenerate_nonce": nonce[1]})
 
@@ -195,7 +186,6 @@ async def api_auth_verify_viewbackupcodeschallenge(user):
 async def api_users_me_get(user):
     return c_json(await userdataResponse(user))
 
-
 @app.route("/api/v9/users/@me", methods=["PATCH"])
 @getUser
 async def api_users_me_patch(user):
@@ -203,29 +193,21 @@ async def api_users_me_patch(user):
     _settings = await request.get_json()
     d = "discriminator" in _settings and _settings.get("discriminator") != data["discriminator"]
     u = "username" in _settings and _settings.get("username") != data["username"]
-    ures = None
     if d or u:
-        if "password" not in _settings:
-            return c_json(ERRORS[6], ECODES[6])
-        if not await core.checkUserPassword(user, _settings["password"]):
-            return c_json(ERRORS[6], ECODES[6])
+        if "password" not in _settings or not await core.checkUserPassword(user, _settings["password"]):
+            raise InvalidDataErr(400, mkError(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
         if u:
-            ures = await core.changeUserName(user, str(_settings["username"]))
-            if type(ures) == int:
-                return c_json(ERRORS[ures], ECODES[ures])
+            await core.changeUserName(user, str(_settings["username"]))
             del _settings["username"]
         if d:
-            dres = await core.changeUserDiscriminator(user, int(_settings["discriminator"]))
-            if type(dres) == int:
-                if u and type(ures) != int:
+            if not await core.changeUserDiscriminator(user, int(_settings["discriminator"])):
+                if u:
                     return c_json(await userdataResponse(user))
-                return c_json(ERRORS[dres], ECODES[dres])
+                raise InvalidDataErr(400, mkError(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This discriminator already used by someone. Please enter something else."}}))
             del _settings["discriminator"]
     if "new_password" in _settings:
-        if "password" not in _settings:
-            return c_json(ERRORS[6], ECODES[6])
-        if not await core.checkUserPassword(user, _settings["password"]):
-            return c_json(ERRORS[6], ECODES[6])
+        if "password" not in _settings or not await core.checkUserPassword(user, _settings["password"]):
+            raise InvalidDataErr(400, mkError(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
         await core.changeUserPassword(user, _settings["new_password"])
         del _settings["new_password"]
 
@@ -300,11 +282,10 @@ async def api_users_me_connections(user): # TODO
 async def api_users_me_relationships_post(user):
     udata = await request.get_json()
     if not (rUser := await core.getUserByUsername(**udata)):
-        return c_json(ERRORS[9], ECODES[9])
+        raise InvalidDataErr(400, mkError(80004))
     if rUser == user:
-        return c_json(ERRORS[10], ECODES[10])
-    if (res := await core.relationShipAvailable(rUser, user)):
-        return c_json(ERRORS[res], ECODES[res])
+        raise InvalidDataErr(400, mkError(80007))
+    await core.checkRelationShipAvailable(rUser, user)
     await core.reqRelationship(rUser, user)
     return "", 204
 
@@ -319,7 +300,7 @@ async def api_users_me_relationships_get(user):
 @getUser
 async def api_users_me_notes_get(user, target_uid):
     if not (note := await core.getUserNote(user.id, target_uid)):
-        return c_json(ERRORS[23], ECODES[23])
+        raise InvalidDataErr(404, mkError(10013))
     return c_json(note.to_response())
 
 
@@ -336,19 +317,17 @@ async def api_users_me_notes_put(user, target_uid):
 @getSession
 async def api_users_me_mfa_totp_enable(session):
     data = await request.get_json()
-    if not (password := data.get("password")):
-        return c_json(ERRORS[15], ECODES[15])
-    if not await core.checkUserPassword(session, password):
-        return c_json(ERRORS[15], ECODES[15])
+    if not (password := data.get("password")) or not await core.checkUserPassword(session, password):
+        raise InvalidDataErr(400, mkError(50018))
     if not (secret := data.get("secret")):
-        return c_json(ERRORS[12], ECODES[12])
+        raise InvalidDataErr(400, mkError(60005))
     mfa = MFA(secret, session.id)
     if not mfa.valid:
-        return c_json(ERRORS[12], ECODES[12])
+        raise InvalidDataErr(400, mkError(60005))
     if not (code := data.get("code")):
-        return c_json(ERRORS[13], ECODES[13])
+        raise InvalidDataErr(400, mkError(60008))
     if mfa.getCode() != code:
-        return c_json(ERRORS[13], ECODES[13])
+        raise InvalidDataErr(400, mkError(60008))
     await core.setSettings(UserSettings(session.id, mfa=secret))
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
     await core.setBackupCodes(session, codes)
@@ -364,13 +343,13 @@ async def api_users_me_mfa_totp_enable(session):
 async def api_users_me_mfa_totp_disable(session):
     data = await request.get_json()
     if not (code := data.get("code")):
-        return c_json(ERRORS[13], ECODES[13])
+        raise InvalidDataErr(400, mkError(60008))
     if not (mfa := await core.getMfa(session)):
-        return c_json(ERRORS[14], ECODES[14])
+        raise InvalidDataErr(400, mkError(50018))
     code = code.replace("-", "").replace(" ", "")
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
-            return c_json(ERRORS[13], ECODES[13])
+            raise InvalidDataErr(400, mkError(60008))
     await core.setSettings(UserSettings(session.id, mfa=None))
     await core.clearBackupCodes(session)
     await core.sendUserUpdateEvent(session.id)
@@ -384,12 +363,12 @@ async def api_users_me_mfa_totp_disable(session):
 async def api_users_me_mfa_codesverification(user):
     data = await request.get_json()
     if not (unonce := data.get("nonce")):
-        return c_json(ERRORS[17], ECODES[17])
+        raise InvalidDataErr(400, mkError(60011))
     reg = data.get("regenerate", False)
     nonce = await core.generateUserMfaNonce(user)
     nonce = nonce[1] if reg else nonce[0]
     if nonce != unonce:
-        return c_json(ERRORS[17], ECODES[17])
+        raise InvalidDataErr(400, mkError(60011))
     if reg:
         codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
         await core.setBackupCodes(user, codes)
@@ -455,8 +434,6 @@ async def api_connections_connection_callback(user, connection):
 @getUser
 async def api_users_user_profile(user, t_user_id):
     user = await core.getUserProfile(t_user_id, user)
-    if isinstance(user, int):
-        return c_json(ERRORS[user], ECODES[user])
     return c_json(await userProfileResponse(user))
 
 
@@ -486,14 +463,11 @@ async def api_channels_channel_messages_get(user, channel):
 async def api_channels_channel_messages_post(user, channel):
     data = await request.get_json()
     if not data.get("content") and not data.get("embeds"):
-        return c_json(ERRORS[19], ECODES[19])
+        raise InvalidDataErr(400, mkError(50006))
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
-    try:
-        message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data)
-    except EmbedException as e:
-        return c_json(e.error, 400)
+    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data)
     message = await core.sendMessage(message)
     if await core.delReadStateIfExists(user.id, channel.id):
         await core.sendMessageAck(user.id, channel.id, message.id)
@@ -506,7 +480,7 @@ async def api_channels_channel_messages_post(user, channel):
 @getMessage
 async def api_channels_channel_messages_message_delete(user, channel, message):
     if message.author != user.id:
-        return c_json(ERRORS[21], ECODES[21])
+        raise InvalidDataErr(403, mkError(50003))
     await core.deleteMessage(message)
     return "", 204
 
@@ -518,7 +492,7 @@ async def api_channels_channel_messages_message_delete(user, channel, message):
 async def api_channels_channel_messages_message_patch(user, channel, message):
     data = await request.get_json()
     if message.author != user.id:
-        return c_json(ERRORS[22], ECODES[22])
+        raise InvalidDataErr(403, mkError(50005))
     before = message
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
@@ -548,6 +522,18 @@ async def api_channels_channel_messages_message_ack(user, channel, message):
 @getUser
 @getChannel
 async def api_channels_channel_messages_typing(user, channel):
+    await core.sendTypingEvent(user, channel)
+    return "", 204
+
+
+@app.route("/api/v9/channels/<int:channel>/attachments", methods=["POST"])
+@getUser
+@getChannel
+async def api_channels_channel_attachments_post(user, channel):
+    data = await request.get_json()
+    if not data.get("files"):
+        raise InvalidDataErr(400, mkError(50013))
+    #{"attachments": [{"id": 3, "upload_url": "https://discord-attachments-uploads-prd.storage.googleapis.com/45af797f-cd30-445c-b273-d91a3871d10a/burp.pem?upload_id=ADPycduKcemR3rrq6eKL6g7ONfjJrk2dtFg6eiminNuZKEt_p5u7foxseha77A1rneGnUN2j3hcTx_PQafxE0mIB6K0Ul7ZF150I", "upload_filename": "45af797f-cd30-445c-b273-d91a3871d10a/burp.pem"}]}
     await core.sendTypingEvent(user, channel)
     return "", 204
 

@@ -161,7 +161,8 @@ CREATE TABLE `attachments` (
   `content_type` text not null,
   `filename` text not null,
   `size` bigint not null,
-  `uuid` text not null
+  `uuid` text not null,
+  `j_metadata` JSON not null default "{}"
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `connections`;

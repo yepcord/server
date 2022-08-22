@@ -4,14 +4,16 @@ from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
-from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json, lsf
+
+from .errors import InvalidDataErr, MfaRequiredErr
+from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, ChannelId, \
-    UserNote, UserConnection
+    UserNote, UserConnection, Attachment
 from .storage import _Storage
 from json import loads as jloads
 from random import randint
 from .msg_client import Broadcaster
-from typing import Optional, Union, List, Dict
+from typing import Optional, Union, List
 from time import time
 
 
@@ -81,10 +83,10 @@ class Core:
                 return d
 
     @_usingDB
-    async def register(self, uid: int, login: str, email: str, password: str, birth: str, cur: Cursor) -> Union[Session, int]:
+    async def register(self, uid: int, login: str, email: str, password: str, birth: str, cur: Cursor) -> Session:
         email = email.lower()
         if await self.userExists(email):
-            return 1
+            raise InvalidDataErr(400, mkError(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
         password = self.encryptPassword(password)
         key = self.generateKey(bytes.fromhex(password))
         session = int.from_bytes(urandom(6), "big")
@@ -92,7 +94,8 @@ class Core:
 
         discrim = await self.getRandomDiscriminator(login, cur=cur)
         if discrim is None:
-            return 3
+
+            raise InvalidDataErr(400, mkError(50035, {"login": {"code": "USERNAME_TOO_MANY_USERS", "message": "Too many users have this username, please try another."}}))
 
         await cur.execute(f'INSERT INTO `users` VALUES ({uid}, "{escape_string(email)}", "{password}", "{key}");')
         await cur.execute(f'INSERT INTO `sessions` VALUES ({uid}, {session}, "{signature}");')
@@ -101,20 +104,18 @@ class Core:
         return Session(uid, session, signature)
 
     @_usingDB
-    async def login(self, email: str, password: str, cur: Cursor) -> Union[Session, int, tuple]:
+    async def login(self, email: str, password: str, cur: Cursor) -> Session:
         email = email.lower()
         await cur.execute(f'SELECT `password`, `key`, `id` FROM `users` WHERE `email`="{escape_string(email)}"')
         r = await cur.fetchone()
-        if not r:
-            return 2
-        if self.encryptPassword(password) != r[0]:
-            return 2
+        if not r or self.encryptPassword(password) != r[0]:
+            raise InvalidDataErr(400, mkError(50035, {"login": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}, "password": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}}))
         await cur.execute(f'SELECT `mfa` FROM `settings` WHERE `uid`={r[2]}')
         mr = await cur.fetchone()
         if mr[0]:
             _sid = bytes.fromhex(r[0][:12])
             sid = int.from_bytes(_sid, "big")
-            return 1, r[2], b64encode(_sid), self.generateSessionSignature(r[2], sid, b64decode(r[1]))
+            raise MfaRequiredErr(r[2], b64encode(_sid), self.generateSessionSignature(r[2], sid, b64decode(r[1])))
         return await self.createSession(r[2], r[1], cur=cur)
 
     @_usingDB
@@ -171,10 +172,10 @@ class Core:
         await cur.execute(f'UPDATE `userdata` SET {json_to_sql(j)} WHERE `uid`={userdata.uid};')
 
     @_usingDB
-    async def getUserProfile(self, uid: int, cUser: User, cur: Cursor) -> Union[User, int]:
+    async def getUserProfile(self, uid: int, cUser: User, cur: Cursor) -> User:
         # TODO: check for relationship, mutual guilds or mutual friends
         if not (user := await self.getUser(uid, cur=cur)):
-            return 4
+            raise InvalidDataErr(404, mkError(10013))
         return user
 
     @_usingDB
@@ -185,21 +186,22 @@ class Core:
         return passw[0] == password
 
     @_usingDB
-    async def changeUserDiscriminator(self, user: User, discriminator: int, cur: Cursor) -> Optional[int]:
+    async def changeUserDiscriminator(self, user: User, discriminator: int, cur: Cursor) -> bool:
         username = (await user.data)["username"]
         await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discriminator} AND `username`="{username}";')
         if await cur.fetchone():
-            return 8
+            return False
         await cur.execute(f'UPDATE `userdata` SET `discriminator`={discriminator} WHERE `uid`={user.id};')
+        return True
 
     @_usingDB
-    async def changeUserName(self, user: User, username: str, cur: Cursor) -> Optional[int]:
+    async def changeUserName(self, user: User, username: str, cur: Cursor) -> None:
         discrim = (await user.data)["discriminator"]
         await cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discrim} AND `username`="{escape_string(username)}";')
         if await cur.fetchone():
             discrim = await self.getRandomDiscriminator(username, cur=cur)
             if discrim is None:
-                return 7
+                raise InvalidDataErr(400, mkError(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This name is used by too many users. Please enter something else or try again."}}))
         await cur.execute(f'UPDATE `userdata` SET `username`="{escape_string(username)}", `discriminator`={discrim} WHERE `uid`={user.id};')
 
     @_usingDB
@@ -209,10 +211,10 @@ class Core:
             return User(r[0]).setCore(self)
 
     @_usingDB
-    async def relationShipAvailable(self, tUser: User, cUser: User, cur: Cursor) -> Optional[int]:
+    async def checkRelationShipAvailable(self, tUser: User, cUser: User, cur: Cursor) -> Optional[int]:
         await cur.execute(f'SELECT * FROM `relationships` WHERE (`u1`={tUser.id} AND `u2`={cUser.id}) OR (`u1`={cUser.id} AND `u2`={tUser.id});')
         if await cur.fetchone():
-            return 10
+            raise InvalidDataErr(400, mkError(80007))
         return None # TODO: check for relationship, mutual guilds or mutual friends
 
     @_usingDB
@@ -595,3 +597,10 @@ class Core:
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
         await cur.execute(f'INSERT INTO `connections` ({fields}) VALUES ({values});')
+
+    @_usingDB
+    async def putAttachment(self, attachment: Attachment, cur: Cursor) -> None:
+        q = json_to_sql(attachment.to_sql_json(attachment.to_typed_json, with_id=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await cur.execute(f'INSERT INTO `attachments` ({fields}) VALUES ({values});')

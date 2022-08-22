@@ -4,7 +4,7 @@ from json import loads as jloads
 from asyncio import CancelledError
 
 class YEPcord(Quart):
-    async def process_response(self, response, request_context):
+    async def process_response(self, response, request_context=None):
         response = await super(YEPcord, self).process_response(response, request_context)
         response.headers['Server'] = "YEPcord"
         response.headers['Access-Control-Allow-Origin'] = "*"

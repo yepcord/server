@@ -1,13 +1,28 @@
 from datetime import datetime
 from time import mktime
+from uuid import uuid4
 from zlib import compressobj, Z_FULL_FLUSH
-from .errors import EmbedException
+from .errors import EmbedErr
 from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json
 from dateutil.parser import parse as dparse
 
 
 class _Null:
-    pass
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not isinstance(cls._instance, cls):
+            cls._instance = super(_Null, cls).__new__(cls)
+        return cls._instance
+
+    def __bool__(self):
+        return False
+
+    def __int__(self):
+        return 0
+
+    def __repr__(self):
+        return "<Null>"
 
 
 Null = _Null()
@@ -20,6 +35,22 @@ class DBModel:
     DEFAULTS = {}
     TYPES = {}
     DB_FIELDS = {}
+
+
+    #def __init__(self, *args, **kwargs): #  TODO
+    #    fields = list(self.FIELDS)
+    #    if self.ID_FIELD:
+    #        fields.insert(0, self.ID_FIELD)
+    #    if self.ALLOWED_FIELDS:
+    #        fields += list(self.ALLOWED_FIELDS)
+    #    for arg in args:
+    #        setattr(self, fields.pop(0), arg)
+    #    for field in fields:
+    #        if field in kwargs:
+    #            setattr(self, field, kwargs[field])
+    #
+    #    self._checkNulls()
+
 
     def _checkNulls(self):
         for f in self.FIELDS:
@@ -396,7 +427,7 @@ class Message(_Message, DBModel):
 
     def _checkEmbedImage(self, image, idx):
         if (url := image.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
-            raise EmbedException(24, {"embed_index": idx, "scheme": scheme})
+            raise EmbedErr(self._formatEmbedError(24, {"embed_index": idx, "scheme": scheme}))
         if image.get("proxy_url"):  # Not supported
             del image["proxy_url"]
         if (w := image.get("width")):
@@ -461,7 +492,7 @@ class Message(_Message, DBModel):
         if not hasattr(self, "embeds"):
             return
         if len(self.embeds) > 10:
-            raise EmbedException(28)
+            raise EmbedErr(self._formatEmbedError(28))
         if type(self.embeds) != list:
             delattr(self, "embeds")
             return
@@ -470,7 +501,7 @@ class Message(_Message, DBModel):
                 delattr(self, "embeds")
                 return
             if not embed.get("title"):
-                raise EmbedException(self._formatEmbedError(23, f"{idx}"))
+                raise EmbedErr(self._formatEmbedError(23, f"{idx}"))
             embed["type"] = "rich"
             embed["title"] = str(embed["title"])
             _delIfEmpty(idx, "description")
@@ -484,28 +515,28 @@ class Message(_Message, DBModel):
             _delIfEmpty(idx, "provider")
             _delIfEmpty(idx, "author")
             if len(embed.get("title")) > 256:
-                raise EmbedException(self._formatEmbedError(27, f"{idx}.title", {"length": "256"}))
+                raise EmbedErr(self._formatEmbedError(27, f"{idx}.title", {"length": "256"}))
             if (desc := embed.get("description")):
                 embed["description"] = str(desc)
                 if len(str(desc)) > 2048:
-                    raise EmbedException(self._formatEmbedError(27, f"{idx}.description", {"length": "2048"}))
+                    raise EmbedErr(self._formatEmbedError(27, f"{idx}.description", {"length": "2048"}))
             if (url := embed.get("url")):
                 url = str(url)
                 embed["url"] = url
                 if (scheme := url.split(":")[0]) not in ["http", "https"]:
-                    raise EmbedException(self._formatEmbedError(24, f"{idx}.url", {"scheme": scheme}))
+                    raise EmbedErr(self._formatEmbedError(24, f"{idx}.url", {"scheme": scheme}))
             if (ts := embed.get("timestamp")):
                 ts = str(ts)
                 embed["timestamp"] = ts
                 try:
                     ts = mktime(dparse(ts).timetuple())
                 except ValueError:
-                    raise EmbedException(self._formatEmbedError(25, f"{idx}.timestamp", {"value": ts}))
+                    raise EmbedErr(self._formatEmbedError(25, f"{idx}.timestamp", {"value": ts}))
             try:
                 if (color := embed.get("color")):
                     color = int(color)
                     if color > 0xffffff or color < 0:
-                        raise EmbedException(self._formatEmbedError(26, f"{idx}.color"))
+                        raise EmbedErr(self._formatEmbedError(26, f"{idx}.color"))
             except ValueError:
                 del self.embeds[idx]["color"]
             if (footer := embed.get("footer")):
@@ -513,9 +544,9 @@ class Message(_Message, DBModel):
                     del self.embeds[idx]["footer"]
                 else:
                     if len(footer.get("text")) > 2048:
-                        raise EmbedException(self._formatEmbedError(27, f"{idx}.footer.text", {"length": "2048"}))
+                        raise EmbedErr(self._formatEmbedError(27, f"{idx}.footer.text", {"length": "2048"}))
                     if (url := footer.get("icon_url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
-                        raise EmbedException(self._formatEmbedError(24, f"{idx}.footer.icon_url", {"scheme": scheme}))
+                        raise EmbedErr(self._formatEmbedError(24, f"{idx}.footer.icon_url", {"scheme": scheme}))
                     if footer.get("proxy_icon_url"):  # Not supported
                         del footer["proxy_icon_url"]
             if (image := embed.get("image")):
@@ -540,24 +571,24 @@ class Message(_Message, DBModel):
                     del self.embeds[idx]["author"]
                 else:
                     if len(aname) > 256:
-                        raise EmbedException(self._formatEmbedError(27, f"{idx}.author.name", {"length": "256"}))
+                        raise EmbedErr(self._formatEmbedError(27, f"{idx}.author.name", {"length": "256"}))
                     if (url := author.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
-                        raise EmbedException(self._formatEmbedError(24, f"{idx}.author.url", {"scheme": scheme}))
+                        raise EmbedErr(self._formatEmbedError(24, f"{idx}.author.url", {"scheme": scheme}))
                     if (url := author.get("icon_url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
-                        raise EmbedException(self._formatEmbedError(24, f"{idx}.author.icon_url", {"scheme": scheme}))
+                        raise EmbedErr(self._formatEmbedError(24, f"{idx}.author.icon_url", {"scheme": scheme}))
                     if author.get("proxy_icon_url"):  # Not supported
                         del author["proxy_icon_url"]
             if (fields := embed.get("fields")):
                 embed["fields"] = fields = fields[:25]
                 for fidx, field in enumerate(fields):
                     if not (name := field.get("name")):
-                        raise EmbedException(self._formatEmbedError(23, f"{idx}.fields.{fidx}.name"))
+                        raise EmbedErr(self._formatEmbedError(23, f"{idx}.fields.{fidx}.name"))
                     if len(name) > 256:
-                        raise EmbedException(self._formatEmbedError(27, f"{idx}.fields.{fidx}.name", {"length": "256"}))
+                        raise EmbedErr(self._formatEmbedError(27, f"{idx}.fields.{fidx}.name", {"length": "256"}))
                     if not (value := field.get("value")):
-                        raise EmbedException(self._formatEmbedError(23, f"{idx}.fields.{fidx}.value"))
+                        raise EmbedErr(self._formatEmbedError(23, f"{idx}.fields.{fidx}.value"))
                     if len(value) > 1024:
-                        raise EmbedException(self._formatEmbedError(27, f"{idx}.fields.{fidx}.value", {"length": "1024"}))
+                        raise EmbedErr(self._formatEmbedError(27, f"{idx}.fields.{fidx}.value", {"length": "1024"}))
                     if not field.get("inline"):
                         field["inline"] = False
 
@@ -691,5 +722,21 @@ class UserConnection(DBModel):
         self.revoked = revoked
         self.show_activity = show_activity
         self.two_way_link = two_way_link
+
+        self._checkNulls()
+
+
+class Attachment(DBModel):
+    FIELDS = ("content_type", "filename", "size", "uuid", "metadata",)
+    ID_FIELD = "id"
+    DB_FIELDS = {"metadata": "j_metadata"}
+
+    def __init__(self, id, content_type, filename, size, uuid=Null, metadata=Null):
+        self.uid = id
+        self.content_type = content_type
+        self.filename = filename
+        self.size = size
+        self.uuid = uuid if uuid != Null else str(uuid4())
+        self.metadata = metadata
 
         self._checkNulls()

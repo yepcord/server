@@ -12,6 +12,8 @@ from typing import Union
 from aiomysql import escape_string
 from re import compile as rcompile
 
+from server.errors import Errors
+
 global _INCREMENT_ID
 
 
@@ -76,61 +78,17 @@ def c_json(json, code=200, headers={}):
     return json, code, h
 
 
-NoneType = type(None)
-
-
-ERRORS = {
-    1: jdumps({"code": 50035, "errors": {"email": {"_errors": [{"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}]}}, "message": "Invalid Form Body"}),
-    2: jdumps({"code": 50035, "errors": {"login": {"_errors": [{"code": "INVALID_LOGIN", "message": "Invalid login or password."}]}, "password": {"_errors": [{"code": "INVALID_LOGIN", "message": "Invalid login or password."}]}}, "message": "Invalid Form Body"}),
-    3: jdumps({"code": 50035, "errors": {"login": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "Too many users have this username, please try another."}]}}, "message": "Invalid Form Body"}),
-    4: jdumps({"code": 10013, "message": "Unknown User"}),
-    5: jdumps({"code": 50001, "message": "Missing Access"}),
-    6: jdumps({"code": 50035, "errors": {"password": {"_errors": [{"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}]}}, "message": "Invalid Form Body"}),
-    7: jdumps({"code": 50035, "errors": {"username": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "This name is used by too many users. Please enter something else or try again."}]}}, "message": "Invalid Form Body"}),
-    8: jdumps({"code": 50035, "errors": {"username": {"_errors": [{"code": "USERNAME_TOO_MANY_USERS", "message": "This discriminator already used by someone. Please enter something else."}]}}, "message": "Invalid Form Body"}),
-    9: jdumps({"code": 80004, "message": "No users with DiscordTag exist"}),
-    10: jdumps({"code": 80007, "message": "You are already friends with that user."}),
-    11: jdumps({"code": 80000, "message": "Incoming friend requests disabled."}),
-    12: jdumps({"code": 60005, "message": "Invalid two-factor secret"}),
-    13: jdumps({"code": 60008, "message": "Invalid two-factor code"}),
-    14: jdumps({"code": 50018, "message": "This account is not enrolled in two factor authentication"}),
-    15: jdumps({"code": 60002, "message": "Password does not match"}),
-    16: jdumps({"code": 60006, "message": "Invalid two-factor auth ticket"}),
-    17: jdumps({"code": 60011, "message": "Invalid key"}),
-    18: jdumps({"code": 10003, "message": "Unknown Channel"}),
-    19: jdumps({"code": 50006, "message": "Cannot send an empty message"}),
-    20: jdumps({"code": 10008, "message": "Unknown Message"}),
-    21: jdumps({"code": 50003, "message": "Cannot execute action on a DM channel"}),
-    22: jdumps({"code": 50005, "message": "Cannot edit a message authored by another user"}),
-    23: jdumps({"code": 10013, "message": "Unknown User"}),
-}
-
-
-ECODES = {
-    1: 400,
-    2: 400,
-    3: 400,
-    4: 404,
-    5: 403,
-    6: 400,
-    7: 400,
-    8: 400,
-    9: 400,
-    10: 400,
-    11: 400,
-    12: 400,
-    13: 400,
-    14: 400,
-    15: 404,
-    16: 400,
-    17: 400,
-    18: 404,
-    19: 400,
-    20: 404,
-    21: 403,
-    22: 403,
-    23: 404,
-}
+def mkError(code, errors=None, message=None):
+    if errors is None:
+        return {"code": code, "message": Errors(code) or message}
+    err = {"code": code, "errors": {}, "message": Errors(code) or message}
+    for path, error in errors.items():
+        e = err["errors"]
+        for p in path.split("."):
+            e[p] = {}
+            e = e[p]
+        e["_errors"] = [error]
+    return err
 
 
 def getImage(image):
@@ -230,7 +188,7 @@ def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
                 k = f"j_{k}"
             v = escape_string(jdumps(v))
             v = f"\"{v}\""
-        elif isinstance(v, NoneType):
+        elif v is None:
             v = "null"
         if as_tuples:
             query.append((k,v))
