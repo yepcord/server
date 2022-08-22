@@ -1,8 +1,9 @@
 from quart import Quart, websocket
+
+from ..config import Config
 from ..classes import ZlibCompressor
 from ..core import Core
 from ..utils import b64decode
-from os import environ
 from json import loads as jloads
 from asyncio import CancelledError
 from .gateway import Gateway
@@ -21,18 +22,18 @@ class YEPcord(Quart):
 
 
 app = YEPcord("YEPcord-Gateway")
-core = Core(b64decode(environ.get("KEY")))
+core = Core(b64decode(Config("KEY")))
 gw = Gateway(core)
 
 
 @app.before_serving
 async def before_serving():
     await core.initDB(
-        host=environ.get("DB_HOST"),
+        host=Config("DB_HOST"),
         port=3306,
-        user=environ.get("DB_USER"),
-        password=environ.get("DB_PASS"),
-        db=environ.get("DB_NAME"),
+        user=Config("DB_USER"),
+        password=Config("DB_PASS"),
+        db=Config("DB_NAME"),
         autocommit=True
     )
     await gw.init()

@@ -6,7 +6,7 @@ from os import urandom
 from Crypto.Cipher import AES
 
 from .errors import InvalidDataErr, MfaRequiredErr
-from .utils import b64encode, b64decode, RELATIONSHIP, MFA, ChannelType, mksf, json_to_sql, result_to_json, lsf, mkError
+from .utils import b64encode, b64decode, RelationshipType, MFA, ChannelType, mksf, json_to_sql, result_to_json, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, ChannelId, \
     UserNote, UserConnection, Attachment
 from .storage import _Storage
@@ -215,11 +215,11 @@ class Core:
         await cur.execute(f'SELECT * FROM `relationships` WHERE (`u1`={tUser.id} AND `u2`={cUser.id}) OR (`u1`={cUser.id} AND `u2`={tUser.id});')
         if await cur.fetchone():
             raise InvalidDataErr(400, mkError(80007))
-        return None # TODO: check for relationship, mutual guilds or mutual friends
+        return None # TODO: check for mutual guilds or mutual friends
 
     @_usingDB
     async def reqRelationship(self, tUser: User, cUser: User, cur: Cursor) -> None:
-        await cur.execute(f'INSERT INTO `relationships` VALUES ({cUser.id}, {tUser.id}, {RELATIONSHIP.PENDING});')
+        await cur.execute(f'INSERT INTO `relationships` VALUES ({cUser.id}, {tUser.id}, {RelationshipType.PENDING});')
         await self.mcl.broadcast("user_events", {"e": "relationship_req", "data": {"target_user": tUser.id, "current_user": cUser.id}})
 
     @_usingDB
@@ -240,10 +240,10 @@ class Core:
         rel = []
         await cur.execute(f'SELECT * FROM `relationships` WHERE `u1`={user.id} OR `u2`={user.id};')
         for r in await cur.fetchall():
-            if r[2] == RELATIONSHIP.BLOCK:
+            if r[2] == RelationshipType.BLOCK:
                 uid = r[0] if r[0] != user.id else r[1]
                 rel.append(await _d(uid, 2))
-            elif r[2] == RELATIONSHIP.FRIEND:
+            elif r[2] == RelationshipType.FRIEND:
                 uid = r[0] if r[0] != user.id else r[1]
                 rel.append(await _d(uid, 1))
             elif r[0] == user.id:
@@ -296,7 +296,7 @@ class Core:
 
     @_usingDB
     async def accRelationship(self, user: User, uid: int, cur: Cursor) -> None:
-        await cur.execute(f'UPDATE `relationships` SET `type`={RELATIONSHIP.FRIEND} WHERE `u1`={uid} AND `u2`={user.id} AND `type`={RELATIONSHIP.PENDING};')
+        await cur.execute(f'UPDATE `relationships` SET `type`={RelationshipType.FRIEND} WHERE `u1`={uid} AND `u2`={user.id} AND `type`={RelationshipType.PENDING};')
         channel = await self.getDMChannelOrCreate(user.id, uid, cur=cur)
         await self.mcl.broadcast("user_events", {"e": "relationship_acc", "data": {"target_user": uid, "current_user": user.id, "channel_id": channel.id}})
 
@@ -308,7 +308,7 @@ class Core:
         t = r[0]
         t1 = 0
         t2 = 0
-        if r == RELATIONSHIP.PENDING:
+        if r == RelationshipType.PENDING:
             if r[1] == user.id:
                 t1 = 4
                 t2 = 3
@@ -604,3 +604,21 @@ class Core:
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
         await cur.execute(f'INSERT INTO `attachments` ({fields}) VALUES ({values});')
+
+    @_usingDB
+    async def getAttachment(self, id: str, cur: Cursor) -> Optional[Attachment]:
+        await cur.execute(f'SELECT * FROM `attachments` WHERE `id`="{id}"')
+        if (r := await cur.fetchone()):
+            return Attachment.from_result(cur.description, r)
+
+    @_usingDB
+    async def getAttachmentByUUID(self, uuid: str, cur: Cursor) -> Optional[Attachment]:
+        await cur.execute(f'SELECT * FROM `attachments` WHERE `uuid`="{uuid}"')
+        if (r := await cur.fetchone()):
+            return Attachment.from_result(cur.description, r)
+
+    @_usingDB
+    async def updateAttachment(self, before: Attachment, after: Attachment, cur: Cursor) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        await cur.execute(f'UPDATE `attachments` SET {diff} WHERE `id`={before.id};')

@@ -1,6 +1,6 @@
 from .events import *
 from ..msg_client import Client
-from ..utils import GATEWAY_OP
+from ..utils import GatewayOp
 from ..core import Core
 from ..classes import UserId, Session
 from os import urandom
@@ -126,7 +126,7 @@ class GatewayEvents:
                 "avatar": d.avatar
             }]
             await cl.esend(DMChannelCreate(channel_id, recipients, 1, cinfo))
-            await self.send(cl, GATEWAY_OP.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
+            await self.send(cl, GatewayOp.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
                 "type": "friend_request_accepted",
                 "other_user": {
                     "username": d.username,
@@ -240,7 +240,7 @@ class Gateway:
 
     async def process(self, ws, data):
         op = data["op"]
-        if op == GATEWAY_OP.IDENTIFY:
+        if op == GatewayOp.IDENTIFY:
             if [w for w in self.clients if w.ws == ws]:
                 return await ws.close(4005)
             if not (token := data["d"]["token"]):
@@ -255,10 +255,10 @@ class Gateway:
             await self.ev.presence_update(cl.id, st)
             await cl.esend(ReadyEvent(await self.core.getUser(cl.id), cl, self.core))
             await cl.esend(ReadySupplementalEvent(await self.getFriendsPresences(cl.id)))
-        elif op == GATEWAY_OP.RESUME:
+        elif op == GatewayOp.RESUME:
             if not (cl := [w for w in self.clients if w.sid == data["d"]["session_id"]]):
-                await self.sendws(ws, GATEWAY_OP.INV_SESSION)
-                await self.sendws(ws, GATEWAY_OP.RECONNECT)
+                await self.sendws(ws, GatewayOp.INV_SESSION)
+                await self.sendws(ws, GatewayOp.RECONNECT)
                 return await ws.close(4009)
             if not (token := data["d"]["token"]):
                 return await ws.close(4004)
@@ -272,13 +272,13 @@ class Gateway:
             settings = await self.core.getUserSettings(UserId(cl.id))
             self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
             await self.ev.presence_update(cl.id, st)
-            await self.send(cl, GATEWAY_OP.DISPATCH, t="READY")
-        elif op == GATEWAY_OP.HEARTBEAT:
+            await self.send(cl, GatewayOp.DISPATCH, t="READY")
+        elif op == GatewayOp.HEARTBEAT:
             if not (cl := [w for w in self.clients if w.ws == ws]):
                 return await ws.close(4005)
             cl = cl[0]
-            await self.send(cl, GATEWAY_OP.HEARTBEAT_ACK, t=None, d=None)
-        elif op == GATEWAY_OP.STATUS:
+            await self.send(cl, GatewayOp.HEARTBEAT_ACK, t=None, d=None)
+        elif op == GatewayOp.STATUS:
             d = data["d"]
             if not (cl := [w for w in self.clients if w.ws == ws]):
                 return await ws.close(4005)
@@ -293,7 +293,7 @@ class Gateway:
             await self.ev.presence_update(cl.id, st)
 
     async def sendHello(self, ws):
-        await self.sendws(ws, GATEWAY_OP.HELLO, t=None, s=None, d={"heartbeat_interval": 45000})
+        await self.sendws(ws, GatewayOp.HELLO, t=None, s=None, d={"heartbeat_interval": 45000})
 
     async def disconnect(self, ws):
         if not (cl := [w for w in self.clients if w.ws == ws]):

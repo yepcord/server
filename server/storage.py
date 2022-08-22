@@ -44,6 +44,11 @@ class _Storage:
             raise NotImplementedError
         return await self.storage.getBanner(user_id, avatar_hash, size, fmt)
 
+    async def getAttachment(self, channel_id, message_id, name):
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.getAttachment(channel_id, message_id, name)
+
     async def setAvatarFromBytesIO(self, user_id, image):
         if type(self) == _Storage:
             raise NotImplementedError
@@ -53,6 +58,11 @@ class _Storage:
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.setBannerFromBytesIO(user_id, image)
+
+    async def uploadAttachment(self, data, attachment):
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.uploadAttachment(data, attachment)
 
 """
 def _resizeAnimated(image, size):
@@ -116,6 +126,13 @@ class FileStorage(_Storage):
         async with aopen(fpath, "rb") as f:
             return await f.read()
 
+    async def getAttachment(self, channel_id, attachment_id, name):
+        fpath = pjoin(self.root, "attachments", str(channel_id), str(attachment_id), name)
+        if not isfile(fpath):
+            return
+        async with aopen(fpath, "rb") as f:
+            return await f.read()
+
     async def setBannerFromBytesIO(self, user_id, image):
         banner_hash = md5()
         banner_hash.update(image.getvalue())
@@ -138,3 +155,9 @@ class FileStorage(_Storage):
         with ThreadPoolExecutor() as pool:
             await get_event_loop().run_in_executor(pool, save_task)
         return banner_hash
+
+    async def uploadAttachment(self, data, attachment):
+        fpath = pjoin(self.root, "attachments", str(attachment.channel_id), str(attachment.id), attachment.filename)
+        makedirs(fpath, exist_ok=True)
+        async with aopen(fpath, "wb") as f:
+            return await f.write(data)

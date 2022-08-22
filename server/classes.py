@@ -1,9 +1,12 @@
+from copy import deepcopy
 from datetime import datetime
 from time import mktime
-from uuid import uuid4
+from uuid import uuid4, UUID
 from zlib import compressobj, Z_FULL_FLUSH
-from .errors import EmbedErr
-from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json
+
+from .config import Config
+from .errors import EmbedErr, InvalidDataErr
+from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError
 from dateutil.parser import parse as dparse
 
 
@@ -129,6 +132,9 @@ class DBModel:
                 del other[k]
         diff.update(other)
         return diff
+
+    def copy(self):
+        return deepcopy(self)
 
 
 class _User:
@@ -423,7 +429,10 @@ class Message(_Message, DBModel):
         self.set(**kwargs)
 
         self._checkNulls()
+
+    async def check(self):
         self._checkEmbeds()
+        await self._checkAttachments()
 
     def _checkEmbedImage(self, image, idx):
         if (url := image.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
@@ -482,7 +491,6 @@ class Message(_Message, DBModel):
         elif code == 28:
             _mkTree(e, path, [{"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or fewer in length."}])
             return e
-
 
     def _checkEmbeds(self):  # TODO: Check for total lenght
         def _delIfEmpty(i, a):
@@ -592,6 +600,21 @@ class Message(_Message, DBModel):
                     if not field.get("inline"):
                         field["inline"] = False
 
+    async def _checkAttachments(self):
+        if not hasattr(self, "attachments"):
+            return
+        attachments = self.attachments.copy()
+        self.attachments = []
+        for idx, attachment in enumerate(attachments):
+            if not attachment.get("uploaded_filename"):
+                raise InvalidDataErr(400, mkError(50013, {f"attachments.{idx}.uploaded_filename": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+            uuid = attachment["uploaded_filename"].split("/")[0]
+            try:
+                uuid = str(UUID(uuid))
+            except ValueError:
+                raise InvalidDataErr(400, mkError(50013, {f"attachments.{idx}.uploaded_filename": {"code": "UUID_TYPE_COERCE","message": f"The value '{uuid}' is not an uuid."}}))
+            att = await self._core.getAttachmentByUUID(uuid)
+            self.attachments.append(att.id)
 
     @property
     def json(self):
@@ -607,6 +630,7 @@ class Message(_Message, DBModel):
             edit_timestamp = edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         mentions = []
         role_mentions = []
+        attachments = []
         for m in ping_regex.findall(self.content):
             if m.startswith("!"):
                 m = m[1:]
@@ -621,6 +645,15 @@ class Message(_Message, DBModel):
                     "discriminator": str(mem.discriminator).rjust(4, "0"),
                     "public_flags": mem.public_flags
                 })
+        for att in self.attachments:
+            att = await self._core.getAttachment(att)
+            attachments.append({
+                "filename": att.filename,
+                "id": str(att.id),
+                "size": att.size,
+                "url": f"https://{Config('CDN_HOST')}/attachments/{self.channel_id}/{att.id}/{att.filename}"
+            })
+
         j = {
             "id": str(self.id),
             "type": self.type,
@@ -634,8 +667,8 @@ class Message(_Message, DBModel):
                 "discriminator": str(author.discriminator).rjust(4, "0"),
                 "public_flags": author.public_flags
             },
-            "attachments": self.attachments, # TODO: parse attachments
-            "embeds": self.embeds, # TODO: parse embeds
+            "attachments": attachments,
+            "embeds": self.embeds,
             "mentions": mentions,
             "mention_roles": role_mentions,
             "pinned": self.pinned,
@@ -727,16 +760,18 @@ class UserConnection(DBModel):
 
 
 class Attachment(DBModel):
-    FIELDS = ("content_type", "filename", "size", "uuid", "metadata",)
+    FIELDS = ("channel_id", "filename", "size", "uuid", "content_type", "uploaded", "metadata",)
     ID_FIELD = "id"
     DB_FIELDS = {"metadata": "j_metadata"}
 
-    def __init__(self, id, content_type, filename, size, uuid=Null, metadata=Null):
-        self.uid = id
-        self.content_type = content_type
+    def __init__(self, id, channel_id, filename, size, uuid=Null, content_type=Null, uploaded=Null, metadata=Null):
+        self.id = id
+        self.channel_id = channel_id
         self.filename = filename
         self.size = size
         self.uuid = uuid if uuid != Null else str(uuid4())
+        self.content_type = content_type
+        self.uploaded = uploaded
         self.metadata = metadata
 
         self._checkNulls()

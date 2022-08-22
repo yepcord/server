@@ -158,11 +158,14 @@ CREATE TABLE `notes` (
 DROP TABLE IF EXISTS `attachments`;
 CREATE TABLE `attachments` (
   `id` bigint not null,
-  `content_type` text not null,
+  `channel_id` bigint not null,
   `filename` text not null,
   `size` bigint not null,
   `uuid` text not null,
+  `content_type` text default null,
+  `uploaded` bool not null default false,
   `j_metadata` JSON not null default "{}"
+  UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `connections`;

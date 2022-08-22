@@ -1,5 +1,10 @@
-from os import environ
+from io import BytesIO
+
+from async_timeout import timeout
 from quart import Quart, request
+from uuid import UUID
+
+from ..config import Config
 from ..core import Core, CDN
 from ..storage import FileStorage
 from ..utils import b64decode
@@ -17,17 +22,17 @@ class YEPcord(Quart):
         return response
 
 app = YEPcord("YEPcord-api")
-core = Core(b64decode(environ.get("KEY")))
+core = Core(b64decode(Config("KEY")))
 cdn = CDN(FileStorage(), core)
 
 @app.before_serving
 async def before_serving():
     await core.initDB(
-        host=environ.get("DB_HOST"),
+        host=Config("DB_HOST"),
         port=3306,
-        user=environ.get("DB_USER"),
-        password=environ.get("DB_PASS"),
-        db=environ.get("DB_NAME"),
+        user=Config("DB_USER"),
+        password=Config("DB_PASS"),
+        db=Config("DB_NAME"),
         autocommit=True
     )
 
@@ -54,6 +59,32 @@ async def banners_uid_hash(uid, name):
     if not banner:
         return b'', 404
     return banner, 200, {"Content-Type": "image/webp"}
+
+@app.route("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>", methods=["GET"])
+async def attachments_channelid_attachmentid_name(channel_id, attachment_id, name):
+    att = await cdn.getBanner(channel_id, attachment_id, name)
+    if not att:
+        return b'', 404
+    return att, 200 # TODO: add content-type header
+
+@app.route("/upload/attachment/<string:uuid>/<string:filename>", methods=["PUT"])
+async def upload_attachment_uuid_filename(uuid, filename):
+    try:
+        uuid = str(UUID(uuid))
+    except ValueError:
+        return "Not found", 404
+    if not (attachment := await core.getAttachmentByUUID(uuid)):
+        return "Not found", 404
+    if attachment.filename != filename:
+        return "Not found", 404
+    if attachment.uploaded:
+        return ""
+    if request.content_length > 100*1024*1024:
+        return "Payload Too Large", 413
+    async with timeout(100):
+        data = await request.body
+    await cdn.uploadAttachment(data, attachment)
+    await core.updateAttachment(attachment, attachment.copy().set(uploaded=True))
 
 if __name__ == "__main__":
     from uvicorn import run as urun

@@ -2,13 +2,14 @@ from time import time
 from quart import Quart, request
 from functools import wraps
 
+from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection
+from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, ChannelType, mkError
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
-from os import environ, urandom
+from os import urandom
 from json import dumps as jdumps
 from random import choice
 
@@ -26,18 +27,18 @@ class YEPcord(Quart):
 
 
 app = YEPcord("YEPcord-api")
-core = Core(b64decode(environ.get("KEY")))
+core = Core(b64decode(Config("KEY")))
 cdn = CDN(FileStorage(), core)
 
 
 @app.before_serving
 async def before_serving():
     await core.initDB(
-        host=environ.get("DB_HOST"),
+        host=Config("DB_HOST"),
         port=3306,
-        user=environ.get("DB_USER"),
-        password=environ.get("DB_PASS"),
-        db=environ.get("DB_NAME"),
+        user=Config("DB_USER"),
+        password=Config("DB_PASS"),
+        db=Config("DB_NAME"),
         autocommit=True
     )
     await core.initMCL()
@@ -462,12 +463,14 @@ async def api_channels_channel_messages_get(user, channel):
 @getChannel
 async def api_channels_channel_messages_post(user, channel):
     data = await request.get_json()
-    if not data.get("content") and not data.get("embeds"):
+    print(data)
+    if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
         raise InvalidDataErr(400, mkError(50006))
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
-    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data)
+    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data).setCore(core)
+    await message.check()
     message = await core.sendMessage(message)
     if await core.delReadStateIfExists(user.id, channel.id):
         await core.sendMessageAck(user.id, channel.id, message.id)
@@ -531,11 +534,30 @@ async def api_channels_channel_messages_typing(user, channel):
 @getChannel
 async def api_channels_channel_attachments_post(user, channel):
     data = await request.get_json()
-    if not data.get("files"):
-        raise InvalidDataErr(400, mkError(50013))
-    #{"attachments": [{"id": 3, "upload_url": "https://discord-attachments-uploads-prd.storage.googleapis.com/45af797f-cd30-445c-b273-d91a3871d10a/burp.pem?upload_id=ADPycduKcemR3rrq6eKL6g7ONfjJrk2dtFg6eiminNuZKEt_p5u7foxseha77A1rneGnUN2j3hcTx_PQafxE0mIB6K0Ul7ZF150I", "upload_filename": "45af797f-cd30-445c-b273-d91a3871d10a/burp.pem"}]}
-    await core.sendTypingEvent(user, channel)
-    return "", 204
+    if not (files := data.get("files")):
+        raise InvalidDataErr(400, mkError(50013, {"files": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+    if len(files) > 10:
+        raise InvalidDataErr(400, mkError(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
+    attachments = []
+    for idx, file in enumerate(files):
+        if not (filename := file.get("filename")) or not (filename := filename.replace("\\", "/").split("/")[-1]):
+            raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.filename": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+        if not (size := file.get("file_size")):
+            try:
+                size = int(size)
+            except ValueError:
+                raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.file_size": {"code": "NUMBER_TYPE_COERCE", "message": f"The value '{size}' is not an int."}}))
+            raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.file_size": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+        if not (fid := file.get("id")):
+            raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+        att = Attachment(mksf(), channel.id, filename, size)
+        await core.putAttachment(att)
+        attachments.append({
+            "id": int(fid),
+            "upload_filename": f"{att.uuid}/{att.filename}",
+            "upload_url": f"https://{Config('CDN_HOST')}/upload/attachment/{att.uuid}/{att.filename}",
+        })
+    return {"attachments": attachments}
 
 
 # Other

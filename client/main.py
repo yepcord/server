@@ -2,22 +2,23 @@ from quart import Quart, redirect
 from os.path import realpath, dirname, join
 from aiohttp import ClientSession
 from aiofiles import open as aopen
-from os import environ
+
+from server.config import Config
 
 STATIC_FOLDER = join(dirname(realpath(__file__)), "assets/")
 HTML_FILE = join(dirname(realpath(__file__)), "discord.html")
 
-_domain = environ.get("DOMAIN", "127.0.0.1")
+_domain = Config("DOMAIN")
 CONFIG = {
-    "CLIENT_HOST": environ.get("PUBLIC_DOMAIN", f"{_domain}:8080"),
-    "API_HOST": f"{_domain}:8000",
-    "GATEWAY_HOST": f"{_domain}:8001",
-    "REMOTEAUTH_HOST": f"{_domain}:8002",
-    "CDN_HOST": f"{_domain}:8003",
-    "MEDIAPROXY_HOST": f"{_domain}:8004",
-    "NETWORKING_HOST": f"{_domain}:8005",
-    "RTCLATENCY_HOST": f"{_domain}:8006",
-    "ACTIVITYAPPLICATION_HOST": f"{_domain}:8007",
+    "CLIENT_HOST": Config("CLIENT_HOST"),
+    "API_HOST": Config("API_HOST"),
+    "GATEWAY_HOST": Config("GATEWAY_HOST"),
+    "REMOTEAUTH_HOST": Config("REMOTEAUTH_HOST"),
+    "CDN_HOST": Config("CDN_HOST"),
+    "MEDIAPROXY_HOST": Config("MEDIAPROXY_HOST"),
+    "NETWORKING_HOST": Config("NETWORKING_HOST"),
+    "RTCLATENCY_HOST": Config("RTCLATENCY_HOST"),
+    "ACTIVITYAPPLICATION_HOST": Config("ACTIVITYAPPLICATION_HOST"),
 }
 
 

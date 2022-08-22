@@ -114,13 +114,13 @@ def validImage(image):
     return imageType(image) in ["png", "webp", "gif", "jpeg", "jpg"] and image.getbuffer().nbytes < 8*1024*1024*1024
 
 
-class RELATIONSHIP:
+class RelationshipType:
     PENDING = 0
     FRIEND = 1
     BLOCK = 2
 
 
-class GATEWAY_OP:
+class GatewayOp:
     DISPATCH = 0
     HEARTBEAT = 1
     IDENTIFY = 2

@@ -1,5 +1,5 @@
 from datetime import datetime
-from ..utils import GATEWAY_OP, snowflake_timestamp
+from ..utils import GatewayOp, snowflake_timestamp
 from time import time
 
 
@@ -7,7 +7,11 @@ class Event:
     pass
 
 
-class ReadyEvent(Event):
+class DispatchEvent(Event):
+    OP = GatewayOp.DISPATCH
+
+
+class ReadyEvent(DispatchEvent):
     NAME = "READY"
 
     def __init__(self, user, client, core):
@@ -20,7 +24,7 @@ class ReadyEvent(Event):
         settings = await self.user.settings
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "v": 9,
                 "user": {
@@ -93,7 +97,7 @@ class ReadyEvent(Event):
         }
 
 
-class ReadySupplementalEvent(Event):
+class ReadySupplementalEvent(DispatchEvent):
     NAME = "READY_SUPPLEMENTAL"
 
     def __init__(self, friends_presences):
@@ -102,7 +106,7 @@ class ReadySupplementalEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "merged_presences": {
                     "guilds": [], # TODO
@@ -114,7 +118,7 @@ class ReadySupplementalEvent(Event):
         }
 
 
-class RelationshipAddEvent(Event):
+class RelationshipAddEvent(DispatchEvent):
     NAME = "RELATIONSHIP_ADD"
 
     def __init__(self, user_id, userdata, type):
@@ -125,7 +129,7 @@ class RelationshipAddEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "user": {
                     "username": self.userdata.username,
@@ -143,7 +147,7 @@ class RelationshipAddEvent(Event):
         }
 
 
-class DMChannelCreate(Event):
+class DMChannelCreate(DispatchEvent):
     NAME = "CHANNEL_CREATE"
 
     def __init__(self, channel_id, recipients, type, info):
@@ -155,7 +159,7 @@ class DMChannelCreate(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "type": self.type,
                 "recipients": self.recipients,
@@ -165,7 +169,7 @@ class DMChannelCreate(Event):
         }
 
 
-class RelationshipRemoveEvent(Event):
+class RelationshipRemoveEvent(DispatchEvent):
     NAME = "RELATIONSHIP_REMOVE"
 
     def __init__(self, user, type):
@@ -175,7 +179,7 @@ class RelationshipRemoveEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "type": self.type,
                 "id": str(self.user)
@@ -183,7 +187,7 @@ class RelationshipRemoveEvent(Event):
         }
 
 
-class UserUpdateEvent(Event):
+class UserUpdateEvent(DispatchEvent):
     NAME = "USER_UPDATE"
 
     def __init__(self, user, userdata, settings):
@@ -194,7 +198,7 @@ class UserUpdateEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "verified": True,
                 "username": self.userdata.username,
@@ -217,7 +221,7 @@ class UserUpdateEvent(Event):
         }
 
 
-class PresenceUpdateEvent(Event):
+class PresenceUpdateEvent(DispatchEvent):
     NAME = "PRESENCE_UPDATE"
 
     def __init__(self, user, userdata, status):
@@ -228,7 +232,7 @@ class PresenceUpdateEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "user": {
                     "username": self.userdata.username,
@@ -245,7 +249,7 @@ class PresenceUpdateEvent(Event):
         }
 
 
-class MessageCreateEvent(Event):
+class MessageCreateEvent(DispatchEvent):
     NAME = "MESSAGE_CREATE"
 
     def __init__(self, message):
@@ -254,12 +258,12 @@ class MessageCreateEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": self.message
         }
 
 
-class TypingEvent(Event):
+class TypingEvent(DispatchEvent):
     NAME = "TYPING_START"
 
     def __init__(self, user, channel):
@@ -269,7 +273,7 @@ class TypingEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "user_id": str(self.user),
                 "timestamp": int(time()),
@@ -282,7 +286,7 @@ class MessageUpdateEvent(MessageCreateEvent):
     NAME = "MESSAGE_UPDATE"
 
 
-class MessageDeleteEvent(Event):
+class MessageDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE"
 
     def __init__(self, message, channel):
@@ -292,7 +296,7 @@ class MessageDeleteEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": {
                 "id": str(self.message),
                 "channel_id": str(self.channel)
@@ -300,7 +304,7 @@ class MessageDeleteEvent(Event):
         }
 
 
-class MessageAckEvent(Event):
+class MessageAckEvent(DispatchEvent):
     NAME = "MESSAGE_ACK"
 
     def __init__(self, ack_object):
@@ -309,6 +313,6 @@ class MessageAckEvent(Event):
     async def json(self) -> dict:
         return {
             "t": self.NAME,
-            "op": GATEWAY_OP.DISPATCH,
+            "op": self.OP,
             "d": self.ack_object
         }
