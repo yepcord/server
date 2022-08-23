@@ -672,7 +672,7 @@ async def api_users_me_billing_usertrialoffer():
 
 @app.route("/api/v9/users/@me/billing/subscriptions", methods=["GET"])
 async def api_users_me_billing_subscriptions():
-    return c_json("[]")
+    return c_json("[{\"items\": [{\"id\": 1, \"plan_id\": 511651880837840896, \"quantity\": 1200}], \"id\": 1, \"type\": 2, \"created_at\": 1640995200000, \"canceled_at\": null, \"current_period_start\": 1640995200000, \"current_period_end\": 4794595201000, \"status\": \"idk\", \"payment_source_id\": 0, \"payment_gateway\": null, \"payment_gateway_plan_id\": null, \"payment_gateway_subscription_id\": null, \"trial_id\": null, \"trial_ends_at\": null, \"renewal_mutations\": null, \"streak_started_at\": 1640995200000, \"currency\": \"USD\", \"metadata\": null}]")
 
 
 @app.route("/api/v9/users/@me/billing/subscription-slots", methods=["GET"])
