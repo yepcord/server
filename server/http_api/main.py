@@ -1,4 +1,10 @@
+from io import BytesIO
 from time import time
+from uuid import uuid4
+
+from PIL import Image
+from async_timeout import timeout
+from magic import from_buffer
 from quart import Quart, request
 from functools import wraps
 
@@ -6,11 +12,12 @@ from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment
 from ..core import Core, CDN
-from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, ChannelType, mkError
+from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, ChannelType, mkError, \
+    parseMultipartRequest
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
 from os import urandom
-from json import dumps as jdumps
+from json import dumps as jdumps, loads as jloads
 from random import choice
 
 
@@ -29,6 +36,8 @@ class YEPcord(Quart):
 app = YEPcord("YEPcord-api")
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(FileStorage(), core)
+
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 
 @app.before_serving
@@ -463,7 +472,46 @@ async def api_channels_channel_messages_get(user, channel):
 @getChannel
 async def api_channels_channel_messages_post(user, channel):
     data = await request.get_json()
-    print(data)
+    if data is None and (ct := request.headers.get("Content-Type", "")).startswith("multipart/form-data;"):
+        data = {}
+        if request.content_length > 1024*1024*100:
+            raise InvalidDataErr(400, mkError(50006)) # TODO: replace with correct error
+        async with timeout(100):
+            boundary = ct.split(";")[1].strip().split("=")[1].split("WebKitFormBoundary")[1]
+            body = await request.body
+            if len(body) > 1024*1024*100:
+                raise InvalidDataErr(400, mkError(50006)) # TODO: replace with correct error
+            data = parseMultipartRequest(body, boundary)
+            files = data["files"]
+            data = jloads(data["payload_json"]["data"].decode("utf8"))
+            if len(files) > 10:
+                raise InvalidDataErr(400, mkError(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
+            atts = data["attachments"]
+            data["attachments"] = []
+            for idx, file in enumerate(files):
+                uuid = str(uuid4())
+                att = {"filename": None}
+                if idx+1 <= len(atts):
+                    att = atts[idx]
+                name = att.get("filename") or file.get("filename") or "unknown"
+                data["attachments"].append({"uploaded_filename": f"{uuid}/{name}"})
+                att = Attachment(mksf(), channel.id, name, len(file["data"]), uuid)
+                if file.get("content_type"):
+                    cot = file.get("content_type").strip()
+                    att.set(content_type=cot)
+                    if cot.startswith("image/"):
+                        img = Image.open(BytesIO(file["data"]))
+                        att.set(metadata={"height": img.height, "width": img.width})
+                        img.close()
+                else:
+                    cot = from_buffer(file["data"][:1024], mime=True)
+                    att.set(content_type=cot)
+                    if cot.startswith("image/"):
+                        img = Image.open(BytesIO(file["data"]))
+                        att.set(metadata={"height": img.height, "width": img.width})
+                        img.close()
+                await core.putAttachment(att)
+                await cdn.uploadAttachment(file["data"], att)
     if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
         raise InvalidDataErr(400, mkError(50006))
     if "id" in data: del data["id"]
@@ -501,7 +549,7 @@ async def api_channels_channel_messages_message_patch(user, channel, message):
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
     if "edit_timestamp" in data: del data["edit_timestamp"]
-    after = Message(id=before.id, channel_id=before.channel_id, author=before.author, edit_timestamp=int(time()), **data)
+    after = before.copy().set(edit_timestamp=int(time()), **data)
     after = await core.editMessage(before, after)
     return c_json(await after.json)
 

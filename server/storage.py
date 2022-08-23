@@ -157,7 +157,7 @@ class FileStorage(_Storage):
         return banner_hash
 
     async def uploadAttachment(self, data, attachment):
-        fpath = pjoin(self.root, "attachments", str(attachment.channel_id), str(attachment.id), attachment.filename)
+        fpath = pjoin(self.root, "attachments", str(attachment.channel_id), str(attachment.id))
         makedirs(fpath, exist_ok=True)
-        async with aopen(fpath, "wb") as f:
+        async with aopen(pjoin(fpath, attachment.filename), "wb") as f:
             return await f.write(data)

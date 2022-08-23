@@ -1,4 +1,4 @@
-from aiomysql import create_pool, Cursor, escape_string
+from aiomysql import create_pool, Cursor, escape_string, Connection
 from asyncio import get_event_loop
 from hmac import new
 from hashlib import sha256
@@ -23,6 +23,8 @@ def _usingDB(f):
             return await f(self, *args, **kwargs)
         if "db" not in f.__code__.co_varnames and "cur" not in f.__code__.co_varnames:
             return await f(self, *args, **kwargs)
+        db: Connection
+        cur: Cursor
         async with self.pool.acquire() as db:
             async with db.cursor() as cur:
                 if "db" in f.__code__.co_varnames:

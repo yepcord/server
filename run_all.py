@@ -6,12 +6,13 @@ from threading import Thread
 environ["PYTHONUNBUFFERED"] = "1"
 
 class Process:
-    def __init__(self, name, app=None, port=None, file=None, wd="."):
+    def __init__(self, name, app=None, port=None, file=None, wd=".", *, disable_logs=False):
         self.name = name
         self.app = app
         self.port = port
         self.file = file
         self.wd = wd
+        self.disable_logs = disable_logs
         self.output = []
         self._process = None
         self.started = False
@@ -25,7 +26,7 @@ class Process:
                 o = self._process.stdout.read(1).decode("utf8")
             except UnicodeDecodeError:
                 continue
-            if o == "":
+            if o == "" or self.disable_logs:
                 continue
             if o in ["\r", "\n"]:
                 if "Application startup complete" in out:
@@ -59,7 +60,7 @@ processes = [
     Process("Gateway", app="server.gateway.main:app", port=8001),
     Process("CDN", app="server.cdn.main:app", port=8003),
     Process("RemoteAuth", app="server.remote_auth.main:app", port=8002),
-    Process("Client", app="client.main:app", port=8080),
+    Process("Client", app="client.main:app", port=8080, disable_logs=True),
 ]
 
 skip_logs = [
@@ -83,9 +84,9 @@ def main():
                 while p.output:
                     s = p.output.pop(0)
                     if "WatchGodReload detected file change in" in s:
-                    	print(f"[{p.name}] Reloading...")
+                        print(f"[{p.name}] Reloading...")
                     elif "Application startup complete" in s and (p.started and p.astarted):
-                    	print(f"[{p.name}] Reload complete.")
+                        print(f"[{p.name}] Reload complete.")
                     sk = False
                     for _a in skip_logs:
                         if _a in s:

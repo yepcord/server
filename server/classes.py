@@ -6,7 +6,7 @@ from zlib import compressobj, Z_FULL_FLUSH
 
 from .config import Config
 from .errors import EmbedErr, InvalidDataErr
-from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError
+from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, mksf
 from dateutil.parser import parse as dparse
 
 
@@ -134,7 +134,15 @@ class DBModel:
         return diff
 
     def copy(self):
-        return deepcopy(self)
+        o = self.__class__.__new__(self.__class__)
+        for k,v in self.__dict__.items():
+            setattr(o, k, v)
+        return o
+
+    def get(self, item, default=None):
+        if not hasattr(self, item):
+            return default
+        return getattr(self, item)
 
 
 class _User:
@@ -612,7 +620,7 @@ class Message(_Message, DBModel):
             try:
                 uuid = str(UUID(uuid))
             except ValueError:
-                raise InvalidDataErr(400, mkError(50013, {f"attachments.{idx}.uploaded_filename": {"code": "UUID_TYPE_COERCE","message": f"The value '{uuid}' is not an uuid."}}))
+                continue
             att = await self._core.getAttachmentByUUID(uuid)
             self.attachments.append(att.id)
 
@@ -631,20 +639,21 @@ class Message(_Message, DBModel):
         mentions = []
         role_mentions = []
         attachments = []
-        for m in ping_regex.findall(self.content):
-            if m.startswith("!"):
-                m = m[1:]
-            if m.startswith("&"):
-                role_mentions.append(m[1:])
-            if (mem := await self._core.getUserByChannel(self.channel_id, int(m))):
-                mentions.append({
-                    "id": m,
-                    "username": mem.username,
-                    "avatar": mem.avatar,
-                    "avatar_decoration": mem.avatar_decoration,
-                    "discriminator": str(mem.discriminator).rjust(4, "0"),
-                    "public_flags": mem.public_flags
-                })
+        if self.content:
+            for m in ping_regex.findall(self.content):
+                if m.startswith("!"):
+                    m = m[1:]
+                if m.startswith("&"):
+                    role_mentions.append(m[1:])
+                if (mem := await self._core.getUserByChannel(self.channel_id, int(m))):
+                    mentions.append({
+                        "id": m,
+                        "username": mem.username,
+                        "avatar": mem.avatar,
+                        "avatar_decoration": mem.avatar_decoration,
+                        "discriminator": str(mem.discriminator).rjust(4, "0"),
+                        "public_flags": mem.public_flags
+                    })
         for att in self.attachments:
             att = await self._core.getAttachment(att)
             attachments.append({
@@ -653,6 +662,10 @@ class Message(_Message, DBModel):
                 "size": att.size,
                 "url": f"https://{Config('CDN_HOST')}/attachments/{self.channel_id}/{att.id}/{att.filename}"
             })
+            if att.get("content_type"):
+                attachments[-1]["content_type"] = att.get("content_type")
+            if att.get("metadata"):
+                attachments[-1].update(att.metadata)
 
         j = {
             "id": str(self.id),
@@ -672,7 +685,7 @@ class Message(_Message, DBModel):
             "mentions": mentions,
             "mention_roles": role_mentions,
             "pinned": self.pinned,
-            "mention_everyone": "@everyone" in self.content or "@here" in self.content,
+            "mention_everyone": ("@everyone" in self.content or "@here" in self.content) if self.content else None,
             "tts": False,
             "timestamp": timestamp,
             "edited_timestamp": edit_timestamp,

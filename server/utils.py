@@ -212,3 +212,44 @@ def result_to_json(desc: list, result: list):
 
 
 ping_regex = rcompile(r'<@((?:!|&){0,1}\d{17,32})>')
+
+
+def parseMultipartRequest(body, boundary):
+    res = {}
+    parts = body.split(f"------WebKitFormBoundary{boundary}".encode("utf8"))
+    parts.pop(0)
+    parts.pop(-1)
+    for part in parts:
+        name = None
+        ct = None
+        p = part.split(b"\r\n")[1:-1]
+        for _ in range(10):
+            data = p.pop(0)
+            if data == b'':
+                break
+            k, v = data.decode("utf8").split(":")
+            if k == "Content-Type":
+                ct = v
+            if k == "Content-Disposition":
+                v = ";".join(v.split(";")[1:])
+                args = dict([a.strip().split("=") for a in v.strip().split(";")])
+                name = args["name"][1:-1]
+                del args["name"]
+                if "[" in name and "]" in name:
+                    name, idx = name.split("[")
+                    idx = int(idx.replace("]", ""))
+                    if name not in res:
+                        res[name] = []
+                    res[name].insert(idx, {"data": ""})
+                    res[name][idx].update(args)
+                else:
+                    res[name] = {"data": ""}
+                    res[name].update(args)
+        if isinstance(res[name], list):
+            d = res[name][idx]
+        else:
+            d = res[name]
+        d["data"] = b"\r\n".join(p)
+        if ct:
+            d["content_type"] = ct
+    return res

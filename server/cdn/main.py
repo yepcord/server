@@ -1,6 +1,8 @@
 from io import BytesIO
 
+from PIL import Image
 from async_timeout import timeout
+from magic import from_buffer
 from quart import Quart, request
 from uuid import UUID
 
@@ -24,6 +26,8 @@ class YEPcord(Quart):
 app = YEPcord("YEPcord-api")
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(FileStorage(), core)
+
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 @app.before_serving
 async def before_serving():
@@ -62,10 +66,16 @@ async def banners_uid_hash(uid, name):
 
 @app.route("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>", methods=["GET"])
 async def attachments_channelid_attachmentid_name(channel_id, attachment_id, name):
-    att = await cdn.getBanner(channel_id, attachment_id, name)
+    att = await core.getAttachment(attachment_id)
     if not att:
         return b'', 404
-    return att, 200 # TODO: add content-type header
+    h = {}
+    if att.get("content_type"):
+        h["Content-Type"] = att.content_type
+    att = await cdn.getAttachment(channel_id, attachment_id, name)
+    if not att:
+        return b'', 404
+    return att, 200, h
 
 @app.route("/upload/attachment/<string:uuid>/<string:filename>", methods=["PUT"])
 async def upload_attachment_uuid_filename(uuid, filename):
@@ -83,8 +93,16 @@ async def upload_attachment_uuid_filename(uuid, filename):
         return "Payload Too Large", 413
     async with timeout(100):
         data = await request.body
+    meta = {}
+    ct = attachment.get("content_type")
+    if not ct:
+        ct = from_buffer(data[:1024], mime=True)
+    if ct.startswith("image/"):
+        img = Image.open(BytesIO(data))
+        meta.update({"height": img.height, "width": img.width})
+        img.close()
     await cdn.uploadAttachment(data, attachment)
-    await core.updateAttachment(attachment, attachment.copy().set(uploaded=True))
+    await core.updateAttachment(attachment, attachment.copy().set(uploaded=True, metadata=meta, content_type=ct))
 
 if __name__ == "__main__":
     from uvicorn import run as urun
