@@ -107,7 +107,7 @@ class Core:
 
     @_usingDB
     async def login(self, email: str, password: str, cur: Cursor) -> Session:
-        email = email.lower()
+        email = email.strip().lower()
         await cur.execute(f'SELECT `password`, `key`, `id` FROM `users` WHERE `email`="{escape_string(email)}"')
         r = await cur.fetchone()
         if not r or self.encryptPassword(password) != r[0]:
