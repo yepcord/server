@@ -1,13 +1,17 @@
 from io import BytesIO
 from time import time
 from uuid import uuid4
-
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
 from quart import Quart, request
 from functools import wraps
+from os import urandom
+from json import dumps as jdumps, loads as jloads
+from random import choice
+from base64 import b64encode as _b64encode, b64decode as _b64decode
 
+from server.proto import PreloadedUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment
@@ -16,9 +20,6 @@ from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MF
     parseMultipartRequest
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
-from os import urandom
-from json import dumps as jdumps, loads as jloads
-from random import choice
 
 
 class YEPcord(Quart):
@@ -279,6 +280,33 @@ async def api_users_me_settings_patch(user):
     await core.setSettings(s)
     await core.sendUserUpdateEvent(user.id)
     return c_json(await userSettingsResponse(user))
+
+
+@app.route("/api/v9/users/@me/settings-proto/1", methods=["GET"])
+@getUser
+async def api_users_me_settingsproto_1_get(user):
+    settings = await user.settings
+    proto = settings.to_proto()
+    return c_json({"settings": _b64encode(proto.dumps()).decode("utf8")})
+
+
+@app.route("/api/v9/users/@me/settings-proto/1", methods=["PATCH"])
+@getUser
+async def api_users_me_settingsproto_1_patch(user):
+    data = await request.get_json()
+    if not data.get("settings"):
+        raise InvalidDataErr(400, mkError(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
+    try:
+        proto = PreloadedUserSettings.loads(_b64decode(data.get("settings").encode("utf8")))
+    except ValueError:
+        raise InvalidDataErr(400, mkError(50104))
+    settings_old = await user.settings
+    settings = UserSettings(user)
+    settings.from_proto(proto)
+    await core.setSettingsDiff(settings_old, settings)
+    user._uSettings = None
+    settings = await user.settings
+    return c_json({"settings": _b64encode(settings.to_proto().dumps()).decode("utf8")})
 
 
 @app.route("/api/v9/users/@me/connections", methods=["GET"])

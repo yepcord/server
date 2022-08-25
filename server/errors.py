@@ -31,6 +31,7 @@ class _Errors:
     err_50006 = "Cannot send an empty message"
     err_50018 = "This account is not enrolled in two factor authentication"
     err_50035 = "Invalid Form Body"
+    err_50104 = "Malformed user settings payload"
 
     err_60002 = "Password does not match"
     err_60005 = "Invalid two-factor secret"

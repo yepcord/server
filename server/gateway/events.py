@@ -1,3 +1,4 @@
+from base64 import b64encode
 from datetime import datetime
 from ..utils import GatewayOp, snowflake_timestamp
 from time import time
@@ -22,6 +23,8 @@ class ReadyEvent(DispatchEvent):
     async def json(self) -> dict:
         userdata = await self.user.userdata
         settings = await self.user.settings
+        proto = settings.to_proto()
+        print(proto.voice_and_video.stream_notifications_enabled)
         return {
             "t": self.NAME,
             "op": self.OP,
@@ -57,7 +60,7 @@ class ReadyEvent(DispatchEvent):
                 "connected_accounts": [],
                 "consents": {
                     "personalization": {
-                        "consented": True
+                        "consented": settings.personalization
                     }
                 },
                 "country_code": "US",
@@ -92,7 +95,7 @@ class ReadyEvent(DispatchEvent):
                     "entries": []
                 },
                 "user_settings": settings.to_json(),
-                # "user_settings_proto": "CgIYBCILCgkRAAEAAAAAAIAqDTIDCNgEOgIIAUICCAEyL0oCCAFSAggBWgIIAWICCAFqAggBcgIIAXoAggECCAGKAQCaAQIIAaIBAKoBAggBQhBCAggBSgIIAVIAWgIIDmIAUgIaAFoOCggKBm9ubGluZRoCCAFiEwoECgJydRILCMz+/////////wFqAggBcgA="
+                "user_settings_proto": b64encode(proto.dumps()).decode("utf8")
             }
         }
 

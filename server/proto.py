@@ -2,8 +2,12 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import List, Optional
 
+# Fix pure-protobuf uint
+from .fixes import fix_proto_uint
+fix_proto_uint()
+
 from pure_protobuf.dataclasses_ import message, field as _field
-from pure_protobuf.types import uint32, fixed64, int32, sint32, uint64
+from pure_protobuf.types import uint32, fixed64
 
 
 def field(num, *args, **kwargs):
@@ -297,7 +301,7 @@ class PrivacySettings:
     friend_source_flags: Optional[FriendSourceFlags] = field(11, default_factory=FriendSourceFlags)
     friend_discovery_flags: Optional[FriendDiscoveryFlags] = field(12, default_factory=FriendDiscoveryFlags)
     activity_restricted_guild_ids: Optional[List[fixed64]] = field(13, default_factory=list)
-    default_guilds_activity_restricted: Optional[GuildActivityStatusRestrictionDefault] = field(14)
+    default_guilds_activity_restricted: Optional[GuildActivityStatusRestrictionDefault] = field(14, default_factory=GuildActivityStatusRestrictionDefault)
     activity_joining_restricted_guild_ids: Optional[List[fixed64]] = field(15, default_factory=list)
 
 @message
@@ -400,3 +404,51 @@ class PreloadedUserSettings:
     status: Optional[StatusSettings] = field(11, default_factory=StatusSettings)
     localization: Optional[LocalizationSettings] = field(12, default_factory=LocalizationSettings)
     appearance: Optional[AppearanceSettings] = field(13, default_factory=AppearanceSettings)
+
+    @classmethod
+    def from_settings(cls, settings):
+        return cls(
+            versions=Version(client_version=14, data_version=62),
+            inbox=None,
+            user_content=UserContentSettings(dismissed_contents=b'Q\x01\t\x00\x00\x02\x00\x00\x80'),
+            voice_and_video=VoiceAndVideoSettings(
+                afk_timeout=AfkTimeout(value=settings.get("afk_timeout", 600)),
+                stream_notifications_enabled=StreamNotificationsEnabled(value=bool(settings.get("stream_notifications_enabled", True))),
+            ),
+            text_and_images=TextAndImagesSettings(
+                use_rich_chat_input=UseRichChatInput(value=bool(settings.get("use_rich_chat_input", True))),  # TODO: add to db
+                use_thread_sidebar=UseThreadSidebar(value=bool(settings.get("use_thread_sidebar", True))),  # TODO: add to db
+                render_spoilers=RenderSpoilers(value=settings.get("render_spoilers", "ON_CLICK")),  # TODO: add to db
+                inline_attachment_media=InlineAttachmentMedia(value=bool(settings.get("inline_attachment_media", True))),  # TODO: add to db
+                inline_embed_media=InlineEmbedMedia(value=bool(settings.get("inline_embed_media", True))),  # TODO: add to db
+                render_embeds=RenderEmbeds(value=bool(settings.get("render_embeds", True))),
+                render_reactions=RenderReactions(value=bool(settings.get("render_reactions", True))),
+                explicit_content_filter=ExplicitContentFilter(value=settings.get("explicit_content_filter", True)),
+                view_nsfw_guilds=ViewNsfwGuilds(value=bool(settings.get("view_nsfw_guilds", False))),
+                convert_emoticons=ConvertEmoticons(value=bool(settings.get("convert_emoticons", True))),
+                animate_stickers=AnimateStickers(value=settings.get("animate_stickers", True)),
+                expression_suggestions_enabled=ExpressionSuggestionsEnabled(value=bool(settings.get("expression_suggestions_enabled", True))),  # TODO: add to db
+            ),
+            notifications=None,
+            privacy=PrivacySettings(
+                allow_activity_party_privacy_friends=None,
+                allow_activity_party_privacy_voice_channel=None,
+                #friend_source_flags=FriendSourceFlags(value=settings.get("friend_source_flags", 14)), # TODO: ???
+                friend_source_flags=FriendSourceFlags(value=14),
+                default_guilds_activity_restricted=GuildActivityStatusRestrictionDefault(settings.get("default_guilds_restricted", 1)),
+            ),
+            debug=None,
+            game_library=None,
+            status=StatusSettings(
+                status=Status(status=settings.get("status", "online")),
+                show_current_game=ShowCurrentGame(value=bool(settings.get("show_current_game", True))),
+            ),
+            localization=LocalizationSettings(
+                locale=Locale(locale_code=settings.get("locale", "en_US")),
+                timezone_offset=TimezoneOffset(offset=settings.get("timezone_offset", 0)),
+            ),
+            appearance=AppearanceSettings(
+                theme=Theme.DARK if settings.get("theme", "dark") == "dark" else Theme.LIGHT,
+                developer_mode=bool(settings.get("developer_mode", False)),
+            ),
+        )

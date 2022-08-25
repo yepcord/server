@@ -168,6 +168,13 @@ class Core:
         await cur.execute(f'UPDATE `settings` SET {json_to_sql(j)} WHERE `uid`={settings.uid};')
 
     @_usingDB
+    async def setSettingsDiff(self, before: UserSettings, after: UserSettings, cur: Cursor) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await cur.execute(f'UPDATE `settings` SET {diff} WHERE `uid`={before.uid};')
+
+    @_usingDB
     async def setUserdata(self, userdata: UserData, cur: Cursor) -> None:
         if not (j := userdata.to_sql_json(userdata.to_typed_json)):
             return

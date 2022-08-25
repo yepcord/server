@@ -253,3 +253,13 @@ def parseMultipartRequest(body, boundary):
         if ct:
             d["content_type"] = ct
     return res
+
+def proto_get(protoObj, path, default):
+    path = path.split(".")
+    try:
+        o = getattr(protoObj, path.pop(0))
+        for p in path:
+            o = getattr(o, p)
+    except:
+        return default
+    return o

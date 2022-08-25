@@ -60,7 +60,7 @@ CREATE TABLE `settings` (
   `default_guilds_restricted` bool not null default false,
   `theme` text not null default "dark",
   `allow_accessibility_detection` bool not null default false,
-  `locale` text not null default "ru",
+  `locale` text not null default "en_US",
   `native_phone_integration_enabled` bool not null default true,
   `timezone_offset` int not null default 0,
   `friend_discovery_flags` bigint not null default 0,

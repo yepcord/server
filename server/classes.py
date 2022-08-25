@@ -1,4 +1,3 @@
-from copy import deepcopy
 from datetime import datetime
 from time import mktime
 from uuid import uuid4, UUID
@@ -6,7 +5,8 @@ from zlib import compressobj, Z_FULL_FLUSH
 
 from .config import Config
 from .errors import EmbedErr, InvalidDataErr
-from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, mksf
+from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get
+from .proto import PreloadedUserSettings as PreloadedUserSettingsProto
 from dateutil.parser import parse as dparse
 
 
@@ -113,6 +113,7 @@ class DBModel:
             if k not in list(self.FIELDS) + list(self.ALLOWED_FIELDS):
                 continue
             setattr(self, k, v)
+        self._checkNulls()
         return self
 
     def fill_defaults(self):
@@ -195,23 +196,17 @@ class User(_User, DBModel):
         self._checkNulls()
 
     @property
-    def settings(self):
-        return self._settings()
-
-    @property
-    def data(self):
-        return self._userdata()
-
-    @property
-    def userdata(self):
-        return self._userdata()
-
-    async def _settings(self):
+    async def settings(self):
         if not self._uSettings:
             self._uSettings = await self._core.getUserSettings(self)
         return self._uSettings
 
-    async def _userdata(self):
+    @property
+    async def data(self):
+        return await self.userdata
+
+    @property
+    async def userdata(self):
         if not self._uData:
             self._uData = await self._core.getUserData(self)
         return self._uData
@@ -292,6 +287,52 @@ class UserSettings(DBModel):
         if "mfa" in j:
             j["mfa"] = self.mfa_key
         return j
+
+    def to_proto(self) -> PreloadedUserSettingsProto:
+        return PreloadedUserSettingsProto.from_settings(self)
+
+    def from_proto(self, proto):
+        self.set(
+            inline_attachment_media=proto_get(proto, "text_and_images.inline_attachment_media.value", Null),
+            show_current_game=proto_get(proto, "status.show_current_game.value", Null),
+            view_nsfw_guilds=proto_get(proto, "text_and_images.view_nsfw_guilds.value", Null),
+            enable_tts_command=proto_get(proto, "text_and_images.enable_tts_command.value", Null),
+            render_reactions=proto_get(proto, "text_and_images.render_reactions.value", Null),
+            gif_auto_play=proto_get(proto, "text_and_images.gif_auto_play.value", Null),
+            stream_notifications_enabled=proto_get(proto, "voice_and_video.stream_notifications_enabled.value", Null),
+            animate_emoji=proto_get(proto, "text_and_images.animate_emoji.value", Null),
+            afk_timeout=proto_get(proto, "voice_and_video.afk_timeout.value", Null),
+            view_nsfw_commands=proto_get(proto, "text_and_images.view_nsfw_commands.value", Null),
+            detect_platform_accounts=proto_get(proto, "privacy.detect_platform_accounts.value", Null),
+            explicit_content_filter=proto_get(proto, "text_and_images.explicit_content_filter.value", Null),
+            status=proto_get(proto, "status.status.status", Null),
+            default_guilds_restricted=proto_get(proto, "privacy.default_guilds_activity_restricted", Null),
+            theme="dark" if proto_get(proto, "appearance.theme", 1) == 1 else "light",
+            allow_accessibility_detection=proto_get(proto, "privacy.allow_accessibility_detection", Null),
+            locale=proto_get(proto, "localization.locale.locale_code", Null),
+            native_phone_integration_enabled=proto_get(proto, "voice_and_video.native_phone_integration_enabled.value", Null),
+            timezone_offset=proto_get(proto, "localization.timezone_offset.offset", Null),
+            friend_discovery_flags=proto_get(proto, "privacy.friend_discovery_flags.value", Null),
+            contact_sync_enabled=proto_get(proto, "privacy.contact_sync_enabled.value", Null),
+            disable_games_tab=proto_get(proto, "game_library.disable_games_tab.value", Null),
+            developer_mode=proto_get(proto, "appearance.developer_mode", Null),
+            render_embeds=proto_get(proto, "text_and_images.render_embeds.value", Null),
+            animate_stickers=proto_get(proto, "text_and_images.animate_stickers.value", Null),
+            message_display_compact=proto_get(proto, "text_and_images.message_display_compact.value", Null),
+            convert_emoticons=proto_get(proto, "text_and_images.convert_emoticons.value", Null),
+            passwordless=proto_get(proto, "privacy.passwordless.value", Null),
+            activity_restricted_guild_ids=proto_get(proto, "privacy.activity_restricted_guild_ids", Null),
+            #friend_source_flags=proto_get(proto, "privacy.friend_source_flags.value", Null),  # TODO: ???
+            restricted_guilds=proto_get(proto, "privacy.restricted_guild_ids", Null),
+        )
+        if proto_get(proto, "text_and_images.", Null) is not Null:
+            cs = {}
+            custom_status = proto_get(proto, "status.custom_status", Null)
+            cs["text"] = proto_get(custom_status, "text", None)
+            cs["emoji_id"] = proto_get(custom_status, "emoji_id", None)
+            cs["emoji_name"] = proto_get(custom_status, "emoji_name", None)
+            cs["expires_at_ms"] = proto_get(custom_status, "expires_at_ms", None)
+            self.set(custom_status=cs)
 
 
 class UserData(DBModel):
