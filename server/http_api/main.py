@@ -292,19 +292,19 @@ async def api_users_me_settingsproto_1_get(user):
 
 @app.route("/api/v9/users/@me/settings-proto/1", methods=["PATCH"])
 @getUser
-async def api_users_me_settingsproto_1_patch(user):
-    data = await request.get_json()
-    if not data.get("settings"):
-        raise InvalidDataErr(400, mkError(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
-    try:
-        proto = PreloadedUserSettings.loads(_b64decode(data.get("settings").encode("utf8")))
-    except ValueError:
-        raise InvalidDataErr(400, mkError(50104))
-    settings_old = await user.settings
-    settings = UserSettings(user)
-    settings.from_proto(proto)
-    await core.setSettingsDiff(settings_old, settings)
-    user._uSettings = None
+async def api_users_me_settingsproto_1_patch(user): # TODO
+    #data = await request.get_json()
+    #if not data.get("settings"):
+    #    raise InvalidDataErr(400, mkError(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
+    #try:
+    #    proto = PreloadedUserSettings.loads(_b64decode(data.get("settings").encode("utf8")))
+    #except ValueError:
+    #    raise InvalidDataErr(400, mkError(50104))
+    #settings_old = await user.settings
+    #settings = UserSettings(user)
+    #settings.from_proto(proto)
+    #await core.setSettingsDiff(settings_old, settings)
+    #user._uSettings = None
     settings = await user.settings
     return c_json({"settings": _b64encode(settings.to_proto().dumps()).decode("utf8")})
 
@@ -634,6 +634,19 @@ async def api_channels_channel_attachments_post(user, channel):
             "upload_url": f"https://{Config('CDN_HOST')}/upload/attachment/{att.uuid}/{att.filename}",
         })
     return {"attachments": attachments}
+
+
+# Stickers
+
+
+@app.route("/api/v9/sticker-packs", methods=["GET"])
+async def api_stickerpacks_get():
+    return c_json('{"sticker_packs": []}') # TODO
+
+
+@app.route("/api/v9/gifs/trending", methods=["GET"])
+async def api_gifs_trending_get():
+    return c_json('{"gifs": [], "categories": []}') # TODO
 
 
 # Other

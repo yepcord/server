@@ -153,6 +153,11 @@ class _User:
     def __eq__(self, other):
         return isinstance(other, _User) and self.id == other.id
 
+    def get(self, item, default=None):
+        if not hasattr(self, item):
+            return default
+        return getattr(self, item)
+
 
 class Session(_User, DBModel):
     FIELDS = ("uid", "sid", "sig")
