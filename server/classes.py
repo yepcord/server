@@ -57,7 +57,7 @@ class DBModel:
 
     def _checkNulls(self):
         for f in self.FIELDS:
-            if getattr(self, f) == Null:
+            if getattr(self, f, None) == Null:
                 delattr(self, f)
 
     def to_json(self, with_id=False, with_values=False):

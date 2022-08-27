@@ -199,7 +199,7 @@ def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
     return ", ".join(query)
 
 
-def result_to_json(desc: list, result: list):
+def result_to_json(desc: list, result: list) -> dict:
     j = {}
     for idx, value in enumerate(result):
         name = desc[idx][0]

@@ -24,7 +24,7 @@ class ReadyEvent(DispatchEvent):
         userdata = await self.user.userdata
         settings = await self.user.settings
         proto = settings.to_proto()
-        print(proto.voice_and_video.stream_notifications_enabled)
+        #print(proto.voice_and_video.stream_notifications_enabled)
         return {
             "t": self.NAME,
             "op": self.OP,
@@ -74,7 +74,7 @@ class ReadyEvent(DispatchEvent):
                 "read_state": {
                     "version": 1,
                     "partial": False,
-                    "entries": await self.core.getReadStates(self.user)
+                    "entries": await self.core.getReadStatesJ(self.user)
                 },
                 "resume_gateway_url": "wss://127.0.0.1/",
                 "session_type": "normal",

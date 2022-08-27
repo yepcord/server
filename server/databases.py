@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from types import FunctionType
 from typing import Optional, List
 
-from aiomysql import create_pool, escape_string, Cursor
+from aiomysql import create_pool, escape_string, Cursor, Connection
 
-from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message
-from .utils import json_to_sql, ChannelType
+from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
+    ChannelId, UserNote, UserConnection, Attachment
+from .utils import json_to_sql, ChannelType, lsf
 
 
 class Database:
@@ -13,7 +13,6 @@ class Database:
 
     def __getattr__(self, item):
         return getattr(Database._instance, item)
-
 
 class DBConnection(ABC):
     @abstractmethod
@@ -95,7 +94,7 @@ class DBConnection(ABC):
     async def getDMChannel(self, u1: int, u2: int) -> Optional[Channel]: ...
 
     @abstractmethod
-    async def getLastMessageId(self, channel: Channel, before: int, after: int) -> int: ...
+    async def getLastMessageId(self, channel: _Channel, before: int, after: int) -> int: ...
 
     @abstractmethod
     async def getChannelMessagesCount(self, channel: Channel, before: int, after: int) -> int: ...
@@ -121,21 +120,42 @@ class DBConnection(ABC):
     @abstractmethod
     async def deleteMessage(self, message: Message) -> None: ...
 
+    @abstractmethod
+    async def getReadStates(self, uid: int, channel_id: int=None) -> List[ReadState]: ...
+
+    @abstractmethod
+    async def setReadState(self, uid: int, channel_id: int, count: int, last: int = None) -> None: ...
+
+    @abstractmethod
+    async def delReadStateIfExists(self, uid: int, channel_id: int) -> bool: ...
+
+    @abstractmethod
+    async def getUserNote(self, uid: int, target_uid: int) -> Optional[UserNote]: ...
+
+    @abstractmethod
+    async def putUserNote(self, note: UserNote) -> None: ...
+
+    @abstractmethod
+    async def putUserConnection(self, uc: UserConnection) -> None: ...
+
+    @abstractmethod
+    async def putAttachment(self, attachment: Attachment) -> None: ...
+
+    @abstractmethod
+    async def getAttachment(self, id: int) -> Optional[Attachment]: ...
+
+    @abstractmethod
+    async def getAttachmentByUUID(self, uuid: str) -> Optional[Attachment]: ...
+
+    @abstractmethod
+    async def updateAttachment(self, before: Attachment, after: Attachment) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
         self.pool = None
 
-    @staticmethod
-    async def conn(f):
-        async def wrapper(self, *args, **kwargs):
-            async with self.db.pool.acquire() as db:
-                async with db.cursor() as cur:
-                    g = f.__globals__.copy()
-                    if not isinstance(g.get("db", None), MySqlConnection):
-                        g["db"] = MySqlConnection(cur)
-                    return FunctionType(f.__code__, g, f.__name__, f.__defaults__, f.__closure__)(self, *args, **kwargs)
-        return wrapper
+    def __call__(self):
+        return MySqlConnection(self)
 
     async def init(self, *db_args, **db_kwargs):
         self.pool = await create_pool(*db_args, **db_kwargs)
@@ -146,8 +166,19 @@ class MySQL(Database):
         return Database._instance
 
 class MySqlConnection:
-    def __init__(self, cursor: Cursor):
-        self.cur: Cursor = cursor
+    def __init__(self, mysql: MySQL):
+        self.mysql: MySQL = mysql
+        self.db: Connection = None
+        self.cur: Cursor = None
+
+    async def __aenter__(self):
+        self.db = await self.mysql.pool.acquire()
+        self.cur = await self.db.cursor()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.cur.close()
+        await self.mysql.pool.release(self.db)
 
     async def getUserByEmail(self, email: str) -> Optional[User]:
         await self.cur.execute(f'SELECT * FROM `users` WHERE `email`="{escape_string(email)}";')
@@ -256,15 +287,15 @@ class MySqlConnection:
 
     async def getChannel(self, channel_id: int) -> Optional[Channel]:
         await self.cur.execute(f'SELECT * FROM `channels` WHERE `id`={channel_id};')
-        if (r := self.cur.fetchone()):
+        if (r := await self.cur.fetchone()):
             return Channel.from_result(self.cur.description, r)
 
     async def getDMChannel(self, u1: int, u2: int) -> Optional[Channel]:
         await self.cur.execute(f'SELECT * FROM `channels` WHERE JSON_CONTAINS(j_recipients, {u1}, "$") AND JSON_CONTAINS(j_recipients, {u2}, "$");')
-        if (r := self.cur.fetchone()):
+        if (r := await self.cur.fetchone()):
             return Channel.from_result(self.cur.description, r)
 
-    async def getLastMessageId(self, channel: Channel, before: int, after: int) -> int:
+    async def getLastMessageId(self, channel: _Channel, before: int, after: int) -> int:
         await self.cur.execute(f'SELECT `id` FROM `messages` WHERE `channel_id`={channel.id} AND `id` > {after} AND `id` < {before} ORDER BY `id` DESC LIMIT 1;')
         last = None
         if (r := await self.cur.fetchone()):
@@ -317,3 +348,66 @@ class MySqlConnection:
 
     async def deleteMessage(self, message: Message) -> None:
         await self.cur.execute(f'DELETE FROM `messages` WHERE `id`={message.id};')
+
+    async def getReadStates(self, uid: int, channel_id: int=None) -> List[ReadState]:
+        states = []
+        where = [f"`uid`={uid}"]
+        if channel_id:
+            where.append(f"`channel_id`={channel_id}")
+        where = " AND ".join(where)
+        await self.cur.execute(f'SELECT * FROM `read_states` WHERE {where};')
+        for r in await self.cur.fetchall():
+            states.append(ReadState.from_result(self.cur.description, r))
+        return states
+
+    async def setReadState(self, uid: int, channel_id: int, count: int, last: int = None) -> None:
+        if not last: last = "`last_read_id`"
+        await self.cur.execute(f'UPDATE `read_states` set `count`={count}, `last_read_id`={last} WHERE `uid`={uid} and `channel_id`={channel_id};')
+        if self.cur.rowcount == 0:
+            if not last:
+                last = await self.getLastMessageId(ChannelId(channel_id), before=lsf() + 1, after=0)
+            await self.cur.execute(f'INSERT INTO `read_states` (`uid`, `channel_id`, `last_read_id`, `count`) VALUES ({uid}, {channel_id}, {last}, {count});')
+
+    async def delReadStateIfExists(self, uid: int, channel_id: int) -> bool:
+        await self.cur.execute(f'DELETE FROM `read_states` WHERE `uid`={uid} and `channel_id`={channel_id};')
+        return self.cur.rowcount > 0
+
+    async def getUserNote(self, uid: int, target_uid: int) -> Optional[UserNote]:
+        await self.cur.execute(f'SELECT * FROM `notes` WHERE `uid`={uid} AND `target_uid`={target_uid};')
+        if (r := await self.cur.fetchone()):
+            return UserNote.from_result(self.cur.description, r)
+
+    async def putUserNote(self, note: UserNote) -> None:
+        await self.cur.execute(f'UPDATE `notes` SET `note`="{note.note}" WHERE `uid`={note.uid} AND `target_uid`={note.target_uid}')
+        if self.cur.rowcount == 0:
+            q = json_to_sql(note.to_sql_json(note.to_typed_json), as_tuples=True)
+            fields = ", ".join([f"`{f}`" for f, v in q])
+            values = ", ".join([f"{v}" for f, v in q])
+            await self.cur.execute(f'INSERT INTO `notes` ({fields}) VALUES ({values});')
+
+    async def putUserConnection(self, uc: UserConnection) -> None:
+        q = json_to_sql(uc.to_sql_json(uc.to_typed_json, with_id=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `connections` ({fields}) VALUES ({values});')
+
+    async def putAttachment(self, attachment: Attachment) -> None:
+        q = json_to_sql(attachment.to_sql_json(attachment.to_typed_json, with_id=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `attachments` ({fields}) VALUES ({values});')
+
+    async def getAttachment(self, id: int) -> Optional[Attachment]:
+        await self.cur.execute(f'SELECT * FROM `attachments` WHERE `id`="{id}"')
+        if (r := await self.cur.fetchone()):
+            return Attachment.from_result(self.cur.description, r)
+
+    async def getAttachmentByUUID(self, uuid: str) -> Optional[Attachment]:
+        await self.cur.execute(f'SELECT * FROM `attachments` WHERE `uuid`="{uuid}"')
+        if (r := await self.cur.fetchone()):
+            return Attachment.from_result(self.cur.description, r)
+
+    async def updateAttachment(self, before: Attachment, after: Attachment) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        await self.cur.execute(f'UPDATE `attachments` SET {diff} WHERE `id`={before.id};')
