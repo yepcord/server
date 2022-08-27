@@ -11,7 +11,6 @@ from json import dumps as jdumps, loads as jloads
 from random import choice
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 
-from server.proto import PreloadedUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment

@@ -8,4 +8,4 @@ aiohttp==3.8.1
 python-magic==0.4.27
 Pillow==9.2.0
 cryptography==37.0.4
-pure-protobuf==2.1.0
+protobuf==4.21.5

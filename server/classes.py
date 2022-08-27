@@ -3,11 +3,17 @@ from time import mktime
 from uuid import uuid4, UUID
 from zlib import compressobj, Z_FULL_FLUSH
 
+from dateutil.parser import parse as dparse
+
 from .config import Config
+from .discord_pb2 import PreloadedUserSettings, Version, UserContentSettings, VoiceAndVideoSettings, AfkTimeout, \
+    StreamNotificationsEnabled, TextAndImagesSettings, UseRichChatInput, UseThreadSidebar, Theme, RenderSpoilers, \
+    InlineAttachmentMedia, RenderEmbeds, RenderReactions, ExplicitContentFilter, ViewNsfwGuilds, ConvertEmoticons, \
+    AnimateStickers, ExpressionSuggestionsEnabled, InlineEmbedMedia, PrivacySettings, FriendSourceFlags, StatusSettings, \
+    GuildActivityStatusRestrictionDefault, ShowCurrentGame, Status, LocalizationSettings, Locale, TimezoneOffset, \
+    AppearanceSettings
 from .errors import EmbedErr, InvalidDataErr
 from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get
-from .proto import PreloadedUserSettings as PreloadedUserSettingsProto
-from dateutil.parser import parse as dparse
 
 
 class _Null:
@@ -39,8 +45,7 @@ class DBModel:
     TYPES = {}
     DB_FIELDS = {}
 
-
-    #def __init__(self, *args, **kwargs): #  TODO
+    # def __init__(self, *args, **kwargs): #  TODO
     #    fields = list(self.FIELDS)
     #    if self.ID_FIELD:
     #        fields.insert(0, self.ID_FIELD)
@@ -53,7 +58,6 @@ class DBModel:
     #            setattr(self, field, kwargs[field])
     #
     #    self._checkNulls()
-
 
     def _checkNulls(self):
         for f in self.FIELDS:
@@ -109,7 +113,7 @@ class DBModel:
         return self
 
     def set(self, **kwargs):
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             if k not in list(self.FIELDS) + list(self.ALLOWED_FIELDS):
                 continue
             setattr(self, k, v)
@@ -117,7 +121,7 @@ class DBModel:
         return self
 
     def fill_defaults(self):
-        for k,v in self.DEFAULTS.items():
+        for k, v in self.DEFAULTS.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
         return self
@@ -136,7 +140,7 @@ class DBModel:
 
     def copy(self):
         o = self.__class__.__new__(self.__class__)
-        for k,v in self.__dict__.items():
+        for k, v in self.__dict__.items():
             setattr(o, k, v)
         return o
 
@@ -219,18 +223,19 @@ class User(_User, DBModel):
 
 class UserSettings(DBModel):
     FIELDS = ("inline_attachment_media", "show_current_game", "view_nsfw_guilds", "enable_tts_command",
-                  "render_reactions", "gif_auto_play", "stream_notifications_enabled", "animate_emoji", "afk_timeout",
-                  "view_nsfw_commands", "detect_platform_accounts", "explicit_content_filter", "status", "custom_status",
-                  "default_guilds_restricted", "theme", "allow_accessibility_detection", "locale",
-                  "native_phone_integration_enabled", "timezone_offset", "friend_discovery_flags", "contact_sync_enabled",
-                  "disable_games_tab", "developer_mode", "render_embeds", "animate_stickers", "message_display_compact",
-                  "convert_emoticons", "passwordless", "mfa", "activity_restricted_guild_ids", "friend_source_flags",
-                  "guild_positions", "guild_folders", "restricted_guilds", "personalization", "usage_statistics")
+              "render_reactions", "gif_auto_play", "stream_notifications_enabled", "animate_emoji", "afk_timeout",
+              "view_nsfw_commands", "detect_platform_accounts", "explicit_content_filter", "status", "custom_status",
+              "default_guilds_restricted", "theme", "allow_accessibility_detection", "locale",
+              "native_phone_integration_enabled", "timezone_offset", "friend_discovery_flags", "contact_sync_enabled",
+              "disable_games_tab", "developer_mode", "render_embeds", "animate_stickers", "message_display_compact",
+              "convert_emoticons", "passwordless", "mfa", "activity_restricted_guild_ids", "friend_source_flags",
+              "guild_positions", "guild_folders", "restricted_guilds", "personalization", "usage_statistics")
     ID_FIELD = "uid"
     DB_FIELDS = {"custom_status": "j_custom_status", "activity_restricted_guild_ids": "j_activity_restricted_guild_ids",
                  "friend_source_flags": "j_friend_source_flags", "guild_positions": "j_guild_positions",
                  "guild_folders": "j_guild_folders", "restricted_guilds": "j_restricted_guilds"}
-    TYPES = {"custom_status": (dict, "nullable",), "friend_source_flags": {"all": bool, "mutual_friends": bool, "mutual_guilds": bool}}
+    TYPES = {"custom_status": (dict, "nullable",),
+             "friend_source_flags": {"all": bool, "mutual_friends": bool, "mutual_guilds": bool}}
 
     def __init__(self,
                  uid, inline_attachment_media=Null, show_current_game=Null, view_nsfw_guilds=Null,
@@ -293,51 +298,100 @@ class UserSettings(DBModel):
             j["mfa"] = self.mfa_key
         return j
 
-    def to_proto(self) -> PreloadedUserSettingsProto:
-        return PreloadedUserSettingsProto.from_settings(self)
+    def to_proto(self) -> PreloadedUserSettings:
+        proto = PreloadedUserSettings(versions=Version())
+        #proto.versions = Version()
+        proto.version.client_version = 14
+        proto.version.data_version = 62
+        proto.user_content = UserContentSettings()
+        proto.user_content.dismissed_contents = b'Q\x01\t\x00\x00\x02\x00\x00\x80'
+        proto.voice_and_video = VoiceAndVideoSettings()
+        proto.voice_and_video.afk_timeout = AfkTimeout()
+        proto.voice_and_video.afk_timeout.value = self.get("afk_timeout", 600)
+        proto.voice_and_video.stream_notifications_enabled = StreamNotificationsEnabled()
+        proto.voice_and_video.stream_notifications_enabled.value = bool(self.get("stream_notifications_enabled", True))
+        proto.text_and_images = TextAndImagesSettings()
+        proto.text_and_images.use_rich_chat_input = UseRichChatInput()
+        proto.text_and_images.use_rich_chat_input.value = bool(self.get("use_rich_chat_input", True))  # TODO: add to db
+        proto.text_and_images.use_thread_sidebar = UseThreadSidebar()
+        proto.text_and_images.use_thread_sidebar.value = bool(self.get("use_thread_sidebar", True))  # TODO: add to db
+        proto.text_and_images.render_spoilers = RenderSpoilers()
+        proto.text_and_images.render_spoilers.value = self.get("render_spoilers", "ON_CLICK")  # TODO: add to db
+        proto.text_and_images.inline_attachment_media = InlineAttachmentMedia()
+        proto.text_and_images.inline_attachment_media.value = bool(
+            self.get("inline_attachment_media", True))  # TODO: add to db
+        proto.text_and_images.inline_embed_media = InlineEmbedMedia()
+        proto.text_and_images.inline_embed_media.value = bool(self.get("inline_embed_media", True))  # TODO: add to db
+        proto.text_and_images.render_embeds = RenderEmbeds(value=bool(self.get("render_embeds", True)))
+        proto.text_and_images.render_reactions = RenderReactions(value=bool(self.get("render_reactions", True)))
+        proto.text_and_images.explicit_content_filter = ExplicitContentFilter()
+        proto.text_and_images.explicit_content_filter.value = self.get("explicit_content_filter", True)
+        proto.text_and_images.view_nsfw_guilds = ViewNsfwGuilds(value=bool(self.get("view_nsfw_guilds", False)))
+        proto.text_and_images.convert_emoticons = ConvertEmoticons(value=bool(self.get("convert_emoticons", True)))
+        proto.text_and_images.animate_stickers = AnimateStickers(value=self.get("animate_stickers", True))
+        proto.text_and_images.expression_suggestions_enabled = ExpressionSuggestionsEnabled()
+        proto.text_and_images.expression_suggestions_enabled.value = bool(
+            self.get("expression_suggestions_enabled", True))  # TODO: add to db
+        proto.privacy = PrivacySettings()
+        # proto.privacy.friend_source_flags=FriendSourceFlags(value=settings.get("friend_source_flags", 14)), # TODO: ???
+        proto.privacy.friend_source_flags = FriendSourceFlags(value=14)
+        proto.privacy.default_guilds_activity_restricted = GuildActivityStatusRestrictionDefault(
+            self.get("default_guilds_restricted", 1))
+        proto.status = StatusSettings()
+        proto.status.status = Status(status=self.get("status", "online"))
+        proto.status.show_current_game = ShowCurrentGame(value=bool(self.get("show_current_game", True)))
+        proto.localization = LocalizationSettings()
+        proto.localization.locale = Locale(locale_code=self.get("locale", "en_US"))
+        proto.localization.timezone_offset = TimezoneOffset(offset=self.get("timezone_offset", 0))
+        proto.appearance = AppearanceSettings()
+        proto.appearance.theme = Theme.DARK if self.get("theme", "dark") == "dark" else Theme.LIGHT
+        proto.appearance.developer_mode = bool(self.get("developer_mode", False))
+        return proto
 
-    def from_proto(self, proto):
-        self.set(
-            inline_attachment_media=proto_get(proto, "text_and_images.inline_attachment_media.value", Null),
-            show_current_game=proto_get(proto, "status.show_current_game.value", Null),
-            view_nsfw_guilds=proto_get(proto, "text_and_images.view_nsfw_guilds.value", Null),
-            enable_tts_command=proto_get(proto, "text_and_images.enable_tts_command.value", Null),
-            render_reactions=proto_get(proto, "text_and_images.render_reactions.value", Null),
-            gif_auto_play=proto_get(proto, "text_and_images.gif_auto_play.value", Null),
-            stream_notifications_enabled=proto_get(proto, "voice_and_video.stream_notifications_enabled.value", Null),
-            animate_emoji=proto_get(proto, "text_and_images.animate_emoji.value", Null),
-            afk_timeout=proto_get(proto, "voice_and_video.afk_timeout.value", Null),
-            view_nsfw_commands=proto_get(proto, "text_and_images.view_nsfw_commands.value", Null),
-            detect_platform_accounts=proto_get(proto, "privacy.detect_platform_accounts.value", Null),
-            explicit_content_filter=proto_get(proto, "text_and_images.explicit_content_filter.value", Null),
-            status=proto_get(proto, "status.status.status", Null),
-            default_guilds_restricted=proto_get(proto, "privacy.default_guilds_activity_restricted", Null),
-            theme="dark" if proto_get(proto, "appearance.theme", 1) == 1 else "light",
-            allow_accessibility_detection=proto_get(proto, "privacy.allow_accessibility_detection", Null),
-            locale=proto_get(proto, "localization.locale.locale_code", Null),
-            native_phone_integration_enabled=proto_get(proto, "voice_and_video.native_phone_integration_enabled.value", Null),
-            timezone_offset=proto_get(proto, "localization.timezone_offset.offset", Null),
-            friend_discovery_flags=proto_get(proto, "privacy.friend_discovery_flags.value", Null),
-            contact_sync_enabled=proto_get(proto, "privacy.contact_sync_enabled.value", Null),
-            disable_games_tab=proto_get(proto, "game_library.disable_games_tab.value", Null),
-            developer_mode=proto_get(proto, "appearance.developer_mode", Null),
-            render_embeds=proto_get(proto, "text_and_images.render_embeds.value", Null),
-            animate_stickers=proto_get(proto, "text_and_images.animate_stickers.value", Null),
-            message_display_compact=proto_get(proto, "text_and_images.message_display_compact.value", Null),
-            convert_emoticons=proto_get(proto, "text_and_images.convert_emoticons.value", Null),
-            passwordless=proto_get(proto, "privacy.passwordless.value", Null),
-            activity_restricted_guild_ids=proto_get(proto, "privacy.activity_restricted_guild_ids", Null),
-            #friend_source_flags=proto_get(proto, "privacy.friend_source_flags.value", Null),  # TODO: ???
-            restricted_guilds=proto_get(proto, "privacy.restricted_guild_ids", Null),
-        )
-        if proto_get(proto, "text_and_images.", Null) is not Null:
-            cs = {}
-            custom_status = proto_get(proto, "status.custom_status", Null)
-            cs["text"] = proto_get(custom_status, "text", None)
-            cs["emoji_id"] = proto_get(custom_status, "emoji_id", None)
-            cs["emoji_name"] = proto_get(custom_status, "emoji_name", None)
-            cs["expires_at_ms"] = proto_get(custom_status, "expires_at_ms", None)
-            self.set(custom_status=cs)
+
+def from_proto(self, proto):
+    self.set(
+        inline_attachment_media=proto_get(proto, "text_and_images.inline_attachment_media.value", Null),
+        show_current_game=proto_get(proto, "status.show_current_game.value", Null),
+        view_nsfw_guilds=proto_get(proto, "text_and_images.view_nsfw_guilds.value", Null),
+        enable_tts_command=proto_get(proto, "text_and_images.enable_tts_command.value", Null),
+        render_reactions=proto_get(proto, "text_and_images.render_reactions.value", Null),
+        gif_auto_play=proto_get(proto, "text_and_images.gif_auto_play.value", Null),
+        stream_notifications_enabled=proto_get(proto, "voice_and_video.stream_notifications_enabled.value", Null),
+        animate_emoji=proto_get(proto, "text_and_images.animate_emoji.value", Null),
+        afk_timeout=proto_get(proto, "voice_and_video.afk_timeout.value", Null),
+        view_nsfw_commands=proto_get(proto, "text_and_images.view_nsfw_commands.value", Null),
+        detect_platform_accounts=proto_get(proto, "privacy.detect_platform_accounts.value", Null),
+        explicit_content_filter=proto_get(proto, "text_and_images.explicit_content_filter.value", Null),
+        status=proto_get(proto, "status.status.status", Null),
+        default_guilds_restricted=proto_get(proto, "privacy.default_guilds_activity_restricted", Null),
+        theme="dark" if proto_get(proto, "appearance.theme", 1) == 1 else "light",
+        allow_accessibility_detection=proto_get(proto, "privacy.allow_accessibility_detection", Null),
+        locale=proto_get(proto, "localization.locale.locale_code", Null),
+        native_phone_integration_enabled=proto_get(proto, "voice_and_video.native_phone_integration_enabled.value",
+                                                   Null),
+        timezone_offset=proto_get(proto, "localization.timezone_offset.offset", Null),
+        friend_discovery_flags=proto_get(proto, "privacy.friend_discovery_flags.value", Null),
+        contact_sync_enabled=proto_get(proto, "privacy.contact_sync_enabled.value", Null),
+        disable_games_tab=proto_get(proto, "game_library.disable_games_tab.value", Null),
+        developer_mode=proto_get(proto, "appearance.developer_mode", Null),
+        render_embeds=proto_get(proto, "text_and_images.render_embeds.value", Null),
+        animate_stickers=proto_get(proto, "text_and_images.animate_stickers.value", Null),
+        message_display_compact=proto_get(proto, "text_and_images.message_display_compact.value", Null),
+        convert_emoticons=proto_get(proto, "text_and_images.convert_emoticons.value", Null),
+        passwordless=proto_get(proto, "privacy.passwordless.value", Null),
+        activity_restricted_guild_ids=proto_get(proto, "privacy.activity_restricted_guild_ids", Null),
+        # friend_source_flags=proto_get(proto, "privacy.friend_source_flags.value", Null),  # TODO: ???
+        restricted_guilds=proto_get(proto, "privacy.restricted_guild_ids", Null),
+    )
+    if proto_get(proto, "text_and_images.", Null) is not Null:
+        cs = {}
+        custom_status = proto_get(proto, "status.custom_status", Null)
+        cs["text"] = proto_get(custom_status, "text", None)
+        cs["emoji_id"] = proto_get(custom_status, "emoji_id", None)
+        cs["emoji_name"] = proto_get(custom_status, "emoji_name", None)
+        cs["expires_at_ms"] = proto_get(custom_status, "expires_at_ms", None)
+        self.set(custom_status=cs)
 
 
 class UserData(DBModel):
@@ -349,7 +403,8 @@ class UserData(DBModel):
              "banner_color": (int, "nullable",)}
 
     def __init__(self, uid, birth=Null, username=Null, discriminator=Null, phone=Null, accent_color=Null, premium=Null,
-                 avatar=Null, avatar_decoration=Null, banner=Null, banner_color=Null, bio=Null, flags=Null, public_flags=Null):
+                 avatar=Null, avatar_decoration=Null, banner=Null, banner_color=Null, bio=Null, flags=Null,
+                 public_flags=Null):
         self.uid = uid
         self.birth = birth
         self.username = username
@@ -375,6 +430,7 @@ class UserId(_User):
 
 class _Channel:
     id = None
+
     def __eq__(self, other):
         return isinstance(other, _Channel) and self.id == other.id
 
@@ -392,7 +448,8 @@ class Channel(_Channel, DBModel):
     ALLOWED_FIELDS = ("last_message_id",)
     DB_FIELDS = {"permission_overwrites": "j_permission_overwrites", "recipients": "j_recipients",
                  "thread_metadata": "j_thread_metadata"}
-    TYPES = {"guild_id": (int, "nullable",), "position": (int, "nullable",), "j_permission_overwrites": (list, "nullable",),
+    TYPES = {"guild_id": (int, "nullable",), "position": (int, "nullable",),
+             "j_permission_overwrites": (list, "nullable",),
              "name": (str, "nullable",), "topic": (str, "nullable",), "nsfw": (bool, "nullable",),
              "bitrate": (int, "nullable",), "user_limit": (int, "nullable",), "rate_limit": (int, "nullable",),
              "j_recipients": (list, "nullable",), "icon": (str, "nullable",), "owner_id": (int, "nullable",),
@@ -439,23 +496,27 @@ class Channel(_Channel, DBModel):
 
 class _Message:
     id = None
+
     def __eq__(self, other):
         return isinstance(other, _Message) and self.id == other.id
 
 
 class Message(_Message, DBModel):
     FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "reactions", "pinned",
-              "webhook_id", "application_id", "type", "flags", "message_reference", "thread", "components", "sticker_items")
+              "webhook_id", "application_id", "type", "flags", "message_reference", "thread", "components",
+              "sticker_items")
     ID_FIELD = "id"
     ALLOWED_FIELDS = ("nonce",)
-    DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "reactions": [], "pinned": False,
+    DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "reactions": [],
+                "pinned": False,
                 "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
                 "thread": None, "components": [], "sticker_items": []}
     TYPES = {"content": (str, "nullable",), "edit_timestamp": (int, "nullable",), "attachments": list, "embeds": list,
-             "reactions": list, "pinned": bool,"webhook_id": (int, "nullable",), "application_id": (int, "nullable",),
-             "type": int, "flags": int, "message_reference": (int, "nullable",),"thread": (int, "nullable",),
+             "reactions": list, "pinned": bool, "webhook_id": (int, "nullable",), "application_id": (int, "nullable",),
+             "type": int, "flags": int, "message_reference": (int, "nullable",), "thread": (int, "nullable",),
              "components": list, "sticker_items": list}
-    DB_FIELDS = {"attachments": "j_attachments", "embeds": "j_embeds", "reactions": "j_reactions", "components": "j_components",
+    DB_FIELDS = {"attachments": "j_attachments", "embeds": "j_embeds", "reactions": "j_reactions",
+                 "components": "j_components",
                  "sticker_items": "j_sticker_items"}
 
     def __init__(self, id, channel_id, author, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
@@ -523,7 +584,7 @@ class Message(_Message, DBModel):
             return e
         elif code == 24:
             m = "Scheme \"%SCHEME%\" is not supported. Scheme must be one of ('http', 'https')."
-            for k,v in replace.items():
+            for k, v in replace.items():
                 m = m.replace(f"%{k.upper()}%", v)
             _mkTree(e, path, [{"code": "URL_TYPE_INVALID_SCHEME", "message": m}])
             return e
@@ -661,7 +722,9 @@ class Message(_Message, DBModel):
         self.attachments = []
         for idx, attachment in enumerate(attachments):
             if not attachment.get("uploaded_filename"):
-                raise InvalidDataErr(400, mkError(50013, {f"attachments.{idx}.uploaded_filename": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+                raise InvalidDataErr(400, mkError(50013, {
+                    f"attachments.{idx}.uploaded_filename": {"code": "BASE_TYPE_REQUIRED",
+                                                             "message": "Required field"}}))
             uuid = attachment["uploaded_filename"].split("/")[0]
             try:
                 uuid = str(UUID(uuid))
@@ -736,7 +799,7 @@ class Message(_Message, DBModel):
             "timestamp": timestamp,
             "edited_timestamp": edit_timestamp,
             "flags": self.flags,
-            "components": self.components, # TODO: parse components
+            "components": self.components,  # TODO: parse components
         }
         if (nonce := getattr(self, "nonce", None)):
             j["nonce"] = nonce
@@ -748,7 +811,7 @@ class ZlibCompressor:
         self.cObj = compressobj()
 
     def __call__(self, data):
-        return self.cObj.compress(data)+self.cObj.flush(Z_FULL_FLUSH)
+        return self.cObj.compress(data) + self.cObj.flush(Z_FULL_FLUSH)
 
 
 class Relationship(DBModel):
