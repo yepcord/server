@@ -415,7 +415,6 @@ class UserSettings(DBModel):
             cs["emoji_name"] = proto_get(custom_status, "emoji_name", None)
             cs["expires_at_ms"] = proto_get(custom_status, "expires_at_ms", None)
             self.set(custom_status=cs)
-        print(self.to_json())
         return self
 
 
