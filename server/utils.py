@@ -257,8 +257,11 @@ def parseMultipartRequest(body, boundary):
 def proto_get(protoObj, path, default):
     path = path.split(".")
     try:
-        o = getattr(protoObj, path.pop(0))
+        o = protoObj
         for p in path:
+            if hasattr(o, "ListFields"):
+                if not o.ListFields():
+                    return default
             o = getattr(o, p)
     except:
         return default

@@ -527,3 +527,13 @@ class Core:
     async def updateAttachment(self, before: Attachment, after: Attachment) -> None:
         async with self.db() as db:
             await db.updateAttachment(before, after)
+
+    async def getUserByChannelId(self, channel_id: int, uid: int) -> Optional[User]:
+        if not (channel := await self.getChannel(channel_id)):
+            return None
+        return await self.getUserByChannel(channel, uid)
+
+    async def getUserByChannel(self, channel: Channel, uid: int) -> Optional[User]:
+        if channel.type == ChannelType.DM:
+            if uid in channel.recipients:
+                return await self.getUser(uid)

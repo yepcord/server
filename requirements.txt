@@ -9,3 +9,4 @@ python-magic==0.4.27
 Pillow==9.2.0
 cryptography==37.0.4
 protobuf==4.21.5
+schema==0.7.5

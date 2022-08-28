@@ -11,6 +11,7 @@ from json import dumps as jdumps, loads as jloads
 from random import choice
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 
+from ..proto import PreloadedUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment
@@ -101,9 +102,8 @@ def getChannel(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (channel := await core.getChannel(channel)):
             raise InvalidDataErr(404, mkError(10003))
-        if channel.type == ChannelType.DM:
-            if user.id not in channel.recipients:
-                raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+        if not await core.getUserByChannel(channel, user.id):
+            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         kwargs["channel"] = channel
         return await f(*args, **kwargs)
     return wrapped
@@ -286,26 +286,27 @@ async def api_users_me_settings_patch(user):
 async def api_users_me_settingsproto_1_get(user):
     settings = await user.settings
     proto = settings.to_proto()
-    return c_json({"settings": _b64encode(proto.dumps()).decode("utf8")})
+    return c_json({"settings": _b64encode(proto.SerializeToString()).decode("utf8")})
 
 
 @app.route("/api/v9/users/@me/settings-proto/1", methods=["PATCH"])
 @getUser
 async def api_users_me_settingsproto_1_patch(user): # TODO
-    #data = await request.get_json()
-    #if not data.get("settings"):
-    #    raise InvalidDataErr(400, mkError(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
-    #try:
-    #    proto = PreloadedUserSettings.loads(_b64decode(data.get("settings").encode("utf8")))
-    #except ValueError:
-    #    raise InvalidDataErr(400, mkError(50104))
-    #settings_old = await user.settings
-    #settings = UserSettings(user)
-    #settings.from_proto(proto)
-    #await core.setSettingsDiff(settings_old, settings)
-    #user._uSettings = None
+    data = await request.get_json()
+    if not data.get("settings"):
+        raise InvalidDataErr(400, mkError(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
+    try:
+        proto = PreloadedUserSettings()
+        proto.ParseFromString(_b64decode(data.get("settings").encode("utf8")))
+    except ValueError:
+        raise InvalidDataErr(400, mkError(50104))
+    settings_old = await user.settings
+    settings = UserSettings(user.id)
+    settings.from_proto(proto)
+    await core.setSettingsDiff(settings_old, settings)
+    user._uSettings = None
     settings = await user.settings
-    return c_json({"settings": _b64encode(settings.to_proto().dumps()).decode("utf8")})
+    return c_json({"settings": _b64encode(settings.to_proto().SerializeToString()).decode("utf8")})
 
 
 @app.route("/api/v9/users/@me/connections", methods=["GET"])

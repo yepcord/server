@@ -95,7 +95,7 @@ class ReadyEvent(DispatchEvent):
                     "entries": []
                 },
                 "user_settings": settings.to_json(),
-                "user_settings_proto": b64encode(proto.dumps()).decode("utf8")
+                "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
             }
         }
 
