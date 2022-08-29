@@ -1,20 +1,23 @@
 from asyncio import get_event_loop
+from email.message import EmailMessage
 from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
 from base64 import b64encode as _b64encode
 
+from .config import Config
 from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, RelationshipType, MFA, ChannelType, mksf, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, UserConnection, Attachment, Relationship
 from .storage import _Storage
-from json import loads as jloads
+from json import loads as jloads, dumps as jdumps
 from random import randint
 from .msg_client import Broadcaster
 from typing import Optional, Union, List
 from time import time
+from aiosmtplib import send as smtp_send
 
 class CDN(_Storage):
     def __init__(self, storage, core):
@@ -550,3 +553,17 @@ class Core:
     async def getFrecencySettings(self, user: _User) -> str:
         async with self.db() as db:
             return await db.getFrecencySettings(user.id)
+
+    async def sendVerificationEmail(self, user: User) -> None:
+        message = EmailMessage()
+        message["From"] = "no-reply@yepcord.ml"
+        message["To"] = user.email
+        message["Subject"] = "Confirm your e-mail in YEPCord"
+        key = new(self.key, str(user.id).encode('utf-8'), sha256).digest()
+        uid = b64encode(new(key, str(user.id).encode('utf-8'), sha256).digest())[:8]
+        email = b64encode(new(key, user.email.encode('utf-8'), sha256).digest())
+        token = b64encode(jdumps({"id": user.id, "email": user.email}))
+        token += f".{uid}.{email}"
+        link = f"https://{Config('CLIENT_HOST')}/verify#token={token}"
+        message.set_content(f"Thank you for signing up for a YEPCord account! First you need to make sure that you are you! Click to verify your email address: {link}")
+        await smtp_send(message, hostname=Config('SMTP_HOST'), port=int(Config('SMTP_PORT')))

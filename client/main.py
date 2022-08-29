@@ -56,6 +56,7 @@ async def index():
 @app.route("/channels/@me/<channel>")
 @app.route("/channels/<channel>")
 @app.route("/connections/<connection>")
+@app.route("/verify")
 async def discord(**kwargs):
     return HTML_DATA
 

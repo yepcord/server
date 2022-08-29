@@ -44,7 +44,7 @@ class ReadyEvent(DispatchEvent):
                     "premium": True,
                     "premium_type": 2,
                     "premium_since": datetime.utcfromtimestamp(int(snowflake_timestamp(self.user.id)/1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "verified": True,
+                    "verified": self.user.verified,
                     "purchased_flags": 0,
                     "nsfw_allowed": True,  # TODO: check
                     "mobile": True,  # TODO: check

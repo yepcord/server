@@ -4,6 +4,7 @@ CREATE TABLE `users` (
   `email` longtext not null,
   `password` longtext not null,
   `key` longtext not null,
+  `verified` bool not null default false,
   UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 

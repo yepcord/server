@@ -9,6 +9,8 @@ class _Config:
     def_DB_PASS = ""
     def_DB_NAME = "yepcord"
     def_DOMAIN = "127.0.0.1"
+    def_SMTP_HOST = "127.0.0.1"
+    def_SMTP_PORT = 25
 
     def __new__(cls, *args, **kwargs):
         if not isinstance(cls._instance, cls):

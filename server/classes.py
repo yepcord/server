@@ -414,21 +414,23 @@ class UserData(DBModel):
 
 
 class User(_User, DBModel):
-    FIELDS = ("email", "password", "key")
+    FIELDS = ("email", "password", "key", "verified")
     ID_FIELD = "id"
     SCHEMA = Schema({
         "id": Use(int),
         Optional("email"): And(Use(str), Use(str.lower),
                                lambda s: Regex(r'^[a-z0-9_\.]{1,64}@[a-zA-Z-_\.]{2,250}?\.[a-zA-Z]{2,6}$').validate(s)),
         Optional("password"): Use(str),
-        Optional("key"): Use(str)
+        Optional("key"): Use(str),
+        Optional("verified"): Use(bool)
     })
 
-    def __init__(self, id, email=Null, password=Null, key=Null):
+    def __init__(self, id, email=Null, password=Null, key=Null, verified=Null):
         self.id = id
         self.email = email
         self.password = password
         self.key = key
+        self.verified = verified
         self._core = None
         self._uSettings = None
         self._uData = None

@@ -188,6 +188,14 @@ async def api_auth_verify_viewbackupcodeschallenge(user):
     return c_json({"nonce": nonce[0], "regenerate_nonce": nonce[1]})
 
 
+@app.route("/api/v9/auth/verify/resend", methods=["POST"])
+@getUser
+async def api_auth_verify_resend(user):
+    if not user.verified:
+        await core.sendVerificationEmail(user)
+    return "", 204
+
+
 # Users (@me)
 
 
