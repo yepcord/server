@@ -11,7 +11,7 @@ from json import dumps as jdumps, loads as jloads
 from random import choice
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 
-from ..proto import PreloadedUserSettings
+from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment
@@ -284,8 +284,7 @@ async def api_users_me_settings_patch(user):
 @app.route("/api/v9/users/@me/settings-proto/1", methods=["GET"])
 @getUser
 async def api_users_me_settingsproto_1_get(user):
-    settings = await user.settings
-    proto = settings.to_proto()
+    proto = await user.settings_proto
     return c_json({"settings": _b64encode(proto.SerializeToString()).decode("utf8")})
 
 
@@ -307,6 +306,32 @@ async def api_users_me_settingsproto_1_patch(user): # TODO
     user._uSettings = None
     settings = await user.settings
     return c_json({"settings": _b64encode(settings.to_proto().SerializeToString()).decode("utf8")})
+
+
+@app.route("/api/v9/users/@me/settings-proto/2", methods=["GET"])
+@getUser
+async def api_users_me_settingsproto_2_get(user):
+    proto = await user.frecency_settings_proto
+    return c_json({"settings": _b64encode(proto).decode("utf8")})
+
+
+@app.route("/api/v9/users/@me/settings-proto/2", methods=["PATCH"])
+@getUser
+async def api_users_me_settingsproto_2_patch(user):
+    data = await request.get_json()
+    if not data.get("settings"):
+        raise InvalidDataErr(400, mkError(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
+    try:
+        proto_new = FrecencyUserSettings()
+        proto_new.ParseFromString(_b64decode(data.get("settings").encode("utf8")))
+    except ValueError:
+        raise InvalidDataErr(400, mkError(50104))
+    proto = FrecencyUserSettings()
+    proto.ParseFromString(await user.frecency_settings_proto)
+    proto.MergeFrom(proto_new)
+    proto = proto.SerializeToString()
+    await core.setFrecencySettingsBytes(user.id, proto)
+    return c_json({"settings": _b64encode(proto).decode("utf8")})
 
 
 @app.route("/api/v9/users/@me/connections", methods=["GET"])

@@ -150,6 +150,12 @@ class DBConnection(ABC):
     @abstractmethod
     async def updateAttachment(self, before: Attachment, after: Attachment) -> None: ...
 
+    @abstractmethod
+    async def setFrecencySettings(self, uid: int, proto: bytes) -> None: ...
+
+    @abstractmethod
+    async def getFrecencySettings(self, uid) -> str: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -411,3 +417,12 @@ class MySqlConnection:
         diff = before.get_diff(after)
         diff = json_to_sql(diff)
         await self.cur.execute(f'UPDATE `attachments` SET {diff} WHERE `id`={before.id};')
+
+    async def setFrecencySettings(self, uid: int, proto: str) -> None:
+        await self.cur.execute(f'INSERT INTO `frecency_settings` (`uid`, `settings`) VALUES ({uid}, "{escape_string(proto)}") ON DUPLICATE KEY UPDATE `settings`="{escape_string(proto)}";')
+
+    async def getFrecencySettings(self, uid: int) -> str:
+        await self.cur.execute(f'SELECT `settings` FROM `frecency_settings` WHERE `uid`={uid};')
+        if (r := await self.cur.fetchone()):
+            return r[0]
+        return ""

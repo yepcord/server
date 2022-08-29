@@ -183,3 +183,10 @@ CREATE TABLE `connections` (
   `show_activity` bool not null default true,
   `two_way_link` bool not null default false
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `frecency_settings`;
+CREATE TABLE `frecency_settings` (
+  `uid` bigint not null,
+  `settings` longtext not null,
+  UNIQUE KEY `uid` (`uid`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

@@ -3,6 +3,7 @@ from hmac import new
 from hashlib import sha256
 from os import urandom
 from Crypto.Cipher import AES
+from base64 import b64encode as _b64encode
 
 from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
@@ -537,3 +538,15 @@ class Core:
         if channel.type == ChannelType.DM:
             if uid in channel.recipients:
                 return await self.getUser(uid)
+
+    async def setFrecencySettingsBytes(self, uid: int, proto: bytes) -> None:
+        proto = _b64encode(proto).decode("utf8")
+        await self.setFrecencySettings(uid, proto)
+
+    async def setFrecencySettings(self, uid: int, proto: str) -> None:
+        async with self.db() as db:
+            await db.setFrecencySettings(uid, proto)
+
+    async def getFrecencySettings(self, user: _User) -> str:
+        async with self.db() as db:
+            return await db.getFrecencySettings(user.id)

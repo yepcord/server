@@ -2,14 +2,20 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional, List, Dict
 
-def stub(cls):
+def protoStub(cls):
     def _init(self, *args, **kwargs):
         raise RuntimeError
+    def _ParseFromString(self, data: bytes) -> None:
+        raise RuntimeError
+    def _SerializeToString(self) -> bytes:
+        raise RuntimeError
     cls.__init__ = _init
+    cls.ParseFromString = _ParseFromString
+    cls.SerializeToString = _SerializeToString
     return cls
 
 @dataclass
-@stub
+@protoStub
 class Version:
     client_version: Optional[int]
     server_version: Optional[int]
@@ -21,73 +27,73 @@ class InboxTab(IntEnum):
     UNREADS = 2
 
 @dataclass
-@stub
+@protoStub
 class InboxSettings:
     current_tab: Optional[InboxTab]
     viewed_tutorial: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class ChannelSettings:
     collapsed_in_inbox: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class GuildSettings:
     channels: Dict[int, ChannelSettings]
     hub_progress: Optional[int]
     guild_onboarding_progress: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class LastDismissedOutboundPromotionStartDate:
     value: Optional[str]
 
 @dataclass
-@stub
+@protoStub
 class PremiumTier0ModalDismissedAt:
     timestamp: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class UserContentSettings:
     dismissed_contents: Optional[bytes]
     last_dismissed_outbound_promotion_start_date: Optional[LastDismissedOutboundPromotionStartDate]
     premium_tier_0_modal_dismissed_at: Optional[PremiumTier0ModalDismissedAt]
 
 @dataclass
-@stub
+@protoStub
 class VideoFilterBackgroundBlur:
     use_blur: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class VideoFilterAsset:
     id: Optional[int]
     asset_hash: Optional[str]
 
 @dataclass
-@stub
+@protoStub
 class AlwaysPreviewVideo:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class AfkTimeout:
     value: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class StreamNotificationsEnabled:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class NativePhoneIntegrationEnabled:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class VoiceAndVideoSettings:
     blur: Optional[VideoFilterBackgroundBlur]
     preset_option: Optional[int]
@@ -98,107 +104,107 @@ class VoiceAndVideoSettings:
     native_phone_integration_enabled: Optional[NativePhoneIntegrationEnabled]
 
 @dataclass
-@stub
+@protoStub
 class DiversitySurrogate:
     value: Optional[str]
 
 @dataclass
-@stub
+@protoStub
 class UseRichChatInput:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class UseThreadSidebar:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class RenderSpoilers:
     value: Optional[str]
 
 @dataclass
-@stub
+@protoStub
 class ViewImageDescriptions:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class ShowCommandSuggestions:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class InlineAttachmentMedia:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class InlineEmbedMedia:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class GifAutoPlay:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class RenderEmbeds:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class RenderReactions:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class AnimateEmoji:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class AnimateStickers:
     value: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class EnableTtsCommand:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class MessageDisplayCompact:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class ExplicitContentFilter:
     value: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class ViewNsfwGuilds:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class ConvertEmoticons:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class ExpressionSuggestionsEnabled:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class ViewNsfwCommands:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class TextAndImagesSettings:
     diversity_surrogate: Optional[DiversitySurrogate]
     use_rich_chat_input: Optional[UseRichChatInput]
@@ -224,17 +230,17 @@ class TextAndImagesSettings:
     view_nsfw_commands: Optional[ViewNsfwCommands]
 
 @dataclass
-@stub
+@protoStub
 class ShowInAppNotifications:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class NotifyFriendsOnGoLive:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class NotificationSettings:
     show_in_app_notifications: Optional[ShowInAppNotifications]
     notify_friends_on_go_live: Optional[NotifyFriendsOnGoLive]
@@ -245,42 +251,42 @@ class GuildActivityStatusRestrictionDefault(IntEnum):
     ON_FOR_LARGE_GUILDS = 1
 
 @dataclass
-@stub
+@protoStub
 class AllowActivityPartyPrivacyFriends:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class AllowActivityPartyPrivacyVoiceChannel:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class DetectPlatformAccounts:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class Passwordless:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class ContactSyncEnabled:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class FriendSourceFlags:
     value: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class FriendDiscoveryFlags:
     value: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class PrivacySettings:
     allow_activity_party_privacy_friends: Optional[AllowActivityPartyPrivacyFriends]
     allow_activity_party_privacy_voice_channel: Optional[AllowActivityPartyPrivacyVoiceChannel]
@@ -297,44 +303,44 @@ class PrivacySettings:
     activity_joining_restricted_guild_ids: Optional[List[int]]
 
 @dataclass
-@stub
+@protoStub
 class RtcPanelShowVoiceStates:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class DebugSettings:
     rtc_panel_show_voice_states: Optional[RtcPanelShowVoiceStates]
 
 @dataclass
-@stub
+@protoStub
 class InstallShortcutDesktop:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class InstallShortcutStartMenu:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class DisableGamesTab:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class GameLibrarySettings:
     install_shortcut_desktop: Optional[InstallShortcutDesktop]
     install_shortcut_start_menu: Optional[InstallShortcutStartMenu]
     disable_games_tab: Optional[DisableGamesTab]
 
 @dataclass
-@stub
+@protoStub
 class Status:
     status: Optional[str]
 
 @dataclass
-@stub
+@protoStub
 class CustomStatus:
     text: Optional[str]
     emoji_id: Optional[int]
@@ -342,29 +348,29 @@ class CustomStatus:
     expires_at_ms: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class ShowCurrentGame:
     value: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class StatusSettings:
     status: Optional[Status]
     custom_status: Optional[CustomStatus]
     show_current_game: Optional[ShowCurrentGame]
 
 @dataclass
-@stub
+@protoStub
 class Locale:
     locale_code: Optional[str]
 
 @dataclass
-@stub
+@protoStub
 class TimezoneOffset:
     offset: Optional[int]
 
 @dataclass
-@stub
+@protoStub
 class LocalizationSettings:
     locale: Optional[Locale]
     timezone_offset: Optional[TimezoneOffset]
@@ -375,13 +381,13 @@ class Theme(IntEnum):
     LIGHT = 2
 
 @dataclass
-@stub
+@protoStub
 class AppearanceSettings:
     theme: Optional[Theme]
     developer_mode: Optional[bool]
 
 @dataclass
-@stub
+@protoStub
 class PreloadedUserSettings:
     versions: Optional[Version]
     inbox: Optional[InboxSettings]
@@ -396,5 +402,69 @@ class PreloadedUserSettings:
     status: Optional[StatusSettings]
     localization: Optional[LocalizationSettings]
     appearance: Optional[AppearanceSettings]
+
+class GIFType(IntEnum):
+    NONE = 0
+    IMAGE = 1
+    VIDEO = 2
+
+@dataclass
+@protoStub
+class FavoriteGIF:
+    format: Optional[GIFType]
+    src: Optional[str]
+    width: Optional[int]
+    height: Optional[int]
+    order: Optional[int]
+
+@dataclass
+@protoStub
+class FavoriteGIFs:
+    gifs: Optional[Dict[str, FavoriteGIF]]
+    hide_tooltip: Optional[bool]
+
+@dataclass
+@protoStub
+class FavoriteStickers:
+    stickers_ids: Optional[List[int]]
+
+@dataclass
+@protoStub
+class FrecencyItem:
+    total_uses: Optional[int]
+    recent_uses: Optional[List[int]]
+    frecency: Optional[int]
+    score: Optional[int]
+
+@dataclass
+@protoStub
+class StickerFrecency:
+    stickers: Optional[Dict[int, FrecencyItem]]
+
+@dataclass
+@protoStub
+class FavoriteEmojis:
+    emojis: Optional[List[str]]
+
+@dataclass
+@protoStub
+class EmojiFrecency:
+    emojis: Optional[Dict[str, FrecencyItem]]
+
+@dataclass
+@protoStub
+class ApplicationCommandFrecency:
+    application_commands: Optional[Dict[str, FrecencyItem]]
+
+@dataclass
+@protoStub
+class FrecencyUserSettings:
+    versions: Optional[Version]
+    favorite_gifs: Optional[FavoriteGIFs]
+    favorite_stickers: Optional[FavoriteStickers]
+    sticker_frecency: Optional[StickerFrecency]
+    favorite_emojis: Optional[FavoriteEmojis]
+    emoji_frecency: Optional[EmojiFrecency]
+    application_command_frecency: Optional[ApplicationCommandFrecency]
 
 from .discord_pb2 import *

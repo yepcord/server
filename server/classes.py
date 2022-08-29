@@ -177,46 +177,6 @@ class Session(_User, DBModel):
         return cls(uid, sid, sig)
 
 
-class User(_User, DBModel):
-    FIELDS = ("email", "password", "key")
-    ID_FIELD = "id"
-    SCHEMA = Schema({
-        "id": Use(int),
-        Optional("email"): And(Use(str), Use(str.lower),
-                               lambda s: Regex(r'^[a-z0-9_\.]{1,64}@[a-zA-Z-_\.]{2,250}?\.[a-zA-Z]{2,6}$').validate(s)),
-        Optional("password"): Use(str),
-        Optional("key"): Use(str)
-    })
-
-    def __init__(self, id, email=Null, password=Null, key=Null):
-        self.id = id
-        self.email = email
-        self.password = password
-        self.key = key
-        self._core = None
-        self._uSettings = None
-        self._uData = None
-
-        self._checkNulls()
-        self.to_typed_json(with_id=True, with_values=True)
-
-    @property
-    async def settings(self):
-        if not self._uSettings:
-            self._uSettings = await self._core.getUserSettings(self)
-        return self._uSettings
-
-    @property
-    async def data(self):
-        return await self.userdata
-
-    @property
-    async def userdata(self):
-        if not self._uData:
-            self._uData = await self._core.getUserData(self)
-        return self._uData
-
-
 class UserSettings(DBModel):
     FIELDS = ("inline_attachment_media", "show_current_game", "view_nsfw_guilds", "enable_tts_command",
               "render_reactions", "gif_auto_play", "stream_notifications_enabled", "animate_emoji", "afk_timeout",
@@ -451,6 +411,58 @@ class UserData(DBModel):
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
+
+
+class User(_User, DBModel):
+    FIELDS = ("email", "password", "key")
+    ID_FIELD = "id"
+    SCHEMA = Schema({
+        "id": Use(int),
+        Optional("email"): And(Use(str), Use(str.lower),
+                               lambda s: Regex(r'^[a-z0-9_\.]{1,64}@[a-zA-Z-_\.]{2,250}?\.[a-zA-Z]{2,6}$').validate(s)),
+        Optional("password"): Use(str),
+        Optional("key"): Use(str)
+    })
+
+    def __init__(self, id, email=Null, password=Null, key=Null):
+        self.id = id
+        self.email = email
+        self.password = password
+        self.key = key
+        self._core = None
+        self._uSettings = None
+        self._uData = None
+        self._uFrecencySettings = None
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)
+
+    @property
+    async def settings(self) -> UserSettings:
+        if not self._uSettings:
+            self._uSettings = await self._core.getUserSettings(self)
+        return self._uSettings
+
+    @property
+    async def data(self) -> UserData:
+        return await self.userdata
+
+    @property
+    async def userdata(self) -> UserData:
+        if not self._uData:
+            self._uData = await self._core.getUserData(self)
+        return self._uData
+
+    @property
+    async def settings_proto(self) -> PreloadedUserSettings:
+        settings = await self.settings
+        return settings.to_proto()
+
+    @property
+    async def frecency_settings_proto(self) -> bytes:
+        if not self._uFrecencySettings:
+            self._uFrecencySettings = await self._core.getFrecencySettings(self)
+        return b64decode(self._uFrecencySettings.encode("utf8"))
 
 
 class UserId(_User):
