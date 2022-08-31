@@ -10,12 +10,13 @@ from .config import Config
 from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, RelationshipType, MFA, ChannelType, mksf, lsf, mkError
-from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, UserConnection, Attachment, Relationship
+from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
+    UserConnection, Attachment, Relationship, EmailMsg
 from .storage import _Storage
 from json import loads as jloads, dumps as jdumps
 from random import randint
 from .msg_client import Broadcaster
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Tuple
 from time import time
 from aiosmtplib import send as smtp_send
 
@@ -295,7 +296,7 @@ class Core:
         async with self.db() as db:
             await db.logoutUser(sess)
 
-    def _sessionToUser(self, session: Session):
+    def _sessionToUser(self, session: Session) -> User:
         return User(session.id).setCore(self)
 
     async def getMfa(self, user: Union[User, Session]) -> Optional[MFA]:
@@ -335,12 +336,11 @@ class Core:
         settings = await user.settings
         return MFA(settings.mfa_key, uid)
 
-    async def generateUserMfaNonce(self, user: User) -> tuple:
+    async def generateUserMfaNonce(self, user: User) -> Tuple[str]:
         mfa = await self.getMfa(user)
-        nonce = f"{mfa.key}.{int(time() // 300)}"
-        nonce = b64encode(new(self.key, nonce.encode('utf-8'), sha256).digest())
-        rnonce = f"{int(time() // 300)}.{mfa.key}"
-        rnonce = b64encode(new(self.key, rnonce.encode('utf-8'), sha256).digest())
+        _nonce = f"{mfa.key}.{int(time() // 600)}"
+        nonce = b64encode(b'\x00'+new(self.key, _nonce.encode('utf-8'), sha256).digest())
+        rnonce = b64encode(b'\x01'+new(self.key, _nonce.encode('utf-8'), sha256).digest()[::-1])
         return nonce, rnonce
 
     async def useMfaCode(self, uid: int, code: str) -> bool:
@@ -556,18 +556,14 @@ class Core:
             return await db.getFrecencySettings(user.id)
 
     async def sendVerificationEmail(self, user: User) -> None:
-        message = EmailMessage()
-        message["From"] = "no-reply@yepcord.ml"
-        message["To"] = user.email
-        message["Subject"] = "Confirm your e-mail in YEPCord"
         key = new(self.key, str(user.id).encode('utf-8'), sha256).digest()
         t = int(time())
         sig = b64encode(new(key, f"{user.id}:{user.email}:{t}".encode('utf-8'), sha256).digest())
         token = b64encode(jdumps({"id": user.id, "email": user.email, "time": t}))
         token += f".{sig}"
         link = f"https://{Config('CLIENT_HOST')}/verify#token={token}"
-        message.set_content(f"Thank you for signing up for a YEPCord account!\nFirst you need to make sure that you are you! Click to verify your email address:\n{link}")
-        await smtp_send(message, hostname=Config('SMTP_HOST'), port=int(Config('SMTP_PORT')))
+        await EmailMsg(user.email, "Confirm your e-mail in YEPCord",
+                       f"Thank you for signing up for a YEPCord account!\nFirst you need to make sure that you are you! Click to verify your email address:\n{link}").send()
 
     async def verifyEmail(self, user: User, token: str) -> None:
         try:
@@ -600,3 +596,20 @@ class Core:
                 raise InvalidDataErr(400, mkError(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
             await db.changeUserEmail(user.id, email)
             user.email = email
+
+    async def sendMfaChallengeEmail(self, user: User, nonce: str) -> None:
+        code = self.mfaNonceToCode(nonce)
+        await EmailMsg(user.email, f"Your one-time verification key is {code}",
+                        f"It looks like you're trying to view your account's backup codes.\n"+
+                        f"This verification key expires in 30 minutes. This key is extremely sensitive, treat it like a password and do not share it with anyone.\n"+
+                        f"Enter it in the app to unlock your backup codes:\n{code}").send()
+
+    def mfaNonceToCode(self, nonce: str) -> str:
+        nonce = b64decode(nonce)
+        b = nonce[0]
+        nonce = nonce[1:]
+        if b == 1:
+            nonce = nonce[::-1]
+        elif b != 0:
+            return ""
+        return b64encode(new(self.key, nonce, sha256).digest()).replace("-", "").replace("_", "")[:8].upper()

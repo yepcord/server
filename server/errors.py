@@ -29,7 +29,7 @@ class _Errors:
     err_50003 = "Cannot execute action on a DM channel"
     err_50005 = "Cannot edit a message authored by another user"
     err_50006 = "Cannot send an empty message"
-    err_50018 = "This account is not enrolled in two factor authentication"
+    err_50018 = "Password does not match"
     err_50035 = "Invalid Form Body"
     err_50104 = "Malformed user settings payload"
 

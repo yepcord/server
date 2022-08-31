@@ -185,6 +185,7 @@ async def api_auth_verify_viewbackupcodeschallenge(user):
     if not await core.checkUserPassword(user, password):
         raise InvalidDataErr(400, mkError(50018))
     nonce = await core.generateUserMfaNonce(user)
+    await core.sendMfaChallengeEmail(user, nonce[0])
     return c_json({"nonce": nonce[0], "regenerate_nonce": nonce[1]})
 
 
@@ -456,10 +457,14 @@ async def api_users_me_mfa_codesverification(user):
     data = await request.get_json()
     if not (unonce := data.get("nonce")):
         raise InvalidDataErr(400, mkError(60011))
+    if not (key := data.get("key")):
+        raise InvalidDataErr(400, mkError(50035, {"key": {"code": "BASE_TYPE_REQUIRED", "message": "This field is required"}}))
     reg = data.get("regenerate", False)
     nonce = await core.generateUserMfaNonce(user)
     nonce = nonce[1] if reg else nonce[0]
     if nonce != unonce:
+        raise InvalidDataErr(400, mkError(60011))
+    if core.mfaNonceToCode(nonce) != key:
         raise InvalidDataErr(400, mkError(60011))
     if reg:
         codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]

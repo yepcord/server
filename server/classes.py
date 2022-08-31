@@ -1,4 +1,5 @@
 from datetime import datetime
+from email.message import EmailMessage
 from time import mktime
 from uuid import uuid4, UUID
 from zlib import compressobj, Z_FULL_FLUSH
@@ -14,6 +15,7 @@ from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAnd
     AnimateStickers, ExpressionSuggestionsEnabled, InlineEmbedMedia, PrivacySettings, FriendSourceFlags, StatusSettings, \
     ShowCurrentGame, Status, LocalizationSettings, Locale, TimezoneOffset, AppearanceSettings
 from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get
+from aiosmtplib import send as smtp_send
 
 
 class _Null:
@@ -976,3 +978,18 @@ class Attachment(DBModel):  # TODO: make schema
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
+
+
+class EmailMsg:
+    def __init__(self, to: str, subject: str, text: str):
+        self.to = to
+        self.subject = subject
+        self.text = text
+
+    async def send(self):
+        message = EmailMessage()
+        message["From"] = "no-reply@yepcord.ml"
+        message["To"] = self.to
+        message["Subject"] = self.subject
+        message.set_content(self.text)
+        await smtp_send(message, hostname=Config('SMTP_HOST'), port=int(Config('SMTP_PORT')))
