@@ -393,7 +393,7 @@ class UserData(DBModel):
 
     def __init__(self, uid, birth=Null, username=Null, discriminator=Null, phone=Null, accent_color=Null, premium=Null,
                  avatar=Null, avatar_decoration=Null, banner=Null, banner_color=Null, bio=Null, flags=Null,
-                 public_flags=Null):
+                 public_flags=Null, **kwargs):
         self.uid = uid
         self.birth = birth
         self.username = username

@@ -154,7 +154,13 @@ class DBConnection(ABC):
     async def setFrecencySettings(self, uid: int, proto: bytes) -> None: ...
 
     @abstractmethod
-    async def getFrecencySettings(self, uid) -> str: ...
+    async def getFrecencySettings(self, uid: int) -> str: ...
+
+    @abstractmethod
+    async def verifyEmail(self, uid: int) -> None: ...
+
+    @abstractmethod
+    async def changeUserEmail(self, uid: int, email: str) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -426,3 +432,9 @@ class MySqlConnection:
         if (r := await self.cur.fetchone()):
             return r[0]
         return ""
+
+    async def verifyEmail(self, uid: int) -> None:
+        await self.cur.execute(f'UPDATE `users` SET `verified`=true WHERE `id`={uid};')
+
+    async def changeUserEmail(self, uid: int, email: str) -> None:
+        await self.cur.execute(f'UPDATE `users` SET `email`="{escape_string(email)}", `verified`=false WHERE `id`={uid};')

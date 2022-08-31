@@ -24,7 +24,6 @@ class ReadyEvent(DispatchEvent):
         userdata = await self.user.userdata
         settings = await self.user.settings
         proto = settings.to_proto()
-        #print(proto.voice_and_video.stream_notifications_enabled)
         return {
             "t": self.NAME,
             "op": self.OP,
@@ -203,7 +202,7 @@ class UserUpdateEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "verified": True,
+                "verified": self.user.verified,
                 "username": self.userdata.username,
                 "public_flags": self.userdata.public_flags,
                 "phone": self.userdata.phone,

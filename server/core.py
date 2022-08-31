@@ -79,6 +79,7 @@ class Core:
         data = UserData(uid, birth=birth, username=login, discriminator=discrim)
         async with self.db() as db:
             await db.registerUser(user, session, data)
+        await self.sendVerificationEmail(user)
         return session
 
     async def login(self, email: str, password: str) -> Session:
@@ -560,10 +561,42 @@ class Core:
         message["To"] = user.email
         message["Subject"] = "Confirm your e-mail in YEPCord"
         key = new(self.key, str(user.id).encode('utf-8'), sha256).digest()
-        uid = b64encode(new(key, str(user.id).encode('utf-8'), sha256).digest())[:8]
-        email = b64encode(new(key, user.email.encode('utf-8'), sha256).digest())
-        token = b64encode(jdumps({"id": user.id, "email": user.email}))
-        token += f".{uid}.{email}"
+        t = int(time())
+        sig = b64encode(new(key, f"{user.id}:{user.email}:{t}".encode('utf-8'), sha256).digest())
+        token = b64encode(jdumps({"id": user.id, "email": user.email, "time": t}))
+        token += f".{sig}"
         link = f"https://{Config('CLIENT_HOST')}/verify#token={token}"
-        message.set_content(f"Thank you for signing up for a YEPCord account! First you need to make sure that you are you! Click to verify your email address: {link}")
+        message.set_content(f"Thank you for signing up for a YEPCord account!\nFirst you need to make sure that you are you! Click to verify your email address:\n{link}")
         await smtp_send(message, hostname=Config('SMTP_HOST'), port=int(Config('SMTP_PORT')))
+
+    async def verifyEmail(self, user: User, token: str) -> None:
+        try:
+            data, sig = token.split(".")
+            data = jloads(b64decode(data).decode("utf8"))
+            sig = b64decode(sig)
+            t = data["time"]
+            if data["email"] != user.email or data["id"] != user.id or time()-t > 600:
+                raise Exception
+            key = new(self.key, str(user.id).encode('utf-8'), sha256).digest()
+            vsig = new(key, f"{user.id}:{user.email}:{t}".encode('utf-8'), sha256).digest()
+            if sig != vsig:
+                raise Exception
+        except Exception as e:
+            print(e)
+            raise InvalidDataErr(400, mkError(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
+        async with self.db() as db:
+            await db.verifyEmail(user.id)
+
+    async def getUserByEmail(self, email: str) -> Optional[User]:
+        async with self.db() as db:
+            return await db.getUserByEmail(email)
+
+    async def changeUserEmail(self, user: User, email: str) -> None:
+        email = email.lower()
+        if user.email == email:
+            return
+        async with self.db() as db:
+            if await db.getUserByEmail(email):
+                raise InvalidDataErr(400, mkError(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
+            await db.changeUserEmail(user.id, email)
+            user.email = email

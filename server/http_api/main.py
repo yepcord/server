@@ -196,6 +196,21 @@ async def api_auth_verify_resend(user):
     return "", 204
 
 
+@app.route("/api/v9/auth/verify", methods=["POST"])
+async def api_auth_verify():
+    data = await request.get_json()
+    if not data.get("token"):
+        raise InvalidDataErr(400, mkError(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
+    try:
+        email = jloads(b64decode(data["token"].split(".")[0]).decode("utf8"))["email"]
+    except:
+        raise InvalidDataErr(400, mkError(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
+    user = await core.getUserByEmail(email)
+    await core.verifyEmail(user, data["token"])
+    await core.sendUserUpdateEvent(user.id)
+    return c_json({"token": (await core.createSession(user.id, user.key)).token, "user_id": str(user.id)})
+
+
 # Users (@me)
 
 
@@ -209,8 +224,8 @@ async def api_users_me_get(user):
 async def api_users_me_patch(user):
     data = await user.data
     _settings = await request.get_json()
-    d = "discriminator" in _settings and _settings.get("discriminator") != data["discriminator"]
-    u = "username" in _settings and _settings.get("username") != data["username"]
+    d = "discriminator" in _settings and _settings.get("discriminator") != data.discriminator
+    u = "username" in _settings and _settings.get("username") != data.username
     if d or u:
         if "password" not in _settings or not await core.checkUserPassword(user, _settings["password"]):
             raise InvalidDataErr(400, mkError(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
@@ -228,6 +243,12 @@ async def api_users_me_patch(user):
             raise InvalidDataErr(400, mkError(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
         await core.changeUserPassword(user, _settings["new_password"])
         del _settings["new_password"]
+    if "email" in _settings:
+        if "password" not in _settings or not await core.checkUserPassword(user, _settings["password"]):
+            raise InvalidDataErr(400, mkError(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
+        await core.changeUserEmail(user, _settings["email"])
+        await core.sendVerificationEmail(user)
+        del _settings["email"]
 
     settings = {}
     for k,v in _settings.items():

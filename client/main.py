@@ -7,6 +7,7 @@ from server.config import Config
 
 STATIC_FOLDER = join(dirname(realpath(__file__)), "assets/")
 HTML_FILE = join(dirname(realpath(__file__)), "discord.html")
+HTML_FILE_VERIFY = join(dirname(realpath(__file__)), "discord_verify.html")
 
 _domain = Config("DOMAIN")
 CONFIG = {
@@ -32,10 +33,16 @@ async def downloadAsset(file):
                     await fp.write(chunk)
 
 with open(HTML_FILE, "r", encoding="utf8") as f:
-    HTML_DATA = f.read()
+    HTML_DATA_MAIN = f.read()
+
+with open(HTML_FILE_VERIFY, "r", encoding="utf8") as f:
+    HTML_DATA_VERIFY = f.read()
 
 for k,v in CONFIG.items():
-    HTML_DATA = HTML_DATA.replace("{%s}" % k, v)
+    HTML_DATA_MAIN = HTML_DATA_MAIN.replace("{%s}" % k, v)
+
+for k,v in CONFIG.items():
+    HTML_DATA_VERIFY = HTML_DATA_VERIFY.replace("{%s}" % k, v)
 
 app = Quart(
     "YEPCord",
@@ -56,9 +63,13 @@ async def index():
 @app.route("/channels/@me/<channel>")
 @app.route("/channels/<channel>")
 @app.route("/connections/<connection>")
-@app.route("/verify")
 async def discord(**kwargs):
-    return HTML_DATA
+    return HTML_DATA_MAIN
+
+
+@app.route("/verify")
+async def discord_verify(**kwargs):
+    return HTML_DATA_VERIFY
 
 
 @app.route("/assets/<file>")
