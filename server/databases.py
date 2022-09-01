@@ -180,8 +180,8 @@ class MySQL(Database):
 class MySqlConnection:
     def __init__(self, mysql: MySQL):
         self.mysql: MySQL = mysql
-        self.db: Connection = None
-        self.cur: Cursor = None
+        self.db: Optional[Connection] = None
+        self.cur: Optional[Cursor] = None
 
     async def __aenter__(self):
         self.db = await self.mysql.pool.acquire()
@@ -194,12 +194,12 @@ class MySqlConnection:
 
     async def getUserByEmail(self, email: str) -> Optional[User]:
         await self.cur.execute(f'SELECT * FROM `users` WHERE `email`="{escape_string(email)}";')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return User.from_result(self.cur.description, r)
 
     async def getUserByUsername(self, username: str, discriminator: int) -> Optional[User]:
         await self.cur.execute(f'SELECT `uid` FROM `userdata` WHERE `discriminator`={discriminator} AND `username`="{escape_string(username)}";')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return User(r[0])
 
     async def registerUser(self, user: User, session: Session, data: UserData) -> None:
@@ -213,7 +213,7 @@ class MySqlConnection:
 
     async def getUser(self, uid: int) -> Optional[User]:
         await self.cur.execute(f'SELECT * FROM `users` WHERE `id`={uid};')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return User.from_result(self.cur.description, r)
 
     async def validSession(self, session: Session) -> bool:
@@ -271,7 +271,7 @@ class MySqlConnection:
 
     async def getRelationship(self, u1: int, u2: int) -> Optional[Relationship]:
         await self.cur.execute(f'SELECT * FROM `relationships` WHERE (`u1`={u1} AND `u2`={u2}) OR (`u1`={u2} AND `u2`={u1});')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return Relationship.from_result(self.cur.description, r)
 
     async def delRelationship(self, relationship: Relationship) -> None:
@@ -299,18 +299,18 @@ class MySqlConnection:
 
     async def getChannel(self, channel_id: int) -> Optional[Channel]:
         await self.cur.execute(f'SELECT * FROM `channels` WHERE `id`={channel_id};')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return Channel.from_result(self.cur.description, r)
 
     async def getDMChannel(self, u1: int, u2: int) -> Optional[Channel]:
         await self.cur.execute(f'SELECT * FROM `channels` WHERE JSON_CONTAINS(j_recipients, {u1}, "$") AND JSON_CONTAINS(j_recipients, {u2}, "$");')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return Channel.from_result(self.cur.description, r)
 
     async def getLastMessageId(self, channel: _Channel, before: int, after: int) -> int:
         await self.cur.execute(f'SELECT `id` FROM `messages` WHERE `channel_id`={channel.id} AND `id` > {after} AND `id` < {before} ORDER BY `id` DESC LIMIT 1;')
         last = None
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             last = r[0]
         return last
 
@@ -344,7 +344,7 @@ class MySqlConnection:
 
     async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
         await self.cur.execute(f'SELECT * FROM `messages` WHERE `channel_id`={channel.id} AND `id`={message_id};')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return Message.from_result(self.cur.description, r)
 
     async def insertMessage(self, message: Message) -> None:
@@ -386,7 +386,7 @@ class MySqlConnection:
 
     async def getUserNote(self, uid: int, target_uid: int) -> Optional[UserNote]:
         await self.cur.execute(f'SELECT * FROM `notes` WHERE `uid`={uid} AND `target_uid`={target_uid};')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return UserNote.from_result(self.cur.description, r)
 
     async def putUserNote(self, note: UserNote) -> None:
@@ -411,12 +411,12 @@ class MySqlConnection:
 
     async def getAttachment(self, id: int) -> Optional[Attachment]:
         await self.cur.execute(f'SELECT * FROM `attachments` WHERE `id`="{id}"')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return Attachment.from_result(self.cur.description, r)
 
     async def getAttachmentByUUID(self, uuid: str) -> Optional[Attachment]:
         await self.cur.execute(f'SELECT * FROM `attachments` WHERE `uuid`="{uuid}"')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return Attachment.from_result(self.cur.description, r)
 
     async def updateAttachment(self, before: Attachment, after: Attachment) -> None:
@@ -429,7 +429,7 @@ class MySqlConnection:
 
     async def getFrecencySettings(self, uid: int) -> str:
         await self.cur.execute(f'SELECT `settings` FROM `frecency_settings` WHERE `uid`={uid};')
-        if (r := await self.cur.fetchone()):
+        if r := await self.cur.fetchone():
             return r[0]
         return ""
 

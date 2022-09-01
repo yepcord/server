@@ -14,8 +14,6 @@ from re import compile as rcompile
 
 from server.errors import Errors
 
-global _INCREMENT_ID
-
 
 def b64decode(data: Union[str, bytes]) -> bytes:
     if isinstance(data, str):
@@ -34,7 +32,7 @@ def b64encode(data: Union[str, bytes]) -> str:
         data = data.replace(search, replace)
     return data
 
-
+global _INCREMENT_ID
 _EPOCH = 1640995200_000
 _INCREMENT_ID = 0
 _MAX_TIMESTAMP = 1 << 42
@@ -69,7 +67,9 @@ def snowflake_timestamp(sf):
     return (sf >> 22) + _EPOCH
 
 
-def c_json(json, code=200, headers={}):
+def c_json(json, code=200, headers=None):
+    if headers is None:
+        headers = {}
     if not isinstance(json, str):
         json = jdumps(json)
     h = {'Content-Type': 'application/json'}
@@ -222,6 +222,7 @@ def parseMultipartRequest(body, boundary):
     for part in parts:
         name = None
         ct = None
+        idx = None
         p = part.split(b"\r\n")[1:-1]
         for _ in range(10):
             data = p.pop(0)
@@ -260,7 +261,7 @@ def proto_get(protoObj, path, default):
         o = protoObj
         for p in path:
             if hasattr(o, "ListFields"):
-                if not o.ListFields():
+                if p not in [f[0].name for f in o.ListFields()] and p != "value":
                     return default
             o = getattr(o, p)
     except:

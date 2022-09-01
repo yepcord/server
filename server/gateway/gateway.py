@@ -286,9 +286,9 @@ class Gateway:
             if not (st := self.statuses.get(cl.id)):
                 settings = await self.core.getUserSettings(UserId(cl.id))
                 self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
-            if (status := d.get("status")):
+            if status := d.get("status"):
                 st.setStatus(status)
-            if (activities := d.get("activities")):
+            if activities := d.get("activities"):
                 st.setActivities(activities)
             await self.ev.presence_update(cl.id, st)
 
@@ -308,7 +308,7 @@ class Gateway:
         friends = await self.core.getRelationships(UserId(uid))
         friends = [int(u["user_id"]) for u in friends if u["type"] == 1]
         for friend in friends:
-            if (status := self.statuses.get(friend)):
+            if status := self.statuses.get(friend):
                 pr.append({
                     "user_id": str(friend),
                     "status": status.status,

@@ -13,12 +13,14 @@ from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAnd
     StreamNotificationsEnabled, TextAndImagesSettings, UseRichChatInput, UseThreadSidebar, Theme, RenderSpoilers, \
     InlineAttachmentMedia, RenderEmbeds, RenderReactions, ExplicitContentFilter, ViewNsfwGuilds, ConvertEmoticons, \
     AnimateStickers, ExpressionSuggestionsEnabled, InlineEmbedMedia, PrivacySettings, FriendSourceFlags, StatusSettings, \
-    ShowCurrentGame, Status, LocalizationSettings, Locale, TimezoneOffset, AppearanceSettings
+    ShowCurrentGame, Status, LocalizationSettings, Locale, TimezoneOffset, AppearanceSettings, MessageDisplayCompact, \
+    ViewImageDescriptions
 from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get
 from aiosmtplib import send as smtp_send
 
 
 class _Null:
+    value = None
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -37,6 +39,7 @@ class _Null:
 
 
 Null = _Null()
+Null.value = Null
 
 
 class DBModel:
@@ -187,18 +190,27 @@ class UserSettings(DBModel):
               "native_phone_integration_enabled", "timezone_offset", "friend_discovery_flags", "contact_sync_enabled",
               "disable_games_tab", "developer_mode", "render_embeds", "animate_stickers", "message_display_compact",
               "convert_emoticons", "passwordless", "mfa", "activity_restricted_guild_ids", "friend_source_flags",
-              "guild_positions", "guild_folders", "restricted_guilds", "personalization", "usage_statistics")
+              "guild_positions", "guild_folders", "restricted_guilds", "personalization", "usage_statistics",
+              "render_spoilers", "inline_embed_media", "use_thread_sidebar", "use_rich_chat_input",
+              "expression_suggestions_enabled")
     ID_FIELD = "uid"
     DB_FIELDS = {"custom_status": "j_custom_status", "activity_restricted_guild_ids": "j_activity_restricted_guild_ids",
                  "friend_source_flags": "j_friend_source_flags", "guild_positions": "j_guild_positions",
                  "guild_folders": "j_guild_folders", "restricted_guilds": "j_restricted_guilds"}
     SCHEMA = Schema({
-        "uid": Use(int), Optional("inline_attachment_media"): Use(bool), Optional("show_current_game"): Use(bool),
-        Optional("view_nsfw_guilds"): Use(bool), Optional("enable_tts_command"): Use(bool),
-        Optional("render_reactions"): Use(bool), Optional("gif_auto_play"): Use(bool),
-        Optional("stream_notifications_enabled"): Use(bool), Optional("animate_emoji"): Use(bool),
-        Optional("afk_timeout"): Use(int), Optional("view_nsfw_commands"): Use(bool),
-        Optional("detect_platform_accounts"): Use(bool), Optional("explicit_content_filter"): Use(int),
+        "uid": Use(int),
+        Optional("inline_attachment_media"): Use(bool),
+        Optional("show_current_game"): Use(bool),
+        Optional("view_nsfw_guilds"): Use(bool),
+        Optional("enable_tts_command"): Use(bool),
+        Optional("render_reactions"): Use(bool),
+        Optional("gif_auto_play"): Use(bool),
+        Optional("stream_notifications_enabled"): Use(bool),
+        Optional("animate_emoji"): Use(bool),
+        Optional("afk_timeout"): Use(int),
+        Optional("view_nsfw_commands"): Use(bool),
+        Optional("detect_platform_accounts"): Use(bool),
+        Optional("explicit_content_filter"): Use(int),
         Optional("status"): And(Use(str), Use(str.lower), lambda s: s in ("online", "invisible", "dnd", "idle")),
         Optional("custom_status"): Or(And(Use(dict), lambda d: "text" in d), type(None)),  # TODO
         Optional("default_guilds_restricted"): Use(bool),
@@ -207,18 +219,30 @@ class UserSettings(DBModel):
         Optional("locale"): And(Use(str), lambda s: 2 <= len(s) <= 6),
         Optional("native_phone_integration_enabled"): Use(bool),
         Optional("timezone_offset"): And(Use(int), lambda i: -600 <= i <= 840),
-        Optional("friend_discovery_flags"): Use(int), Optional("contact_sync_enabled"): Use(bool),
-        Optional("disable_games_tab"): Use(bool), Optional("developer_mode"): Use(bool),
-        Optional("render_embeds"): Use(bool), Optional("animate_stickers"): Use(bool),
-        Optional("message_display_compact"): Use(bool), Optional("convert_emoticons"): Use(bool),
+        Optional("friend_discovery_flags"): Use(int),
+        Optional("contact_sync_enabled"): Use(bool),
+        Optional("disable_games_tab"): Use(bool),
+        Optional("developer_mode"): Use(bool),
+        Optional("render_embeds"): Use(bool),
+        Optional("animate_stickers"): Use(bool),
+        Optional("message_display_compact"): Use(bool),
+        Optional("convert_emoticons"): Use(bool),
         Optional("passwordless"): Use(bool),
         Optional("mfa"): Or(And(Use(str), lambda s: 16 <= len(s) <= 32 and len(s) % 4 == 0), type(None)),
         Optional("activity_restricted_guild_ids"): [Use(int)],
-        Optional("friend_source_flags"): {"all": Use(bool), Optional("mutual_friends"): Use(bool),
+        Optional("friend_source_flags"): {"all": Use(bool),Optional("mutual_friends"): Use(bool),
                                           Optional("mutual_guilds"): Use(bool)},
-        Optional("guild_positions"): [Use(int)], Optional("guild_folders"): [Use(int)],
-        Optional("restricted_guilds"): [Use(int)], Optional("personalization"): Use(bool),
-        Optional("usage_statistics"): Use(bool)
+        Optional("guild_positions"): [Use(int)],
+        Optional("guild_folders"): [Use(int)],
+        Optional("restricted_guilds"): [Use(int)],
+        Optional("personalization"): Use(bool),
+        Optional("usage_statistics"): Use(bool),
+        Optional("render_spoilers"): And(Use(str), Use(str.upper), lambda s: s in ("ON_CLICK", "IF_MODERATOR", "ALWAYS")),
+        Optional("inline_embed_media"): Use(bool),
+        Optional("use_thread_sidebar"): Use(bool),
+        Optional("use_rich_chat_input"): Use(bool),
+        Optional("expression_suggestions_enabled"): Use(bool),
+        Optional("view_image_descriptions"): Use(bool),
     })
 
     def __init__(self,
@@ -231,7 +255,9 @@ class UserSettings(DBModel):
                  developer_mode=Null, render_embeds=Null, animate_stickers=Null, message_display_compact=Null,
                  convert_emoticons=Null, passwordless=Null, mfa=Null, activity_restricted_guild_ids=Null,
                  friend_source_flags=Null, guild_positions=Null, guild_folders=Null, restricted_guilds=Null,
-                 personalization=Null, usage_statistics=Null, **kwargs):
+                 personalization=Null, usage_statistics=Null, render_spoilers=Null, inline_embed_media=Null,
+                 use_thread_sidebar=Null, use_rich_chat_input=Null, expression_suggestions_enabled=Null,
+                 view_image_descriptions=Null, **kwargs):
         self.uid = uid
         self.inline_attachment_media = inline_attachment_media
         self.show_current_game = show_current_game
@@ -274,6 +300,12 @@ class UserSettings(DBModel):
         self.restricted_guilds = restricted_guilds
         self.personalization = personalization
         self.usage_statistics = usage_statistics
+        self.render_spoilers = render_spoilers
+        self.inline_embed_media = inline_embed_media
+        self.use_thread_sidebar = use_thread_sidebar
+        self.use_rich_chat_input = use_rich_chat_input
+        self.expression_suggestions_enabled = expression_suggestions_enabled
+        self.view_image_descriptions = view_image_descriptions
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
@@ -293,45 +325,54 @@ class UserSettings(DBModel):
             voice_and_video=VoiceAndVideoSettings(
                 afk_timeout=AfkTimeout(value=self.get("afk_timeout", 600)),
                 stream_notifications_enabled=StreamNotificationsEnabled(
-                    value=bool(self.get("stream_notifications_enabled", True))),
+                    value=bool(self.get("stream_notifications_enabled", True))
+                )
             ),
             text_and_images=TextAndImagesSettings(
-                use_rich_chat_input=UseRichChatInput(value=bool(self.get("use_rich_chat_input", True))),
-                # TODO: add to db
-                use_thread_sidebar=UseThreadSidebar(value=bool(self.get("use_thread_sidebar", True))),
-                # TODO: add to db
-                render_spoilers=RenderSpoilers(value=self.get("render_spoilers", "ON_CLICK")),  # TODO: add to db
-                inline_attachment_media=InlineAttachmentMedia(value=bool(self.get("inline_attachment_media", True))),
-                # TODO: add to db
-                inline_embed_media=InlineEmbedMedia(value=bool(self.get("inline_embed_media", True))),
-                # TODO: add to db
-                render_embeds=RenderEmbeds(value=bool(self.get("render_embeds", True))),
-                render_reactions=RenderReactions(value=bool(self.get("render_reactions", True))),
+                use_rich_chat_input=UseRichChatInput(value=self.get("use_rich_chat_input", True)),
+                use_thread_sidebar=UseThreadSidebar(value=self.get("use_thread_sidebar", True)),
+                render_spoilers=RenderSpoilers(value=self.get("render_spoilers", "ON_CLICK")),
+                inline_attachment_media=InlineAttachmentMedia(value=self.get("inline_attachment_media", True)),
+                inline_embed_media=InlineEmbedMedia(value=self.get("inline_embed_media", True)),
+                render_embeds=RenderEmbeds(value=self.get("render_embeds", True)),
+                render_reactions=RenderReactions(value=self.get("render_reactions", True)),
                 explicit_content_filter=ExplicitContentFilter(value=self.get("explicit_content_filter", True)),
-                view_nsfw_guilds=ViewNsfwGuilds(value=bool(self.get("view_nsfw_guilds", False))),
-                convert_emoticons=ConvertEmoticons(value=bool(self.get("convert_emoticons", True))),
+                view_nsfw_guilds=ViewNsfwGuilds(value=self.get("view_nsfw_guilds", False)),
+                convert_emoticons=ConvertEmoticons(value=self.get("convert_emoticons", True)),
                 animate_stickers=AnimateStickers(value=self.get("animate_stickers", True)),
-                expression_suggestions_enabled=ExpressionSuggestionsEnabled(
-                    value=bool(self.get("expression_suggestions_enabled", True))),  # TODO: add to db
+                expression_suggestions_enabled=ExpressionSuggestionsEnabled(value=self.get("expression_suggestions_enabled", True)),
+                message_display_compact=MessageDisplayCompact(value=self.get("message_display_compact", False)),
+                view_image_descriptions=ViewImageDescriptions(value=self.get("view_image_descriptions", False))
             ),
             privacy=PrivacySettings(
-                # friend_source_flags=FriendSourceFlags(value=settings.get("friend_source_flags", 14)), # TODO: ???
                 friend_source_flags=FriendSourceFlags(value=14),
-                default_guilds_activity_restricted=self.get("default_guilds_restricted", 1),
+                default_guilds_restricted=self.get("default_guilds_restricted", False),
+                allow_accessibility_detection=self.get("allow_accessibility_detection", False)
             ),
             status=StatusSettings(
                 status=Status(status=self.get("status", "online")),
-                show_current_game=ShowCurrentGame(value=bool(self.get("show_current_game", True))),
+                show_current_game=ShowCurrentGame(value=bool(self.get("show_current_game", True)))
             ),
             localization=LocalizationSettings(
                 locale=Locale(locale_code=self.get("locale", "en_US")),
-                timezone_offset=TimezoneOffset(offset=self.get("timezone_offset", 0)),
+                timezone_offset=TimezoneOffset(offset=self.get("timezone_offset", 0))
             ),
             appearance=AppearanceSettings(
                 theme=Theme.DARK if self.get("theme", "dark") == "dark" else Theme.LIGHT,
-                developer_mode=bool(self.get("developer_mode", False)),
+                developer_mode=bool(self.get("developer_mode", False))
             )
         )
+        if (d := self.get("friend_source_flags")):
+            if d["all"]:
+                proto.privacy.friend_source_flags.value = 14
+            elif d["mutual_friends"] and d["mutual_guilds"]:
+                proto.privacy.friend_source_flags.value = 6
+            elif d["mutual_guilds"]:
+                proto.privacy.friend_source_flags.value = 4
+            elif d["mutual_friends"]:
+                proto.privacy.friend_source_flags.value = 2
+            else:
+                proto.privacy.friend_source_flags.value = 0
         return proto
 
     def from_proto(self, proto):
@@ -349,7 +390,7 @@ class UserSettings(DBModel):
             detect_platform_accounts=proto_get(proto, "privacy.detect_platform_accounts.value", Null),
             explicit_content_filter=proto_get(proto, "text_and_images.explicit_content_filter.value", Null),
             status=proto_get(proto, "status.status.status", Null),
-            default_guilds_restricted=proto_get(proto, "privacy.default_guilds_activity_restricted", Null),
+            default_guilds_restricted=proto_get(proto, "privacy.default_guilds_restricted", Null),
             theme="dark" if proto_get(proto, "appearance.theme", 1) == 1 else "light",
             allow_accessibility_detection=proto_get(proto, "privacy.allow_accessibility_detection", Null),
             locale=proto_get(proto, "localization.locale.locale_code", Null),
@@ -366,10 +407,15 @@ class UserSettings(DBModel):
             convert_emoticons=proto_get(proto, "text_and_images.convert_emoticons.value", Null),
             passwordless=proto_get(proto, "privacy.passwordless.value", Null),
             activity_restricted_guild_ids=proto_get(proto, "privacy.activity_restricted_guild_ids", Null),
-            # friend_source_flags=proto_get(proto, "privacy.friend_source_flags.value", Null),  # TODO: ???
             restricted_guilds=proto_get(proto, "privacy.restricted_guild_ids", Null),
+            render_spoilers=proto_get(proto, "text_and_images.render_spoilers.value", Null),
+            inline_embed_media=proto_get(proto, "text_and_images.inline_embed_media.value", Null),
+            use_thread_sidebar=proto_get(proto, "text_and_images.use_thread_sidebar.value", Null),
+            use_rich_chat_input=proto_get(proto, "text_and_images.use_rich_chat_input.value", Null),
+            expression_suggestions_enabled=proto_get(proto, "text_and_images.expression_suggestions_enabled.value", Null),
+            view_image_descriptions=proto_get(proto, "text_and_images.view_image_descriptions.value", Null),
         )
-        if proto_get(proto, "text_and_images.", Null) is not Null:
+        if proto_get(proto, "status.custom_status", Null) is not Null:
             cs = {}
             custom_status = proto_get(proto, "status.custom_status", Null)
             cs["text"] = proto_get(custom_status, "text", None)
@@ -377,6 +423,19 @@ class UserSettings(DBModel):
             cs["emoji_name"] = proto_get(custom_status, "emoji_name", None)
             cs["expires_at_ms"] = proto_get(custom_status, "expires_at_ms", None)
             self.set(custom_status=cs)
+        if (p := proto_get(proto, "privacy.friend_source_flags.value", Null)) is not Null:
+            if p == 14:
+                self.set(friend_source_flags={"all": True})
+            elif p == 6:
+                self.set(friend_source_flags={"all": False, "mutual_friends": True, "mutual_guilds": True})
+            elif p == 4:
+                self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": True})
+            elif p == 2:
+                self.set(friend_source_flags={"all": False, "mutual_friends": True, "mutual_guilds": False})
+            else:
+                self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": True})
+        else:
+            self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": False})
         return self
 
 

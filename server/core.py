@@ -1,5 +1,4 @@
 from asyncio import get_event_loop
-from email.message import EmailMessage
 from hmac import new
 from hashlib import sha256
 from os import urandom
@@ -18,10 +17,10 @@ from random import randint
 from .msg_client import Broadcaster
 from typing import Optional, Union, List, Tuple
 from time import time
-from aiosmtplib import send as smtp_send
 
 class CDN(_Storage):
     def __init__(self, storage, core):
+        super().__init__()
         self.storage = storage
         self.core = core
 
@@ -71,13 +70,13 @@ class Core:
         session = int.from_bytes(urandom(6), "big")
         signature = self.generateSessionSignature(uid, session, b64decode(key))
 
-        discrim = await self.getRandomDiscriminator(login)
-        if discrim is None:
+        discriminator = await self.getRandomDiscriminator(login)
+        if discriminator is None:
             raise InvalidDataErr(400, mkError(50035, {"login": {"code": "USERNAME_TOO_MANY_USERS", "message": "Too many users have this username, please try another."}}))
 
         user = User(uid, email, password, key)
         session = Session(uid, session, signature)
-        data = UserData(uid, birth=birth, username=login, discriminator=discrim)
+        data = UserData(uid, birth=birth, username=login, discriminator=discriminator)
         async with self.db() as db:
             await db.registerUser(user, session, data)
         await self.sendVerificationEmail(user)
@@ -156,7 +155,7 @@ class Core:
         return user.password == password
 
     async def changeUserDiscriminator(self, user: User, discriminator: int) -> bool:
-        username = (await user.data)["username"]
+        username = (await user.data).username
         if await self.getUserByUsername(username, discriminator):
             return False
         data = await user.data
@@ -166,13 +165,13 @@ class Core:
         return True
 
     async def changeUserName(self, user: User, username: str) -> None:
-        discrim = (await user.data)["discriminator"]
-        if await self.getUserByUsername(username, discrim):
-            discrim = await self.getRandomDiscriminator(username)
-            if discrim is None:
+        discriminator = (await user.data).discriminator
+        if await self.getUserByUsername(username, discriminator):
+            discriminator = await self.getRandomDiscriminator(username)
+            if discriminator is None:
                 raise InvalidDataErr(400, mkError(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This name is used by too many users. Please enter something else or try again."}}))
         data = await user.data
-        ndata = data.copy().set(discriminator=discrim, username=username)
+        ndata = data.copy().set(discriminator=discriminator, username=username)
         async with self.db() as db:
             await db.setUserDataDiff(data, ndata)
 
@@ -336,7 +335,7 @@ class Core:
         settings = await user.settings
         return MFA(settings.mfa_key, uid)
 
-    async def generateUserMfaNonce(self, user: User) -> Tuple[str]:
+    async def generateUserMfaNonce(self, user: User) -> Tuple[str, str]:
         mfa = await self.getMfa(user)
         _nonce = f"{mfa.key}.{int(time() // 600)}"
         nonce = b64encode(b'\x00'+new(self.key, _nonce.encode('utf-8'), sha256).digest())
@@ -521,9 +520,9 @@ class Core:
         async with self.db() as db:
             await db.putAttachment(attachment)
 
-    async def getAttachment(self, id: int) -> Optional[Attachment]:
+    async def getAttachment(self, aid: int) -> Optional[Attachment]:
         async with self.db() as db:
-            return await db.getAttachment(id)
+            return await db.getAttachment(aid)
 
     async def getAttachmentByUUID(self, uuid: str) -> Optional[Attachment]:
         async with self.db() as db:

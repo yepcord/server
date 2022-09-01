@@ -16,8 +16,7 @@ from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment
 from ..core import Core, CDN
-from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, ChannelType, mkError, \
-    parseMultipartRequest
+from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
 
@@ -401,7 +400,7 @@ async def api_users_me_notes_get(user, target_uid):
 @getUser
 async def api_users_me_notes_put(user, target_uid):
     data = await request.get_json()
-    if (note := data.get("note")):
+    if note := data.get("note"):
         await core.putUserNote(UserNote(user.id, target_uid, note))
     return "", 204
 

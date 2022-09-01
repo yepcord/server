@@ -61,7 +61,7 @@ CREATE TABLE `settings` (
   `default_guilds_restricted` bool not null default false,
   `theme` text not null default "dark",
   `allow_accessibility_detection` bool not null default false,
-  `locale` text not null default "en_US",
+  `locale` text not null default "en-US",
   `native_phone_integration_enabled` bool not null default true,
   `timezone_offset` int not null default 0,
   `friend_discovery_flags` bigint not null default 0,
@@ -83,6 +83,13 @@ CREATE TABLE `settings` (
 
   `personalization` bool not null default false,
   `usage_statistics` bool not null default false,
+
+  `render_spoilers` text not null default "ON_CLICK",
+  `inline_embed_media` bool not null default true,
+  `use_thread_sidebar` bool not null default true,
+  `use_rich_chat_input` bool not null default true,
+  `expression_suggestions_enabled` bool not null default true,
+  `view_image_descriptions` bool not null default true,
   UNIQUE KEY `uid` (`uid`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 

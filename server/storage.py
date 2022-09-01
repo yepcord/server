@@ -10,26 +10,28 @@ from aiofiles import open as aopen
 
 
 class _Storage:
+    storage = None
+
     def __init__(self, root_path="files/"):
         self.root = root_path
 
     async def convertImgToWebp(self, image):
-        def convert_task(image):
+        def convert_task(img):
             out = BytesIO()
-            image = Image.open(image)
-            s = image.size
+            img = Image.open(img)
+            s = img.size
             if s[0] != s[1]:
                 return
-            image.save(out, lossless=True, save_all=True)
+            img.save(out, lossless=True, save_all=True)
             return out
         with ThreadPoolExecutor() as pool:
             return await get_event_loop().run_in_executor(pool, lambda: convert_task(image))
 
     async def resizeImage(self, image, size=(300, 120)):
-        def res_image(image, size):
+        def res_image(img, size):
             out = BytesIO()
-            image = Image.open(image).resize(size)
-            image.save(out, lossless=True, save_all=True)
+            img = Image.open(img).resize(size)
+            img.save(out, lossless=True, save_all=True)
             return out
         with ThreadPoolExecutor() as pool:
             return await get_event_loop().run_in_executor(pool, lambda: res_image(image, size))
