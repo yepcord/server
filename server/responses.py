@@ -109,32 +109,34 @@ async def userProfileResponse(user):
     }
 
 
-async def channelInfoResponse(channel, user):
+async def channelInfoResponse(channel, user, ids=True):
     _recipients = channel.recipients.copy()
     _recipients.remove(user.id)
-    recipients = []
-    for user in _recipients:
-        user = await channel._core.getUser(user)
-        data = await user.data
-        recipients.append({
-            "id": str(user.id),
-            "username": data.username,
-            "avatar": data.avatar,
-            "avatar_decoration": data.avatar_decoration,
-            "discriminator": str(data.discriminator).rjust(4, "0"),
-            "public_flags": data.public_flags
-        })
+    recipients = _recipients
+    if not ids:
+        recipients = []
+        for u in _recipients:
+            u = await channel._core.getUser(u)
+            data = await u.data
+            recipients.append({
+                "id": str(u.id),
+                "username": data.username,
+                "avatar": data.avatar,
+                "avatar_decoration": data.avatar_decoration,
+                "discriminator": str(data.discriminator).rjust(4, "0"),
+                "public_flags": data.public_flags
+            })
     if channel.type == ChannelType.DM:
         return {
             "type": channel.type,
-            "recipients": recipients,
+            "recipient_ids" if ids else "recipients": recipients,
             "last_message_id": channel.last_message_id,
             "id": str(channel.id)
         }
     elif channel.type == ChannelType.GROUP_DM:
-        return {
-            "type": channel.tye,
-            "recipient_ids": recipients,
+        j = {
+            "type": channel.type,
+            "recipient_ids" if ids else "recipients": recipients,
             "last_message_id": channel.last_message_id,
             "id": str(channel.id),
             "owner_id": str(channel.owner_id),

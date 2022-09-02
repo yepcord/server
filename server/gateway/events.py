@@ -1,6 +1,6 @@
 from base64 import b64encode
 from datetime import datetime
-from ..utils import GatewayOp, snowflake_timestamp
+from ..utils import GatewayOp, snowflake_timestamp, ChannelType
 from time import time
 
 
@@ -152,23 +152,26 @@ class RelationshipAddEvent(DispatchEvent):
 class DMChannelCreate(DispatchEvent):
     NAME = "CHANNEL_CREATE"
 
-    def __init__(self, channel_id, recipients, type, info):
-        self.channel_id = channel_id
+    def __init__(self, channel, recipients):
+        self.channel = channel
         self.recipients = recipients
-        self.type = type
-        self.info = info
 
     async def json(self) -> dict:
-        return {
+        j = {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "type": self.type,
+                "type": self.channel.type,
                 "recipients": self.recipients,
-                "last_message_id": str(self.info["last_message_id"]),
-                "id": self.channel_id
+                "last_message_id": str(self.channel.last_message_id),
+                "id": str(self.channel.id)
             }
         }
+        if self.channel.type == ChannelType.GROUP_DM:
+            j["d"]["owner"] = str(self.channel.owner_id)
+            j["d"]["icon"] = self.channel.icon
+            j["d"]["name"] = self.channel.name
+        return j
 
 
 class RelationshipRemoveEvent(DispatchEvent):

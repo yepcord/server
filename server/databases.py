@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List
+from json import dumps as jdumps
 
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
@@ -162,6 +163,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def changeUserEmail(self, uid: int, email: str) -> None: ...
 
+    @abstractmethod
+    async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int) -> Channel: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -254,7 +258,7 @@ class MySqlConnection:
 
     async def relationShipAvailable(self, tUser: User, cUser: User) -> bool:
         await self.cur.execute(f'SELECT * FROM `relationships` WHERE (`u1`={tUser.id} AND `u2`={cUser.id}) OR (`u1`={cUser.id} AND `u2`={tUser.id});')
-        return not bool(self.cur.fetchone())
+        return not bool(await self.cur.fetchone())
 
     async def insertRelationShip(self, relationship: Relationship) -> None:
         await self.cur.execute(f'INSERT INTO `relationships` VALUES ({relationship.u1}, {relationship.u2}, {relationship.type});')
@@ -303,7 +307,7 @@ class MySqlConnection:
             return Channel.from_result(self.cur.description, r)
 
     async def getDMChannel(self, u1: int, u2: int) -> Optional[Channel]:
-        await self.cur.execute(f'SELECT * FROM `channels` WHERE JSON_CONTAINS(j_recipients, {u1}, "$") AND JSON_CONTAINS(j_recipients, {u2}, "$");')
+        await self.cur.execute(f'SELECT * FROM `channels` WHERE JSON_CONTAINS(j_recipients, {u1}, "$") AND JSON_CONTAINS(j_recipients, {u2}, "$") AND `type`={ChannelType.DM};')
         if r := await self.cur.fetchone():
             return Channel.from_result(self.cur.description, r)
 
@@ -438,3 +442,8 @@ class MySqlConnection:
 
     async def changeUserEmail(self, uid: int, email: str) -> None:
         await self.cur.execute(f'UPDATE `users` SET `email`="{escape_string(email)}", `verified`=false WHERE `id`={uid};')
+
+    async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int) -> Channel:
+        recipients = jdumps(recipients)
+        await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`) VALUES ({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(recipients)}", {owner_id});')
+        return Channel(channel_id, ChannelType.GROUP_DM, recipients=recipients, owner_id=owner_id, icon=None, name=None)

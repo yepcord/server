@@ -958,7 +958,8 @@ class ReadState(DBModel):
     SCHEMA = Schema({
         "uid": Use(int),
         "channel_id": Use(int),
-        "count": Use(int)
+        "count": Use(int),
+        "last_read_id": Use(int)
     })
 
     def __init__(self, uid, channel_id, last_read_id, count=Null):

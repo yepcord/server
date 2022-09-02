@@ -14,7 +14,7 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment
+from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, UserId
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
@@ -98,6 +98,7 @@ def getChannel(f):
         if not (channel := kwargs.get("channel")):
             raise InvalidDataErr(404, mkError(10003))
         if not (user := kwargs.get("user")):
+            print("??")
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (channel := await core.getChannel(channel)):
             raise InvalidDataErr(404, mkError(10003))
@@ -521,6 +522,37 @@ async def api_connections_connection_callback(user, connection):
     if connection == "github":
         ...
     return ...
+
+
+@app.route("/api/v9/users/@me/channels", methods=["GET"])
+@getUser
+async def api_users_me_channels_get(user):
+    return c_json(await core.getPrivateChannels(user))
+
+
+@app.route("/api/v9/users/@me/channels", methods=["POST"])
+@getUser
+async def api_users_me_channels_post(user):
+    data = await request.get_json()
+    rep = data.get("recipients", [])
+    rep = [int(r) for r in rep]
+    if len(rep) == 1:
+        if int(rep[0]) == user.id:
+            raise InvalidDataErr(400, mkError(50007))
+        ch = await core.getDMChannelOrCreate(user.id, rep[0])
+    elif len(rep) == 0:
+        ch = await core.createDMGroupChannel(user, [])
+    else:
+        if user.id in rep:
+            rep.remove(user.id)
+        if len(rep) == 0:
+            raise InvalidDataErr(400, mkError(50007))
+        elif len(rep) == 1:
+            ch = await core.getDMChannelOrCreate(user.id, rep[0])
+        else:
+            ch = await core.createDMGroupChannel(user, rep)
+    await core.sendDMChannelCreateEvent(ch)
+    return c_json(await channelInfoResponse(ch, user, ids=False))
 
 
 # Users

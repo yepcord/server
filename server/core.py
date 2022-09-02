@@ -1,6 +1,6 @@
 from asyncio import get_event_loop
 from hmac import new
-from hashlib import sha256
+from hashlib import sha256, sha512
 from os import urandom
 from Crypto.Cipher import AES
 from base64 import b64encode as _b64encode
@@ -45,8 +45,9 @@ class Core:
         await self.db.init(*db_args, **db_kwargs)
         return self
 
-    def encryptPassword(self, password: str) -> str:
-        return new(self.key, password.encode('utf-8'), sha256).hexdigest()
+    def encryptPassword(self, uid: int, password: str) -> str:
+        key = new(self.key, int.to_bytes(uid, 16, "big"), sha256).digest()
+        return new(key, password.encode('utf-8'), sha512).hexdigest()
 
     def generateKey(self, password_key: bytes) -> str:
         return b64encode(AES.new(self.key, AES.MODE_CBC, urandom(16)).encrypt(password_key))
@@ -65,7 +66,7 @@ class Core:
         async with self.db() as db:
             if await db.getUserByEmail(email):
                 raise InvalidDataErr(400, mkError(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
-        password = self.encryptPassword(password)
+        password = self.encryptPassword(uid, password)
         key = self.generateKey(bytes.fromhex(password))
         session = int.from_bytes(urandom(6), "big")
         signature = self.generateSessionSignature(uid, session, b64decode(key))
@@ -86,7 +87,7 @@ class Core:
         email = email.strip().lower()
         async with self.db() as db:
             user = await db.getUserByEmail(email)
-        if not user or self.encryptPassword(password) != user.password:
+        if not user or self.encryptPassword(user.id, password) != user.password:
             raise InvalidDataErr(400, mkError(50035, {"login": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}, "password": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}}))
         user.setCore(self)
         settings = await user.settings
@@ -151,7 +152,7 @@ class Core:
 
     async def checkUserPassword(self, user: User, password: str) -> bool:
         user = await self.getUser(user.id) if not user.get("key") else user
-        password = self.encryptPassword(password)
+        password = self.encryptPassword(user.id, password)
         return user.password == password
 
     async def changeUserDiscriminator(self, user: User, discriminator: int) -> bool:
@@ -189,7 +190,7 @@ class Core:
 
     async def reqRelationship(self, tUser: User, cUser: User) -> None:
         async with self.db() as db:
-            await db.insertRelationShip(Relationship(cUser, tUser, RelationshipType.PENDING))
+            await db.insertRelationShip(Relationship(cUser.id, tUser.id, RelationshipType.PENDING))
         await self.mcl.broadcast("user_events", {"e": "relationship_req", "data": {"target_user": tUser.id, "current_user": cUser.id}})
 
     async def getRelationships(self, user: _User, with_data=False) -> list:
@@ -287,7 +288,7 @@ class Core:
         await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": t or t2}})
 
     async def changeUserPassword(self, user: User, new_password: str) -> None:
-        new_password = self.encryptPassword(new_password)
+        new_password = self.encryptPassword(user.id, new_password)
         async with self.db() as db:
             await db.changeUserPassword(user, new_password)
 
@@ -450,8 +451,8 @@ class Core:
             await db.deleteMessage(message)
         await self.mcl.broadcast("message_events", {"e": "message_delete", "data": {"message": message.id, "channel": message.channel_id}})
 
-    async def getRelatedUsersToChannel(self, channel: int) -> list:
-        channel = await self.getChannel(channel)
+    async def getRelatedUsersToChannel(self, channel_id: int) -> list:
+        channel = await self.getChannel(channel_id)
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             return channel.recipients
 
@@ -538,7 +539,7 @@ class Core:
         return await self.getUserByChannel(channel, uid)
 
     async def getUserByChannel(self, channel: Channel, uid: int) -> Optional[User]:
-        if channel.type == ChannelType.DM:
+        if channel.type in (ChannelType.DM, ChannelType.GROUP_DM):
             if uid in channel.recipients:
                 return await self.getUser(uid)
 
@@ -612,3 +613,13 @@ class Core:
         elif b != 0:
             return ""
         return b64encode(new(self.key, nonce, sha256).digest()).replace("-", "").replace("_", "")[:8].upper()
+
+    async def createDMGroupChannel(self, user: User, recipients: list) -> Channel:
+        if user.id not in recipients:
+            recipients.append(user.id)
+        async with self.db() as db:
+            return await db.createDMGroupChannel(mksf(), recipients, user.id)
+
+    async def sendDMChannelCreateEvent(self, channel: Channel) -> None:
+        users = await self.getRelatedUsersToChannel(channel.id)
+        await self.mcl.broadcast("channel_events", {"e": "dmchannel_create", "data": {"users": users, "channel_id": channel.id}})

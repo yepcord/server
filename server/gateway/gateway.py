@@ -1,8 +1,10 @@
+from typing import List
+
 from .events import *
 from ..msg_client import Client
 from ..utils import GatewayOp
 from ..core import Core
-from ..classes import UserId, Session
+from ..classes import UserId, Session, UserData
 from os import urandom
 from json import dumps as jdumps
 
@@ -113,7 +115,6 @@ class GatewayEvents:
         tClient = [u for u in self.clients if u.id == target_user and u.connected]
         cClient = [u for u in self.clients if u.id == current_user and u.connected]
         channel = await self.core.getChannel(channel_id)
-        cinfo = await channel.info
         d = await self.core.getUserData(UserId(current_user)) if tClient else None
         for cl in tClient:
             await cl.esend(RelationshipAddEvent(current_user, d, 1))
@@ -125,7 +126,7 @@ class GatewayEvents:
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             }]
-            await cl.esend(DMChannelCreate(channel_id, recipients, 1, cinfo))
+            await cl.esend(DMChannelCreate(channel, recipients))
             await self.send(cl, GatewayOp.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
                 "type": "friend_request_accepted",
                 "other_user": {
@@ -153,7 +154,7 @@ class GatewayEvents:
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             }]
-            await cl.esend(DMChannelCreate(channel_id, recipients, 1, cinfo))
+            await cl.esend(DMChannelCreate(channel, recipients))
 
     async def relationship_del(self, current_user, target_user, type):
         cls = [u for u in self.clients if u.id == current_user and u.connected]
@@ -206,6 +207,24 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(MessageAckEvent(data))
 
+    async def dmchannel_create(self, users, channel_id):
+        clients = [c for c in self.clients if c.id in users and c.connected]
+        channel = await self.core.getChannel(channel_id)
+        rec = [await self.core.getUserData(UserId(u)) for u in channel.recipients]
+        rec = {r.uid: {
+            "username": r.username,
+            "public_flags": r.public_flags,
+            "id": str(r.uid),
+            "discriminator": str(r.discriminator).rjust(4, "0"),
+            "avatar_decoration": r.avatar_decoration,
+            "avatar": r.avatar
+        } for r in rec}
+        for cl in clients:
+            r = rec.copy()
+            del r[cl.id]
+            r = list(r.values())
+            await cl.esend(DMChannelCreate(channel, r))
+
 
 class Gateway:
     def __init__(self, core: Core):
@@ -218,6 +237,7 @@ class Gateway:
     async def init(self):
         await self.mcl.start("ws://127.0.0.1:5050")
         await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
+        await self.mcl.subscribe("channel_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("message_events", self.mcl_eventsCallback)
 
     async def mcl_eventsCallback(self, data: dict) -> None:
