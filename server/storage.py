@@ -1,4 +1,4 @@
-from asyncio import get_event_loop
+from asyncio import get_event_loop, gather
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import md5
 from io import BytesIO
@@ -7,6 +7,7 @@ from os.path import join as pjoin, isfile
 
 from PIL import Image
 from aiofiles import open as aopen
+from typing import Optional
 
 
 class _Storage:
@@ -91,12 +92,29 @@ class FileStorage(_Storage):
         super().__init__(*args, **kwargs)
         makedirs(self.root, exist_ok=True)
 
-    async def getAvatar(self, user_id, avatar_hash, size, fmt):
-        fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.{fmt}")
-        if not isfile(fpath):
-            return
-        async with aopen(fpath, "rb") as f:
-            return await f.read()
+    async def getAvatar(self, user_id: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        anim = avatar_hash.startswith("a_")
+        def_fmt = "gif" if anim else "png"
+        paths = [f"{avatar_hash}_{size}.{fmt}", f"{avatar_hash}_1024.{fmt}", f"{avatar_hash}_1024.{def_fmt}"]
+        paths = [pjoin(self.root, "avatars", str(user_id), name) for name in paths]
+        data = None
+        for i, p in enumerate(paths):
+            if isfile(p):
+                if i == 0:
+                    async with aopen(p, "rb") as f:
+                        return await f.read()
+                else:
+                    def resize_task():
+                        image = Image.open(p)
+                        img = image.resize((size, size)) if not anim else _resizeAnimated(image, (size, size))
+                        b = BytesIO()
+                        img.save(b, format=fmt, save_all=True)
+                        return b.getvalue()
+                    with ThreadPoolExecutor() as pool:
+                        res = await gather(get_event_loop().run_in_executor(pool, resize_task))
+                    async with aopen(paths[0], "wb") as f:
+                        await f.write(res[0])
+                    return res[0]
 
     async def setAvatarFromBytesIO(self, user_id, image):
         avatar_hash = md5()
@@ -104,21 +122,18 @@ class FileStorage(_Storage):
         avatar_hash = avatar_hash.hexdigest()
         image = Image.open(image)
         a = False
-        formats = ["png", "webp"]
+        form = "png"
         if image.n_frames > 1:
             a = True
+            form = "gif"
             avatar_hash = f"a_{avatar_hash}"
-            formats = ["webp", "gif"]
-            image.seek(image.tell()+1)
         makedirs(pjoin(self.root, "avatars", str(user_id)), exist_ok=True)
-        def save_task():
-            for size in [32, 40, 48, 64, 80, 128, 256, 512, 1024]:
-                img = image.resize((size, size)) if not a else _resizeAnimated(image, (size, size))
-                for form in formats:
-                    fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.{form}")
-                    img.save(fpath, format=form, save_all=True)
+        def resize_task():
+            img = image.resize((1024, 1024)) if not a else _resizeAnimated(image, (1024, 1024))
+            fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_1024.{form}")
+            img.save(fpath, format=form, save_all=True)
         with ThreadPoolExecutor() as pool:
-            await get_event_loop().run_in_executor(pool, save_task)
+            await get_event_loop().run_in_executor(pool, resize_task)
         return avatar_hash
 
     async def getBanner(self, user_id, banner_hash, size, fmt):

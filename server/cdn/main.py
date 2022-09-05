@@ -9,7 +9,7 @@ from uuid import UUID
 from ..config import Config
 from ..core import Core, CDN
 from ..storage import FileStorage
-from ..utils import b64decode
+from ..utils import b64decode, ALLOWED_AVATAR_SIZES
 
 
 class YEPcord(Quart):
@@ -46,11 +46,16 @@ async def before_serving():
 async def avatars_uid_hash(uid, name):
     ahash = name.split(".")[0]
     fmt = name.split(".")[1]
-    size = request.args.get("size", 1024)
+    size = int(request.args.get("size", 1024))
+    if fmt not in ["webp", "png", "jpg", "gif"]:
+        return b'', 400
+    if size not in ALLOWED_AVATAR_SIZES:
+        return b'', 400
+    if size > 1024: size = 1024
     avatar = await cdn.getAvatar(uid, ahash, size, fmt)
     if not avatar:
-        return b'', 404
-    return avatar, 200, {"Content-Type": "image/webp"}
+        return b'', 400
+    return avatar, 200, {"Content-Type": f"image/{fmt}"}
 
 @app.route("/banners/<int:uid>/<string:name>", methods=["GET"])
 async def banners_uid_hash(uid, name):
@@ -58,10 +63,10 @@ async def banners_uid_hash(uid, name):
     fmt = name.split(".")[1]
     size = request.args.get("size", 600)
     if fmt not in ["webp", "png", "jpg", "gif"]:
-        return b'', 404
+        return b'', 400
     banner = await cdn.getBanner(uid, bhash, size, fmt)
     if not banner:
-        return b'', 404
+        return b'', 400
     return banner, 200, {"Content-Type": "image/webp"}
 
 @app.route("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>", methods=["GET"])
