@@ -5,9 +5,9 @@ from io import BytesIO
 from os import makedirs
 from os.path import join as pjoin, isfile
 
-from PIL import Image
+from PIL import Image, ImageSequence
 from aiofiles import open as aopen
-from typing import Optional
+from typing import Optional, Tuple
 
 
 class _Storage:
@@ -67,25 +67,38 @@ class _Storage:
             raise NotImplementedError
         return await self.storage.uploadAttachment(data, attachment)
 
-"""
-def _resizeAnimated(image, size):
-    _frames = list(ImageSequence.Iterator(image))
-    frames = []
-    for idx, frame in enumerate(_frames):
-        frame = frame.copy()
-        frame.thumbnail(size, Image.ANTIALIAS)
-        frames.append(frame)
-        #frames[idx] = frame
-    print(len(frames))
-    im = frames.pop(0)
-    im.info = image.info
-    b = BytesIO()
-    im.save(b, format="GIF", save_all=True, append_images=frames)
-    return Image.open(BytesIO(b.getvalue()))
-"""
 
-def _resizeAnimated(image, size):
-    return image.resize(size)
+def _resizeAnimImage(img: Image, size: Tuple[int, int], form: str) -> bytes:
+    orig_size = (img.size[0], img.size[1])
+    n_frames = getattr(img, 'n_frames', 1)
+    def resize_frame(frame):
+        if orig_size == size:
+            return frame
+        return frame.resize(size)
+
+    if n_frames == 1:
+        return resize_frame(img)
+    frames = []
+    for frame in ImageSequence.Iterator(img):
+        frames.append(resize_frame(frame))
+    b = BytesIO()
+    frames[0].save(b, format=form, save_all=True, append_images=frames[1:], loop=0)
+    return b.getvalue()
+
+async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str):
+    with ThreadPoolExecutor() as pool:
+        res = await gather(get_event_loop().run_in_executor(pool, lambda: _resizeAnimImage(img, size, form)))
+    return res[0]
+
+async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
+    def _resize():
+        img = image.resize(size)
+        b = BytesIO()
+        img.save(b, format=form, save_all=True)
+        return b.getvalue()
+    with ThreadPoolExecutor() as pool:
+        res = await gather(get_event_loop().run_in_executor(pool, _resize))
+    return res[0]
 
 class FileStorage(_Storage):
     def __init__(self, *args, **kwargs):
@@ -95,53 +108,57 @@ class FileStorage(_Storage):
     async def getAvatar(self, user_id: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = avatar_hash.startswith("a_")
         def_fmt = "gif" if anim else "png"
-        paths = [f"{avatar_hash}_{size}.{fmt}", f"{avatar_hash}_1024.{fmt}", f"{avatar_hash}_1024.{def_fmt}"]
+        def_size = 256 if anim else 1024
+        paths = [f"{avatar_hash}_{size}.{fmt}", f"{avatar_hash}_{def_size}.{fmt}", f"{avatar_hash}_{def_size}.{def_fmt}"]
         paths = [pjoin(self.root, "avatars", str(user_id), name) for name in paths]
-        data = None
         for i, p in enumerate(paths):
             if isfile(p):
                 if i == 0:
                     async with aopen(p, "rb") as f:
                         return await f.read()
                 else:
-                    def resize_task():
-                        image = Image.open(p)
-                        img = image.resize((size, size)) if not anim else _resizeAnimated(image, (size, size))
-                        b = BytesIO()
-                        img.save(b, format=fmt, save_all=True)
-                        return b.getvalue()
-                    with ThreadPoolExecutor() as pool:
-                        res = await gather(get_event_loop().run_in_executor(pool, resize_task))
+                    image = Image.open(p)
+                    coro = resizeImage(image, (size, size), fmt) if not anim else resizeAnimImage(image, (size, size), fmt)
+                    data = await coro
                     async with aopen(paths[0], "wb") as f:
-                        await f.write(res[0])
-                    return res[0]
+                        await f.write(data)
+                    return data
 
-    async def setAvatarFromBytesIO(self, user_id, image):
+    async def setAvatarFromBytesIO(self, user_id: int, image: Image):
         avatar_hash = md5()
         avatar_hash.update(image.getvalue())
         avatar_hash = avatar_hash.hexdigest()
         image = Image.open(image)
-        a = False
-        form = "png"
-        if image.n_frames > 1:
-            a = True
-            form = "gif"
-            avatar_hash = f"a_{avatar_hash}"
+        a = image.n_frames > 1
+        size = 256 if a else 1024
+        form = "gif" if a else "png"
+        avatar_hash = f"a_{avatar_hash}" if a else avatar_hash
         makedirs(pjoin(self.root, "avatars", str(user_id)), exist_ok=True)
-        def resize_task():
-            img = image.resize((1024, 1024)) if not a else _resizeAnimated(image, (1024, 1024))
-            fpath = pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_1024.{form}")
-            img.save(fpath, format=form, save_all=True)
-        with ThreadPoolExecutor() as pool:
-            await get_event_loop().run_in_executor(pool, resize_task)
+        coro = resizeImage(image, (size, size), form) if not a else resizeAnimImage(image, (size, size), form)
+        data = await coro
+        async with aopen(pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.{form}"), "wb") as f:
+            await f.write(data)
         return avatar_hash
 
     async def getBanner(self, user_id, banner_hash, size, fmt):
-        fpath = pjoin(self.root, "banners", str(user_id), f"{banner_hash}_{size}.{fmt}")
-        if not isfile(fpath):
-            return
-        async with aopen(fpath, "rb") as f:
-            return await f.read()
+        anim = banner_hash.startswith("a_")
+        def_fmt = "gif" if anim else "png"
+        def_size = 480 if anim else 600
+        paths = [f"{banner_hash}_{size}.{fmt}", f"{banner_hash}_{def_size}.{fmt}", f"{banner_hash}_{def_size}.{def_fmt}"]
+        paths = [pjoin(self.root, "banners", str(user_id), name) for name in paths]
+        size = (size, int(240*size/600))
+        for i, p in enumerate(paths):
+            if isfile(p):
+                if i == 0:
+                    async with aopen(p, "rb") as f:
+                        return await f.read()
+                else:
+                    image = Image.open(p)
+                    coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
+                    data = await coro
+                    async with aopen(paths[0], "wb") as f:
+                        await f.write(data)
+                    return data
 
     async def getAttachment(self, channel_id, attachment_id, name):
         fpath = pjoin(self.root, "attachments", str(channel_id), str(attachment_id), name)
@@ -155,22 +172,15 @@ class FileStorage(_Storage):
         banner_hash.update(image.getvalue())
         banner_hash = banner_hash.hexdigest()
         image = Image.open(image)
-        a = False
-        formats = ["png", "webp"]
-        if image.n_frames > 1:
-            a = True
-            banner_hash = f"a_{banner_hash}"
-            formats = ["webp", "gif"]
-            image.seek(image.tell()+1)
+        a = image.n_frames > 1
+        form = "gif" if a else "png"
+        size = (480, 192) if a else (600, 240)
+        banner_hash = f"a_{banner_hash}" if a else banner_hash
         makedirs(pjoin(self.root, "banners", str(user_id)), exist_ok=True)
-        def save_task():
-                for size in [(600, 240), (300, 120)]:
-                    img = image.resize(size) if not a else _resizeAnimated(image, size)
-                    for form in formats:
-                        fpath = pjoin(self.root, "banners", str(user_id), f"{banner_hash}_{size[0]}.{form}")
-                        img.save(fpath, format=form, save_all=True)
-        with ThreadPoolExecutor() as pool:
-            await get_event_loop().run_in_executor(pool, save_task)
+        coro = resizeImage(image, size, form) if not a else resizeAnimImage(image, size, form)
+        data = await coro
+        async with aopen(pjoin(self.root, "banners", str(user_id), f"{banner_hash}_{size[0]}.{form}"), "wb") as f:
+            await f.write(data)
         return banner_hash
 
     async def uploadAttachment(self, data, attachment):

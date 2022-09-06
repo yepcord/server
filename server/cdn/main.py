@@ -61,8 +61,10 @@ async def avatars_uid_hash(uid, name):
 async def banners_uid_hash(uid, name):
     bhash = name.split(".")[0]
     fmt = name.split(".")[1]
-    size = request.args.get("size", 600)
+    size = int(request.args.get("size", 600))
     if fmt not in ["webp", "png", "jpg", "gif"]:
+        return b'', 400
+    if size not in [600, 480, 300]:
         return b'', 400
     banner = await cdn.getBanner(uid, bhash, size, fmt)
     if not banner:
