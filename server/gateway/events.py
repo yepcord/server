@@ -174,6 +174,10 @@ class DMChannelCreate(DispatchEvent):
         return j
 
 
+class DMChannelUpdate(DMChannelCreate):
+    NAME = "CHANNEL_UPDATE"
+
+
 class RelationshipRemoveEvent(DispatchEvent):
     NAME = "RELATIONSHIP_REMOVE"
 

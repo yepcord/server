@@ -14,9 +14,10 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, UserId
+from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, UserId, Channel
 from ..core import Core, CDN
-from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
+from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
+    parseMultipartRequest, ChannelType, MessageType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
 
@@ -98,7 +99,6 @@ def getChannel(f):
         if not (channel := kwargs.get("channel")):
             raise InvalidDataErr(404, mkError(10003))
         if not (user := kwargs.get("user")):
-            print("??")
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (channel := await core.getChannel(channel)):
             raise InvalidDataErr(404, mkError(10003))
@@ -259,7 +259,7 @@ async def api_users_me_patch(user):
                 continue
             if not (v := await cdn.setAvatarFromBytesIO(user.id, img)):
                 continue
-        elif k == "banner":
+        elif k == "banner": # TODO: remove
             if not (img := getImage(v)) or not validImage(img):
                 continue
             if not (v := await cdn.setBannerFromBytesIO(user.id, img)):
@@ -271,6 +271,24 @@ async def api_users_me_patch(user):
     await core.sendUserUpdateEvent(user.id)
     return c_json(await userdataResponse(user))
 
+
+@app.route("/api/v9/users/@me/profile", methods=["PATCH"])
+@getUser
+async def api_users_me_profile_patch(user):
+    _settings = await request.get_json()
+    settings = {}
+    for k, v in _settings.items():
+        if k == "banner":
+            if not (img := getImage(v)) or not validImage(img):
+                continue
+            if not (v := await cdn.setBannerFromBytesIO(user.id, img)):
+                continue
+        settings[k] = v
+    if settings:
+        if "uid" in settings: del settings["uid"]
+        await core.setUserdata(UserData(user.id, **settings))
+    await core.sendUserUpdateEvent(user.id)
+    return c_json(await userdataResponse(user))
 
 @app.route("/api/v9/users/@me/consent", methods=["GET"])
 @getUser
@@ -575,6 +593,35 @@ async def api_channels_channel(user, channel):
     return c_json(await channelInfoResponse(channel, user))
 
 
+@app.route("/api/v9/channels/<int:channel>", methods=["PATCH"])
+@getUser
+@getChannel
+async def api_channels_channel_patch(user, channel):
+    data = dict(await request.get_json())
+    if "icon" in data:
+        if not (img := getImage(data["icon"])) or not validImage(img):
+            del data["icon"]
+        else:
+            if not (v := await cdn.setChannelIconFromBytesIO(channel.id, img)):
+                del data["icon"]
+            else:
+                data["icon"] = v
+    if "id" in data: del data["id"]
+    if "type" in data: del data["type"]
+    nChannel = Channel(channel.id, channel.type, **data)
+    await core.updateChannelDiff(channel, nChannel)
+    await core.sendDMChannelUpdateEvent(channel)
+    diff = channel.get_diff(nChannel)
+    if "name" in diff:
+        message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
+        await core.sendMessage(message)
+    if "icon" in diff:
+        message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_ICON_CHANGE, content="")
+        await core.sendMessage(message)
+    channel.set(**data)
+    return c_json(await channelInfoResponse(channel, user))
+
+
 @app.route("/api/v9/channels/<int:channel>/messages", methods=["GET"])
 @getUser
 @getChannel
@@ -725,8 +772,24 @@ async def api_channels_channel_attachments_post(user, channel):
         })
     return {"attachments": attachments}
 
+@app.route("/api/v9/channels/<int:channel>/recipients/<int:nUser>", methods=["PUT"])
+@getUser
+@getChannel
+async def api_channels_channel_repicients_recipient_put(user, channel, cUser):
+    if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
+        raise InvalidDataErr(403, mkError(50013))
+    if channel.type == ChannelType.DM:
+        rep = channel.recipients
+        rep.remove(user.id)
+        rep.append(cUser)
+        ch = await core.createDMGroupChannel(user, rep)
+        await core.sendDMChannelCreateEvent(ch)
+    elif channel.type == ChannelType.GROUP_DM:
+        ... #await core.addUserToGroupDM(channel, cUser)
+    return "", 204
 
-# Stickers
+
+# Stickers & gifs
 
 
 @app.route("/api/v9/sticker-packs", methods=["GET"])
@@ -875,6 +938,23 @@ async def api_users_me_settingsproto_type(t):
 @app.route("/api/v9/oauth2/tokens", methods=["GET"])
 async def api_oauth_tokens():
     return c_json("[]")
+
+
+# Other endpoints
+
+
+@app.route("/api/v9/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def other_api_endpoints(path):
+    print("----------------")
+    print(f"  Path: /api/v9/{path}")
+    print(f"  Method: {request.method}")
+    print("  Headers:")
+    for k,v in request.headers.items():
+        print(f"    {k}: {v}")
+    if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
+        print(f"  Data: {await request.get_json()}")
+    print("----------------")
+    return "Not Implemented!", 502
 
 
 if __name__ == "__main__":

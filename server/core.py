@@ -577,8 +577,7 @@ class Core:
             vsig = new(key, f"{user.id}:{user.email}:{t}".encode('utf-8'), sha256).digest()
             if sig != vsig:
                 raise Exception
-        except Exception as e:
-            print(e)
+        except:
             raise InvalidDataErr(400, mkError(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
         async with self.db() as db:
             await db.verifyEmail(user.id)
@@ -623,3 +622,16 @@ class Core:
     async def sendDMChannelCreateEvent(self, channel: Channel) -> None:
         users = await self.getRelatedUsersToChannel(channel.id)
         await self.mcl.broadcast("channel_events", {"e": "dmchannel_create", "data": {"users": users, "channel_id": channel.id}})
+
+    #async def addUserToGroupDM(self, channel: Channel, uid: int) -> None:
+    #    await self.mcl.broadcast("channel_events", {"e": "dm_recipient_add", "data": {"users": channel.recipients, "channel_id": channel.id, "user": uid}})
+    #    await self.mcl.broadcast("channel_events", {"e": "dmchannel_create", "data": {"users": [uid], "channel_id": channel.id}})
+    #    #{"t":"MESSAGE_CREATE","s":4,"op":0,"d":{"type":1,"tts":false,"timestamp":"2022-09-02T15:16:20.474000+00:00","pinned":false,"mentions":[{"username":"Ruslan","public_flags":128,"id":"542383405212631051","discriminator":"9204","avatar_decoration":null,"avatar":"18e72a4691fe34368e2e8370f90b10de"}],"mention_roles":[],"mention_everyone":false,"id":"1015279016367890473","flags":0,"embeds":[],"edited_timestamp":null,"content":"","components":[],"channel_id":"1015274498049720421","author":{"username":"PepegaYEP","public_flags":0,"id":"955398305960050708","discriminator":"1132","avatar_decoration":null,"avatar":"0a1a4453159c791f9e72d7d0395a3bac"},"attachments":[]}}
+
+    async def updateChannelDiff(self, before: Channel, after: Channel) -> None:
+        async with self.db() as db:
+            await db.updateChannelDiff(before, after)
+
+    async def sendDMChannelUpdateEvent(self, channel: Channel) -> None:
+        users = await self.getRelatedUsersToChannel(channel.id)
+        await self.mcl.broadcast("channel_events", {"e": "dmchannel_update", "data": {"users": users, "channel_id": channel.id}})

@@ -225,6 +225,27 @@ class GatewayEvents:
             r = list(r.values())
             await cl.esend(DMChannelCreate(channel, r))
 
+    async def dmchannel_update(self, users, channel_id):
+        clients = [c for c in self.clients if c.id in users and c.connected]
+        channel = await self.core.getChannel(channel_id)
+        rec = [await self.core.getUserData(UserId(u)) for u in channel.recipients]
+        rec = {r.uid: {
+            "username": r.username,
+            "public_flags": r.public_flags,
+            "id": str(r.uid),
+            "discriminator": str(r.discriminator).rjust(4, "0"),
+            "avatar_decoration": r.avatar_decoration,
+            "avatar": r.avatar
+        } for r in rec}
+        for cl in clients:
+            r = rec.copy()
+            del r[cl.id]
+            r = list(r.values())
+            await cl.esend(DMChannelUpdate(channel, r))
+
+    async def dmchannel_delete(self, **data):
+        ... # {"t":"CHANNEL_DELETE","s":3,"op":0,"d":{"type":3,"owner_id":"781484348959883324","name":null,"last_message_id":"1015277812648792135","id":"1015275668612853852","icon":null,"flags":0}}
+
 
 class Gateway:
     def __init__(self, core: Core):

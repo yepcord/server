@@ -166,6 +166,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int) -> Channel: ...
 
+    @abstractmethod
+    async def updateChannelDiff(self, before: Channel, after: Channel) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -447,3 +450,9 @@ class MySqlConnection:
         recipients = jdumps(recipients)
         await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`) VALUES ({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(recipients)}", {owner_id});')
         return Channel(channel_id, ChannelType.GROUP_DM, recipients=recipients, owner_id=owner_id, icon=None, name=None)
+
+    async def updateChannelDiff(self, before: Channel, after: Channel) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `channels` SET {diff} WHERE `id`={before.id};')

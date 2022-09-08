@@ -16,30 +16,40 @@ class _Storage:
     def __init__(self, root_path="files/"):
         self.root = root_path
 
-    async def getAvatar(self, user_id, avatar_hash, size, fmt):
+    async def getAvatar(self, user_id: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.getAvatar(user_id, avatar_hash, size, fmt)
 
-    async def getBanner(self, user_id, avatar_hash, size, fmt):
+    async def getBanner(self, user_id: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.getBanner(user_id, avatar_hash, size, fmt)
 
-    async def getAttachment(self, channel_id, message_id, name):
+    async def getChannelIcon(self, channel_id: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.getChannelIcon(channel_id, icon_hash, size, fmt)
+
+    async def getAttachment(self, channel_id: int, message_id: int, name: str):
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.getAttachment(channel_id, message_id, name)
 
-    async def setAvatarFromBytesIO(self, user_id, image):
+    async def setAvatarFromBytesIO(self, user_id: int, image: BytesIO) -> str:
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.setAvatarFromBytesIO(user_id, image)
 
-    async def setBannerFromBytesIO(self, user_id, image):
+    async def setBannerFromBytesIO(self, user_id: int, image: BytesIO) -> str:
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.setBannerFromBytesIO(user_id, image)
+
+    async def setChannelIconFromBytesIO(self, channel_id: int, image: BytesIO) -> str:
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.setChannelIconFromBytesIO(channel_id, image)
 
     async def uploadAttachment(self, data, attachment):
         if type(self) == _Storage:
@@ -88,7 +98,7 @@ class FileStorage(_Storage):
         def_fmt = "gif" if anim else "png"
         paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
         paths = [pjoin(self.root, f"{type}s", str(id), name) for name in paths]
-        size = size_f(size)
+        size = (size, size_f(size))
         for i, p in enumerate(paths):
             if isfile(p):
                 if i == 0:
@@ -102,47 +112,51 @@ class FileStorage(_Storage):
                         await f.write(data)
                     return data
 
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
+        hash = md5()
+        hash.update(image.getvalue())
+        hash = hash.hexdigest()
+        image = Image.open(image)
+        anim = image.n_frames > 1
+        form = "gif" if anim else "png"
+        hash = f"a_{hash}" if anim else hash
+        makedirs(pjoin(self.root, f"{type}s", str(id)), exist_ok=True)
+        size = (size, size_f(size))
+        coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
+        data = await coro
+        async with aopen(pjoin(self.root, f"{type}s", str(id), f"{hash}_{size[0]}.{form}"), "wb") as f:
+            await f.write(data)
+        return hash
+
     async def getAvatar(self, uid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = avatar_hash.startswith("a_")
         def_size = 256 if anim else 1024
         return await self._getImage("avatar", uid, avatar_hash, size, fmt, def_size, lambda s: s)
+
+    async def getChannelIcon(self, cid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        anim = icon_hash.startswith("a_")
+        def_size = 256 if anim else 1024
+        return await self._getImage("channel_icon", cid, icon_hash, size, fmt, def_size, lambda s: s)
 
     async def getBanner(self, uid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = banner_hash.startswith("a_")
         def_size = 480 if anim else 600
         return await self._getImage("banner", uid, banner_hash, size, fmt, def_size, lambda s: int(240*s/600))
 
-    async def setAvatarFromBytesIO(self, user_id: int, image: Image):
-        avatar_hash = md5()
-        avatar_hash.update(image.getvalue())
-        avatar_hash = avatar_hash.hexdigest()
-        image = Image.open(image)
-        a = image.n_frames > 1
+    async def setAvatarFromBytesIO(self, uid: int, image: BytesIO) -> str:
+        a = Image.open(image).n_frames > 1
         size = 256 if a else 1024
-        form = "gif" if a else "png"
-        avatar_hash = f"a_{avatar_hash}" if a else avatar_hash
-        makedirs(pjoin(self.root, "avatars", str(user_id)), exist_ok=True)
-        coro = resizeImage(image, (size, size), form) if not a else resizeAnimImage(image, (size, size), form)
-        data = await coro
-        async with aopen(pjoin(self.root, "avatars", str(user_id), f"{avatar_hash}_{size}.{form}"), "wb") as f:
-            await f.write(data)
-        return avatar_hash
+        return await self._setImage("avatar", uid, size, lambda s: s, image)
 
-    async def setBannerFromBytesIO(self, user_id, image):
-        banner_hash = md5()
-        banner_hash.update(image.getvalue())
-        banner_hash = banner_hash.hexdigest()
-        image = Image.open(image)
-        a = image.n_frames > 1
-        form = "gif" if a else "png"
-        size = (480, 192) if a else (600, 240)
-        banner_hash = f"a_{banner_hash}" if a else banner_hash
-        makedirs(pjoin(self.root, "banners", str(user_id)), exist_ok=True)
-        coro = resizeImage(image, size, form) if not a else resizeAnimImage(image, size, form)
-        data = await coro
-        async with aopen(pjoin(self.root, "banners", str(user_id), f"{banner_hash}_{size[0]}.{form}"), "wb") as f:
-            await f.write(data)
-        return banner_hash
+    async def setBannerFromBytesIO(self, uid: int, image: BytesIO) -> str:
+        a = Image.open(image).n_frames > 1
+        size = 480 if a else 600
+        return await self._setImage("banner", uid, size, lambda s: int(240*s/600), image)
+
+    async def setChannelIconFromBytesIO(self, cid: int, image: BytesIO) -> str:
+        a = Image.open(image).n_frames > 1
+        size = 256 if a else 1024
+        return await self._setImage("channel_icon", cid, size, lambda s: s, image)
 
     async def uploadAttachment(self, data, attachment):
         fpath = pjoin(self.root, "attachments", str(attachment.channel_id), str(attachment.id))
