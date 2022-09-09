@@ -342,3 +342,29 @@ class ChannelRecipientAddEvent(DispatchEvent):
                 "channel_id": str(self.channel_id)
             }
         }
+
+
+class ChannelRecipientRemoveEvent(ChannelRecipientAddEvent):
+    NAME = "CHANNEL_RECIPIENT_REMOVE"
+
+
+class DMChannelDeleteEvent(DispatchEvent):
+    NAME = "CHANNEL_DELETE"
+
+    def __init__(self, channel):
+        self.channel = channel
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "type": self.channel.type,
+                "owner_id": str(self.channel.owner_id),
+                "name": self.channel.name,
+                "last_message_id": str(self.channel.last_message_id),
+                "id": str(self.channel.id),
+                "icon": self.channel.icon,
+                "flags": self.channel.flags
+            }
+        }

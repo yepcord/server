@@ -431,7 +431,8 @@ class Core:
         await self.mcl.broadcast("message_events", {"e": "message_create", "data": {"users": users, "message_obj": m}})
         async def _addToReadStates():
             _u = await self.getRelatedUsersToChannel(message.channel_id)
-            _u.remove(message.author)
+            if message.author in _u:
+                _u.remove(message.author)
             for u in _u:
                 await self.addMessageToReadStates(u, message.channel_id)
         get_event_loop().create_task(_addToReadStates())
@@ -627,9 +628,20 @@ class Core:
     async def sendDMRepicientAddEvent(self, users: List[int], channel_id: int, uid: int) -> None:
         await self.mcl.broadcast("channel_events", {"e": "dm_recipient_add", "data": {"users": users, "channel_id": channel_id, "user": uid}})
 
+    async def sendDMRepicientRemoveEvent(self, users: List[int], channel_id: int, uid: int) -> None:
+        await self.mcl.broadcast("channel_events", {"e": "dm_recipient_remove", "data": {"users": users, "channel_id": channel_id, "user": uid}})
+
+    async def sendDMChannelDeleteEvent(self, channel_id: int, users: List[int]) -> None:
+        await self.mcl.broadcast("channel_events", {"e": "dmchannel_delete", "data": {"users": users, "channel_id": channel_id}})
+
     async def addUserToGroupDM(self, channel: Channel, uid: int) -> None:
         nChannel = channel.copy()
         nChannel.recipients.append(uid)
+        await self.updateChannelDiff(channel, nChannel)
+
+    async def removeUserFromGroupDM(self, channel: Channel, uid: int) -> None:
+        nChannel = channel.copy()
+        nChannel.recipients.remove(uid)
         await self.updateChannelDiff(channel, nChannel)
 
     async def updateChannelDiff(self, before: Channel, after: Channel) -> None:

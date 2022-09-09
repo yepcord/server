@@ -622,6 +622,27 @@ async def api_channels_channel_patch(user, channel):
     return c_json(await channelInfoResponse(channel, user))
 
 
+@app.route("/api/v9/channels/<int:channel>", methods=["DELETE"])
+@getUser
+@getChannel
+async def api_channels_channel_delete(user, channel):
+    if channel.type == ChannelType.DM:
+        return "", 204 # TODO
+    elif channel.type == ChannelType.GROUP_DM:
+        msg = Message(id=mksf(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_REMOVE, extra_data={"user": user.id})
+        await core.sendMessage(msg)
+        await core.removeUserFromGroupDM(channel, user.id)
+        await core.sendDMRepicientRemoveEvent(channel.recipients, channel.id, user.id)
+        await core.sendDMChannelDeleteEvent(channel.id, users=[user.id])
+        if channel.owner_id == user.id:
+            channel.recipients.remove(user.id)
+            nChannel = channel.copy()
+            nChannel.owner_id = choice(channel.recipients)
+            await core.updateChannelDiff(channel, nChannel)
+            await core.sendDMChannelUpdateEvent(channel)
+    return "", 204
+
+
 @app.route("/api/v9/channels/<int:channel>/messages", methods=["GET"])
 @getUser
 @getChannel
@@ -791,6 +812,23 @@ async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
             await core.addUserToGroupDM(channel, nUser)
             await core.sendDMRepicientAddEvent(channel.recipients, channel.id, nUser)
             await core.sendDMChannelCreateEvent(channel, users=[nUser])
+    return "", 204
+
+
+@app.route("/api/v9/channels/<int:channel>/recipients/<int:nUser>", methods=["DELETE"])
+@getUser
+@getChannel
+async def api_channels_channel_repicients_recipient_delete(user, channel, nUser):
+    if channel.type not in (ChannelType.GROUP_DM,):
+        raise InvalidDataErr(403, mkError(50013))
+    if channel.owner_id != user.id:
+        raise InvalidDataErr(403, mkError(50013))
+    if nUser in channel.recipients:
+        msg = Message(id=mksf(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_REMOVE, extra_data={"user": nUser})
+        await core.sendMessage(msg)
+        await core.removeUserFromGroupDM(channel, nUser)
+        await core.sendDMRepicientRemoveEvent(channel.recipients, channel.id, nUser)
+        await core.sendDMChannelDeleteEvent(channel.id, users=[nUser])
     return "", 204
 
 
