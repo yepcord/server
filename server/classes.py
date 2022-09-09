@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime
 from email.message import EmailMessage
 from time import mktime
@@ -15,7 +16,8 @@ from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAnd
     AnimateStickers, ExpressionSuggestionsEnabled, InlineEmbedMedia, PrivacySettings, FriendSourceFlags, StatusSettings, \
     ShowCurrentGame, Status, LocalizationSettings, Locale, TimezoneOffset, AppearanceSettings, MessageDisplayCompact, \
     ViewImageDescriptions
-from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get
+from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get, \
+    MessageType
 from aiosmtplib import send as smtp_send
 
 
@@ -134,6 +136,8 @@ class DBModel:
     def copy(self):
         o = self.__class__.__new__(self.__class__)
         for k, v in self.__dict__.items():
+            if isinstance(v, (dict, list)):
+                v = deepcopy(v)
             setattr(o, k, v)
         return o
 
@@ -616,13 +620,13 @@ class _Message:
 class Message(_Message, DBModel):
     FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "reactions", "pinned",
               "webhook_id", "application_id", "type", "flags", "message_reference", "thread", "components",
-              "sticker_items")
+              "sticker_items", "extra_data")
     ID_FIELD = "id"
     ALLOWED_FIELDS = ("nonce",)
     DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "reactions": [],
                 "pinned": False,
                 "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
-                "thread": None, "components": [], "sticker_items": []}
+                "thread": None, "components": [], "sticker_items": [], "extra_data": {}}
     SCHEMA = Schema({
         "id": Use(int),
         "channel_id": Use(int),
@@ -641,14 +645,15 @@ class Message(_Message, DBModel):
         Optional("thread"): Or(int, type(None)),
         Optional("components"): list,
         Optional("sticker_items"): list,
+        Optional("extra_data"): dict,
     })
     DB_FIELDS = {"attachments": "j_attachments", "embeds": "j_embeds", "reactions": "j_reactions",
                  "components": "j_components",
-                 "sticker_items": "j_sticker_items"}
+                 "sticker_items": "j_sticker_items", "extra_data": "j_extra_data"}
 
     def __init__(self, id, channel_id, author, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
                  reactions=Null, pinned=Null, webhook_id=Null, application_id=Null, type=Null, flags=Null,
-                 message_reference=Null, thread=Null, components=Null, sticker_items=Null, **kwargs):
+                 message_reference=Null, thread=Null, components=Null, sticker_items=Null, extra_data=Null, **kwargs):
         self.id = id
         self.content = content
         self.channel_id = channel_id
@@ -666,6 +671,7 @@ class Message(_Message, DBModel):
         self.thread = thread
         self.components = components
         self.sticker_items = sticker_items
+        self.extra_data = extra_data
         self._core = None
 
         self.set(**kwargs)
@@ -862,10 +868,7 @@ class Message(_Message, DBModel):
             self.attachments.append(att.id)
 
     @property
-    def json(self):
-        return self._json()
-
-    async def _json(self):
+    async def json(self):
         author = await self._core.getUserData(UserId(self.author))
         timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.id) / 1000))
         timestamp = timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
@@ -892,6 +895,17 @@ class Message(_Message, DBModel):
                         "discriminator": str(mdata.discriminator).rjust(4, "0"),
                         "public_flags": mdata.public_flags
                     })
+        if self.type == MessageType.RECIPIENT_ADD:
+            if (u := self.extra_data.get("user")):
+                u = await self._core.getUserData(UserId(u))
+                mentions.append({
+                    "username": u.username,
+                    "public_flags": u.public_flags,
+                    "id": str(u.uid),
+                    "discriminator": str(u.discriminator).rjust(4, "0"),
+                    "avatar_decoration": u.avatar_decoration,
+                    "avatar": u.avatar
+                })
         for att in self.attachments:
             att = await self._core.getAttachment(att)
             attachments.append({

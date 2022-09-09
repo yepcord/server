@@ -126,7 +126,7 @@ class GatewayEvents:
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             }]
-            await cl.esend(DMChannelCreate(channel, recipients))
+            await cl.esend(DMChannelCreateEvent(channel, recipients))
             await self.send(cl, GatewayOp.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
                 "type": "friend_request_accepted",
                 "other_user": {
@@ -154,7 +154,7 @@ class GatewayEvents:
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             }]
-            await cl.esend(DMChannelCreate(channel, recipients))
+            await cl.esend(DMChannelCreateEvent(channel, recipients))
 
     async def relationship_del(self, current_user, target_user, type):
         cls = [u for u in self.clients if u.id == current_user and u.connected]
@@ -221,12 +221,15 @@ class GatewayEvents:
         } for r in rec}
         for cl in clients:
             r = rec.copy()
-            del r[cl.id]
+            if cl.id in r:
+                del r[cl.id]
             r = list(r.values())
-            await cl.esend(DMChannelCreate(channel, r))
+            await cl.esend(DMChannelCreateEvent(channel, r))
 
     async def dmchannel_update(self, users, channel_id):
         clients = [c for c in self.clients if c.id in users and c.connected]
+        if not clients:
+            return
         channel = await self.core.getChannel(channel_id)
         rec = [await self.core.getUserData(UserId(u)) for u in channel.recipients]
         rec = {r.uid: {
@@ -241,7 +244,24 @@ class GatewayEvents:
             r = rec.copy()
             del r[cl.id]
             r = list(r.values())
-            await cl.esend(DMChannelUpdate(channel, r))
+            await cl.esend(DMChannelUpdateEvent(channel, r))
+
+    async def dm_recipient_add(self, users, channel_id, user):
+        clients = [c for c in self.clients if c.id in users and c.connected]
+        if not clients:
+            return
+        user = await self.core.getUserData(UserId(user))
+        user = {
+            "username": user.username,
+            "public_flags": user.public_flags,
+            "id": str(user.uid),
+            "discriminator": str(user.discriminator).rjust(4, "0"),
+            "avatar_decoration": user.avatar_decoration,
+            "avatar": user.avatar
+        }
+        for cl in clients:
+            await cl.esend(ChannelRecipientAddEvent(channel_id, user))
+
 
     async def dmchannel_delete(self, **data):
         ... # {"t":"CHANNEL_DELETE","s":3,"op":0,"d":{"type":3,"owner_id":"781484348959883324","name":null,"last_message_id":"1015277812648792135","id":"1015275668612853852","icon":null,"flags":0}}

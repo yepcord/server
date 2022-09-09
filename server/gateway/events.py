@@ -149,7 +149,7 @@ class RelationshipAddEvent(DispatchEvent):
         }
 
 
-class DMChannelCreate(DispatchEvent):
+class DMChannelCreateEvent(DispatchEvent):
     NAME = "CHANNEL_CREATE"
 
     def __init__(self, channel, recipients):
@@ -174,7 +174,7 @@ class DMChannelCreate(DispatchEvent):
         return j
 
 
-class DMChannelUpdate(DMChannelCreate):
+class DMChannelUpdateEvent(DMChannelCreateEvent):
     NAME = "CHANNEL_UPDATE"
 
 
@@ -324,4 +324,21 @@ class MessageAckEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": self.ack_object
+        }
+
+class ChannelRecipientAddEvent(DispatchEvent):
+    NAME = "CHANNEL_RECIPIENT_ADD"
+
+    def __init__(self, channel_id, user):
+        self.channel_id = channel_id
+        self.user = user
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user": self.user,
+                "channel_id": str(self.channel_id)
+            }
         }

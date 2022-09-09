@@ -145,6 +145,7 @@ CREATE TABLE `messages` (
   `thread` bigint default null,
   `j_components` JSON not null default "[]",
   `j_sticker_items` JSON not null default "[]",
+  `j_extra_data` JSON not null default "{}",
   UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 

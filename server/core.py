@@ -619,14 +619,18 @@ class Core:
         async with self.db() as db:
             return await db.createDMGroupChannel(mksf(), recipients, user.id)
 
-    async def sendDMChannelCreateEvent(self, channel: Channel) -> None:
-        users = await self.getRelatedUsersToChannel(channel.id)
+    async def sendDMChannelCreateEvent(self, channel: Channel, *, users=None) -> None:
+        if not users:
+            users = await self.getRelatedUsersToChannel(channel.id)
         await self.mcl.broadcast("channel_events", {"e": "dmchannel_create", "data": {"users": users, "channel_id": channel.id}})
 
-    #async def addUserToGroupDM(self, channel: Channel, uid: int) -> None:
-    #    await self.mcl.broadcast("channel_events", {"e": "dm_recipient_add", "data": {"users": channel.recipients, "channel_id": channel.id, "user": uid}})
-    #    await self.mcl.broadcast("channel_events", {"e": "dmchannel_create", "data": {"users": [uid], "channel_id": channel.id}})
-    #    #{"t":"MESSAGE_CREATE","s":4,"op":0,"d":{"type":1,"tts":false,"timestamp":"2022-09-02T15:16:20.474000+00:00","pinned":false,"mentions":[{"username":"Ruslan","public_flags":128,"id":"542383405212631051","discriminator":"9204","avatar_decoration":null,"avatar":"18e72a4691fe34368e2e8370f90b10de"}],"mention_roles":[],"mention_everyone":false,"id":"1015279016367890473","flags":0,"embeds":[],"edited_timestamp":null,"content":"","components":[],"channel_id":"1015274498049720421","author":{"username":"PepegaYEP","public_flags":0,"id":"955398305960050708","discriminator":"1132","avatar_decoration":null,"avatar":"0a1a4453159c791f9e72d7d0395a3bac"},"attachments":[]}}
+    async def sendDMRepicientAddEvent(self, users: List[int], channel_id: int, uid: int) -> None:
+        await self.mcl.broadcast("channel_events", {"e": "dm_recipient_add", "data": {"users": users, "channel_id": channel_id, "user": uid}})
+
+    async def addUserToGroupDM(self, channel: Channel, uid: int) -> None:
+        nChannel = channel.copy()
+        nChannel.recipients.append(uid)
+        await self.updateChannelDiff(channel, nChannel)
 
     async def updateChannelDiff(self, before: Channel, after: Channel) -> None:
         async with self.db() as db:

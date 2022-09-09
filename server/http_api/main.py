@@ -775,17 +775,22 @@ async def api_channels_channel_attachments_post(user, channel):
 @app.route("/api/v9/channels/<int:channel>/recipients/<int:nUser>", methods=["PUT"])
 @getUser
 @getChannel
-async def api_channels_channel_repicients_recipient_put(user, channel, cUser):
+async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
         raise InvalidDataErr(403, mkError(50013))
     if channel.type == ChannelType.DM:
         rep = channel.recipients
         rep.remove(user.id)
-        rep.append(cUser)
+        rep.append(nUser)
         ch = await core.createDMGroupChannel(user, rep)
         await core.sendDMChannelCreateEvent(ch)
     elif channel.type == ChannelType.GROUP_DM:
-        ... #await core.addUserToGroupDM(channel, cUser)
+        if nUser not in channel.recipients and len(channel.recipients) < 10:
+            msg = Message(id=mksf(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_ADD, extra_data={"user": nUser})
+            await core.sendMessage(msg)
+            await core.addUserToGroupDM(channel, nUser)
+            await core.sendDMRepicientAddEvent(channel.recipients, channel.id, nUser)
+            await core.sendDMChannelCreateEvent(channel, users=[nUser])
     return "", 204
 
 
