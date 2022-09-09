@@ -606,6 +606,11 @@ async def api_channels_channel_patch(user, channel):
                 del data["icon"]
             else:
                 data["icon"] = v
+    if "owner" in data:
+        if channel.owner_id != user.id:
+            raise InvalidDataErr(403, mkError(50013))
+        data["owner_id"] = int(data["owner"])
+        del data["owner"]
     if "id" in data: del data["id"]
     if "type" in data: del data["type"]
     nChannel = Channel(channel.id, channel.type, **data)
