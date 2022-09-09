@@ -169,6 +169,12 @@ class DBConnection(ABC):
     @abstractmethod
     async def updateChannelDiff(self, before: Channel, after: Channel) -> None: ...
 
+    @abstractmethod
+    async def deleteChannel(self, channel: Channel) -> None: ...
+
+    @abstractmethod
+    async def deleteMessagesAck(self, channel: Channel, user: User) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -447,8 +453,7 @@ class MySqlConnection:
         await self.cur.execute(f'UPDATE `users` SET `email`="{escape_string(email)}", `verified`=false WHERE `id`={uid};')
 
     async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int) -> Channel:
-        recipients = jdumps(recipients)
-        await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`) VALUES ({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(recipients)}", {owner_id});')
+        await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`) VALUES ({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(jdumps(recipients))}", {owner_id});')
         return Channel(channel_id, ChannelType.GROUP_DM, recipients=recipients, owner_id=owner_id, icon=None, name=None)
 
     async def updateChannelDiff(self, before: Channel, after: Channel) -> None:
@@ -456,3 +461,11 @@ class MySqlConnection:
         diff = json_to_sql(diff)
         if diff:
             await self.cur.execute(f'UPDATE `channels` SET {diff} WHERE `id`={before.id};')
+
+    async def deleteChannel(self, channel: Channel) -> None:
+        await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id} AND JSON_LENGTH(j_recipients) = 0;")
+        await self.cur.execute(f"DELETE FROM `read_states` WHERE `channel_id`={channel.id};")
+        # TODO: delete all messages in channel
+
+    async def deleteMessagesAck(self, channel: Channel, user: User) -> None:
+        await self.cur.execute(f"DELETE FROM `read_states` WHERE `uid`={user.id} AND `channel_id`={channel.id};")

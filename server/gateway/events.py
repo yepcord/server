@@ -168,7 +168,7 @@ class DMChannelCreateEvent(DispatchEvent):
             }
         }
         if self.channel.type == ChannelType.GROUP_DM:
-            j["d"]["owner"] = str(self.channel.owner_id)
+            j["d"]["owner_id"] = str(self.channel.owner_id)
             j["d"]["icon"] = self.channel.icon
             j["d"]["name"] = self.channel.name
         return j
@@ -358,13 +358,5 @@ class DMChannelDeleteEvent(DispatchEvent):
         return {
             "t": self.NAME,
             "op": self.OP,
-            "d": {
-                "type": self.channel.type,
-                "owner_id": str(self.channel.owner_id),
-                "name": self.channel.name,
-                "last_message_id": str(self.channel.last_message_id),
-                "id": str(self.channel.id),
-                "icon": self.channel.icon,
-                "flags": self.channel.flags
-            }
+            "d": self.channel
         }

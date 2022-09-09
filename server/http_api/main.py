@@ -638,8 +638,10 @@ async def api_channels_channel_delete(user, channel):
         await core.sendMessage(msg)
         await core.removeUserFromGroupDM(channel, user.id)
         await core.sendDMRepicientRemoveEvent(channel.recipients, channel.id, user.id)
-        await core.sendDMChannelDeleteEvent(channel.id, users=[user.id])
-        if channel.owner_id == user.id:
+        await core.sendDMChannelDeleteEvent(channel, users=[user.id])
+        if len(channel.recipients) == 1:
+            await core.deleteChannel(channel)
+        elif channel.owner_id == user.id:
             channel.recipients.remove(user.id)
             nChannel = channel.copy()
             nChannel.owner_id = choice(channel.recipients)
@@ -760,6 +762,14 @@ async def api_channels_channel_messages_message_ack(user, channel, message):
     return c_json({"token": None})
 
 
+@app.route("/api/v9/channels/<int:channel>/messages/ack", methods=["DELETE"])
+@getUser
+@getChannel
+async def api_channels_channel_messages_ack_delete(user, channel):
+    await core.deleteMessagesAck(channel, user)
+    return "", 204
+
+
 @app.route("/api/v9/channels/<int:channel>/typing", methods=["POST"])
 @getUser
 @getChannel
@@ -833,7 +843,7 @@ async def api_channels_channel_repicients_recipient_delete(user, channel, nUser)
         await core.sendMessage(msg)
         await core.removeUserFromGroupDM(channel, nUser)
         await core.sendDMRepicientRemoveEvent(channel.recipients, channel.id, nUser)
-        await core.sendDMChannelDeleteEvent(channel.id, users=[nUser])
+        await core.sendDMChannelDeleteEvent(channel, users=[nUser])
     return "", 204
 
 

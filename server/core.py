@@ -631,8 +631,17 @@ class Core:
     async def sendDMRepicientRemoveEvent(self, users: List[int], channel_id: int, uid: int) -> None:
         await self.mcl.broadcast("channel_events", {"e": "dm_recipient_remove", "data": {"users": users, "channel_id": channel_id, "user": uid}})
 
-    async def sendDMChannelDeleteEvent(self, channel_id: int, users: List[int]) -> None:
-        await self.mcl.broadcast("channel_events", {"e": "dmchannel_delete", "data": {"users": users, "channel_id": channel_id}})
+    async def sendDMChannelDeleteEvent(self, channel: Channel, users: List[int]) -> None:
+        channel = {
+                "type": channel.type,
+                "owner_id": str(channel.owner_id),
+                "name": channel.name,
+                "last_message_id": str(channel.last_message_id),
+                "id": str(channel.id),
+                "icon": channel.icon,
+                "flags": channel.flags
+            }
+        await self.mcl.broadcast("channel_events", {"e": "dmchannel_delete", "data": {"users": users, "channel": channel}})
 
     async def addUserToGroupDM(self, channel: Channel, uid: int) -> None:
         nChannel = channel.copy()
@@ -651,3 +660,11 @@ class Core:
     async def sendDMChannelUpdateEvent(self, channel: Channel) -> None:
         users = await self.getRelatedUsersToChannel(channel.id)
         await self.mcl.broadcast("channel_events", {"e": "dmchannel_update", "data": {"users": users, "channel_id": channel.id}})
+
+    async def deleteChannel(self, channel: Channel) -> None:
+        async with self.db() as db:
+            await db.deleteChannel(channel)
+
+    async def deleteMessagesAck(self, channel: Channel, user: User) -> None:
+        async with self.db() as db:
+            await db.deleteMessagesAck(channel, user)

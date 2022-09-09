@@ -6,3 +6,4 @@ endpoints.*
 .local
 /tests
 /rp
+*.db
