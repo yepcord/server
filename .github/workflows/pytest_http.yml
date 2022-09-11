@@ -36,8 +36,8 @@ jobs:
         run: |
           pytest tests/test_http.py
         env:
-          DB_HOST=127.0.0.1
-          DB_USER=root
-          DB_PASS=${{ secrets.DB_PASS }}
-          DB_NAME=yepcord_test
-          KEY=${{ secrets.KEY }}
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_NAME: yepcord_test
+          KEY: ${{ secrets.KEY }}
