@@ -25,7 +25,7 @@ jobs:
 
       - name: Setup database
         run: |
-          mysql -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
+          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
 
       - name: Install dependencies
         run: |
