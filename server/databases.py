@@ -216,7 +216,7 @@ class MySqlConnection:
             return User(r[0])
 
     async def registerUser(self, user: User, session: Session, data: UserData) -> None:
-        await self.cur.execute(f'INSERT INTO `users` VALUES ({user.id}, "{escape_string(user.email)}", "{user.password}", "{user.key}");')
+        await self.cur.execute(f'INSERT INTO `users`(`id`, `email`, `password`, `key`) VALUES ({user.id}, "{escape_string(user.email)}", "{user.password}", "{user.key}");')
         await self.cur.execute(f'INSERT INTO `sessions` VALUES ({user.id}, {session.sid}, "{session.sig}");')
         await self.cur.execute(f'INSERT INTO `settings`(`uid`) VALUES ({user.id});')
         await self.cur.execute(f'INSERT INTO `userdata`(`uid`, `birth`, `username`, `discriminator`) VALUES ({user.id}, "{data.birth}", "{data.username}", {data.discriminator});')

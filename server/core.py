@@ -35,8 +35,12 @@ class Core:
         self._cache = {}
 
     async def initMCL(self):
-        await self.mcl.start("ws://127.0.0.1:5050")
-        self.mcl.set_callback(self.mclCallback)
+        try:
+            await self.mcl.start("ws://127.0.0.1:5050")
+            self.mcl.set_callback(self.mclCallback)
+        except ConnectionRefusedError:
+            self.mcl.online = False
+            self.mcl.running = True
         return self
 
     async def mclCallback(self, data: dict) -> None:

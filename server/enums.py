@@ -1,12 +1,9 @@
-from enum import Enum
-
-
-class RelationshipType(Enum):
+class RelationshipType:
     PENDING = 0
     FRIEND = 1
     BLOCK = 2
 
-class GatewayOp(Enum):
+class GatewayOp:
     DISPATCH = 0
     HEARTBEAT = 1
     IDENTIFY = 2
@@ -20,7 +17,7 @@ class GatewayOp(Enum):
     HELLO = 10
     HEARTBEAT_ACK = 11
 
-class ChannelType(Enum):
+class ChannelType:
     GUILD_TEXT = 0
     DM = 1
     GUILD_VOICE = 2
@@ -33,7 +30,7 @@ class ChannelType(Enum):
     GUILD_STAGE_VOICE = 13
     GUILD_DIRECTORY = 14
 
-class MessageType(Enum):
+class MessageType:
     DEFAULT = 0
     RECIPIENT_ADD = 1
     RECIPIENT_REMOVE = 2

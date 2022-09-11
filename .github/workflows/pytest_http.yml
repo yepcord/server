@@ -1,0 +1,43 @@
+name: PyTest
+on:
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.9"
+
+      - uses: getong/mariadb-action@v1.1
+        with:
+          mariadb version: '10.6.4'
+          mysql database: 'yepcord_test'
+          mysql root password: ${{ secrets.DB_PASS }}
+
+      - name: Setup database
+        run: |
+          mysql -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade wheel
+          python -m pip install -r requirements.txt
+
+      - name: Run test suite
+        run: |
+          pytest tests/test_http.py
+        env:
+          DB_HOST=127.0.0.1
+          DB_USER=root
+          DB_PASS=${{ secrets.DB_PASS }}
+          DB_NAME=yepcord_test
+          KEY=${{ secrets.KEY }}

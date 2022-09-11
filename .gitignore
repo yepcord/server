@@ -4,6 +4,5 @@ files/
 .idea/
 endpoints.*
 .local
-/tests
 /rp
 *.db

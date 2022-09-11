@@ -1,3 +1,4 @@
+import traceback
 from io import BytesIO
 from time import time
 from uuid import uuid4
@@ -151,7 +152,7 @@ async def api_auth_login():
 
 
 @app.route("/api/v9/auth/mfa/totp", methods=["POST"])
-async def api_auth_mfa_totp():
+async def api_auth_mfa_totp(): # TODO: test
     data = await request.get_json()
     if not (ticket := data.get("ticket")):
         raise InvalidDataErr(400, mkError(60006))
@@ -271,7 +272,6 @@ async def api_users_me_patch(user):
     await core.sendUserUpdateEvent(user.id)
     return c_json(await userdataResponse(user))
 
-
 @app.route("/api/v9/users/@me/profile", methods=["PATCH"])
 @getUser
 async def api_users_me_profile_patch(user):
@@ -293,8 +293,7 @@ async def api_users_me_profile_patch(user):
 @app.route("/api/v9/users/@me/consent", methods=["GET"])
 @getUser
 async def api_users_me_consent_get(user):
-    return c_json(await userdataResponse(user))
-
+    return c_json(await userConsentResponse(user))
 
 @app.route("/api/v9/users/@me/consent", methods=["POST"])
 @getUser
@@ -302,9 +301,9 @@ async def api_users_me_consent_set(user):
     data = await request.get_json()
     if data["grant"] or data["revoke"]:
         settings = {}
-        for g in data["grant"]:
+        for g in data.get("grant", []):
             settings[g] = True
-        for r in data["revoke"]:
+        for r in data.get("revoke", []):
             settings[r] = False
         if "uid" in settings: del settings["uid"]
         s = UserSettings(user.id, **settings)

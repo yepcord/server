@@ -18,7 +18,7 @@ from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAnd
     ShowCurrentGame, Status, LocalizationSettings, Locale, TimezoneOffset, AppearanceSettings, MessageDisplayCompact, \
     ViewImageDescriptions
 from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get
-from aiosmtplib import send as smtp_send
+from aiosmtplib import send as smtp_send, SMTPConnectError
 
 
 class _Null:
@@ -39,10 +39,8 @@ class _Null:
     def __repr__(self):
         return "<Null>"
 
-
 Null = _Null()
 Null.value = Null
-
 
 class DBModel:
     FIELDS = ()
@@ -132,7 +130,6 @@ class DBModel:
             return default
         return getattr(self, item)
 
-
 class _User:
     def __init__(self):
         self.id = None
@@ -144,7 +141,6 @@ class _User:
         if not hasattr(self, item):
             return default
         return getattr(self, item)
-
 
 class Session(_User, DBModel):
     FIELDS = ("uid", "sid", "sig")
@@ -170,7 +166,6 @@ class Session(_User, DBModel):
         except:
             return
         return cls(uid, sid, sig)
-
 
 class UserSettings(DBModel):
     FIELDS = ("inline_attachment_media", "show_current_game", "view_nsfw_guilds", "enable_tts_command",
@@ -428,7 +423,6 @@ class UserSettings(DBModel):
             self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": False})
         return self
 
-
 class UserData(DBModel):
     FIELDS = ("birth", "username", "discriminator", "phone", "premium", "accent_color", "avatar", "avatar_decoration",
               "banner", "banner_color", "bio", "flags", "public_flags")
@@ -462,7 +456,6 @@ class UserData(DBModel):
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
-
 
 class User(_User, DBModel):
     FIELDS = ("email", "password", "key", "verified")
@@ -517,11 +510,9 @@ class User(_User, DBModel):
             self._uFrecencySettings = await self._core.getFrecencySettings(self)
         return b64decode(self._uFrecencySettings.encode("utf8"))
 
-
 class UserId(_User):
     def __init__(self, uid):
         self.id = uid
-
 
 class _Channel:
     id = None
@@ -529,11 +520,9 @@ class _Channel:
     def __eq__(self, other):
         return isinstance(other, _Channel) and self.id == other.id
 
-
 class ChannelId(_Channel):
     def __init__(self, cid):
         self.id = cid
-
 
 class Channel(_Channel, DBModel):
     FIELDS = ("type", "guild_id", "position", "permission_overwrites", "name", "topic", "nsfw", "bitrate", "user_limit",
@@ -604,13 +593,11 @@ class Channel(_Channel, DBModel):
             limit = 100
         return await self._core.getChannelMessages(self, limit, before, after)
 
-
 class _Message:
     id = None
 
     def __eq__(self, other):
         return isinstance(other, _Message) and self.id == other.id
-
 
 class Message(_Message, DBModel):
     FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "reactions", "pinned",
@@ -943,14 +930,12 @@ class Message(_Message, DBModel):
             j["nonce"] = nonce
         return j
 
-
 class ZlibCompressor:
     def __init__(self):
         self.cObj = compressobj()
 
     def __call__(self, data):
         return self.cObj.compress(data) + self.cObj.flush(Z_FULL_FLUSH)
-
 
 class Relationship(DBModel):
     FIELDS = ("u1", "u2", "type")
@@ -967,7 +952,6 @@ class Relationship(DBModel):
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
-
 
 class ReadState(DBModel):
     FIELDS = ("channel_id", "last_read_id", "count",)
@@ -988,7 +972,6 @@ class ReadState(DBModel):
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
-
 
 class UserNote(DBModel):
     FIELDS = ("uid", "target_uid", "note",)
@@ -1013,7 +996,6 @@ class UserNote(DBModel):
             "note_user_id": str(self.target_uid)
         }
 
-
 class UserConnection(DBModel):  # TODO: make schema
     FIELDS = ("type", "state", "username", "service_uid", "friend_sync", "integrations", "visible",
               "verified", "revoked", "show_activity", "two_way_link",)
@@ -1037,7 +1019,6 @@ class UserConnection(DBModel):  # TODO: make schema
 
         self._checkNulls()
 
-
 class Attachment(DBModel):  # TODO: make schema
     FIELDS = ("channel_id", "filename", "size", "uuid", "content_type", "uploaded", "metadata",)
     ID_FIELD = "id"
@@ -1056,7 +1037,6 @@ class Attachment(DBModel):  # TODO: make schema
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
 
-
 class EmailMsg:
     def __init__(self, to: str, subject: str, text: str):
         self.to = to
@@ -1069,7 +1049,10 @@ class EmailMsg:
         message["To"] = self.to
         message["Subject"] = self.subject
         message.set_content(self.text)
-        await smtp_send(message, hostname=Config('SMTP_HOST'), port=int(Config('SMTP_PORT')))
+        try:
+            await smtp_send(message, hostname=Config('SMTP_HOST'), port=int(Config('SMTP_PORT')))
+        except SMTPConnectError:
+            pass # TODO: write warning to log
 
 class GuildTemplate(DBModel):
     FIELDS = ("code", "template")

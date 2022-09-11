@@ -8,6 +8,7 @@ class Client:
         self.ws = None
         self.topics = {}
         self.running = False
+        self.online = True
 
     async def start(self, connect_string):
         self.ws = await connect(connect_string).__await_impl__()
@@ -38,12 +39,16 @@ class Client:
 
     async def request(self, callback, broadcaster, data):
         await self.wait_until_start()
+        if not self.online:
+            return
         req = urandom(32).hex()
         self.topics[req] = callback
         await self.ws.send(jdumps({"t": "request", "request_id": req, "br_name": broadcaster, "request_data": data}))
 
     async def subscribe(self, topic, callback):
         await self.wait_until_start()
+        if not self.online:
+            return
         topic = topic.lower()
         if topic not in self.topics:
             self.topics[topic] = callback
@@ -51,6 +56,8 @@ class Client:
 
     async def unsubscribe(self, topic):
         await self.wait_until_start()
+        if not self.online:
+            return
         topic = topic.lower()
         if topic in self.topics:
             del self.topics[topic]
@@ -62,6 +69,7 @@ class Broadcaster:
         self.name = name
         self.callback = None
         self.running = False
+        self.online = True
 
     async def start(self, connect_string):
         self.ws = await connect(connect_string).__await_impl__()
@@ -95,7 +103,8 @@ class Broadcaster:
 
     async def broadcast(self, topic, data):
         await self.wait_until_start()
-        await self.ws.send(jdumps({"t": "broadcast", "topic": topic, "data": data}))
+        if self.online:
+            await self.ws.send(jdumps({"t": "broadcast", "topic": topic, "data": data}))
 
     def set_callback(self, callback):
         self.callback = callback
