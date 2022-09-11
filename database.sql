@@ -199,3 +199,10 @@ CREATE TABLE `frecency_settings` (
   `settings` longtext not null,
   UNIQUE KEY `uid` (`uid`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `guild_templates`;
+CREATE TABLE `guild_templates` (
+  `code` text not null,
+  `template` JSON not null default "{}",
+  UNIQUE KEY `code` (`code`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

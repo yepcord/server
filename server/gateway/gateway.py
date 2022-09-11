@@ -1,10 +1,8 @@
-from typing import List
-
 from .events import *
 from ..msg_client import Client
-from ..utils import GatewayOp
+from ..enums import GatewayOp
 from ..core import Core
-from ..classes import UserId, Session, UserData
+from ..classes import UserId, Session
 from os import urandom
 from json import dumps as jdumps
 

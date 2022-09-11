@@ -14,10 +14,10 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, UserId, Channel
+from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel
 from ..core import Core, CDN
-from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
-    parseMultipartRequest, ChannelType, MessageType
+from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
+from ..enums import ChannelType, MessageType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
 

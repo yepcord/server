@@ -1,17 +1,15 @@
-from json import dumps as jdumps
 from base64 import b64encode as _b64encode, b64decode as _b64decode
-from ..utils import b64encode, b64decode
-from ..msg_client import Client
 from os import urandom
-from hashlib import sha256
 from asyncio import sleep as asleep, get_event_loop
 from time import time
 from hashlib import sha256
-
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives.hashes import SHA256
+
+from ..utils import b64encode, b64decode
+from ..msg_client import Client
 
 class GatewayClient:
     def __init__(self, ws, pubkey, fp, nonce):

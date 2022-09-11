@@ -1,6 +1,7 @@
 from base64 import b64encode
 from datetime import datetime
-from ..utils import GatewayOp, snowflake_timestamp, ChannelType
+from ..utils import snowflake_timestamp
+from ..enums import GatewayOp, ChannelType
 from time import time
 
 

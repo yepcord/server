@@ -9,6 +9,7 @@ from dateutil.parser import parse as dparse
 from schema import Schema, Use, Optional, And, Or, Regex
 
 from .config import Config
+from .enums import ChannelType, MessageType
 from .errors import EmbedErr, InvalidDataErr
 from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAndVideoSettings, AfkTimeout, \
     StreamNotificationsEnabled, TextAndImagesSettings, UseRichChatInput, UseThreadSidebar, Theme, RenderSpoilers, \
@@ -16,8 +17,7 @@ from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAnd
     AnimateStickers, ExpressionSuggestionsEnabled, InlineEmbedMedia, PrivacySettings, FriendSourceFlags, StatusSettings, \
     ShowCurrentGame, Status, LocalizationSettings, Locale, TimezoneOffset, AppearanceSettings, MessageDisplayCompact, \
     ViewImageDescriptions
-from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get, \
-    MessageType
+from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get
 from aiosmtplib import send as smtp_send
 
 
@@ -51,20 +51,6 @@ class DBModel:
     DEFAULTS = {}
     SCHEMA: Schema = Schema(dict)
     DB_FIELDS = {}
-
-    # def __init__(self, *args, **kwargs): #  TODO
-    #    fields = list(self.FIELDS)
-    #    if self.ID_FIELD:
-    #        fields.insert(0, self.ID_FIELD)
-    #    if self.ALLOWED_FIELDS:
-    #        fields += list(self.ALLOWED_FIELDS)
-    #    for arg in args:
-    #        setattr(self, fields.pop(0), arg)
-    #    for field in fields:
-    #        if field in kwargs:
-    #            setattr(self, field, kwargs[field])
-    #
-    #    self._checkNulls()
 
     def _checkNulls(self):
         for f in self.FIELDS:
@@ -904,7 +890,7 @@ class Message(_Message, DBModel):
                         "discriminator": str(mdata.discriminator).rjust(4, "0"),
                         "public_flags": mdata.public_flags
                     })
-        if self.type == MessageType.RECIPIENT_ADD:
+        if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
             if (u := self.extra_data.get("user")):
                 u = await self._core.getUserData(UserId(u))
                 mentions.append({
@@ -1084,3 +1070,21 @@ class EmailMsg:
         message["Subject"] = self.subject
         message.set_content(self.text)
         await smtp_send(message, hostname=Config('SMTP_HOST'), port=int(Config('SMTP_PORT')))
+
+class GuildTemplate(DBModel):
+    FIELDS = ("code", "template")
+    DB_FIELDS = {"template": "j_template"}
+    SCHEMA = Schema({
+        "code": And(Use(str), lambda s: bool(b64decode(s))),
+        "type": [{
+            "id": Use(int),
+            "parent_id": Or(int, type(None)),
+            "name": str,
+            "type": And(Use(int),lambda i: i in [v.value for v in ChannelType])
+        }],
+    })
+
+    def __init__(self, code, template):
+        self.code = code
+        self.template = template
+

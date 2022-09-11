@@ -1,5 +1,6 @@
 from datetime import datetime
-from .utils import snowflake_timestamp, ChannelType
+from .utils import snowflake_timestamp
+from .enums import ChannelType
 
 
 async def userSettingsResponse(user):

@@ -4,19 +4,20 @@ from hashlib import sha256, sha512
 from os import urandom
 from Crypto.Cipher import AES
 from base64 import b64encode as _b64encode
+from json import loads as jloads, dumps as jdumps
+from random import randint
+from typing import Optional, Union, List, Tuple
+from time import time
 
 from .config import Config
 from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
-from .utils import b64encode, b64decode, RelationshipType, MFA, ChannelType, mksf, lsf, mkError
+from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
     UserConnection, Attachment, Relationship, EmailMsg
 from .storage import _Storage
-from json import loads as jloads, dumps as jdumps
-from random import randint
+from .enums import RelationshipType, ChannelType
 from .msg_client import Broadcaster
-from typing import Optional, Union, List, Tuple
-from time import time
 
 class CDN(_Storage):
     def __init__(self, storage, core):

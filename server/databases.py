@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List
 from json import dumps as jdumps
-
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
     ChannelId, UserNote, UserConnection, Attachment
-from .utils import json_to_sql, ChannelType, lsf
+from .utils import json_to_sql, lsf
+from .enums import ChannelType
 
 
 class Database:
