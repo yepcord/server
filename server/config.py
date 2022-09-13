@@ -3,7 +3,7 @@ from os import environ
 class _Config:
     _instance = None
 
-    def_KEY = ""
+    def_KEY = "8Zw1h9O7nhoT8pb4z/SR4g=="
     def_DB_HOST = "127.0.0.1"
     def_DB_USER = "yepcord"
     def_DB_PASS = ""
