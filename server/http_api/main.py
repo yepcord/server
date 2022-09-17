@@ -1,4 +1,3 @@
-import traceback
 from io import BytesIO
 from time import time
 from uuid import uuid4
@@ -15,10 +14,10 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel
+from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, UserFlags
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
-from ..enums import ChannelType, MessageType
+from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
 
@@ -857,6 +856,28 @@ async def api_stickerpacks_get():
 @app.route("/api/v9/gifs/trending", methods=["GET"])
 async def api_gifs_trending_get():
     return c_json('{"gifs": [], "categories": []}') # TODO
+
+
+# Hypesquad
+
+
+@app.route("/api/v9/hypesquad/online", methods=["POST"])
+@getUser
+async def api_hypesquad_online(user):
+    data = await request.get_json()
+    if not (house_id := data.get("house_id")):
+        raise InvalidDataErr(400, mkError(50035, {"house_id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+    if house_id not in (1, 2, 3):
+        raise InvalidDataErr(400, mkError(50035, {"house_id": {"code": "BASE_TYPE_CHOICES", "message": "The following values are allowed: (1, 2, 3)."}}))
+    data = await user.data
+    flags = UserFlags(data.public_flags)
+    for f in (UserFlagsE.HYPESQUAD_ONLINE_HOUSE_1, UserFlagsE.HYPESQUAD_ONLINE_HOUSE_2, UserFlagsE.HYPESQUAD_ONLINE_HOUSE_3):
+        flags.remove(f)
+    flags.add(getattr(UserFlagsE, f"HYPESQUAD_ONLINE_HOUSE_{house_id}"))
+    data.public_flags = flags.value
+    await core.setUserdata(data)
+    await core.sendUserUpdateEvent(user.id)
+    return "", 204
 
 
 # Other
