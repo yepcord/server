@@ -1,9 +1,15 @@
-class RelationshipType:
+class E:
+    @classmethod
+    def values(cls):
+        attrs = [i for i in cls.__dict__.keys() if not i.startswith("__")]
+        return {attr: getattr(cls, attr) for attr in attrs}
+
+class RelationshipType(E):
     PENDING = 0
     FRIEND = 1
     BLOCK = 2
 
-class GatewayOp:
+class GatewayOp(E):
     DISPATCH = 0
     HEARTBEAT = 1
     IDENTIFY = 2
@@ -17,7 +23,7 @@ class GatewayOp:
     HELLO = 10
     HEARTBEAT_ACK = 11
 
-class ChannelType:
+class ChannelType(E):
     GUILD_TEXT = 0
     DM = 1
     GUILD_VOICE = 2
@@ -30,7 +36,7 @@ class ChannelType:
     GUILD_STAGE_VOICE = 13
     GUILD_DIRECTORY = 14
 
-class MessageType:
+class MessageType(E):
     DEFAULT = 0
     RECIPIENT_ADD = 1
     RECIPIENT_REMOVE = 2
@@ -55,3 +61,25 @@ class MessageType:
     GUILD_INVITE_REMINDER = 22
     CONTEXT_MENU_COMMAND = 23
     AUTO_MODERATION_ACTION = 24
+
+class UserFlags(E):
+    STAFF = 1 << 0
+    PARTNER = 1 << 1
+    HYPESQUAD_EVENTS = 1 << 2
+    BUG_HUNTER_LEVEL_1 = 1 << 3
+    # MFA_SMS = 1 << 4 # Unused
+    # PREMIUM_PROMO_DISMISSED = 1 << 5 # Unused
+    HYPESQUAD_ONLINE_HOUSE_1 = 1 << 6
+    HYPESQUAD_ONLINE_HOUSE_2 = 1 << 7
+    HYPESQUAD_ONLINE_HOUSE_3 = 1 << 8
+    PREMIUM_EARLY_SUPPORTER = 1 << 9
+    TEAM_PSEUDO_USER = 1 << 10
+    # INTERNAL_APPLICATION = 1 << 11 # Unused
+    # SYSTEM = 1 << 12 # Unused
+    # HAS_UNREAD_URGENT_MESSAGES = 1 << 13 # Unused
+    BUG_HUNTER_LEVEL_2 = 1 << 14
+    # UNDERAGE_DELETED = 1 << 15 # Unused
+    VERIFIED_BOT = 1 << 16
+    VERIFIED_BOT_DEVELOPER = 1 << 17
+    CERTIFIED_MODERATOR = 1 << 18
+    BOT_HTTP_INTERACTIONS = 1 << 19

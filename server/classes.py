@@ -2,6 +2,7 @@ from copy import deepcopy
 from datetime import datetime
 from email.message import EmailMessage
 from time import mktime
+from typing import List, Union
 from uuid import uuid4, UUID
 from zlib import compressobj, Z_FULL_FLUSH
 
@@ -9,7 +10,7 @@ from dateutil.parser import parse as dparse
 from schema import Schema, Use, Optional, And, Or, Regex
 
 from .config import Config
-from .enums import ChannelType, MessageType
+from .enums import ChannelType, MessageType, UserFlags as UserFlagsE
 from .errors import EmbedErr, InvalidDataErr
 from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAndVideoSettings, AfkTimeout, \
     StreamNotificationsEnabled, TextAndImagesSettings, UseRichChatInput, UseThreadSidebar, Theme, RenderSpoilers, \
@@ -683,7 +684,10 @@ class Message(_Message, DBModel):
             except:
                 del image["height"]
 
-    def _formatEmbedError(self, code, path=None, replace={}):
+    def _formatEmbedError(self, code, path=None, replace=None):
+        if replace is None:
+            replace = {}
+
         def _mkTree(o, p, e):
             _tmp = o["errors"]["embeds"]
             if p is None:
@@ -878,7 +882,7 @@ class Message(_Message, DBModel):
                         "public_flags": mdata.public_flags
                     })
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
-            if (u := self.extra_data.get("user")):
+            if u := self.extra_data.get("user"):
                 u = await self._core.getUserData(UserId(u))
                 mentions.append({
                     "username": u.username,
@@ -1063,7 +1067,7 @@ class GuildTemplate(DBModel):
             "id": Use(int),
             "parent_id": Or(int, type(None)),
             "name": str,
-            "type": And(Use(int),lambda i: i in [v.value for v in ChannelType])
+            "type": And(Use(int),lambda i: i in ChannelType.values())
         }],
     })
 
@@ -1071,3 +1075,27 @@ class GuildTemplate(DBModel):
         self.code = code
         self.template = template
 
+class UserFlags:
+    def __init__(self, value: int):
+        self.value = value
+        self.parsedFlags = self.parseFlags(value)
+
+    @staticmethod
+    def parseFlags(value: int) -> list:
+        flags = []
+        for val in UserFlagsE.values().values():
+            if (value & val) == val:
+                flags.append(val)
+        return flags
+
+    def add(self, val: int):
+        if val not in self.parsedFlags:
+            self.value += val
+            self.parsedFlags.append(val)
+        return self
+
+    def remove(self, val: int):
+        if val in self.parsedFlags:
+            self.value -= val
+            self.parsedFlags.remove(val)
+        return self
