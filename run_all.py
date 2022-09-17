@@ -55,7 +55,7 @@ class Process:
         self.stop(True)
 
 processes = [
-    Process("IMT", file="main.py", wd="internal/message_transport"),
+    Process("IMT", file="main.py", wd="internal/pubsub"),
     Process("HttpApi", app="server.http_api.main:app", port=8000),
     Process("Gateway", app="server.gateway.main:app", port=8001),
     Process("CDN", app="server.cdn.main:app", port=8003),

@@ -1,5 +1,5 @@
 from .events import *
-from ..msg_client import Client
+from ..pubsub_client import Client
 from ..enums import GatewayOp
 from ..core import Core
 from ..classes import UserId, Session

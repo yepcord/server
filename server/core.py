@@ -17,7 +17,7 @@ from .classes import Session, User, Channel, UserId, Message, _User, UserSetting
     UserConnection, Attachment, Relationship, EmailMsg
 from .storage import _Storage
 from .enums import RelationshipType, ChannelType
-from .msg_client import Broadcaster
+from .pubsub_client import Broadcaster
 
 class CDN(_Storage):
     def __init__(self, storage, core):
