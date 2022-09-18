@@ -8,10 +8,8 @@ from time import time
 class Event:
     pass
 
-
 class DispatchEvent(Event):
     OP = GatewayOp.DISPATCH
-
 
 class ReadyEvent(DispatchEvent):
     NAME = "READY"
@@ -99,7 +97,6 @@ class ReadyEvent(DispatchEvent):
             }
         }
 
-
 class ReadySupplementalEvent(DispatchEvent):
     NAME = "READY_SUPPLEMENTAL"
 
@@ -119,7 +116,6 @@ class ReadySupplementalEvent(DispatchEvent):
                 "guilds": [] # TODO
             }
         }
-
 
 class RelationshipAddEvent(DispatchEvent):
     NAME = "RELATIONSHIP_ADD"
@@ -149,7 +145,6 @@ class RelationshipAddEvent(DispatchEvent):
             }
         }
 
-
 class DMChannelCreateEvent(DispatchEvent):
     NAME = "CHANNEL_CREATE"
 
@@ -174,10 +169,8 @@ class DMChannelCreateEvent(DispatchEvent):
             j["d"]["name"] = self.channel.name
         return j
 
-
 class DMChannelUpdateEvent(DMChannelCreateEvent):
     NAME = "CHANNEL_UPDATE"
-
 
 class RelationshipRemoveEvent(DispatchEvent):
     NAME = "RELATIONSHIP_REMOVE"
@@ -195,7 +188,6 @@ class RelationshipRemoveEvent(DispatchEvent):
                 "id": str(self.user)
             }
         }
-
 
 class UserUpdateEvent(DispatchEvent):
     NAME = "USER_UPDATE"
@@ -230,7 +222,6 @@ class UserUpdateEvent(DispatchEvent):
             }
         }
 
-
 class PresenceUpdateEvent(DispatchEvent):
     NAME = "PRESENCE_UPDATE"
 
@@ -258,7 +249,6 @@ class PresenceUpdateEvent(DispatchEvent):
             }
         }
 
-
 class MessageCreateEvent(DispatchEvent):
     NAME = "MESSAGE_CREATE"
 
@@ -271,7 +261,6 @@ class MessageCreateEvent(DispatchEvent):
             "op": self.OP,
             "d": self.message
         }
-
 
 class TypingEvent(DispatchEvent):
     NAME = "TYPING_START"
@@ -291,10 +280,8 @@ class TypingEvent(DispatchEvent):
             }
         }
 
-
 class MessageUpdateEvent(MessageCreateEvent):
     NAME = "MESSAGE_UPDATE"
-
 
 class MessageDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE"
@@ -312,7 +299,6 @@ class MessageDeleteEvent(DispatchEvent):
                 "channel_id": str(self.channel)
             }
         }
-
 
 class MessageAckEvent(DispatchEvent):
     NAME = "MESSAGE_ACK"
@@ -344,10 +330,8 @@ class ChannelRecipientAddEvent(DispatchEvent):
             }
         }
 
-
 class ChannelRecipientRemoveEvent(ChannelRecipientAddEvent):
     NAME = "CHANNEL_RECIPIENT_REMOVE"
-
 
 class DMChannelDeleteEvent(DispatchEvent):
     NAME = "CHANNEL_DELETE"
@@ -360,4 +344,21 @@ class DMChannelDeleteEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": self.channel
+        }
+
+class ChannelPinsUpdateEvent(DispatchEvent):
+    NAME = "CHANNEL_PINS_UPDATE"
+
+    def __init__(self, channel_id, last_pin_timestamp):
+        self.channel_id = channel_id
+        self.last_pin_timestamp = last_pin_timestamp
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "last_pin_timestamp": self.last_pin_timestamp,
+                "channel_id": str(self.channel_id)
+            }
         }

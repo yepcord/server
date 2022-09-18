@@ -673,3 +673,25 @@ class Core:
     async def deleteMessagesAck(self, channel: Channel, user: User) -> None:
         async with self.db() as db:
             await db.deleteMessagesAck(channel, user)
+
+    async def pinMessage(self, message: Message) -> None:
+        async with self.db() as db:
+            if len(await db.getPinnedMessages(message.channel_id)) >= 50:
+                raise InvalidDataErr(400, mkError(30003))
+            await db.pinMessage(message)
+        users = await self.getRelatedUsersToChannel(message.channel_id)
+        await self.mcl.broadcast("channel_events", {"e": "channel_pins_update", "data": {"users": users, "channel_id": message.channel_id}})
+
+    async def getLastPinnedMessage(self, channel_id: int) -> Optional[Message]:
+        async with self.db() as db:
+            return await db.getLastPinnedMessage(channel_id)
+
+    async def getPinnedMessages(self, channel_id: int) -> List[Message]:
+        async with self.db() as db:
+            return [message.setCore(self) for message in await db.getPinnedMessages(channel_id)]
+
+    async def unpinMessage(self, message: Message) -> None:
+        async with self.db() as db:
+            await db.unpinMessage(message)
+        users = await self.getRelatedUsersToChannel(message.channel_id)
+        await self.mcl.broadcast("channel_events", {"e": "channel_pins_update", "data": {"users": users, "channel_id": message.channel_id}})

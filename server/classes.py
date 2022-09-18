@@ -40,6 +40,12 @@ class _Null:
     def __repr__(self):
         return "<Null>"
 
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        raise StopIteration
+
 Null = _Null()
 Null.value = Null
 
@@ -904,7 +910,9 @@ class Message(_Message, DBModel):
                 attachments[-1]["content_type"] = att.get("content_type")
             if att.get("metadata"):
                 attachments[-1].update(att.metadata)
-
+        message_reference = None
+        if self.message_reference:
+            message_reference = {"message_id": str(self.message_reference), "channel_id": str(self.channel_id)}
         j = {
             "id": str(self.id),
             "type": self.type,
@@ -930,8 +938,10 @@ class Message(_Message, DBModel):
             "flags": self.flags,
             "components": self.components,  # TODO: parse components
         }
-        if (nonce := getattr(self, "nonce", None)):
+        if nonce := getattr(self, "nonce", None):
             j["nonce"] = nonce
+        if message_reference:
+            j["message_reference"] = message_reference
         return j
 
 class ZlibCompressor:

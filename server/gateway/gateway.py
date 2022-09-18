@@ -276,13 +276,21 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(ChannelRecipientRemoveEvent(channel_id, user))
 
-    async def dmchannel_delete(self, users, channel):
+    async def dmchannel_delete(self, users, channel_id):
         clients = [c for c in self.clients if c.id in users and c.connected]
         if not clients:
             return
         for cl in clients:
-            await cl.esend(DMChannelDeleteEvent(channel))
+            await cl.esend(DMChannelDeleteEvent(channel_id))
 
+    async def channel_pins_update(self, users, channel_id):
+        clients = [c for c in self.clients if c.id in users and c.connected]
+        if not clients:
+            return
+        msg = await self.core.getLastPinnedMessage(channel_id)
+        ts = datetime.utcfromtimestamp(msg.extra_data["pinned_at"] if msg else 0).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        for cl in clients:
+            await cl.esend(ChannelPinsUpdateEvent(channel_id, ts))
 
 class Gateway:
     def __init__(self, core: Core):

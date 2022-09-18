@@ -845,6 +845,44 @@ async def api_channels_channel_repicients_recipient_delete(user, channel, nUser)
     return "", 204
 
 
+@app.route("/api/v9/channels/<int:channel>/pins/<int:message>", methods=["PUT"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_pins_message_put(user, channel, message):
+    if not message.pinned:
+        await core.pinMessage(message)
+        msg = Message(
+            mksf(),
+            author=user.id,
+            channel_id=channel.id,
+            type=MessageType.CHANNEL_PINNED_MESSAGE,
+            content="",
+            message_reference=message.id
+        )
+        await core.sendMessage(msg)
+    return "", 204
+
+
+@app.route("/api/v9/channels/<int:channel>/pins/<int:message>", methods=["DELETE"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_pins_message_DELETE(user, channel, message):
+    if message.pinned:
+        await core.unpinMessage(message)
+    return "", 204
+
+
+@app.route("/api/v9/channels/<int:channel>/pins", methods=["GET"])
+@getUser
+@getChannel
+async def api_channels_channel_pins_get(user, channel):
+    messages = await core.getPinnedMessages(channel.id)
+    messages = [await message.json for message in messages]
+    return messages
+
+
 # Stickers & gifs
 
 
