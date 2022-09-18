@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from time import time
 from typing import Optional, List
 from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
@@ -174,6 +175,15 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def deleteMessagesAck(self, channel: Channel, user: User) -> None: ...
+
+    @abstractmethod
+    async def pinMessage(self, message: Message) -> None: ...
+
+    @abstractmethod
+    async def getPinnedMessages(self, channel_id: int) -> List[Message]: ...
+
+    @abstractmethod
+    async def getLastPinnedMessage(self, channel_id: int) -> Optional[Message]: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -469,3 +479,27 @@ class MySqlConnection:
 
     async def deleteMessagesAck(self, channel: Channel, user: User) -> None:
         await self.cur.execute(f"DELETE FROM `read_states` WHERE `uid`={user.id} AND `channel_id`={channel.id};")
+
+    async def pinMessage(self, message: Message) -> None:
+        e = message.extra_data
+        e.update({"pinned_at": time()})
+        sql = json_to_sql({"pinned": True, "extra_data": e})
+        await self.cur.execute(f'UPDATE `messages` SET {sql} WHERE `id`={message.id};')
+
+    async def getPinnedMessages(self, channel_id: int) -> List[Message]:
+        messages = []
+        await self.cur.execute(f'SELECT * FROM `messages` WHERE `channel_id`={channel_id} AND `pinned`=true;')
+        for r in await self.cur.fetchall():
+            messages.append(Message.from_result(self.cur.description, r))
+        return messages
+
+    async def getLastPinnedMessage(self, channel_id: int) -> Optional[Message]:
+        await self.cur.execute(f'SELECT * FROM `messages` WHERE `channel_id`={channel_id} AND `pinned`=true ORDER BY `id` DESC LIMIT 1;')
+        if r := await self.cur.fetchone():
+            return Message.from_result(self.cur.description, r)
+
+    async def unpinMessage(self, message: Message) -> None:
+        e = message.extra_data
+        del e["pinned_at"]
+        sql = json_to_sql({"pinned": False, "extra_data": e})
+        await self.cur.execute(f'UPDATE `messages` SET {sql} WHERE `id`={message.id};')

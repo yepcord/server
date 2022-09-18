@@ -25,6 +25,8 @@ class _Errors:
     err_10008 = "Unknown Message"
     err_10013 = "Unknown User"
 
+    err_30003 = "Maximum number of pins reached (50)"
+
     err_50001 = "Missing Access"
     err_50003 = "Cannot execute action on a DM channel"
     err_50005 = "Cannot edit a message authored by another user"

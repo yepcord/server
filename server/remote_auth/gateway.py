@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives.hashes import SHA256
 
 from ..utils import b64encode, b64decode
-from ..msg_client import Client
+from ..pubsub_client import Client
 
 class GatewayClient:
     def __init__(self, ws, pubkey, fp, nonce):
