@@ -162,8 +162,8 @@ message TextAndImagesSettings {
     UseRichChatInput use_rich_chat_input = 2;
     UseThreadSidebar use_thread_sidebar = 3;
     RenderSpoilers render_spoilers = 4;
-    repeated string emoji_picker_collapsed_sections = 5;
-    repeated string sticker_picker_collapsed_sections = 6;
+    repeated string emoji_picker_collapsed_sections = 5 [packed = false];
+    repeated string sticker_picker_collapsed_sections = 6 [packed = false];
     ViewImageDescriptions view_image_descriptions = 7;
     ShowCommandSuggestions show_command_suggestions = 8;
     InlineAttachmentMedia inline_attachment_media = 9;
@@ -232,7 +232,7 @@ message FriendDiscoveryFlags {
 message PrivacySettings {
     AllowActivityPartyPrivacyFriends allow_activity_party_privacy_friends = 1;
     AllowActivityPartyPrivacyVoiceChannel allow_activity_party_privacy_voice_channel = 2;
-    repeated fixed64 restricted_guild_ids = 3;
+    repeated fixed64 restricted_guild_ids = 3 [packed = true];
     bool default_guilds_restricted = 4;
     bool allow_accessibility_detection = 7;
     DetectPlatformAccounts detect_platform_accounts = 8;
@@ -240,9 +240,9 @@ message PrivacySettings {
     ContactSyncEnabled contact_sync_enabled = 10;
     FriendSourceFlags friend_source_flags = 11;
     FriendDiscoveryFlags friend_discovery_flags = 12;
-    repeated fixed64 activity_restricted_guild_ids = 13;
+    repeated fixed64 activity_restricted_guild_ids = 13 [packed = true];
     GuildActivityStatusRestrictionDefault default_guilds_activity_restricted = 14;
-    repeated fixed64 activity_joining_restricted_guild_ids = 15;
+    repeated fixed64 activity_joining_restricted_guild_ids = 15 [packed = true];
 }
 
 message RtcPanelShowVoiceStates {
