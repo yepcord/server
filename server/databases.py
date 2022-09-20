@@ -5,7 +5,7 @@ from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
-    ChannelId, UserNote, UserConnection, Attachment
+    ChannelId, UserNote, UserConnection, Attachment, Reaction
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
 
@@ -184,6 +184,12 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def getLastPinnedMessage(self, channel_id: int) -> Optional[Message]: ...
+
+    @abstractmethod
+    async def addReaction(self, reaction: Reaction) -> None: ...
+
+    @abstractmethod
+    async def removeReaction(self, reaction: Reaction) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -400,7 +406,7 @@ class MySqlConnection:
         await self.cur.execute(f'UPDATE `read_states` set `count`={count}, `last_read_id`={last} WHERE `uid`={uid} and `channel_id`={channel_id};')
         if self.cur.rowcount == 0:
             if not last:
-                last = await self.getLastMessageId(ChannelId(channel_id), before=lsf() + 1, after=0)
+                last = await self.getLastMessageId(ChannelId(channel_id), before=lsf(), after=0)
             await self.cur.execute(f'INSERT INTO `read_states` (`uid`, `channel_id`, `last_read_id`, `count`) VALUES ({uid}, {channel_id}, {last}, {count});')
 
     async def delReadStateIfExists(self, uid: int, channel_id: int) -> bool:
@@ -503,3 +509,17 @@ class MySqlConnection:
         del e["pinned_at"]
         sql = json_to_sql({"pinned": False, "extra_data": e})
         await self.cur.execute(f'UPDATE `messages` SET {sql} WHERE `id`={message.id};')
+
+    async def addReaction(self, reaction: Reaction) -> None:
+        sql = json_to_sql(reaction.to_typed_json(), as_list=True)
+        ssql = " AND ".join(sql)
+        await self.cur.execute(f'SELECT * FROM `reactions` WHERE {ssql} LIMIT 1;')
+        if await self.cur.fetchone():
+            return
+        isql = ", ".join(sql)
+        await self.cur.execute(f'INSERT INTO `reactions` VALUES ({isql});')
+
+    async def removeReaction(self, reaction: Reaction) -> None:
+        sql = json_to_sql(reaction.to_typed_json(), as_list=True)
+        dsql = " AND ".join(sql)
+        await self.cur.execute(f'DELETE FROM `reactions` WHERE {dsql} LIMIT 1;')

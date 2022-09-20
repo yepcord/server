@@ -362,3 +362,27 @@ class ChannelPinsUpdateEvent(DispatchEvent):
                 "channel_id": str(self.channel_id)
             }
         }
+
+class MessageReactionAddEvent(DispatchEvent):
+    NAME = "MESSAGE_REACTION_ADD"
+
+    def __init__(self, user_id, message_id, channel_id, emoji):
+        self.user_id = user_id
+        self.message_id = message_id
+        self.channel_id = channel_id
+        self.emoji = emoji
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id),
+                "channel_id": str(self.channel_id),
+                "message_id": str(self.message_id),
+                "emoji": self.emoji
+            }
+        }
+
+class MessageReactionRemoveEvent(MessageReactionAddEvent):
+    NAME = "MESSAGE_REACTION_REMOVE"

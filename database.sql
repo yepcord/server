@@ -135,7 +135,6 @@ CREATE TABLE `messages` (
   `edit_timestamp` bigint DEFAULT NULL,
   `j_attachments` JSON NOT NULL DEFAULT "[]",
   `j_embeds` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "[]" CHECK(json_valid(`j_embeds`)),
-  `j_reactions` JSON NOT NULL DEFAULT "[]",
   `pinned` bool NOT NULL DEFAULT false,
   `webhook_id` bigint DEFAULT NULL,
   `application_id` bigint DEFAULT NULL,
@@ -205,4 +204,12 @@ CREATE TABLE `guild_templates` (
   `code` text NOT NULL,
   `template` JSON NOT NULL DEFAULT "{}",
   UNIQUE KEY `code` (`code`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `reactions`;
+CREATE TABLE `reactions` (
+  `mid` bigint NOT NULL,
+  `uid` bigint NOT NULL,
+  `emoji_id` bigint DEFAULT NULL,
+  `emoji_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

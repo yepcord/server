@@ -10,11 +10,13 @@ from os import urandom
 from json import dumps as jdumps, loads as jloads
 from random import choice
 from base64 import b64encode as _b64encode, b64decode as _b64decode
+import emoji
 
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, UserFlags
+from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, \
+    UserFlags, Reaction
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE
@@ -881,6 +883,28 @@ async def api_channels_channel_pins_get(user, channel):
     messages = await core.getPinnedMessages(channel.id)
     messages = [await message.json for message in messages]
     return messages
+
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["PUT"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
+    if not emoji.is_emoji(reaction): # TODO: Check custom emoji
+        raise InvalidDataErr(400, mkError(10014))
+    await core.addReaction(Reaction(message.id, user.id, None, reaction), channel)
+    return "", 204
+
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["DELETE"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
+    if not emoji.is_emoji(reaction): # TODO: Check custom emoji
+        raise InvalidDataErr(400, mkError(10014))
+    await core.removeReaction(Reaction(message.id, user.id, None, reaction), channel)
+    return "", 204
 
 
 # Stickers & gifs
