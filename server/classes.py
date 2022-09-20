@@ -937,8 +937,8 @@ class Message(_Message, DBModel):
             j["nonce"] = nonce
         if message_reference:
             j["message_reference"] = message_reference
-        if reactions := await self._core.getMessageReactions(self.id):
-            j["reactions"] = []
+        if reactions := await self._core.getMessageReactions(self.id, 76717859418259456): # TODO: replace with user_id
+            j["reactions"] = reactions
         return j
 
 class ZlibCompressor:

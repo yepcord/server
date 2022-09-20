@@ -208,8 +208,8 @@ CREATE TABLE `guild_templates` (
 
 DROP TABLE IF EXISTS `reactions`;
 CREATE TABLE `reactions` (
-  `mid` bigint NOT NULL,
-  `uid` bigint NOT NULL,
+  `message_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
   `emoji_id` bigint DEFAULT NULL,
   `emoji_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

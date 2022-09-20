@@ -10,7 +10,7 @@ from os import urandom
 from json import dumps as jdumps, loads as jloads
 from random import choice
 from base64 import b64encode as _b64encode, b64decode as _b64decode
-import emoji
+from emoji import is_emoji
 
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
@@ -890,7 +890,7 @@ async def api_channels_channel_pins_get(user, channel):
 @getChannel
 @getMessage
 async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
-    if not emoji.is_emoji(reaction): # TODO: Check custom emoji
+    if not is_emoji(reaction): # TODO: Check custom emoji
         raise InvalidDataErr(400, mkError(10014))
     await core.addReaction(Reaction(message.id, user.id, None, reaction), channel)
     return "", 204
@@ -901,7 +901,7 @@ async def api_channels_channel_messages_message_reactions_put(user, channel, mes
 @getChannel
 @getMessage
 async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
-    if not emoji.is_emoji(reaction): # TODO: Check custom emoji
+    if not is_emoji(reaction): # TODO: Check custom emoji
         raise InvalidDataErr(400, mkError(10014))
     await core.removeReaction(Reaction(message.id, user.id, None, reaction), channel)
     return "", 204

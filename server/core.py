@@ -705,8 +705,9 @@ class Core:
         async with self.db() as db:
             await db.addReaction(reaction)
         users = await self.getRelatedUsersToChannel(channel.id)
+        emoji = {"id": reaction.emoji_id, "name": reaction.emoji_name}
         await self.mcl.broadcast("message_events", {"e": "reaction_add", "data":
-            {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id}})
+            {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
 
     async def removeReaction(self, reaction: Reaction, channel: Channel) -> None:
         async with self.db() as db:
@@ -716,5 +717,6 @@ class Core:
         await self.mcl.broadcast("message_events", {"e": "reaction_remove", "data":
             {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
 
-    async def getMessageReactions(self) -> List[Reactions]:
-        return
+    async def getMessageReactions(self, message_id: int, user_id: int) -> list:
+        async with self.db() as db:
+            return await db.getMessageReactions(message_id, user_id)

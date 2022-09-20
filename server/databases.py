@@ -191,6 +191,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def removeReaction(self, reaction: Reaction) -> None: ...
 
+    @abstractmethod
+    async def getMessageReactions(self, message_id: int, user_id: int) -> list: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -512,14 +515,27 @@ class MySqlConnection:
 
     async def addReaction(self, reaction: Reaction) -> None:
         sql = json_to_sql(reaction.to_typed_json(), as_list=True)
+        with open("test.txt", "w", encoding="utf8") as f:
+            f.write(str(sql))
         ssql = " AND ".join(sql)
         await self.cur.execute(f'SELECT * FROM `reactions` WHERE {ssql} LIMIT 1;')
         if await self.cur.fetchone():
             return
-        isql = ", ".join(sql)
-        await self.cur.execute(f'INSERT INTO `reactions` VALUES ({isql});')
+        sql = json_to_sql(reaction.to_typed_json(), as_tuples=True)
+        fields = ", ".join([r[0] for r in sql])
+        isql = ", ".join([str(r[1]) for r in sql])
+        await self.cur.execute(f'INSERT INTO `reactions` ({fields}) VALUES ({isql});')
 
     async def removeReaction(self, reaction: Reaction) -> None:
         sql = json_to_sql(reaction.to_typed_json(), as_list=True)
         dsql = " AND ".join(sql)
         await self.cur.execute(f'DELETE FROM `reactions` WHERE {dsql} LIMIT 1;')
+
+    async def getMessageReactions(self, message_id: int, user_id: int) -> list:
+        reactions = []
+        await self.cur.execute(f'SELECT `emoji_name` as ename, COUNT(*) AS ecount, ' +
+                               f'(SELECT COUNT(*) > 0 FROM `reactions` WHERE `emoji_name`=ename AND `user_id`={user_id}) as me ' +
+                               f'FROM `reactions` WHERE `message_id`={message_id} GROUP BY `emoji_name`;') # TODO: add custom emoji
+        for r in await self.cur.fetchall():
+            reactions.append({"emoji": {"emoji_id": None, "name": r[0]}, "count": r[1], "me": bool(r[2])})
+        return reactions
