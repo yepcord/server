@@ -2,7 +2,6 @@ from copy import deepcopy
 from datetime import datetime
 from email.message import EmailMessage
 from time import mktime
-from typing import List, Union
 from uuid import uuid4, UUID
 from zlib import compressobj, Z_FULL_FLUSH
 
@@ -10,6 +9,7 @@ from dateutil.parser import parse as dparse
 from schema import Schema, Use, Optional, And, Or, Regex
 
 from .config import Config
+from .ctx import Ctx
 from .enums import ChannelType, MessageType, UserFlags as UserFlagsE
 from .errors import EmbedErr, InvalidDataErr
 from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAndVideoSettings, AfkTimeout, \
@@ -464,6 +464,10 @@ class UserData(DBModel):
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
 
+    @property
+    def s_discriminator(self) -> str:
+        return str(self.discriminator).rjust(4, "0")
+
 class User(_User, DBModel):
     FIELDS = ("email", "password", "key", "verified")
     ID_FIELD = "id"
@@ -607,13 +611,12 @@ class _Message:
         return isinstance(other, _Message) and self.id == other.id
 
 class Message(_Message, DBModel):
-    FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "reactions", "pinned",
+    FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "pinned",
               "webhook_id", "application_id", "type", "flags", "message_reference", "thread", "components",
               "sticker_items", "extra_data")
     ID_FIELD = "id"
     ALLOWED_FIELDS = ("nonce",)
-    DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "reactions": [],
-                "pinned": False,
+    DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "pinned": False,
                 "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
                 "thread": None, "components": [], "sticker_items": [], "extra_data": {}}
     SCHEMA = Schema({
@@ -624,7 +627,6 @@ class Message(_Message, DBModel):
         Optional("edit_timestamp"): Or(int, type(None)),
         Optional("attachments"): list, # TODO
         Optional("embeds"): list,
-        Optional("reactions"): list,
         Optional("pinned"): Use(bool),
         Optional("webhook_id"): Or(int, type(None)),
         Optional("application_id"): Or(int, type(None)),
@@ -636,13 +638,12 @@ class Message(_Message, DBModel):
         Optional("sticker_items"): list,
         Optional("extra_data"): dict,
     })
-    DB_FIELDS = {"attachments": "j_attachments", "embeds": "j_embeds", "reactions": "j_reactions",
-                 "components": "j_components",
+    DB_FIELDS = {"attachments": "j_attachments", "embeds": "j_embeds", "components": "j_components",
                  "sticker_items": "j_sticker_items", "extra_data": "j_extra_data"}
 
     def __init__(self, id, channel_id, author, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
-                 reactions=Null, pinned=Null, webhook_id=Null, application_id=Null, type=Null, flags=Null,
-                 message_reference=Null, thread=Null, components=Null, sticker_items=Null, extra_data=Null, **kwargs):
+                 pinned=Null, webhook_id=Null, application_id=Null, type=Null, flags=Null, message_reference=Null,
+                 thread=Null, components=Null, sticker_items=Null, extra_data=Null, **kwargs):
         self.id = id
         self.content = content
         self.channel_id = channel_id
@@ -650,7 +651,6 @@ class Message(_Message, DBModel):
         self.edit_timestamp = edit_timestamp
         self.attachments = attachments
         self.embeds = embeds
-        self.reactions = reactions
         self.pinned = pinned
         self.webhook_id = webhook_id
         self.application_id = application_id
@@ -733,7 +733,7 @@ class Message(_Message, DBModel):
             _mkTree(e, path, [{"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or fewer in length."}])
             return e
 
-    def _checkEmbeds(self):  # TODO: Check for total lenght
+    def _checkEmbeds(self):  # TODO: Check for total text lenght
         def _delIfEmpty(i, a):
             if (v := self.embeds[i].get(a)) and not bool(v):
                 del self.embeds[i][a]
@@ -884,7 +884,7 @@ class Message(_Message, DBModel):
                         "username": mdata.username,
                         "avatar": mdata.avatar,
                         "avatar_decoration": mdata.avatar_decoration,
-                        "discriminator": str(mdata.discriminator).rjust(4, "0"),
+                        "discriminator": mdata.s_discriminator,
                         "public_flags": mdata.public_flags
                     })
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
@@ -894,7 +894,7 @@ class Message(_Message, DBModel):
                     "username": u.username,
                     "public_flags": u.public_flags,
                     "id": str(u.uid),
-                    "discriminator": str(u.discriminator).rjust(4, "0"),
+                    "discriminator": u.s_discriminator,
                     "avatar_decoration": u.avatar_decoration,
                     "avatar": u.avatar
                 })
@@ -923,7 +923,7 @@ class Message(_Message, DBModel):
                 "username": author.username,
                 "avatar": author.avatar,
                 "avatar_decoration": author.avatar_decoration,
-                "discriminator": str(author.discriminator).rjust(4, "0"),
+                "discriminator": author.s_discriminator,
                 "public_flags": author.public_flags
             },
             "attachments": attachments,
@@ -942,6 +942,8 @@ class Message(_Message, DBModel):
             j["nonce"] = nonce
         if message_reference:
             j["message_reference"] = message_reference
+        if reactions := await self._core.getMessageReactions(self.id, Ctx.get("user_id", 0)):
+            j["reactions"] = reactions
         return j
 
 class ZlibCompressor:
@@ -1109,3 +1111,21 @@ class UserFlags:
             self.value -= val
             self.parsedFlags.remove(val)
         return self
+
+class Reaction(DBModel):
+    FIELDS = ("message_id", "user_id", "emoji_id", "emoji_name")
+    SCHEMA = Schema({
+        "message_id": Use(int),
+        "user_id": Use(int),
+        "emoji_id": Or(int, type(None)),
+        "emoji_name": Or(str, type(None))
+    })
+
+    def __init__(self, message_id, user_id, emoji_id=Null, emoji_name=Null):
+        self.message_id = message_id
+        self.user_id = user_id
+        self.emoji_id = emoji_id
+        self.emoji_name = emoji_name
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)

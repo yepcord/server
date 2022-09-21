@@ -120,7 +120,7 @@ class GatewayEvents:
                 "username": d.username,
                 "public_flags": d.public_flags,
                 "id": str(current_user),
-                "discriminator": str(d.discriminator).rjust(4, "0"),
+                "discriminator": d.s_discriminator,
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             }]
@@ -131,7 +131,7 @@ class GatewayEvents:
                     "username": d.username,
                     "public_flags": d.public_flags,
                     "id": str(current_user),
-                    "discriminator": str(d.discriminator).rjust(4, "0"),
+                    "discriminator": d.s_discriminator,
                     "avatar_decoration": d.avatar_decoration,
                     "avatar": d.avatar
                 },
@@ -148,7 +148,7 @@ class GatewayEvents:
                 "username": d.username,
                 "public_flags": d.public_flags,
                 "id": str(target_user),
-                "discriminator": str(d.discriminator).rjust(4, "0"),
+                "discriminator": d.s_discriminator,
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             }]
@@ -206,14 +206,15 @@ class GatewayEvents:
             await cl.esend(MessageAckEvent(data))
 
     async def dmchannel_create(self, users, channel_id):
-        clients = [c for c in self.clients if c.id in users and c.connected]
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
         channel = await self.core.getChannel(channel_id)
         rec = [await self.core.getUserData(UserId(u)) for u in channel.recipients]
         rec = {r.uid: {
             "username": r.username,
             "public_flags": r.public_flags,
             "id": str(r.uid),
-            "discriminator": str(r.discriminator).rjust(4, "0"),
+            "discriminator": r.s_discriminator,
             "avatar_decoration": r.avatar_decoration,
             "avatar": r.avatar
         } for r in rec}
@@ -225,8 +226,7 @@ class GatewayEvents:
             await cl.esend(DMChannelCreateEvent(channel, r))
 
     async def dmchannel_update(self, users, channel_id):
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        if not clients:
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
         channel = await self.core.getChannel(channel_id)
         rec = [await self.core.getUserData(UserId(u)) for u in channel.recipients]
@@ -234,7 +234,7 @@ class GatewayEvents:
             "username": r.username,
             "public_flags": r.public_flags,
             "id": str(r.uid),
-            "discriminator": str(r.discriminator).rjust(4, "0"),
+            "discriminator": r.s_discriminator,
             "avatar_decoration": r.avatar_decoration,
             "avatar": r.avatar
         } for r in rec}
@@ -245,15 +245,14 @@ class GatewayEvents:
             await cl.esend(DMChannelUpdateEvent(channel, r))
 
     async def dm_recipient_add(self, users, channel_id, user):
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        if not clients:
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
         user = await self.core.getUserData(UserId(user))
         user = {
             "username": user.username,
             "public_flags": user.public_flags,
             "id": str(user.uid),
-            "discriminator": str(user.discriminator).rjust(4, "0"),
+            "discriminator": user.s_discriminator,
             "avatar_decoration": user.avatar_decoration,
             "avatar": user.avatar
         }
@@ -261,15 +260,14 @@ class GatewayEvents:
             await cl.esend(ChannelRecipientAddEvent(channel_id, user))
 
     async def dm_recipient_remove(self, users, channel_id, user):
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        if not clients:
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
         user = await self.core.getUserData(UserId(user))
         user = {
             "username": user.username,
             "public_flags": user.public_flags,
             "id": str(user.uid),
-            "discriminator": str(user.discriminator).rjust(4, "0"),
+            "discriminator": user.s_discriminator,
             "avatar_decoration": user.avatar_decoration,
             "avatar": user.avatar
         }
@@ -277,20 +275,30 @@ class GatewayEvents:
             await cl.esend(ChannelRecipientRemoveEvent(channel_id, user))
 
     async def dmchannel_delete(self, users, channel_id):
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        if not clients:
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
         for cl in clients:
             await cl.esend(DMChannelDeleteEvent(channel_id))
 
     async def channel_pins_update(self, users, channel_id):
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        if not clients:
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
         msg = await self.core.getLastPinnedMessage(channel_id)
         ts = datetime.utcfromtimestamp(msg.extra_data["pinned_at"] if msg else 0).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         for cl in clients:
             await cl.esend(ChannelPinsUpdateEvent(channel_id, ts))
+
+    async def reaction_add(self, users, message_id, channel_id, user_id, emoji):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(MessageReactionAddEvent(user_id, message_id, channel_id, emoji))
+
+    async def reaction_remove(self, users, message_id, channel_id, user_id, emoji):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(MessageReactionRemoveEvent(user_id, message_id, channel_id, emoji))
 
 class Gateway:
     def __init__(self, core: Core):

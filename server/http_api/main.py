@@ -10,11 +10,14 @@ from os import urandom
 from json import dumps as jdumps, loads as jloads
 from random import choice
 from base64 import b64encode as _b64encode, b64decode as _b64decode
+from emoji import is_emoji
 
+from server.ctx import Ctx
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, UserFlags
+from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, \
+    UserFlags, Reaction
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE
@@ -76,6 +79,7 @@ def getUser(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (user := await core.getUserFromSession(session)):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+        Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
     return wrapped
@@ -88,6 +92,7 @@ def getSession(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not await core.validSession(session):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+        Ctx["user_id"] = session.id
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
@@ -882,6 +887,40 @@ async def api_channels_channel_pins_get(user, channel):
     messages = [await message.json for message in messages]
     return messages
 
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["PUT"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
+    if not is_emoji(reaction): # TODO: Check custom emoji
+        raise InvalidDataErr(400, mkError(10014))
+    await core.addReaction(Reaction(message.id, user.id, None, reaction), channel)
+    return "", 204
+
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["DELETE"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
+    if not is_emoji(reaction): # TODO: Check custom emoji
+        raise InvalidDataErr(400, mkError(10014))
+    await core.removeReaction(Reaction(message.id, user.id, None, reaction), channel)
+    return "", 204
+
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>", methods=["GET"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_reactions_reaction_get(user, channel, message, reaction):
+    if not is_emoji(reaction): # TODO: Check custom emoji
+        raise InvalidDataErr(400, mkError(10014))
+    limit = int(request.args.get("limit", 3))
+    if limit > 10:
+        limit = 10
+    return await core.getReactedUsers(Reaction(message.id, 0, None, reaction), limit)
 
 # Stickers & gifs
 

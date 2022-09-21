@@ -1,4 +1,5 @@
 from asyncio import get_event_loop
+from datetime import datetime
 from hmac import new
 from hashlib import sha256, sha512
 from os import urandom
@@ -14,7 +15,7 @@ from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    UserConnection, Attachment, Relationship, EmailMsg
+    UserConnection, Attachment, Relationship, EmailMsg, Reaction
 from .storage import _Storage
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
@@ -208,7 +209,7 @@ class Core:
                     "username": d.username,
                     "avatar": d.avatar,
                     "avatar_decoration": d.avatar_decoration,
-                    "discriminator": str(d.discriminator).rjust(4, "0"),
+                    "discriminator": d.s_discriminator,
                     "public_flags": d.public_flags
                 }
             return u
@@ -242,7 +243,7 @@ class Core:
                     "username": d.username,
                     "public_flags": d.public_flags,
                     "id": str(uid),
-                    "discriminator": str(d.discriminator).rjust(4, "0"),
+                    "discriminator": d.s_discriminator,
                     "avatar_decoration": d.avatar_decoration,
                     "avatar": d.avatar
                 })
@@ -261,7 +262,7 @@ class Core:
                         "username": d.username,
                         "public_flags": d.public_flags,
                         "id": str(uid),
-                        "discriminator": str(d.discriminator).rjust(4, "0"),
+                        "discriminator": d.s_discriminator,
                         "avatar_decoration": d.avatar_decoration,
                         "avatar": d.avatar
                     })
@@ -374,7 +375,7 @@ class Core:
         return await self.getLastMessageIdForChannel(channel.setCore(self))
 
     async def getLastMessageIdForChannel(self, channel: Channel) -> Channel:
-        return channel.set(last_message_id=await self.getLastMessageId(channel, lsf()+1, 0))
+        return channel.set(last_message_id=await self.getLastMessageId(channel, lsf(), 0))
 
     async def getLastMessageId(self, channel: Channel, before: int, after: int) -> int:
         async with self.db() as db:
@@ -485,7 +486,7 @@ class Core:
         for st in await self.getReadStates(user.id):
             states.append({
                 "mention_count": st.count,
-                "last_pin_timestamp": "1970-01-01T00:00:00+00:00",  # TODO
+                "last_pin_timestamp": await self.getLastPinTimestamp(st.channel_id),
                 "last_message_id": str(st.last_read_id),
                 "id": str(st.channel_id),
             })
@@ -686,6 +687,10 @@ class Core:
         async with self.db() as db:
             return await db.getLastPinnedMessage(channel_id)
 
+    async def getLastPinTimestamp(self, channel_id: int) -> str:
+        m = await self.getLastPinnedMessage(channel_id)
+        return datetime.utcfromtimestamp(m.extra_data["pinned_at"] if m else 0).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
     async def getPinnedMessages(self, channel_id: int) -> List[Message]:
         async with self.db() as db:
             return [message.setCore(self) for message in await db.getPinnedMessages(channel_id)]
@@ -695,3 +700,39 @@ class Core:
             await db.unpinMessage(message)
         users = await self.getRelatedUsersToChannel(message.channel_id)
         await self.mcl.broadcast("channel_events", {"e": "channel_pins_update", "data": {"users": users, "channel_id": message.channel_id}})
+
+    async def addReaction(self, reaction: Reaction, channel: Channel) -> None:
+        async with self.db() as db:
+            await db.addReaction(reaction)
+        users = await self.getRelatedUsersToChannel(channel.id)
+        emoji = {"id": reaction.emoji_id, "name": reaction.emoji_name}
+        await self.mcl.broadcast("message_events", {"e": "reaction_add", "data":
+            {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
+
+    async def removeReaction(self, reaction: Reaction, channel: Channel) -> None:
+        async with self.db() as db:
+            await db.removeReaction(reaction)
+        users = await self.getRelatedUsersToChannel(channel.id)
+        emoji = {"id": reaction.emoji_id, "name": reaction.emoji_name}
+        await self.mcl.broadcast("message_events", {"e": "reaction_remove", "data":
+            {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
+
+    async def getMessageReactions(self, message_id: int, user_id: int) -> list:
+        async with self.db() as db:
+            return await db.getMessageReactions(message_id, user_id)
+
+    async def getReactedUsers(self, reaction: Reaction, limit: int) -> List[dict]:
+        users = []
+        async with self.db() as db:
+            users_ids = await db.getReactedUsersIds(reaction, limit)
+        for uid in users_ids:
+            data = await self.getUserData(UserId(uid))
+            users.append({
+                "id": str(uid),
+                "username": data.username,
+                "avatar": data.avatar,
+                "avatar_decoration": data.avatar_decoration,
+                "discriminator": data.s_discriminator,
+                "public_flags": data.public_flags
+            })
+        return users

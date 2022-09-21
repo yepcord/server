@@ -24,6 +24,7 @@ class _Errors:
     err_10003 = "Unknown Channel"
     err_10008 = "Unknown Message"
     err_10013 = "Unknown User"
+    err_10014 = "Unknown Emoji"
 
     err_30003 = "Maximum number of pins reached (50)"
 

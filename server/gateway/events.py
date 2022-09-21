@@ -32,7 +32,7 @@ class ReadyEvent(DispatchEvent):
                     "email": self.user.email,
                     "phone": userdata.phone,
                     "username": userdata.username,
-                    "discriminator": str(userdata.discriminator).rjust(4, "0"),
+                    "discriminator": userdata.s_discriminator,
                     "bio": userdata.bio,
                     "avatar": userdata.avatar,
                     "avatar_decoration": userdata.avatar_decoration,
@@ -134,7 +134,7 @@ class RelationshipAddEvent(DispatchEvent):
                     "username": self.userdata.username,
                     "public_flags": self.userdata.public_flags,
                     "id": str(self.user_id),
-                    "discriminator": str(self.userdata.discriminator).rjust(4, "0"),
+                    "discriminator": self.userdata.s_discriminator,
                     "avatar_decoration": self.userdata.avatar_decoration,
                     "avatar": self.userdata.avatar
                 },
@@ -212,7 +212,7 @@ class UserUpdateEvent(DispatchEvent):
                 "id": str(self.user.id),
                 "flags": 0,
                 "email": self.user.email,
-                "discriminator": str(self.userdata.discriminator).rjust(4, "0"),
+                "discriminator": self.userdata.s_discriminator,
                 "bio": self.userdata.bio,
                 "banner_color": self.userdata.banner_color,
                 "banner": self.userdata.banner,
@@ -239,7 +239,7 @@ class PresenceUpdateEvent(DispatchEvent):
                     "username": self.userdata.username,
                     "public_flags": self.userdata.public_flags,
                     "id": str(self.user),
-                    "discriminator": str(self.userdata.discriminator).rjust(4, "0"),
+                    "discriminator": self.userdata.s_discriminator,
                     "avatar": self.userdata.avatar
                 },
                 "status": self.status["status"],
@@ -362,3 +362,27 @@ class ChannelPinsUpdateEvent(DispatchEvent):
                 "channel_id": str(self.channel_id)
             }
         }
+
+class MessageReactionAddEvent(DispatchEvent):
+    NAME = "MESSAGE_REACTION_ADD"
+
+    def __init__(self, user_id, message_id, channel_id, emoji):
+        self.user_id = user_id
+        self.message_id = message_id
+        self.channel_id = channel_id
+        self.emoji = emoji
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id),
+                "channel_id": str(self.channel_id),
+                "message_id": str(self.message_id),
+                "emoji": self.emoji
+            }
+        }
+
+class MessageReactionRemoveEvent(MessageReactionAddEvent):
+    NAME = "MESSAGE_REACTION_REMOVE"
