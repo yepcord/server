@@ -194,6 +194,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def getMessageReactions(self, message_id: int, user_id: int) -> list: ...
 
+    @abstractmethod
+    async def getReactedUsersIds(self, reaction: Reaction, limit: int) -> List[int]: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -527,7 +530,7 @@ class MySqlConnection:
         await self.cur.execute(f'INSERT INTO `reactions` ({fields}) VALUES ({isql});')
 
     async def removeReaction(self, reaction: Reaction) -> None:
-        sql = json_to_sql(reaction.to_typed_json(), as_list=True)
+        sql = json_to_sql(reaction.to_typed_json(), as_list=True, is_none=True)
         dsql = " AND ".join(sql)
         await self.cur.execute(f'DELETE FROM `reactions` WHERE {dsql} LIMIT 1;')
 
@@ -539,3 +542,7 @@ class MySqlConnection:
         for r in await self.cur.fetchall():
             reactions.append({"emoji": {"emoji_id": None, "name": r[0]}, "count": r[1], "me": bool(r[2])})
         return reactions
+
+    async def getReactedUsersIds(self, reaction: Reaction, limit: int) -> List[int]:
+        await self.cur.execute(f'SELECT `user_id` FROM `reactions` WHERE `message_id`={reaction.message_id} AND `emoji_name`="{escape_string(reaction.emoji_name)}" LIMIT {limit};')
+        return [r[0] for r in await self.cur.fetchall()]

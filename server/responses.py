@@ -54,7 +54,7 @@ async def userdataResponse(user):
         "username": data.username,
         "avatar": data.avatar,
         "avatar_decoration": data.avatar_decoration,
-        "discriminator": str(data.discriminator).rjust(4, "0"),
+        "discriminator": data.s_discriminator,
         "public_flags": data.public_flags,
         "flags": data.flags,
         "banner": data.banner,
@@ -92,7 +92,7 @@ async def userProfileResponse(user):
             "username": data.username,
             "avatar": data.avatar,
             "avatar_decoration": data.avatar_decoration,
-            "discriminator": str(data.discriminator).rjust(4, "0"),
+            "discriminator": data.s_discriminator,
             "public_flags": data.public_flags,
             "flags": data.flags,
             "banner": data.banner,
@@ -124,7 +124,7 @@ async def channelInfoResponse(channel, user, ids=True):
                 "username": data.username,
                 "avatar": data.avatar,
                 "avatar_decoration": data.avatar_decoration,
-                "discriminator": str(data.discriminator).rjust(4, "0"),
+                "discriminator": data.s_discriminator,
                 "public_flags": data.public_flags
             })
     if channel.type == ChannelType.DM:

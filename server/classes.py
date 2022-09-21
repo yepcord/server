@@ -9,6 +9,7 @@ from dateutil.parser import parse as dparse
 from schema import Schema, Use, Optional, And, Or, Regex
 
 from .config import Config
+from .ctx import Ctx
 from .enums import ChannelType, MessageType, UserFlags as UserFlagsE
 from .errors import EmbedErr, InvalidDataErr
 from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAndVideoSettings, AfkTimeout, \
@@ -463,6 +464,10 @@ class UserData(DBModel):
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
 
+    @property
+    def s_discriminator(self) -> str:
+        return str(self.discriminator).rjust(4, "0")
+
 class User(_User, DBModel):
     FIELDS = ("email", "password", "key", "verified")
     ID_FIELD = "id"
@@ -728,7 +733,7 @@ class Message(_Message, DBModel):
             _mkTree(e, path, [{"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or fewer in length."}])
             return e
 
-    def _checkEmbeds(self):  # TODO: Check for total lenght
+    def _checkEmbeds(self):  # TODO: Check for total text lenght
         def _delIfEmpty(i, a):
             if (v := self.embeds[i].get(a)) and not bool(v):
                 del self.embeds[i][a]
@@ -879,7 +884,7 @@ class Message(_Message, DBModel):
                         "username": mdata.username,
                         "avatar": mdata.avatar,
                         "avatar_decoration": mdata.avatar_decoration,
-                        "discriminator": str(mdata.discriminator).rjust(4, "0"),
+                        "discriminator": mdata.s_discriminator,
                         "public_flags": mdata.public_flags
                     })
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
@@ -889,7 +894,7 @@ class Message(_Message, DBModel):
                     "username": u.username,
                     "public_flags": u.public_flags,
                     "id": str(u.uid),
-                    "discriminator": str(u.discriminator).rjust(4, "0"),
+                    "discriminator": u.s_discriminator,
                     "avatar_decoration": u.avatar_decoration,
                     "avatar": u.avatar
                 })
@@ -918,7 +923,7 @@ class Message(_Message, DBModel):
                 "username": author.username,
                 "avatar": author.avatar,
                 "avatar_decoration": author.avatar_decoration,
-                "discriminator": str(author.discriminator).rjust(4, "0"),
+                "discriminator": author.s_discriminator,
                 "public_flags": author.public_flags
             },
             "attachments": attachments,
@@ -937,7 +942,7 @@ class Message(_Message, DBModel):
             j["nonce"] = nonce
         if message_reference:
             j["message_reference"] = message_reference
-        if reactions := await self._core.getMessageReactions(self.id, 76717859418259456): # TODO: replace with user_id
+        if reactions := await self._core.getMessageReactions(self.id, Ctx.get("user_id", 0)):
             j["reactions"] = reactions
         return j
 

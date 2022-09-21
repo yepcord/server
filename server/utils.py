@@ -141,7 +141,7 @@ async def execute_after(coro, seconds):
     get_event_loop().create_task(_wait_exec(coro, seconds))
 
 
-def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
+def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False) -> Union[str, list]:
     query = []
     for k,v in json.items():
         if isinstance(v, str):
@@ -154,11 +154,11 @@ def json_to_sql(json: dict, as_list=False, as_tuples=False) -> Union[str, list]:
             v = escape_string(jdumps(v))
             v = f"\"{v}\""
         elif v is None:
-            v = "null"
+            v = "IS NULL" if is_none else "NULL"
         if as_tuples:
             query.append((k,v))
         else:
-            query.append(f"`{k}`={v}")
+            query.append(f"`{k}`={v}" if v != "IS NULL" else f"`{k}` {v}")
     if as_list or as_tuples:
         return query
     return ", ".join(query)

@@ -209,7 +209,7 @@ class Core:
                     "username": d.username,
                     "avatar": d.avatar,
                     "avatar_decoration": d.avatar_decoration,
-                    "discriminator": str(d.discriminator).rjust(4, "0"),
+                    "discriminator": d.s_discriminator,
                     "public_flags": d.public_flags
                 }
             return u
@@ -243,7 +243,7 @@ class Core:
                     "username": d.username,
                     "public_flags": d.public_flags,
                     "id": str(uid),
-                    "discriminator": str(d.discriminator).rjust(4, "0"),
+                    "discriminator": d.s_discriminator,
                     "avatar_decoration": d.avatar_decoration,
                     "avatar": d.avatar
                 })
@@ -262,7 +262,7 @@ class Core:
                         "username": d.username,
                         "public_flags": d.public_flags,
                         "id": str(uid),
-                        "discriminator": str(d.discriminator).rjust(4, "0"),
+                        "discriminator": d.s_discriminator,
                         "avatar_decoration": d.avatar_decoration,
                         "avatar": d.avatar
                     })
@@ -720,3 +720,19 @@ class Core:
     async def getMessageReactions(self, message_id: int, user_id: int) -> list:
         async with self.db() as db:
             return await db.getMessageReactions(message_id, user_id)
+
+    async def getReactedUsers(self, reaction: Reaction, limit: int) -> List[dict]:
+        users = []
+        async with self.db() as db:
+            users_ids = await db.getReactedUsersIds(reaction, limit)
+        for uid in users_ids:
+            data = await self.getUserData(UserId(uid))
+            users.append({
+                "id": str(uid),
+                "username": data.username,
+                "avatar": data.avatar,
+                "avatar_decoration": data.avatar_decoration,
+                "discriminator": data.s_discriminator,
+                "public_flags": data.public_flags
+            })
+        return users

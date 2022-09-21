@@ -120,7 +120,7 @@ class GatewayEvents:
                 "username": d.username,
                 "public_flags": d.public_flags,
                 "id": str(current_user),
-                "discriminator": str(d.discriminator).rjust(4, "0"),
+                "discriminator": d.s_discriminator,
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             }]
@@ -131,7 +131,7 @@ class GatewayEvents:
                     "username": d.username,
                     "public_flags": d.public_flags,
                     "id": str(current_user),
-                    "discriminator": str(d.discriminator).rjust(4, "0"),
+                    "discriminator": d.s_discriminator,
                     "avatar_decoration": d.avatar_decoration,
                     "avatar": d.avatar
                 },
@@ -148,7 +148,7 @@ class GatewayEvents:
                 "username": d.username,
                 "public_flags": d.public_flags,
                 "id": str(target_user),
-                "discriminator": str(d.discriminator).rjust(4, "0"),
+                "discriminator": d.s_discriminator,
                 "avatar_decoration": d.avatar_decoration,
                 "avatar": d.avatar
             }]
@@ -214,7 +214,7 @@ class GatewayEvents:
             "username": r.username,
             "public_flags": r.public_flags,
             "id": str(r.uid),
-            "discriminator": str(r.discriminator).rjust(4, "0"),
+            "discriminator": r.s_discriminator,
             "avatar_decoration": r.avatar_decoration,
             "avatar": r.avatar
         } for r in rec}
@@ -234,7 +234,7 @@ class GatewayEvents:
             "username": r.username,
             "public_flags": r.public_flags,
             "id": str(r.uid),
-            "discriminator": str(r.discriminator).rjust(4, "0"),
+            "discriminator": r.s_discriminator,
             "avatar_decoration": r.avatar_decoration,
             "avatar": r.avatar
         } for r in rec}
@@ -252,7 +252,7 @@ class GatewayEvents:
             "username": user.username,
             "public_flags": user.public_flags,
             "id": str(user.uid),
-            "discriminator": str(user.discriminator).rjust(4, "0"),
+            "discriminator": user.s_discriminator,
             "avatar_decoration": user.avatar_decoration,
             "avatar": user.avatar
         }
@@ -267,7 +267,7 @@ class GatewayEvents:
             "username": user.username,
             "public_flags": user.public_flags,
             "id": str(user.uid),
-            "discriminator": str(user.discriminator).rjust(4, "0"),
+            "discriminator": user.s_discriminator,
             "avatar_decoration": user.avatar_decoration,
             "avatar": user.avatar
         }

@@ -12,6 +12,7 @@ from random import choice
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from emoji import is_emoji
 
+from server.ctx import Ctx
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
@@ -78,6 +79,7 @@ def getUser(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (user := await core.getUserFromSession(session)):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+        Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
     return wrapped
@@ -90,6 +92,7 @@ def getSession(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not await core.validSession(session):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+        Ctx["user_id"] = session.id
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
@@ -906,6 +909,18 @@ async def api_channels_channel_messages_message_reactions_delete(user, channel, 
     await core.removeReaction(Reaction(message.id, user.id, None, reaction), channel)
     return "", 204
 
+
+@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>", methods=["GET"])
+@getUser
+@getChannel
+@getMessage
+async def api_channels_channel_messages_message_reactions_reaction_get(user, channel, message, reaction):
+    if not is_emoji(reaction): # TODO: Check custom emoji
+        raise InvalidDataErr(400, mkError(10014))
+    limit = int(request.args.get("limit", 3))
+    if limit > 10:
+        limit = 10
+    return await core.getReactedUsers(Reaction(message.id, 0, None, reaction), limit)
 
 # Stickers & gifs
 
