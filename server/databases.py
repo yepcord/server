@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
+from re import sub
 from time import time
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
-    ChannelId, UserNote, UserConnection, Attachment, Reaction
+    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
 
@@ -196,6 +197,9 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def getReactedUsersIds(self, reaction: Reaction, limit: int) -> List[int]: ...
+
+    @abstractmethod
+    async def searchMessages(self, filter: SearchFilter) -> Tuple[List[Message], int]: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -518,8 +522,6 @@ class MySqlConnection:
 
     async def addReaction(self, reaction: Reaction) -> None:
         sql = json_to_sql(reaction.to_typed_json(), as_list=True)
-        with open("test.txt", "w", encoding="utf8") as f:
-            f.write(str(sql))
         ssql = " AND ".join(sql)
         await self.cur.execute(f'SELECT * FROM `reactions` WHERE {ssql} LIMIT 1;')
         if await self.cur.fetchone():
@@ -546,3 +548,14 @@ class MySqlConnection:
     async def getReactedUsersIds(self, reaction: Reaction, limit: int) -> List[int]:
         await self.cur.execute(f'SELECT `user_id` FROM `reactions` WHERE `message_id`={reaction.message_id} AND `emoji_name`="{escape_string(reaction.emoji_name)}" LIMIT {limit};')
         return [r[0] for r in await self.cur.fetchall()]
+
+    async def searchMessages(self, filter: SearchFilter) -> Tuple[List[Message], int]:
+        messages = []
+        where = filter.to_sql()
+        await self.cur.execute(f'SELECT * FROM `messages` WHERE {where};')
+        for r in await self.cur.fetchall():
+            messages.append(Message.from_result(self.cur.description, r))
+        where = sub(r' LIMIT \d{1,},{0,1}\d{0,}', "", where)
+        await self.cur.execute(f'SELECT COUNT(*) as c FROM `messages` WHERE {where};')
+        total = (await self.cur.fetchone())[0]
+        return messages, total

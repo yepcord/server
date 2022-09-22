@@ -15,7 +15,7 @@ from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    UserConnection, Attachment, Relationship, EmailMsg, Reaction
+    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter
 from .storage import _Storage
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
@@ -736,3 +736,8 @@ class Core:
                 "public_flags": data.public_flags
             })
         return users
+
+    async def searchMessages(self, filter: SearchFilter) -> Tuple[List[Message], int]:
+        async with self.db() as db:
+            messages, total = await db.searchMessages(filter)
+            return [m.setCore(self) for m in messages], total

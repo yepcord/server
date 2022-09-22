@@ -6,6 +6,7 @@ from uuid import uuid4, UUID
 from zlib import compressobj, Z_FULL_FLUSH
 
 from dateutil.parser import parse as dparse
+from aiomysql import escape_string
 from schema import Schema, Use, Optional, And, Or, Regex
 
 from .config import Config
@@ -942,8 +943,9 @@ class Message(_Message, DBModel):
             j["nonce"] = nonce
         if message_reference:
             j["message_reference"] = message_reference
-        if reactions := await self._core.getMessageReactions(self.id, Ctx.get("user_id", 0)):
-            j["reactions"] = reactions
+        if not Ctx.get("search", False):
+            if reactions := await self._core.getMessageReactions(self.id, Ctx.get("user_id", 0)):
+                j["reactions"] = reactions
         return j
 
 class ZlibCompressor:
@@ -1129,3 +1131,67 @@ class Reaction(DBModel):
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
+
+class SearchFilter(DBModel):
+    FIELDS = ("author_id", "sort_by", "sort_order", "mentions", "has", "min_id", "max_id", "pinned", "offset", "content")
+    SCHEMA = Schema({
+        Optional("author_id"): Use(int),
+        Optional("sort_by"): And(lambda s: s in ("id",)),
+        Optional("sort_order"): And(lambda s: s in ("asc", "desc")),
+        Optional("mentions"): Use(int),
+        Optional("has"): And(lambda s: s in ("link", "video", "file", "embed", "image", "sound", "sticker")),
+        Optional("min_id"): Use(int),
+        Optional("max_id"): Use(int),
+        Optional("pinned"): And(lambda s: s in ("true", "false")),
+        Optional("offset"): Use(int),
+        Optional("content"): str,
+    })
+    def __init__(self, author_id=Null, sort_by=Null, sort_order=Null, mentions=Null, has=Null, min_id=Null, max_id=Null,
+                 pinned=Null, offset=Null, content=Null):
+        self.author_id = author_id
+        if sort_by == "relevance":
+            sort_by = "timestamp"
+            sort_order = "desc"
+        if sort_by == "timestamp":
+            sort_by = "id"
+            sort_order = "desc"
+        self.sort_by = sort_by or "id"
+        self.sort_order = sort_order or "desc"
+        self.mentions = mentions
+        self.has = has
+        self.min_id = min_id
+        self.max_id = max_id
+        self.pinned = pinned
+        self.offset = offset
+        self.content = content
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)
+
+    def to_sql(self) -> str: # TODO: add has parameter
+        data = self.to_typed_json()
+        where = []
+        if "author_id" in data:
+            where.append(f"`author`={data['author_id']}")
+        if "mentions" in data:
+            where.append("`content` REGEXP '<@!{0,1}\\\\d{17,}>'")
+        if "pinned" in data:
+            where.append(f"`pinned`={data['pinned']}")
+        if "min_id" in data:
+            where.append(f"`id` > {data['min_id']}")
+        if "max_id" in data:
+            where.append(f"`id` < {data['max_id']}")
+        if "content" in data:
+            where.append(f"`content`={escape_string(data['content'])}")
+        if not where:
+            where = ["true"]
+        where = " AND ".join(where)
+        if "sort_by" in data:
+            where += f" ORDER BY `{data['sort_by']}`"
+            if "sort_order" in data:
+                where += f" {data['sort_order'].upper()}"
+        if "offset" in data:
+            where += f" LIMIT {data['offset']},25"
+        else:
+            where += f" LIMIT 25"
+        return where
