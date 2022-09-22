@@ -17,7 +17,7 @@ from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, \
-    UserFlags, Reaction
+    UserFlags, Reaction, SearchFilter
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE
@@ -873,7 +873,7 @@ async def api_channels_channel_pins_message_put(user, channel, message):
 @getUser
 @getChannel
 @getMessage
-async def api_channels_channel_pins_message_DELETE(user, channel, message):
+async def api_channels_channel_pins_message_delete(user, channel, message):
     if message.pinned:
         await core.unpinMessage(message)
     return "", 204
@@ -921,6 +921,19 @@ async def api_channels_channel_messages_message_reactions_reaction_get(user, cha
     if limit > 10:
         limit = 10
     return await core.getReactedUsers(Reaction(message.id, 0, None, reaction), limit)
+
+
+@app.route("/api/v9/channels/<int:channel>/messages/search", methods=["GET"])
+@getUser
+@getChannel
+async def api_channels_channel_messages_search(user, channel):
+    messages, total = await core.searchMessages(SearchFilter(**request.args))
+    Ctx["search"] = True
+    messages = [[await message.json] for message in messages]
+    for message in messages:
+        message[0]["hit"] = True
+    return c_json({"messages": messages, "total_results": total})
+
 
 # Stickers & gifs
 
