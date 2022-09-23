@@ -15,7 +15,7 @@ from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter
+    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite
 from .storage import _Storage
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
@@ -27,6 +27,8 @@ class CDN(_Storage):
         self.core = core
 
 class Core:
+    _instance = None
+
     def __init__(self, key=None, db=None, loop=None):
         self.key = key if key and len(key) == 16 and type(key) == bytes else b''
         self.db = MySQL() if not db else db
@@ -34,6 +36,15 @@ class Core:
         self.loop = loop or get_event_loop()
         self.mcl = Broadcaster("http")
         self._cache = {}
+
+    def __new__(cls, *args, **kwargs):
+        if not isinstance(cls._instance, cls):
+            cls._instance = super(Core, cls).__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def getInstance(cls):
+        return cls._instance
 
     async def initMCL(self):
         try:
@@ -458,7 +469,7 @@ class Core:
             await db.deleteMessage(message)
         await self.mcl.broadcast("message_events", {"e": "message_delete", "data": {"message": message.id, "channel": message.channel_id}})
 
-    async def getRelatedUsersToChannel(self, channel_id: int) -> list:
+    async def getRelatedUsersToChannel(self, channel_id: int) -> List[int]:
         channel = await self.getChannel(channel_id)
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             return channel.recipients
@@ -741,3 +752,16 @@ class Core:
         async with self.db() as db:
             messages, total = await db.searchMessages(filter)
             return [m.setCore(self) for m in messages], total
+
+    async def createInvite(self, channel: Channel, inviter: User, max_age: int) -> Invite:
+        invite = Invite(mksf(), channel.id, inviter.id, int(time()), max_age).setCore(self)
+        async with self.db() as db:
+            await db.putInvite(invite)
+        return invite
+
+    async def getInvite(self, invite_id: int) -> Optional[Invite]:
+        async with self.db() as db:
+            return await db.getInvite(invite_id)
+
+import server.ctx as c
+c._getCore = lambda: Core.getInstance()

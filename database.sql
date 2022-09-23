@@ -213,3 +213,15 @@ CREATE TABLE `reactions` (
   `emoji_id` bigint DEFAULT NULL,
   `emoji_name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `invites`;
+CREATE TABLE `invites` (
+  `id` bigint NOT NULL,
+  `channel_id` bigint NOT NULL,
+  `inviter` bigint NOT NULL,
+  `created_at` bigint NOT NULL,
+  `max_age` bigint NOT NULL,
+  `guild_id` bigint DEFAULT NULL,
+  `type` int NOT NULL DEFAULT 1,
+  UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

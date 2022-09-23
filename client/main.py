@@ -1,5 +1,5 @@
 from quart import Quart, redirect
-from os.path import realpath, dirname, join
+from os.path import realpath, dirname, join, isfile
 from aiohttp import ClientSession
 from aiofiles import open as aopen
 
@@ -25,12 +25,13 @@ CONFIG = {
 
 async def downloadAsset(file):
     if file.endswith(".js.map"):
-        return
+        return False
     async with ClientSession() as sess:
         async with sess.get(f"https://discord.com/assets/{file}") as res:
             async with aopen(join(STATIC_FOLDER, file), "wb") as fp:
                 async for chunk in res.content.iter_chunked(32*1024):
                     await fp.write(chunk)
+    return True
 
 with open(HTML_FILE, "r", encoding="utf8") as f:
     HTML_DATA_MAIN = f.read()
@@ -68,13 +69,15 @@ async def discord(**kwargs):
 
 
 @app.route("/verify")
+@app.route("/invite/<invite>")
 async def discord_verify(**kwargs):
     return HTML_DATA_VERIFY
 
 
 @app.route("/assets/<file>")
 async def assets(file):
-    await downloadAsset(file)
+    if not isfile(join(STATIC_FOLDER, file)):
+        await downloadAsset(file)
     return await app.send_static_file(file)
 
 if __name__ == "__main__":
