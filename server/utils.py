@@ -66,6 +66,8 @@ lsf = lastSnowflake
 def snowflake_timestamp(sf):
     return (sf >> 22) + _EPOCH
 
+sf_ts = snowflake_timestamp
+
 
 def c_json(json, code=200, headers=None):
     if headers is None:

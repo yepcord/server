@@ -1,5 +1,10 @@
-from contextvars import ContextVar, copy_context
+from __future__ import annotations
 
+from contextvars import ContextVar, copy_context
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .core import Core
 
 class _Ctx:
     _CTX = ContextVar("ctx")
@@ -31,3 +36,8 @@ class _Ctx:
         self.set(key, value)
 
 Ctx = _Ctx()
+
+def _getCore(): pass
+
+def getCore() -> Core:
+    return Ctx.get("CORE") or _getCore()

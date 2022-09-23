@@ -274,11 +274,11 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(ChannelRecipientRemoveEvent(channel_id, user))
 
-    async def dmchannel_delete(self, users, channel_id):
+    async def dmchannel_delete(self, users, channel):
         if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
         for cl in clients:
-            await cl.esend(DMChannelDeleteEvent(channel_id))
+            await cl.esend(DMChannelDeleteEvent(channel))
 
     async def channel_pins_update(self, users, channel_id):
         if not (clients := [c for c in self.clients if c.id in users and c.connected]):

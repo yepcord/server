@@ -110,7 +110,7 @@ async def userProfileResponse(user):
     }
 
 
-async def channelInfoResponse(channel, user, ids=True):
+async def channelInfoResponse(channel, user, ids=True) -> dict:
     _recipients = channel.recipients.copy()
     _recipients.remove(user.id)
     recipients = _recipients
@@ -144,3 +144,4 @@ async def channelInfoResponse(channel, user, ids=True):
             "name": channel.name,
             "icon": channel.icon
         }
+    return j

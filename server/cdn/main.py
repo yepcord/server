@@ -82,7 +82,6 @@ async def channelicons_cid_hash(cid, name):
         return b'', 400
     if size > 1024: size = 1024
     avatar = await cdn.getChannelIcon(cid, ihash, size, fmt)
-    print(len(avatar))
     if not avatar:
         return b'', 400
     return avatar, 200, {"Content-Type": f"image/{fmt}"}

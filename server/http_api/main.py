@@ -79,6 +79,7 @@ def getUser(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (user := await core.getUserFromSession(session)):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+        Ctx.set("CORE", core)
         Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
@@ -92,6 +93,7 @@ def getSession(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not await core.validSession(session):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+        Ctx.set("CORE", core)
         Ctx["user_id"] = session.id
         kwargs["session"] = session
         return await f(*args, **kwargs)
@@ -132,6 +134,22 @@ def getMessage(f):
         if isinstance((message := await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))), tuple):
             return message
         kwargs["message"] = message
+        return await f(*args, **kwargs)
+    return wrapped
+
+def getInvite(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (invite := kwargs.get("invite")):
+            raise InvalidDataErr(404, mkError(10006))
+        try:
+            invite = b64decode(invite)
+        except:
+            raise InvalidDataErr(404, mkError(10006))
+        invite = int.from_bytes(invite, "big")
+        if not (invite := await core.getInvite(invite)):
+            raise InvalidDataErr(404, mkError(10006))
+        kwargs["invite"] = invite
         return await f(*args, **kwargs)
     return wrapped
 
@@ -935,6 +953,47 @@ async def api_channels_channel_messages_search(user, channel):
     return c_json({"messages": messages, "total_results": total})
 
 
+# Invites
+
+
+@app.route("/api/v9/channels/<int:channel>/invites", methods=["POST"])
+@getUser
+@getChannel
+async def api_channels_channel_invites_post(user, channel):
+    data = await request.get_json()
+    max_age = data.get("max_age", 86400)
+    invite = await core.createInvite(channel, user, max_age)
+    return c_json(await invite.json)
+
+
+@app.route("/api/v9/invites/<string:invite>", methods=["GET"])
+@getInvite
+async def api_invites_invite_get(invite):
+    data = request.args
+    with_counts = data.get("with_counts", "false").lower == "true"
+    inv = await invite.getJson(with_counts, without=["max_age", "created_at"])
+    return c_json(inv)
+
+
+@app.route("/api/v9/invites/<string:invite>", methods=["POST"])
+@getUser
+@getInvite
+async def api_invites_invite_post(user, invite):
+    channel = await core.getChannel(invite.channel_id)
+    if user.id not in channel.recipients and len(channel.recipients) >= 10:
+        raise InvalidDataErr(404, mkError(10006))
+    inv = await invite.getJson(without=["max_age", "created_at"])
+    if channel.type == ChannelType.GROUP_DM:
+        inv["new_member"] = user.id not in channel.recipients
+        if inv["new_member"]:
+            msg = Message(id=mksf(), author=channel.owner_id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_ADD, extra_data={"user": user.id})
+            await core.addUserToGroupDM(channel, user.id)
+            await core.sendDMRepicientAddEvent(channel.recipients, channel.id, user.id)
+            await core.sendMessage(msg)
+        await core.sendDMChannelCreateEvent(channel, users=[user.id])
+    return c_json(inv)
+
+
 # Stickers & gifs
 
 
@@ -985,7 +1044,7 @@ async def api_science():
 
 @app.route("/api/v9/experiments", methods=["GET"])
 async def api_experiments():
-    return c_json("{}")
+    return c_json("{\"fingerprint\":\"0.A\",\"assignments\":[],\"guild_experiments\":[]}")
 
 
 @app.route("/api/v9/applications/detectable", methods=["GET"])

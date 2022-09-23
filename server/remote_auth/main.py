@@ -29,7 +29,6 @@ async def ws_gateway():
     while True:
         try:
             data = await ws.receive()
-            #print(data)
             await gw.process(ws, jloads(data))
         except CancelledError:
             setattr(ws, "connected", False)

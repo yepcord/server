@@ -10,7 +10,7 @@ from aiomysql import escape_string
 from schema import Schema, Use, Optional, And, Or, Regex
 
 from .config import Config
-from .ctx import Ctx
+from .ctx import Ctx, getCore
 from .enums import ChannelType, MessageType, UserFlags as UserFlagsE
 from .errors import EmbedErr, InvalidDataErr
 from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAndVideoSettings, AfkTimeout, \
@@ -19,9 +19,11 @@ from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAnd
     AnimateStickers, ExpressionSuggestionsEnabled, InlineEmbedMedia, PrivacySettings, FriendSourceFlags, StatusSettings, \
     ShowCurrentGame, Status, LocalizationSettings, Locale, TimezoneOffset, AppearanceSettings, MessageDisplayCompact, \
     ViewImageDescriptions
-from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get
+from .utils import b64encode, b64decode, snowflake_timestamp, ping_regex, result_to_json, mkError, proto_get, \
+    byte_length, sf_ts
 from aiosmtplib import send as smtp_send, SMTPConnectError
 
+NoneType = type(None)
 
 class _Null:
     value = None
@@ -95,7 +97,7 @@ class DBModel:
     def from_result(cls, desc, result):
         return cls(**result_to_json(desc, result))
 
-    def setCore(self, core):
+    def setCore(self, core): # Deprecated, will be removed soon
         self._core = core
         return self
 
@@ -205,7 +207,7 @@ class UserSettings(DBModel):
         Optional("detect_platform_accounts"): Use(bool),
         Optional("explicit_content_filter"): Use(int),
         Optional("status"): And(Use(str), Use(str.lower), lambda s: s in ("online", "invisible", "dnd", "idle")),
-        Optional("custom_status"): Or(And(Use(dict), lambda d: "text" in d), type(None)),  # TODO
+        Optional("custom_status"): Or(And(Use(dict), lambda d: "text" in d), NoneType),  # TODO
         Optional("default_guilds_restricted"): Use(bool),
         Optional("theme"): And(Use(str), Use(str.lower), lambda s: s in ("light", "dark")),
         Optional("allow_accessibility_detection"): Use(bool),
@@ -221,7 +223,7 @@ class UserSettings(DBModel):
         Optional("message_display_compact"): Use(bool),
         Optional("convert_emoticons"): Use(bool),
         Optional("passwordless"): Use(bool),
-        Optional("mfa"): Or(And(Use(str), lambda s: 16 <= len(s) <= 32 and len(s) % 4 == 0), type(None)),
+        Optional("mfa"): Or(And(Use(str), lambda s: 16 <= len(s) <= 32 and len(s) % 4 == 0), NoneType),
         Optional("activity_restricted_guild_ids"): [Use(int)],
         Optional("friend_source_flags"): {"all": Use(bool),Optional("mutual_friends"): Use(bool),
                                           Optional("mutual_guilds"): Use(bool)},
@@ -436,11 +438,19 @@ class UserData(DBModel):
               "banner", "banner_color", "bio", "flags", "public_flags")
     ID_FIELD = "uid"
     SCHEMA = Schema({
-        "uid": Use(int), Optional("birth"): str, Optional("username"): str, Optional("discriminator"): int,
-        Optional("phone"): Or(str, type(None)), Optional("premium"): Or(Use(bool), type(None)),
-        Optional("accent_color"): Or(int, type(None)), Optional("avatar"): Or(str, type(None)),
-        Optional("avatar_decoration"): Or(str, type(None)), Optional("banner"): Or(str, type(None)),
-        Optional("banner_color"): Or(int, type(None)), Optional("bio"): Use(str), Optional("flags"): Use(int),
+        "uid": Use(int),
+        Optional("birth"): str,
+        Optional("username"): str,
+        Optional("discriminator"): int,
+        Optional("phone"): Or(str, NoneType),
+        Optional("premium"): Or(Use(bool), NoneType),
+        Optional("accent_color"): Or(int, NoneType),
+        Optional("avatar"): Or(str, NoneType),
+        Optional("avatar_decoration"): Or(str, NoneType),
+        Optional("banner"): Or(str, NoneType),
+        Optional("banner_color"): Or(int, NoneType),
+        Optional("bio"): Use(str),
+        Optional("flags"): Use(int),
         Optional("public_flags"): Use(int)
     })
 
@@ -487,7 +497,6 @@ class User(_User, DBModel):
         self.password = password
         self.key = key
         self.verified = verified
-        self._core = None
         self._uSettings = None
         self._uData = None
         self._uFrecencySettings = None
@@ -498,7 +507,7 @@ class User(_User, DBModel):
     @property
     async def settings(self) -> UserSettings:
         if not self._uSettings:
-            self._uSettings = await self._core.getUserSettings(self)
+            self._uSettings = await getCore().getUserSettings(self)
         return self._uSettings
 
     @property
@@ -508,7 +517,7 @@ class User(_User, DBModel):
     @property
     async def userdata(self) -> UserData:
         if not self._uData:
-            self._uData = await self._core.getUserData(self)
+            self._uData = await getCore().getUserData(self)
         return self._uData
 
     @property
@@ -519,7 +528,7 @@ class User(_User, DBModel):
     @property
     async def frecency_settings_proto(self) -> bytes:
         if not self._uFrecencySettings:
-            self._uFrecencySettings = await self._core.getFrecencySettings(self)
+            self._uFrecencySettings = await getCore().getFrecencySettings(self)
         return b64decode(self._uFrecencySettings.encode("utf8"))
 
 class UserId(_User):
@@ -547,25 +556,25 @@ class Channel(_Channel, DBModel):
     SCHEMA = Schema({
         "id": Use(int),
         "type": Use(int),
-        Optional("guild_id"): Or(int, type(None)),
-        Optional("position"): Or(int, type(None)),
-        Optional("permission_overwrites"): Or(dict, type(None)),
-        Optional("name"): Or(Use(str), type(None)),
-        Optional("topic"): Or(Use(str), type(None)),
-        Optional("nsfw"): Or(bool, type(None)),
-        Optional("bitrate"): Or(int, type(None)),
-        Optional("user_limit"): Or(int, type(None)),
-        Optional("rate_limit"): Or(int, type(None)),
-        Optional("recipients"): Or([int], type(None)),
-        Optional("icon"): Or(str, type(None)),
-        Optional("owner_id"): Or(int, type(None)),
-        Optional("application_id"): Or(int, type(None)),
-        Optional("parent_id"): Or(int, type(None)),
-        Optional("rtc_region"): Or(str, type(None)),
-        Optional("video_quality_mode"): Or(int, type(None)),
-        Optional("thread_metadata"): Or(dict, type(None)),
-        Optional("default_auto_archive"): Or(int, type(None)),
-        Optional("flags"): Or(int, type(None)),
+        Optional("guild_id"): Or(int, NoneType),
+        Optional("position"): Or(int, NoneType),
+        Optional("permission_overwrites"): Or(dict, NoneType),
+        Optional("name"): Or(Use(str), NoneType),
+        Optional("topic"): Or(Use(str), NoneType),
+        Optional("nsfw"): Or(bool, NoneType),
+        Optional("bitrate"): Or(int, NoneType),
+        Optional("user_limit"): Or(int, NoneType),
+        Optional("rate_limit"): Or(int, NoneType),
+        Optional("recipients"): Or([int], NoneType),
+        Optional("icon"): Or(str, NoneType),
+        Optional("owner_id"): Or(int, NoneType),
+        Optional("application_id"): Or(int, NoneType),
+        Optional("parent_id"): Or(int, NoneType),
+        Optional("rtc_region"): Or(str, NoneType),
+        Optional("video_quality_mode"): Or(int, NoneType),
+        Optional("thread_metadata"): Or(dict, NoneType),
+        Optional("default_auto_archive"): Or(int, NoneType),
+        Optional("flags"): Or(int, NoneType),
     })
 
     def __init__(self, id, type, guild_id=Null, position=Null, permission_overwrites=Null, name=Null, topic=Null,
@@ -594,7 +603,6 @@ class Channel(_Channel, DBModel):
         self.default_auto_archive = default_auto_archive
         self.flags = flags
         self.last_message_id = last_message_id
-        self._core = None
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
@@ -603,7 +611,7 @@ class Channel(_Channel, DBModel):
         limit = int(limit)
         if limit > 100:
             limit = 100
-        return await self._core.getChannelMessages(self, limit, before, after)
+        return await getCore().getChannelMessages(self, limit, before, after)
 
 class _Message:
     id = None
@@ -624,17 +632,17 @@ class Message(_Message, DBModel):
         "id": Use(int),
         "channel_id": Use(int),
         "author": Use(int),
-        Optional("content"): Or(str, type(None)),
-        Optional("edit_timestamp"): Or(int, type(None)),
+        Optional("content"): Or(str, NoneType),
+        Optional("edit_timestamp"): Or(int, NoneType),
         Optional("attachments"): list, # TODO
         Optional("embeds"): list,
         Optional("pinned"): Use(bool),
-        Optional("webhook_id"): Or(int, type(None)),
-        Optional("application_id"): Or(int, type(None)),
-        Optional("type"): Or(int, type(None)),
+        Optional("webhook_id"): Or(int, NoneType),
+        Optional("application_id"): Or(int, NoneType),
+        Optional("type"): Or(int, NoneType),
         Optional("flags"): Use(int),
-        Optional("message_reference"): Or(int, type(None)),
-        Optional("thread"): Or(int, type(None)),
+        Optional("message_reference"): Or(int, NoneType),
+        Optional("thread"): Or(int, NoneType),
         Optional("components"): list,
         Optional("sticker_items"): list,
         Optional("extra_data"): dict,
@@ -662,7 +670,6 @@ class Message(_Message, DBModel):
         self.components = components
         self.sticker_items = sticker_items
         self.extra_data = extra_data
-        self._core = None
 
         self.set(**kwargs)
 
@@ -857,12 +864,12 @@ class Message(_Message, DBModel):
                 uuid = str(UUID(uuid))
             except ValueError:
                 continue
-            att = await self._core.getAttachmentByUUID(uuid)
+            att = await getCore().getAttachmentByUUID(uuid)
             self.attachments.append(att.id)
 
     @property
     async def json(self):
-        author = await self._core.getUserData(UserId(self.author))
+        author = await getCore().getUserData(UserId(self.author))
         timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.id) / 1000))
         timestamp = timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         edit_timestamp = None
@@ -878,7 +885,7 @@ class Message(_Message, DBModel):
                     m = m[1:]
                 if m.startswith("&"):
                     role_mentions.append(m[1:])
-                if (mem := await self._core.getUserByChannelId(self.channel_id, int(m))):
+                if (mem := await getCore().getUserByChannelId(self.channel_id, int(m))):
                     mdata = await mem.data
                     mentions.append({
                         "id": m,
@@ -890,7 +897,7 @@ class Message(_Message, DBModel):
                     })
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
             if u := self.extra_data.get("user"):
-                u = await self._core.getUserData(UserId(u))
+                u = await getCore().getUserData(UserId(u))
                 mentions.append({
                     "username": u.username,
                     "public_flags": u.public_flags,
@@ -900,7 +907,7 @@ class Message(_Message, DBModel):
                     "avatar": u.avatar
                 })
         for att in self.attachments:
-            att = await self._core.getAttachment(att)
+            att = await getCore().getAttachment(att)
             attachments.append({
                 "filename": att.filename,
                 "id": str(att.id),
@@ -944,7 +951,7 @@ class Message(_Message, DBModel):
         if message_reference:
             j["message_reference"] = message_reference
         if not Ctx.get("search", False):
-            if reactions := await self._core.getMessageReactions(self.id, Ctx.get("user_id", 0)):
+            if reactions := await getCore().getMessageReactions(self.id, Ctx.get("user_id", 0)):
                 j["reactions"] = reactions
         return j
 
@@ -986,7 +993,6 @@ class ReadState(DBModel):
         self.channel_id = channel_id
         self.count = count
         self.last_read_id = last_read_id
-        self._core = None
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
@@ -996,7 +1002,7 @@ class UserNote(DBModel):
     SCHEMA = Schema({
         "uid": Use(int),
         "target_uid": Use(int),
-        "note": Or(Use(str), type(None))
+        "note": Or(Use(str), NoneType)
     })
 
     def __init__(self, uid, target_uid, note):
@@ -1079,7 +1085,7 @@ class GuildTemplate(DBModel):
         "code": And(Use(str), lambda s: bool(b64decode(s))),
         "type": [{
             "id": Use(int),
-            "parent_id": Or(int, type(None)),
+            "parent_id": Or(int, NoneType),
             "name": str,
             "type": And(Use(int),lambda i: i in ChannelType.values())
         }],
@@ -1119,8 +1125,8 @@ class Reaction(DBModel):
     SCHEMA = Schema({
         "message_id": Use(int),
         "user_id": Use(int),
-        "emoji_id": Or(int, type(None)),
-        "emoji_name": Or(str, type(None))
+        "emoji_id": Or(int, NoneType),
+        "emoji_name": Or(str, NoneType)
     })
 
     def __init__(self, message_id, user_id, emoji_id=Null, emoji_name=Null):
@@ -1132,7 +1138,7 @@ class Reaction(DBModel):
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
 
-class SearchFilter(DBModel):
+class SearchFilter(DBModel): # Not database model, using DBModel for convenience
     FIELDS = ("author_id", "sort_by", "sort_order", "mentions", "has", "min_id", "max_id", "pinned", "offset", "content")
     SCHEMA = Schema({
         Optional("author_id"): Use(int),
@@ -1195,3 +1201,69 @@ class SearchFilter(DBModel):
         else:
             where += f" LIMIT 25"
         return where
+
+class Invite(DBModel):
+    FIELDS = ("channel_id", "inviter", "created_at", "max_age", "type", "guild_id")
+    ID_FIELD = "id"
+    SCHEMA = Schema({
+        "id": Use(int),
+        "channel_id": Use(int),
+        "inviter": Use(int),
+        "created_at": Use(int),
+        "max_age": Use(int),
+        Optional("guild_id"): Or(int, NoneType),
+        "type": And(lambda i: i == 1) # TODO
+    })
+
+    def __init__(self, id, channel_id, inviter, created_at, max_age, guild_id=Null, type=1):
+        self.id = id
+        self.channel_id = channel_id
+        self.inviter = inviter
+        self.created_at = created_at
+        self.max_age = max_age
+        self.guild_id = guild_id
+        self.type = type
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)
+
+    @property
+    async def json(self) -> dict:
+        data = await getCore().getUserData(UserId(self.inviter))
+        created = datetime.utcfromtimestamp(int(sf_ts(self.id) / 1000)).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        expires = datetime.utcfromtimestamp(int(sf_ts(self.id) / 1000)+self.max_age).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        channel = await getCore().getChannel(self.channel_id)
+        j = {
+            "code": b64encode(self.id.to_bytes(byte_length(self.id), 'big')),
+            "inviter": {
+                "id": str(data.uid),
+                "username": data.username,
+                "avatar": data.avatar,
+                "avatar_decoration": data.avatar_decoration,
+                "discriminator": data.s_discriminator,
+                "public_flags": data.public_flags
+            },
+            "created_at": created,
+            "expires_at": expires,
+            "type": 1,
+            "channel": {
+                "id": str(channel.id),
+                "type": channel.type,
+                **({"name": channel.name, "icon": channel.icon} if channel.type == ChannelType.GROUP_DM else {})
+            },
+            "max_age": self.max_age,
+        }
+        # TODO: add guild field
+        return j
+
+    async def getJson(self, with_counts=False, without=None):
+        if not without:
+            without = []
+        j = await self.json
+        if with_counts:
+            u = await getCore().getRelatedUsersToChannel(self.channel_id)
+            j["approximate_member_count"] = len(u)
+            j["channel"]["recipients"] = [{"username": (await getCore().getUserData(UserId(i))).username} for i in u]
+        for wo in without:
+            del j[wo]
+        return j

@@ -6,7 +6,7 @@ from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
-    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter
+    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
 
@@ -200,6 +200,12 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def searchMessages(self, filter: SearchFilter) -> Tuple[List[Message], int]: ...
+
+    @abstractmethod
+    async def putInvite(self, invite: Invite) -> None: ...
+
+    @abstractmethod
+    async def getInvite(self, invite_id: int) -> Optional[Invite]: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -540,7 +546,8 @@ class MySqlConnection:
         reactions = []
         await self.cur.execute(f'SELECT `emoji_name` as ename, COUNT(*) AS ecount, ' +
                                f'(SELECT COUNT(*) > 0 FROM `reactions` WHERE `emoji_name`=ename AND `user_id`={user_id}) as me ' +
-                               f'FROM `reactions` WHERE `message_id`={message_id} GROUP BY `emoji_name`;') # TODO: add custom emoji
+                               f'FROM `reactions` WHERE `message_id`={message_id} GROUP BY `emoji_name` COLLATE utf8mb4_unicode_520_ci;') # TODO: add custom emoji
+                                                                            # utf8mb4_unicode_520_ci for emoji --^^^^^^^^^^^^^^^^^^^^
         for r in await self.cur.fetchall():
             reactions.append({"emoji": {"emoji_id": None, "name": r[0]}, "count": r[1], "me": bool(r[2])})
         return reactions
@@ -559,3 +566,14 @@ class MySqlConnection:
         await self.cur.execute(f'SELECT COUNT(*) as c FROM `messages` WHERE {where};')
         total = (await self.cur.fetchone())[0]
         return messages, total
+
+    async def putInvite(self, invite: Invite) -> None:
+        sql = json_to_sql(invite.to_typed_json(with_id=True), as_tuples=True)
+        fields = ", ".join([r[0] for r in sql])
+        isql = ", ".join([str(r[1]) for r in sql])
+        await self.cur.execute(f'INSERT INTO `invites` ({fields}) VALUES ({isql});')
+
+    async def getInvite(self, invite_id: int) -> Optional[Invite]:
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `id`={invite_id}')
+        if r := await self.cur.fetchone():
+            return Invite.from_result(self.cur.description, r)
