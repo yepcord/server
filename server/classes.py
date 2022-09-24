@@ -97,10 +97,6 @@ class DBModel:
     def from_result(cls, desc, result):
         return cls(**result_to_json(desc, result))
 
-    def setCore(self, core): # Deprecated, will be removed soon
-        self._core = core
-        return self
-
     def set(self, **kwargs):
         for k, v in kwargs.items():
             if k not in list(self.FIELDS) + list(self.ALLOWED_FIELDS):

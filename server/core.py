@@ -1,4 +1,5 @@
 from asyncio import get_event_loop
+from contextvars import Context
 from datetime import datetime
 from hmac import new
 from hashlib import sha256, sha512
@@ -106,7 +107,6 @@ class Core:
             user = await db.getUserByEmail(email)
         if not user or self.encryptPassword(user.id, password) != user.password:
             raise InvalidDataErr(400, mkError(50035, {"login": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}, "password": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}}))
-        user.setCore(self)
         settings = await user.settings
         if settings.mfa:
             _sid = bytes.fromhex(user.password[:12])
@@ -129,7 +129,6 @@ class Core:
     async def getUser(self, uid: int) -> Optional[User]:
         async with self.db() as db:
             user = await db.getUser(uid)
-        if user: user.setCore(self)
         return user
 
     async def getUserFromSession(self, session: Session) -> Optional[User]:
@@ -196,7 +195,6 @@ class Core:
     async def getUserByUsername(self, username: str, discriminator: int) -> Optional[User]:
         async with self.db() as db:
             user = await db.getUserByUsername(username, discriminator)
-        if user: user.setCore(self)
         return user
 
     async def checkRelationShipAvailable(self, tUser: User, cUser: User) -> None:
@@ -314,7 +312,7 @@ class Core:
             await db.logoutUser(sess)
 
     def _sessionToUser(self, session: Session) -> User:
-        return User(session.id).setCore(self)
+        return User(session.id)
 
     async def getMfa(self, user: Union[User, Session]) -> Optional[MFA]:
         if type(user) == Session:
@@ -377,13 +375,13 @@ class Core:
         async with self.db() as db:
             if not (channel := await db.getChannel(channel_id)):
                 return
-        return await self.getLastMessageIdForChannel(channel.setCore(self))
+        return await self.getLastMessageIdForChannel(channel)
 
     async def getDMChannelOrCreate(self, u1: int, u2: int) -> Channel:
         async with self.db() as db:
             if not (channel := await db.getDMChannel(u1, u2)):
                 return await self.createDMChannel([u1, u2])
-        return await self.getLastMessageIdForChannel(channel.setCore(self))
+        return await self.getLastMessageIdForChannel(channel)
 
     async def getLastMessageIdForChannel(self, channel: Channel) -> Channel:
         return channel.set(last_message_id=await self.getLastMessageId(channel, lsf(), 0))
@@ -400,11 +398,11 @@ class Core:
         cid = mksf()
         async with self.db() as db:
             channel = await db.createDMChannel(cid, recipients)
-        return channel.setCore(self).set(last_message_id=None)
+        return channel.set(last_message_id=None)
 
     async def getPrivateChannels(self, user: _User) -> list:
         async with self.db() as db:
-            _channels = [await self.getLastMessageIdForChannel(channel.setCore(self)) for channel in await db.getPrivateChannels(user)]
+            _channels = [await self.getLastMessageIdForChannel(channel) for channel in await db.getPrivateChannels(user)]
         channels = []
         for channel in _channels:
             ids = channel.recipients.copy()
@@ -431,34 +429,37 @@ class Core:
 
     async def getChannelMessages(self, channel, limit: int, before: int=None, after: int=None) -> List[Message]:
         async with self.db() as db:
-            return [message.setCore(self) for message in await db.getChannelMessages(channel, limit, before, after)]
+            return await db.getChannelMessages(channel, limit, before, after)
 
     async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
         async with self.db() as db:
             message = await db.getMessage(channel, message_id)
-        if message: message.setCore(self)
         return message
 
     async def sendMessage(self, message: Message) -> Message:
         async with self.db() as db:
             await db.insertMessage(message)
-        message.fill_defaults().setCore(self)
+        message.fill_defaults()
         m = await message.json
         users = await self.getRelatedUsersToChannel(message.channel_id)
         await self.mcl.broadcast("message_events", {"e": "message_create", "data": {"users": users, "message_obj": m}})
         async def _addToReadStates():
-            _u = await self.getRelatedUsersToChannel(message.channel_id)
-            if message.author in _u:
-                _u.remove(message.author)
-            for u in _u:
-                await self.addMessageToReadStates(u, message.channel_id)
-        get_event_loop().create_task(_addToReadStates())
+            async with self.db() as d:
+                d.dontCloseOnAExit()
+                c.Ctx["DB"] = d
+                _u = await self.getRelatedUsersToChannel(message.channel_id)
+                if message.author in _u:
+                    _u.remove(message.author)
+                for u in _u:
+                    await self.addMessageToReadStates(u, message.channel_id)
+                await d.close()
+        Context().run(get_event_loop().create_task, _addToReadStates())
         return message
 
     async def editMessage(self, before: Message, after: Message) -> Message:
         async with self.db() as db:
             await db.editMessage(before, after)
-        after.fill_defaults().setCore(self)
+        after.fill_defaults()
         m = await after.json
         users = await self.getRelatedUsersToChannel(after.channel_id)
         await self.mcl.broadcast("message_events", {"e": "message_update", "data": {"users": users, "message_obj": m}})
@@ -704,7 +705,7 @@ class Core:
 
     async def getPinnedMessages(self, channel_id: int) -> List[Message]:
         async with self.db() as db:
-            return [message.setCore(self) for message in await db.getPinnedMessages(channel_id)]
+            return await db.getPinnedMessages(channel_id)
 
     async def unpinMessage(self, message: Message) -> None:
         async with self.db() as db:
@@ -750,11 +751,10 @@ class Core:
 
     async def searchMessages(self, filter: SearchFilter) -> Tuple[List[Message], int]:
         async with self.db() as db:
-            messages, total = await db.searchMessages(filter)
-            return [m.setCore(self) for m in messages], total
+            return await db.searchMessages(filter)
 
     async def createInvite(self, channel: Channel, inviter: User, max_age: int) -> Invite:
-        invite = Invite(mksf(), channel.id, inviter.id, int(time()), max_age).setCore(self)
+        invite = Invite(mksf(), channel.id, inviter.id, int(time()), max_age)
         async with self.db() as db:
             await db.putInvite(invite)
         return invite
