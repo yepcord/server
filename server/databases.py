@@ -9,6 +9,7 @@ from .classes import User, Session, UserData, _User, UserSettings, Relationship,
     ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
+from .ctx import Ctx
 
 
 class Database:
@@ -18,6 +19,13 @@ class Database:
         return getattr(Database._instance, item)
 
 class DBConnection(ABC):
+
+    @abstractmethod
+    def dontCloseOnAExit(self): ...
+
+    @abstractmethod
+    async def close(self): ...
+
     @abstractmethod
     async def getUserByEmail(self, email: str) -> Optional[User]: ...
 
@@ -208,11 +216,16 @@ class DBConnection(ABC):
     async def getInvite(self, invite_id: int) -> Optional[Invite]: ...
 
 class MySQL(Database):
+    _connections = 0
     def __init__(self):
         self.pool = None
 
     def __call__(self):
-        return MySqlConnection(self)
+        if not Ctx.get("DB"):
+            self.__class__._connections += 1
+            print(f"Connections: {self.__class__._connections}")
+            return MySqlConnection(self)
+        return Ctx["DB"]
 
     async def init(self, *db_args, **db_kwargs):
         self.pool = await create_pool(*db_args, **db_kwargs)
@@ -227,15 +240,25 @@ class MySqlConnection:
         self.mysql: MySQL = mysql
         self.db: Optional[Connection] = None
         self.cur: Optional[Cursor] = None
+        self.close_on_aexit = True
+
+    def dontCloseOnAExit(self):
+        self.close_on_aexit = False
+        return self
+
+    async def close(self):
+        await self.cur.close()
+        await self.mysql.pool.release(self.db)
 
     async def __aenter__(self):
-        self.db = await self.mysql.pool.acquire()
-        self.cur = await self.db.cursor()
+        if not self.db and not self.cur:
+            self.db = await self.mysql.pool.acquire()
+            self.cur = await self.db.cursor()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.cur.close()
-        await self.mysql.pool.release(self.db)
+        if self.close_on_aexit:
+            await self.close()
 
     async def getUserByEmail(self, email: str) -> Optional[User]:
         await self.cur.execute(f'SELECT * FROM `users` WHERE `email`="{escape_string(email)}";')

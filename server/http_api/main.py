@@ -11,6 +11,7 @@ from json import dumps as jdumps, loads as jloads
 from random import choice
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from emoji import is_emoji
+from quart.globals import request_ctx
 
 from server.ctx import Ctx
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
@@ -35,6 +36,26 @@ class YEPcord(Quart):
         response.headers['Content-Security-Policy'] = "connect-src *;"
         
         return response
+
+    async def dispatch_request(self, request_context=None):
+        request_ = (request_context or request_ctx).request
+        if request_.routing_exception is not None:
+            self.raise_routing_exception(request_)
+
+        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options:
+            return await self.make_default_options_response()
+
+        handler = self.view_functions[request_.url_rule.endpoint]
+        Ctx.set("CORE", core)
+        if getattr(handler, "__db", None):
+            async with core.db() as db:
+                db.dontCloseOnAExit()
+                Ctx["DB"] = db
+                result = await self.ensure_async(handler)(**request_.view_args)
+                await db.close()
+                return result
+        else:
+            return await self.ensure_async(handler)(**request_.view_args)
 
 
 app = YEPcord("YEPcord-api")
@@ -72,6 +93,19 @@ async def ydataerror_handler(e):
 # Decorators
 
 
+def multipleDecorators(*decorators):
+    def _multipleDecorators(f):
+        for dec in decorators[::-1]:
+            f = dec(f)
+        return f
+    return _multipleDecorators
+
+
+def usingDB(f):
+    setattr(f, "__db", True)
+    return f
+
+
 def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
@@ -79,7 +113,6 @@ def getUser(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (user := await core.getUserFromSession(session)):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
-        Ctx.set("CORE", core)
         Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
@@ -93,7 +126,6 @@ def getSession(f):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not await core.validSession(session):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
-        Ctx.set("CORE", core)
         Ctx["user_id"] = session.id
         kwargs["session"] = session
         return await f(*args, **kwargs)
@@ -158,6 +190,7 @@ def getInvite(f):
 
 
 @app.route("/api/v9/auth/register", methods=["POST"])
+@usingDB
 async def api_auth_register():
     data = await request.get_json()
     sess = await core.register(mksf(), data["username"], data["email"], data["password"], data["date_of_birth"])
@@ -165,6 +198,7 @@ async def api_auth_register():
 
 
 @app.route("/api/v9/auth/login", methods=["POST"])
+@usingDB
 async def api_auth_login():
     data = await request.get_json()
     sess = await core.login(data["login"], data["password"])
@@ -174,6 +208,7 @@ async def api_auth_login():
 
 
 @app.route("/api/v9/auth/mfa/totp", methods=["POST"])
+@usingDB
 async def api_auth_mfa_totp(): # TODO: test
     data = await request.get_json()
     if not (ticket := data.get("ticket")):
@@ -193,14 +228,14 @@ async def api_auth_mfa_totp(): # TODO: test
 
 
 @app.route("/api/v9/auth/logout", methods=["POST"])
-@getSession
+@multipleDecorators(usingDB, getSession)
 async def api_auth_logout(session):
     await core.logoutUser(session)
     return "", 204
 
 
 @app.route("/api/v9/auth/verify/view-backup-codes-challenge", methods=["POST"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_auth_verify_viewbackupcodeschallenge(user):
     data = await request.get_json()
     if not (password := data.get("password")):
@@ -213,7 +248,7 @@ async def api_auth_verify_viewbackupcodeschallenge(user):
 
 
 @app.route("/api/v9/auth/verify/resend", methods=["POST"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_auth_verify_resend(user):
     if not user.verified:
         await core.sendVerificationEmail(user)
@@ -221,6 +256,7 @@ async def api_auth_verify_resend(user):
 
 
 @app.route("/api/v9/auth/verify", methods=["POST"])
+@usingDB
 async def api_auth_verify():
     data = await request.get_json()
     if not data.get("token"):
@@ -239,12 +275,12 @@ async def api_auth_verify():
 
 
 @app.route("/api/v9/users/@me", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_get(user):
     return c_json(await userdataResponse(user))
 
 @app.route("/api/v9/users/@me", methods=["PATCH"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_patch(user):
     data = await user.data
     _settings = await request.get_json()
@@ -295,7 +331,7 @@ async def api_users_me_patch(user):
     return c_json(await userdataResponse(user))
 
 @app.route("/api/v9/users/@me/profile", methods=["PATCH"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_profile_patch(user):
     _settings = await request.get_json()
     settings = {}
@@ -313,12 +349,12 @@ async def api_users_me_profile_patch(user):
     return c_json(await userdataResponse(user))
 
 @app.route("/api/v9/users/@me/consent", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_consent_get(user):
     return c_json(await userConsentResponse(user))
 
 @app.route("/api/v9/users/@me/consent", methods=["POST"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_consent_set(user):
     data = await request.get_json()
     if data["grant"] or data["revoke"]:
@@ -334,13 +370,13 @@ async def api_users_me_consent_set(user):
 
 
 @app.route("/api/v9/users/@me/settings", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_settings_get(user):
     return c_json(await userSettingsResponse(user))
 
 
 @app.route("/api/v9/users/@me/settings", methods=["PATCH"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_settings_patch(user):
     settings = await request.get_json()
     if "uid" in settings: del settings["uid"]
@@ -351,14 +387,14 @@ async def api_users_me_settings_patch(user):
 
 
 @app.route("/api/v9/users/@me/settings-proto/1", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_settingsproto_1_get(user):
     proto = await user.settings_proto
     return c_json({"settings": _b64encode(proto.SerializeToString()).decode("utf8")})
 
 
 @app.route("/api/v9/users/@me/settings-proto/1", methods=["PATCH"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_settingsproto_1_patch(user): # TODO
     data = await request.get_json()
     if not data.get("settings"):
@@ -378,14 +414,14 @@ async def api_users_me_settingsproto_1_patch(user): # TODO
 
 
 @app.route("/api/v9/users/@me/settings-proto/2", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_settingsproto_2_get(user):
     proto = await user.frecency_settings_proto
     return c_json({"settings": _b64encode(proto).decode("utf8")})
 
 
 @app.route("/api/v9/users/@me/settings-proto/2", methods=["PATCH"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_settingsproto_2_patch(user):
     data = await request.get_json()
     if not data.get("settings"):
@@ -404,13 +440,13 @@ async def api_users_me_settingsproto_2_patch(user):
 
 
 @app.route("/api/v9/users/@me/connections", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_connections(user): # TODO
     return c_json("[]") # friend_sync: bool, id: str(int), integrations: list, name: str, revoked: bool, show_activity: bool, two_way_link: bool, type: str, verified: bool, visibility: int
 
 
 @app.route("/api/v9/users/@me/relationships", methods=["POST"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_post(user):
     udata = await request.get_json()
     if not (rUser := await core.getUserByUsername(**udata)):
@@ -423,13 +459,13 @@ async def api_users_me_relationships_post(user):
 
 
 @app.route("/api/v9/users/@me/relationships", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_get(user):
     return c_json(await core.getRelationships(user, with_data=True))
 
 
 @app.route("/api/v9/users/@me/notes/<int:target_uid>", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_notes_get(user, target_uid):
     if not (note := await core.getUserNote(user.id, target_uid)):
         raise InvalidDataErr(404, mkError(10013))
@@ -437,7 +473,7 @@ async def api_users_me_notes_get(user, target_uid):
 
 
 @app.route("/api/v9/users/@me/notes/<int:target_uid>", methods=["PUT"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_notes_put(user, target_uid):
     data = await request.get_json()
     if note := data.get("note"):
@@ -446,7 +482,7 @@ async def api_users_me_notes_put(user, target_uid):
 
 
 @app.route("/api/v9/users/@me/mfa/totp/enable", methods=["POST"])
-@getSession
+@multipleDecorators(usingDB, getSession)
 async def api_users_me_mfa_totp_enable(session):
     data = await request.get_json()
     if not (password := data.get("password")) or not await core.checkUserPassword(session, password):
@@ -471,7 +507,7 @@ async def api_users_me_mfa_totp_enable(session):
 
 
 @app.route("/api/v9/users/@me/mfa/totp/disable", methods=["POST"])
-@getSession
+@multipleDecorators(usingDB, getSession)
 async def api_users_me_mfa_totp_disable(session):
     data = await request.get_json()
     if not (code := data.get("code")):
@@ -491,7 +527,7 @@ async def api_users_me_mfa_totp_disable(session):
 
 
 @app.route("/api/v9/users/@me/mfa/codes-verification", methods=["POST"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_mfa_codesverification(user):
     data = await request.get_json()
     if not (unonce := data.get("nonce")):
@@ -518,21 +554,21 @@ async def api_users_me_mfa_codesverification(user):
 
 
 @app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["PUT"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_put(uid, user):
     await core.accRelationship(user, uid)
     return "", 204
 
 
 @app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["DELETE"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_delete(uid, user):
     await core.delRelationship(user, uid)
     return "", 204
 
 
 @app.route("/api/v9/users/@me/harvest", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_harvest(user):
     return "", 204
 
@@ -541,7 +577,7 @@ async def api_users_me_harvest(user):
 
 
 @app.route("/api/v9/connections/<string:connection>/authorize", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_connections_connection_authorize(user, connection):
     url = ""
     kwargs = {}
@@ -555,7 +591,7 @@ async def api_connections_connection_authorize(user, connection):
 
 
 @app.route("/api/v9/connections/<string:connection>/callback", methods=["POST"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_connections_connection_callback(user, connection):
     data = await request.get_json()
     if connection == "github":
@@ -564,13 +600,13 @@ async def api_connections_connection_callback(user, connection):
 
 
 @app.route("/api/v9/users/@me/channels", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_channels_get(user):
     return c_json(await core.getPrivateChannels(user))
 
 
 @app.route("/api/v9/users/@me/channels", methods=["POST"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_me_channels_post(user):
     data = await request.get_json()
     rep = data.get("recipients", [])
@@ -598,7 +634,7 @@ async def api_users_me_channels_post(user):
 
 
 @app.route("/api/v9/users/<int:t_user_id>/profile", methods=["GET"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_users_user_profile(user, t_user_id):
     user = await core.getUserProfile(t_user_id, user)
     return c_json(await userProfileResponse(user))
@@ -608,15 +644,13 @@ async def api_users_user_profile(user, t_user_id):
 
 
 @app.route("/api/v9/channels/<channel>", methods=["GET"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel(user, channel):
     return c_json(await channelInfoResponse(channel, user))
 
 
 @app.route("/api/v9/channels/<int:channel>", methods=["PATCH"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_patch(user, channel):
     data = dict(await request.get_json())
     if "icon" in data:
@@ -649,8 +683,7 @@ async def api_channels_channel_patch(user, channel):
 
 
 @app.route("/api/v9/channels/<int:channel>", methods=["DELETE"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_delete(user, channel):
     if channel.type == ChannelType.DM:
         return "", 204 # TODO
@@ -672,8 +705,7 @@ async def api_channels_channel_delete(user, channel):
 
 
 @app.route("/api/v9/channels/<int:channel>/messages", methods=["GET"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_get(user, channel):
     args = request.args
     messages = await channel.messages(args.get("limit", 50), int(args.get("before", 0)), int(args.get("after", 0)))
@@ -682,8 +714,7 @@ async def api_channels_channel_messages_get(user, channel):
 
 
 @app.route("/api/v9/channels/<int:channel>/messages", methods=["POST"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_post(user, channel):
     data = await request.get_json()
     if data is None and (ct := request.headers.get("Content-Type", "")).startswith("multipart/form-data;"):
@@ -731,7 +762,7 @@ async def api_channels_channel_messages_post(user, channel):
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
-    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data).setCore(core)
+    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data)
     await message.check()
     message = await core.sendMessage(message)
     if await core.delReadStateIfExists(user.id, channel.id):
@@ -740,9 +771,7 @@ async def api_channels_channel_messages_post(user, channel):
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>", methods=["DELETE"])
-@getUser
-@getChannel
-@getMessage
+@multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_delete(user, channel, message):
     if message.author != user.id:
         raise InvalidDataErr(403, mkError(50003))
@@ -751,9 +780,7 @@ async def api_channels_channel_messages_message_delete(user, channel, message):
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>", methods=["PATCH"])
-@getUser
-@getChannel
-@getMessage
+@multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_patch(user, channel, message):
     data = await request.get_json()
     if message.author != user.id:
@@ -768,8 +795,7 @@ async def api_channels_channel_messages_message_patch(user, channel, message):
     return c_json(await after.json)
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>/ack", methods=["POST"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_message_ack(user, channel, message):
     data = await request.get_json()
     if data.get("manual") and (ct := int(data.get("mention_count"))):
@@ -784,24 +810,21 @@ async def api_channels_channel_messages_message_ack(user, channel, message):
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/ack", methods=["DELETE"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_ack_delete(user, channel):
     await core.deleteMessagesAck(channel, user)
     return "", 204
 
 
 @app.route("/api/v9/channels/<int:channel>/typing", methods=["POST"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_typing(user, channel):
     await core.sendTypingEvent(user, channel)
     return "", 204
 
 
 @app.route("/api/v9/channels/<int:channel>/attachments", methods=["POST"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_attachments_post(user, channel):
     data = await request.get_json()
     if not (files := data.get("files")):
@@ -830,8 +853,7 @@ async def api_channels_channel_attachments_post(user, channel):
     return {"attachments": attachments}
 
 @app.route("/api/v9/channels/<int:channel>/recipients/<int:nUser>", methods=["PUT"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
         raise InvalidDataErr(403, mkError(50013))
@@ -852,8 +874,7 @@ async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
 
 
 @app.route("/api/v9/channels/<int:channel>/recipients/<int:nUser>", methods=["DELETE"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_repicients_recipient_delete(user, channel, nUser):
     if channel.type not in (ChannelType.GROUP_DM,):
         raise InvalidDataErr(403, mkError(50013))
@@ -869,9 +890,7 @@ async def api_channels_channel_repicients_recipient_delete(user, channel, nUser)
 
 
 @app.route("/api/v9/channels/<int:channel>/pins/<int:message>", methods=["PUT"])
-@getUser
-@getChannel
-@getMessage
+@multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_pins_message_put(user, channel, message):
     if not message.pinned:
         await core.pinMessage(message)
@@ -888,9 +907,7 @@ async def api_channels_channel_pins_message_put(user, channel, message):
 
 
 @app.route("/api/v9/channels/<int:channel>/pins/<int:message>", methods=["DELETE"])
-@getUser
-@getChannel
-@getMessage
+@multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_pins_message_delete(user, channel, message):
     if message.pinned:
         await core.unpinMessage(message)
@@ -898,8 +915,7 @@ async def api_channels_channel_pins_message_delete(user, channel, message):
 
 
 @app.route("/api/v9/channels/<int:channel>/pins", methods=["GET"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_pins_get(user, channel):
     messages = await core.getPinnedMessages(channel.id)
     messages = [await message.json for message in messages]
@@ -907,9 +923,7 @@ async def api_channels_channel_pins_get(user, channel):
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["PUT"])
-@getUser
-@getChannel
-@getMessage
+@multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
     if not is_emoji(reaction): # TODO: Check custom emoji
         raise InvalidDataErr(400, mkError(10014))
@@ -918,9 +932,7 @@ async def api_channels_channel_messages_message_reactions_put(user, channel, mes
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["DELETE"])
-@getUser
-@getChannel
-@getMessage
+@multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
     if not is_emoji(reaction): # TODO: Check custom emoji
         raise InvalidDataErr(400, mkError(10014))
@@ -929,9 +941,7 @@ async def api_channels_channel_messages_message_reactions_delete(user, channel, 
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>", methods=["GET"])
-@getUser
-@getChannel
-@getMessage
+@multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_reaction_get(user, channel, message, reaction):
     if not is_emoji(reaction): # TODO: Check custom emoji
         raise InvalidDataErr(400, mkError(10014))
@@ -942,8 +952,7 @@ async def api_channels_channel_messages_message_reactions_reaction_get(user, cha
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/search", methods=["GET"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_search(user, channel):
     messages, total = await core.searchMessages(SearchFilter(**request.args))
     Ctx["search"] = True
@@ -957,8 +966,7 @@ async def api_channels_channel_messages_search(user, channel):
 
 
 @app.route("/api/v9/channels/<int:channel>/invites", methods=["POST"])
-@getUser
-@getChannel
+@multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_invites_post(user, channel):
     data = await request.get_json()
     max_age = data.get("max_age", 86400)
@@ -967,7 +975,7 @@ async def api_channels_channel_invites_post(user, channel):
 
 
 @app.route("/api/v9/invites/<string:invite>", methods=["GET"])
-@getInvite
+@multipleDecorators(usingDB, getInvite)
 async def api_invites_invite_get(invite):
     data = request.args
     with_counts = data.get("with_counts", "false").lower == "true"
@@ -976,8 +984,7 @@ async def api_invites_invite_get(invite):
 
 
 @app.route("/api/v9/invites/<string:invite>", methods=["POST"])
-@getUser
-@getInvite
+@multipleDecorators(usingDB, getUser, getInvite)
 async def api_invites_invite_post(user, invite):
     channel = await core.getChannel(invite.channel_id)
     if user.id not in channel.recipients and len(channel.recipients) >= 10:
@@ -1011,7 +1018,7 @@ async def api_gifs_trending_get():
 
 
 @app.route("/api/v9/hypesquad/online", methods=["POST"])
-@getUser
+@multipleDecorators(usingDB, getUser)
 async def api_hypesquad_online(user):
     data = await request.get_json()
     if not (house_id := data.get("house_id")):
