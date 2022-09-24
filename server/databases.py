@@ -216,14 +216,11 @@ class DBConnection(ABC):
     async def getInvite(self, invite_id: int) -> Optional[Invite]: ...
 
 class MySQL(Database):
-    _connections = 0
     def __init__(self):
         self.pool = None
 
     def __call__(self):
         if not Ctx.get("DB"):
-            self.__class__._connections += 1
-            print(f"Connections: {self.__class__._connections}")
             return MySqlConnection(self)
         return Ctx["DB"]
 
