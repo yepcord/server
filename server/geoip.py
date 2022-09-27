@@ -6,7 +6,10 @@ with open("other/ip_to_lang.pkl", "rb") as f:
     IP_DB = pload(f)
 
 def _ip2int(addr):
-    return unpack("!I", inet_aton(addr))[0]
+    try:
+        return unpack("!I", inet_aton(addr))[0]
+    except OSError:
+        return -1
 
 def _search(ip, low=0, high=len(IP_DB)-1, mid=0):
     if high >= low:
@@ -20,7 +23,8 @@ def _search(ip, low=0, high=len(IP_DB)-1, mid=0):
     return mid-1
 
 def getLanguageCode(ip, default: str="en-US"):
-    ip = _ip2int(ip)
+    if (ip := _ip2int(ip)) == -1:
+        return default
     idx = _search(ip)
     tidx = len(IP_DB) - 1 if idx + 1 >= len(IP_DB) else idx + 1
     bidx = 0 if idx - 1 < 0 else idx-1
