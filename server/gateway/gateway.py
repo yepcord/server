@@ -385,6 +385,10 @@ class Gateway:
             if activities := d.get("activities"):
                 st.setActivities(activities)
             await self.ev.presence_update(cl.id, st)
+        else:
+            print("-"*16)
+            print(f"  Unknown op code: {op}")
+            print(f"  Data: {data}")
 
     async def sendHello(self, ws):
         await self.sendws(ws, GatewayOp.HELLO, t=None, s=None, d={"heartbeat_interval": 45000})

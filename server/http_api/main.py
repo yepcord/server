@@ -14,13 +14,15 @@ from emoji import is_emoji
 from quart.globals import request_ctx
 
 from server.ctx import Ctx
+from server.geoip import getLanguageCode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, \
     UserFlags, Reaction, SearchFilter
 from ..core import Core, CDN
-from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, parseMultipartRequest
+from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
+    parseMultipartRequest, LOCALES
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
@@ -193,7 +195,8 @@ def getInvite(f):
 @usingDB
 async def api_auth_register():
     data = await request.get_json()
-    sess = await core.register(mksf(), data["username"], data["email"], data["password"], data["date_of_birth"])
+    loc = getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
+    sess = await core.register(mksf(), data["username"], data.get("email"), data["password"], data["date_of_birth"], loc)
     return c_json({"token": sess.token})
 
 
