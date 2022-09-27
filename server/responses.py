@@ -62,7 +62,7 @@ async def userdataResponse(user):
         "accent_color": data.accent_color,
         "bio": data.bio,
         "locale": settings.locale,
-        "nsfw_allowed": True,  # TODO: get from age
+        "nsfw_allowed": data.nsfw_allowed,
         "mfa_enabled": settings.mfa,
         "email": user.email,
         "verified": True,

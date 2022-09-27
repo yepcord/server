@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 from time import mktime
 from uuid import uuid4, UUID
@@ -311,7 +311,7 @@ class UserSettings(DBModel):
 
     def to_proto(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
-            versions=Version(client_version=14, data_version=62),
+            versions=Version(client_version=14, data_version=1), # TODO: get data version from database
             user_content=UserContentSettings(dismissed_contents=b'Q\x01\t\x00\x00\x02\x00\x00\x80'),
             voice_and_video=VoiceAndVideoSettings(
                 afk_timeout=AfkTimeout(value=self.get("afk_timeout", 600)),
@@ -429,6 +429,7 @@ class UserSettings(DBModel):
             self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": False})
         return self
 
+
 class UserData(DBModel):
     FIELDS = ("birth", "username", "discriminator", "phone", "premium", "accent_color", "avatar", "avatar_decoration",
               "banner", "banner_color", "bio", "flags", "public_flags")
@@ -474,6 +475,12 @@ class UserData(DBModel):
     @property
     def s_discriminator(self) -> str:
         return str(self.discriminator).rjust(4, "0")
+
+    @property
+    def nsfw_allowed(self) -> bool:
+        db = datetime.strptime(self.birth, "%Y-%m-%d")
+        dn = datetime.utcnow()
+        return dn-db > timedelta(days=18*365+4)
 
 class User(_User, DBModel):
     FIELDS = ("email", "password", "key", "verified")
@@ -1148,6 +1155,16 @@ class SearchFilter(DBModel): # Not database model, using DBModel for convenience
         Optional("offset"): Use(int),
         Optional("content"): str,
     })
+    _HAS = {
+        "link": "`content` REGEXP '(http|https):\\\\/\\\\/[a-zA-Z0-9-_]{1,63}\\\\.[a-zA-Z]{1,63}'",
+        "image": "true in (select content_type LIKE '%image/%' from attachments where JSON_CONTAINS(messages.j_attachments, attachments.id, '$'))",
+        "video": "true in (select content_type LIKE '%video/%' from attachments where JSON_CONTAINS(messages.j_attachments, attachments.id, '$'))",
+        "file": "JSON_LENGTH(`j_attachments`) > 0",
+        "embed": "JSON_LENGTH(`j_embeds`) > 0",
+        "sound": "true in (select content_type LIKE '%audio/%' from attachments where JSON_CONTAINS(messages.j_attachments, attachments.id, '$'))",
+        #"sticker": "" # TODO
+    }
+
     def __init__(self, author_id=Null, sort_by=Null, sort_order=Null, mentions=Null, has=Null, min_id=Null, max_id=Null,
                  pinned=Null, offset=Null, content=Null):
         self.author_id = author_id
@@ -1185,6 +1202,8 @@ class SearchFilter(DBModel): # Not database model, using DBModel for convenience
             where.append(f"`id` < {data['max_id']}")
         if "content" in data:
             where.append(f"`content`={escape_string(data['content'])}")
+        if "has" in data and data["has"] in self._HAS:
+            where.append(self._HAS[data["has"]])
         if not where:
             where = ["true"]
         where = " AND ".join(where)

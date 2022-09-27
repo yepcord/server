@@ -1,5 +1,7 @@
 from base64 import b64encode
 from datetime import datetime
+
+from ..config import Config
 from ..utils import snowflake_timestamp
 from ..enums import GatewayOp, ChannelType
 from time import time
@@ -44,7 +46,7 @@ class ReadyEvent(DispatchEvent):
                     "premium_since": datetime.utcfromtimestamp(int(snowflake_timestamp(self.user.id)/1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "verified": self.user.verified,
                     "purchased_flags": 0,
-                    "nsfw_allowed": True,  # TODO: check
+                    "nsfw_allowed": userdata.nsfw_allowed,  # TODO: check
                     "mobile": True,  # TODO: check
                     "mfa_enabled": settings.mfa,
                     "id": str(self.user.id),
@@ -74,7 +76,7 @@ class ReadyEvent(DispatchEvent):
                     "partial": False,
                     "entries": await self.core.getReadStatesJ(self.user)
                 },
-                "resume_gateway_url": "wss://127.0.0.1/",
+                "resume_gateway_url": f"wss://{Config('GATEWAY_HOST')}/",
                 "session_type": "normal",
                 "sessions": [{
                     "status": "online",
@@ -206,7 +208,7 @@ class UserUpdateEvent(DispatchEvent):
                 "username": self.userdata.username,
                 "public_flags": self.userdata.public_flags,
                 "phone": self.userdata.phone,
-                "nsfw_allowed": True,  # TODO: get from age
+                "nsfw_allowed": self.userdata.nsfw_allowed,
                 "mfa_enabled": bool(self.settings.mfa),
                 "locale": self.settings.locale,
                 "id": str(self.user.id),

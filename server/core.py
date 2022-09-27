@@ -79,7 +79,7 @@ class Core:
             if not await self.getUserByUsername(login, d):
                 return d
 
-    async def register(self, uid: int, login: str, email: str, password: str, birth: str) -> Session:
+    async def register(self, uid: int, login: str, email: Optional[str], password: str, birth: str, locale: str, invite: Optional[str]=None) -> Session:
         email = email.lower()
         async with self.db() as db:
             if await db.getUserByEmail(email):
@@ -95,9 +95,9 @@ class Core:
 
         user = User(uid, email, password, key)
         session = Session(uid, session, signature)
-        data = UserData(uid, birth=birth, username=login, discriminator=discriminator)
+        data = UserData(uid, birth=birth, username=login, discriminator=discriminator, locale=locale)
         async with self.db() as db:
-            await db.registerUser(user, session, data)
+            await db.registerUser(user, session, data, UserSettings(uid, locale=locale))
         await self.sendVerificationEmail(user)
         return session
 

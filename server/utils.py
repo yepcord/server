@@ -235,7 +235,11 @@ def proto_get(protoObj, path, default):
         return default
     return o
 
-ALLOWED_AVATAR_SIZES = [16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128, 160, 240, 256, 300, 320, 480, 512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096]
+ALLOWED_AVATAR_SIZES = [16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128, 160, 240, 256, 300, 320, 480,
+                        512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096]
 
 def byte_length(i):
     return (i.bit_length() + 7) // 8
+
+LOCALES = ["bg", "cs", "da", "de", "el", "en-GB", "es-ES", "fi", "fr", "hi", "hr", "hu", "it", "ja", "ko", "lt", "nl",
+             "no", "pl", "pt-BR", "ro", "ru", "sv-SE", "th", "tr", "uk", "vi", "zh-CN", "zh-TW", "en-US"]
