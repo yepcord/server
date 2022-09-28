@@ -16,7 +16,8 @@ from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite
+    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, GuildTemplate, Guild, Role, \
+    GuildMember
 from .storage import _Storage
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
@@ -763,5 +764,48 @@ class Core:
         async with self.db() as db:
             return await db.getInvite(invite_id)
 
+    async def createGuild(self, user: User, name: str) -> Guild:
+        guild = Guild(mksf(), user.id, name, roles=[], system_channel_id=0)
+        roles = [Role(mksf(), guild.id, "@everyone", permissions=1071698660929)]
+        channels = []
+        channels.append(Channel(mksf(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0, permission_overwrites=[]))
+        channels.append(Channel(mksf(), ChannelType.GUILD_TEXT, guild_id=guild.id, name="general", position=0, parent_id=channels[0].id, permission_overwrites=[]))
+        channels.append(Channel(mksf(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Voice Channels", position=0, permission_overwrites=[]))
+        channels.append(Channel(mksf(), ChannelType.GUILD_VOICE, guild_id=guild.id, name="General", position=0, parent_id=channels[2].id, bitrate=64000, user_limit=0, permission_overwrites=[]))
+        members = [GuildMember(user.id, guild.id, int(time()))]
+
+        guild.system_channel_id = channels[1].id
+        guild.roles.append(roles[0].id)
+        async with self.db() as db:
+            await db.createGuild(guild, roles, channels, members)
+        guild.fill_defaults()
+        Ctx["with_members"] = True
+        Ctx["with_channels"] = True
+        await self.mcl.broadcast("guild_events", {"e": "guild_create", "data": {"users": [user.id], "guild_obj": await guild.json}})
+        Ctx["with_members"] = False
+        Ctx["with_channels"] = False
+        return guild
+
+    async def getRole(self, role_id: int) -> Role:
+        async with self.db() as db:
+            return await db.getRole(role_id)
+
+    async def getGuildMember(self, guild: Guild, user_id: int) -> GuildMember:
+        async with self.db() as db:
+            return await db.getGuildMember(guild, user_id)
+
+    async def getGuildMembers(self, guild: Guild) -> List[GuildMember]:
+        async with self.db() as db:
+            return await db.getGuildMembers(guild)
+
+    async def getGuildChannels(self, guild: Guild) -> List[Channel]:
+        async with self.db() as db:
+            return await db.getGuildChannels(guild)
+
+    async def getUserGuilds(self, user: User) -> List[Guild]:
+        async with self.db() as db:
+            return await db.getUserGuilds(user)
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
+from server.ctx import Ctx

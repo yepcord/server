@@ -2,6 +2,7 @@ from base64 import b64encode
 from datetime import datetime
 
 from ..config import Config
+from ..ctx import Ctx
 from ..utils import snowflake_timestamp
 from ..enums import GatewayOp, ChannelType
 from time import time
@@ -25,6 +26,8 @@ class ReadyEvent(DispatchEvent):
         userdata = await self.user.userdata
         settings = await self.user.settings
         proto = settings.to_proto()
+        Ctx["user_id"] = self.user.id
+        Ctx["with_channels"] = True
         return {
             "t": self.NAME,
             "op": self.OP,
@@ -53,23 +56,23 @@ class ReadyEvent(DispatchEvent):
                     "flags": 0,
                 },
                 "users": await self.core.getRelatedUsers(self.user),
-                "guilds": [],
+                "guilds": [await guild.json for guild in await self.core.getUserGuilds(self.user)], # TODO
                 "session_id": self.client.sid,
-                "presences": [],
+                "presences": [], # TODO
                 "relationships": await self.core.getRelationships(self.user),
-                "connected_accounts": [],
+                "connected_accounts": [], # TODO
                 "consents": {
                     "personalization": {
                         "consented": settings.personalization
                     }
                 },
                 "country_code": "US",
-                "experiments": [],
+                "experiments": [], # TODO
                 "friend_suggestion_count": 0,
                 "geo_ordered_rtc_regions": ["yepcord"],
-                "guild_experiments": [],
-                "guild_join_requests": [],
-                "merged_members": [],
+                "guild_experiments": [], # TODO
+                "guild_join_requests": [], # TODO
+                "merged_members": [], # TODO
                 "private_channels": await self.core.getPrivateChannels(self.user),
                 "read_state": {
                     "version": 1,
@@ -92,7 +95,7 @@ class ReadyEvent(DispatchEvent):
                 "user_guild_settings": {
                     "version": 0,
                     "partial": False,
-                    "entries": []
+                    "entries": [] # TODO
                 },
                 "user_settings": settings.to_json(),
                 "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
@@ -388,3 +391,16 @@ class MessageReactionAddEvent(DispatchEvent):
 
 class MessageReactionRemoveEvent(MessageReactionAddEvent):
     NAME = "MESSAGE_REACTION_REMOVE"
+
+class GuildCreateEvent(DispatchEvent):
+    NAME = "GUILD_CREATE"
+
+    def __init__(self, guild_obj):
+        self.guild_obj = guild_obj
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.guild_obj
+        }

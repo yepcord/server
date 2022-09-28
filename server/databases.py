@@ -6,7 +6,7 @@ from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
-    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite
+    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite, Role, Guild, GuildMember
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
 from .ctx import Ctx
@@ -214,6 +214,24 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def getInvite(self, invite_id: int) -> Optional[Invite]: ...
+
+    @abstractmethod
+    async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel]) -> None: ...
+
+    @abstractmethod
+    async def getRole(self, role_id: int) -> Role: ...
+
+    @abstractmethod
+    async def getGuildMember(self, guild: Guild, user_id: int) -> GuildMember: ...
+
+    @abstractmethod
+    async def getGuildChannels(self, guild: Guild) -> List[Channel]: ...
+
+    @abstractmethod
+    async def getGuildMembers(self, guild: Guild) -> List[GuildMember]: ...
+
+    @abstractmethod
+    async def getUserGuilds(self, user: User) -> List[Guild]: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -597,3 +615,47 @@ class MySqlConnection:
         await self.cur.execute(f'SELECT * FROM `invites` WHERE `id`={invite_id}')
         if r := await self.cur.fetchone():
             return Invite.from_result(self.cur.description, r)
+
+    async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel], members: List[GuildMember]) -> None:
+        fields, values = json_to_sql(guild.to_typed_json(with_id=True), for_insert=True)
+        await self.cur.execute(f'INSERT INTO `guilds` ({fields}) VALUES ({values})')
+        for role in roles:
+            fields, values = json_to_sql(role.to_typed_json(with_id=True), for_insert=True)
+            await self.cur.execute(f'INSERT INTO `roles` ({fields}) VALUES ({values})')
+        for channel in channels:
+            fields, values = json_to_sql(channel.to_typed_json(with_id=True), for_insert=True)
+            await self.cur.execute(f'INSERT INTO `channels` ({fields}) VALUES ({values})')
+        for member in members:
+            fields, values = json_to_sql(member.to_typed_json(with_id=True), for_insert=True)
+            await self.cur.execute(f'INSERT INTO `guild_members` ({fields}) VALUES ({values})')
+
+    async def getRole(self, role_id: int) -> Role:
+        await self.cur.execute(f'SELECT * FROM `roles` WHERE `id`={role_id} LIMIT 1;')
+        if r := await self.cur.fetchone():
+            return Role.from_result(self.cur.description, r)
+
+    async def getGuildMember(self, guild: Guild, user_id: int) -> GuildMember:
+        await self.cur.execute(f'SELECT * FROM `guild_members` WHERE `user_id`={user_id} AND `guild_id`={guild.id} LIMIT 1;')
+        if r := await self.cur.fetchone():
+            return GuildMember.from_result(self.cur.description, r)
+
+    async def getGuildMembers(self, guild: Guild) -> List[GuildMember]:
+        members = []
+        await self.cur.execute(f'SELECT * FROM `guild_members` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            members.append(GuildMember.from_result(self.cur.description, r))
+        return members
+
+    async def getGuildChannels(self, guild: Guild) -> List[Channel]:
+        channels = []
+        await self.cur.execute(f'SELECT * FROM `channels` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            channels.append(Channel.from_result(self.cur.description, r))
+        return channels
+
+    async def getUserGuilds(self, user: User) -> List[Guild]:
+        guilds = []
+        await self.cur.execute(f'SELECT * FROM `guilds` WHERE `id` IN (SELECT `guild_id` FROM `guild_members` WHERE `user_id`={user.id});')
+        for r in await self.cur.fetchall():
+            guilds.append(Guild.from_result(self.cur.description, r))
+        return guilds

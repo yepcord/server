@@ -1004,6 +1004,18 @@ async def api_invites_invite_post(user, invite):
     return c_json(inv)
 
 
+# Guilds
+
+
+@app.route("/api/v9/guilds", methods=["POST"])
+@multipleDecorators(usingDB, getUser)
+async def api_guilds_post(user):
+    data = await request.get_json()
+    guild = await core.createGuild(user, data["name"])
+    Ctx["with_channels"] = True
+    return c_json(await guild.json)
+
+
 # Stickers & gifs
 
 

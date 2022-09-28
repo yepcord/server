@@ -300,6 +300,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(MessageReactionRemoveEvent(user_id, message_id, channel_id, emoji))
 
+    async def guild_create(self, users, guild_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildCreateEvent(guild_obj))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core
@@ -313,6 +319,7 @@ class Gateway:
         await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("channel_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("message_events", self.mcl_eventsCallback)
+        await self.mcl.subscribe("guild_events", self.mcl_eventsCallback)
 
     async def mcl_eventsCallback(self, data: dict) -> None:
         ev = data["e"]
