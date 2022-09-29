@@ -233,6 +233,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def getUserGuilds(self, user: User) -> List[Guild]: ...
 
+    @abstractmethod
+    async def getGuildMemberCount(self, guild: Guild) -> int: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -659,3 +662,9 @@ class MySqlConnection:
         for r in await self.cur.fetchall():
             guilds.append(Guild.from_result(self.cur.description, r))
         return guilds
+
+    async def getGuildMemberCount(self, guild: Guild) -> int:
+        await self.cur.execute(f'SELECT COUNT(*) as c FROM `guild_members` WHERE `guild_id`={guild.id};')
+        if r := await self.cur.fetchone():
+            return r[0]
+        return 0

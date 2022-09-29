@@ -16,8 +16,7 @@ from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, GuildTemplate, Guild, Role, \
-    GuildMember
+    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, Guild, Role, GuildMember, GuildId, _Guild
 from .storage import _Storage
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
@@ -475,6 +474,8 @@ class Core:
         channel = await self.getChannel(channel_id)
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             return channel.recipients
+        elif channel.type in (ChannelType.GUILD_CATEGORY, ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
+            return [member.user_id for member in await self.getGuildMembers(GuildId(channel.guild_id))]
 
     async def sendTypingEvent(self, user: _User, channel: Channel) -> None:
         await self.mcl.broadcast("message_events", {"e": "typing", "data": {"user": user.id, "channel": channel.id}})
@@ -523,7 +524,7 @@ class Core:
         if manual:
             d["data"]["manual"] = True
             d["data"]["ack_type"] = 0
-        await self.mcl.broadcast("message_ack", {"e": "typing", "data": d})
+        await self.mcl.broadcast("message_events", {"e": "message_ack", "data": d})
 
     async def getUserNote(self, uid: int, target_uid: int) -> Optional[UserNote]:
         async with self.db() as db:
@@ -532,6 +533,7 @@ class Core:
     async def putUserNote(self, note: UserNote) -> None:
         async with self.db() as db:
             await db.putUserNote(note)
+        await self.mcl.broadcast("user_events", {"e": "note_update", "data": {"user": note.uid, "uid": note.target_uid, "note": note.note}})
 
     async def putUserConnection(self, uc: UserConnection) -> None:
         async with self.db() as db:
@@ -562,6 +564,8 @@ class Core:
         if channel.type in (ChannelType.DM, ChannelType.GROUP_DM):
             if uid in channel.recipients:
                 return await self.getUser(uid)
+        elif channel.type in (ChannelType.GUILD_CATEGORY, ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
+            return await self.getGuildMember(GuildId(channel.guild_id), uid)
 
     async def setFrecencySettingsBytes(self, uid: int, proto: bytes) -> None:
         proto = _b64encode(proto).decode("utf8")
@@ -766,12 +770,16 @@ class Core:
 
     async def createGuild(self, user: User, name: str) -> Guild:
         guild = Guild(mksf(), user.id, name, roles=[], system_channel_id=0)
-        roles = [Role(mksf(), guild.id, "@everyone", permissions=1071698660929)]
+        roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
         channels = []
-        channels.append(Channel(mksf(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0, permission_overwrites=[]))
-        channels.append(Channel(mksf(), ChannelType.GUILD_TEXT, guild_id=guild.id, name="general", position=0, parent_id=channels[0].id, permission_overwrites=[]))
-        channels.append(Channel(mksf(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Voice Channels", position=0, permission_overwrites=[]))
-        channels.append(Channel(mksf(), ChannelType.GUILD_VOICE, guild_id=guild.id, name="General", position=0, parent_id=channels[2].id, bitrate=64000, user_limit=0, permission_overwrites=[]))
+        channels.append(Channel(mksf(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
+                                permission_overwrites=[], flags=0, rate_limit=0))
+        channels.append(Channel(mksf(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Voice Channels", position=0,
+                                permission_overwrites=[], flags=0, rate_limit=0))
+        channels.append(Channel(mksf(), ChannelType.GUILD_TEXT, guild_id=guild.id, name="general", position=0,
+                                parent_id=channels[0].id, permission_overwrites=[], flags=0, rate_limit=0))
+        channels.append(Channel(mksf(), ChannelType.GUILD_VOICE, guild_id=guild.id, name="General", position=0,
+                                parent_id=channels[1].id, bitrate=64000, user_limit=0, permission_overwrites=[], flags=0, rate_limit=0))
         members = [GuildMember(user.id, guild.id, int(time()))]
 
         guild.system_channel_id = channels[1].id
@@ -790,11 +798,11 @@ class Core:
         async with self.db() as db:
             return await db.getRole(role_id)
 
-    async def getGuildMember(self, guild: Guild, user_id: int) -> GuildMember:
+    async def getGuildMember(self, guild: _Guild, user_id: int) -> Optional[GuildMember]:
         async with self.db() as db:
             return await db.getGuildMember(guild, user_id)
 
-    async def getGuildMembers(self, guild: Guild) -> List[GuildMember]:
+    async def getGuildMembers(self, guild: _Guild) -> List[GuildMember]:
         async with self.db() as db:
             return await db.getGuildMembers(guild)
 
@@ -805,6 +813,10 @@ class Core:
     async def getUserGuilds(self, user: User) -> List[Guild]:
         async with self.db() as db:
             return await db.getUserGuilds(user)
+
+    async def getGuildMemberCount(self, guild: _Guild) -> int:
+        async with self.db() as db:
+            return await db.getGuildMemberCount(guild)
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

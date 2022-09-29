@@ -22,6 +22,9 @@ class GatewayOp(E):
     INV_SESSION = 9
     HELLO = 10
     HEARTBEAT_ACK = 11
+    GUILD_SYNC = 12
+    # UNKNOWN = 13
+    LAZY_REQUEST = 14
 
 class ChannelType(E):
     GUILD_TEXT = 0

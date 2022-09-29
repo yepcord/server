@@ -1383,7 +1383,17 @@ class Invite(DBModel):
             del j[wo]
         return j
 
-class Guild(DBModel):
+class _Guild:
+    id = None
+
+    def __eq__(self, other):
+        return isinstance(other, _Guild) and self.id == other.id
+
+class GuildId(_Guild):
+    def __init__(self, id):
+        self.id = id
+
+class Guild(_Guild, DBModel):
     FIELDS = ("owner_id", "name", "icon", "description", "splash", "discovery_splash", "features", "emojis", "stickers",
               "banner", "region", "afk_channel_id", "afk_timeout", "system_channel_id", "verification_level", "roles",
               "default_message_notifications", "mfa_level", "explicit_content_filter", "max_members", "vanity_url_code",
@@ -1499,7 +1509,7 @@ class Guild(DBModel):
             "default_message_notifications": self.default_message_notifications,
             "mfa_level": self.mfa_level,
             "explicit_content_filter": self.explicit_content_filter,
-            "max_presences": None, # TODO
+            #"max_presences": None, # TODO
             "max_members": self.max_members,
             "max_stage_video_channel_users": 0, # TODO
             "max_video_channel_users": 0, # TODO
@@ -1511,9 +1521,16 @@ class Guild(DBModel):
             "rules_channel_id": None, # TODO
             "public_updates_channel_id": None, # TODO
             "hub_type": None, # TODO
-            "premium_progress_bar_enabled": self.premium_progress_bar_enabled,
-            "nsfw": self.nsfw,
+            "premium_progress_bar_enabled": bool(self.premium_progress_bar_enabled),
+            "nsfw": bool(self.nsfw),
             "nsfw_level": self.nsfw_level,
+            "threads": [], # TODO
+            "guild_scheduled_events": [], # TODO
+            "stage_instances": [], # TODO
+            "application_command_counts": {}, # TODO
+            "large": False, # TODO
+            "lazy": True, # TODO
+            "member_count": await getCore().getGuildMemberCount(self),
             **({} if not Ctx.get("with_members") else {"members": members}),
             **({} if not Ctx.get("with_channels") else {"channels": channels}),
         }
@@ -1563,17 +1580,18 @@ class Role(DBModel):
             "permissions": str(self.permissions),
             "position": self.position,
             "color": self.color,
-            "hoist": self.hoist,
-            "managed": self.managed,
-            "mentionable": self.mentionable,
+            "hoist": bool(self.hoist),
+            "managed": bool(self.managed),
+            "mentionable": bool(self.mentionable),
             "icon": self.icon,
             "unicode_emoji": self.unicode_emoji,
             "flags": self.flags
         }
 
-class GuildMember(DBModel):
+class GuildMember(_User, DBModel):
     FIELDS = ("user_id", "guild_id", "joined_at", "avatar", "communication_disabled_until", "flags", "nick", "roles",
               "mute", "deaf",)
+    ALLOWED_FIELDS = ("_user")
     DB_FIELDS = {"roles": "j_roles"}
     SCHEMA = Schema({
         "user_id": Use(int),
@@ -1600,6 +1618,8 @@ class GuildMember(DBModel):
         self.roles = roles
         self.mute = mute
         self.deaf = deaf
+
+        self._user = User(user_id)
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
@@ -1628,3 +1648,10 @@ class GuildMember(DBModel):
             "mute": self.mute,
             "deaf": self.deaf
         }
+
+    @property
+    async def data(self) -> UserData:
+        d = await self._user.data
+        if self.avatar:
+            d.avatar = self.avatar
+        return d
