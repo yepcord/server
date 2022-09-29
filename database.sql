@@ -205,7 +205,7 @@ CREATE TABLE `guild_templates` (
   `id` bigint NOT NULL,
   `updated_at` bigint NOT NULL,
   `template` JSON NOT NULL DEFAULT "{}",
-  UNIQUE KEY `code` (`code`) USING HASH
+  UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `reactions`;
