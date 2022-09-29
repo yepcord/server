@@ -8,7 +8,7 @@ from magic import from_buffer
 from hmac import new as hnew
 from struct import pack as spack, unpack as sunpack
 from asyncio import get_event_loop, sleep as asleep
-from typing import Union
+from typing import Union, Tuple
 from aiomysql import escape_string
 from re import compile as rcompile
 
@@ -143,7 +143,8 @@ async def execute_after(coro, seconds):
     get_event_loop().create_task(_wait_exec(coro, seconds))
 
 
-def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False) -> Union[str, list]:
+def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False, for_insert=False) -> Union[str, list, Tuple[str, str]]:
+    if not as_tuples: as_tuples = for_insert
     query = []
     for k,v in json.items():
         if isinstance(v, str):
@@ -162,6 +163,8 @@ def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False) -> Un
         else:
             query.append(f"`{k}`={v}" if v != "IS NULL" else f"`{k}` {v}")
     if as_list or as_tuples:
+        if for_insert:
+            return ", ".join([r[0] for r in query]), ", ".join([str(r[1]) for r in query])
         return query
     return ", ".join(query)
 

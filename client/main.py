@@ -61,8 +61,8 @@ async def index():
 @app.route("/register")
 @app.route("/app")
 @app.route("/channels")
-@app.route("/channels/@me/<channel>")
-@app.route("/channels/<channel>")
+@app.route("/channels/@me/<path:channel>")
+@app.route("/channels/<path:channel>")
 @app.route("/connections/<connection>")
 async def discord(**kwargs):
     return HTML_DATA_MAIN

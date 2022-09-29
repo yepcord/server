@@ -1,8 +1,10 @@
+from typing import Optional
+
 from .events import *
 from ..pubsub_client import Client
 from ..enums import GatewayOp
 from ..core import Core
-from ..classes import UserId, Session
+from ..classes import UserId, Session, GuildId
 from os import urandom
 from json import dumps as jdumps
 
@@ -300,6 +302,18 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(MessageReactionRemoveEvent(user_id, message_id, channel_id, emoji))
 
+    async def guild_create(self, users, guild_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildCreateEvent(guild_obj))
+
+    async def note_update(self, user, uid, note):
+        if not (clients := [c for c in self.clients if c.id == user and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(UserNoteUpdateEvent(uid, note))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core
@@ -313,6 +327,7 @@ class Gateway:
         await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("channel_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("message_events", self.mcl_eventsCallback)
+        await self.mcl.subscribe("guild_events", self.mcl_eventsCallback)
 
     async def mcl_eventsCallback(self, data: dict) -> None:
         ev = data["e"]
@@ -348,7 +363,8 @@ class Gateway:
             self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
             await self.ev.presence_update(cl.id, st)
             await cl.esend(ReadyEvent(await self.core.getUser(cl.id), cl, self.core))
-            await cl.esend(ReadySupplementalEvent(await self.getFriendsPresences(cl.id)))
+            guild_ids = [guild.id for guild in await self.core.getUserGuilds(sess)]
+            await cl.esend(ReadySupplementalEvent(await self.getFriendsPresences(cl.id), guild_ids))
         elif op == GatewayOp.RESUME:
             if not (cl := [w for w in self.clients if w.sid == data["d"]["session_id"]]):
                 await self.sendws(ws, GatewayOp.INV_SESSION)
@@ -368,15 +384,11 @@ class Gateway:
             await self.ev.presence_update(cl.id, st)
             await self.send(cl, GatewayOp.DISPATCH, t="READY")
         elif op == GatewayOp.HEARTBEAT:
-            if not (cl := [w for w in self.clients if w.ws == ws]):
-                return await ws.close(4005)
-            cl = cl[0]
+            if not (cl := await self.getClientFromSocket(ws)): return
             await self.send(cl, GatewayOp.HEARTBEAT_ACK, t=None, d=None)
         elif op == GatewayOp.STATUS:
             d = data["d"]
-            if not (cl := [w for w in self.clients if w.ws == ws]):
-                return await ws.close(4005)
-            cl = cl[0]
+            if not (cl := await self.getClientFromSocket(ws)): return
             if not (st := self.statuses.get(cl.id)):
                 settings = await self.core.getUserSettings(UserId(cl.id))
                 self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
@@ -385,10 +397,33 @@ class Gateway:
             if activities := d.get("activities"):
                 st.setActivities(activities)
             await self.ev.presence_update(cl.id, st)
+        elif op == GatewayOp.LAZY_REQUEST:
+            d = data["d"]
+            if not (guild_id := int(d.get("guild_id"))): return
+            if not (cl := await self.getClientFromSocket(ws)): return
+            if d.get("members", True):
+                members = await self.core.getGuildMembers(GuildId(guild_id))
+                statuses = {}
+                for member in members:
+                    if member.user_id in self.statuses:
+                        statuses[member.user_id] = self.statuses[member.user_id]
+                    else:
+                        statuses[member.user_id] = ClientStatus(member.user_id, "offline", None)
+                await cl.esend(GuildMembersListUpdateEvent(
+                    members,
+                    await self.core.getGuildMemberCount(GuildId(guild_id)),
+                    statuses,
+                    guild_id
+                ))
         else:
             print("-"*16)
             print(f"  Unknown op code: {op}")
             print(f"  Data: {data}")
+
+    async def getClientFromSocket(self, ws) -> Optional[GatewayClient]:
+        if cl := [w for w in self.clients if w.ws == ws]:
+            return cl[0]
+        await ws.close(4005)
 
     async def sendHello(self, ws):
         await self.sendws(ws, GatewayOp.HELLO, t=None, s=None, d={"heartbeat_interval": 45000})

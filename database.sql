@@ -145,6 +145,7 @@ CREATE TABLE `messages` (
   `j_components` JSON NOT NULL DEFAULT "[]",
   `j_sticker_items` JSON NOT NULL DEFAULT "[]",
   `j_extra_data` JSON NOT NULL DEFAULT "{}",
+  `guild_id` bigint DEFAULT NULL,
   UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
@@ -201,7 +202,8 @@ CREATE TABLE `frecency_settings` (
 
 DROP TABLE IF EXISTS `guild_templates`;
 CREATE TABLE `guild_templates` (
-  `code` text NOT NULL,
+  `id` bigint NOT NULL,
+  `updated_at` bigint NOT NULL,
   `template` JSON NOT NULL DEFAULT "{}",
   UNIQUE KEY `code` (`code`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
@@ -224,4 +226,67 @@ CREATE TABLE `invites` (
   `guild_id` bigint DEFAULT NULL,
   `type` int NOT NULL DEFAULT 1,
   UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `guilds`;
+CREATE TABLE `guilds` (
+  `id` bigint NOT NULL,
+  `owner_id` bigint NOT NULL,
+  `name` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `icon` text DEFAULT NULL,
+  `description` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `splash` text DEFAULT NULL,
+  `discovery_splash` text DEFAULT NULL,
+  `j_features` JSON NOT NULL DEFAULT "[]",
+  `j_emojis` JSON NOT NULL DEFAULT "[]",
+  `j_stickers` JSON NOT NULL DEFAULT "[]",
+  `banner` text DEFAULT NULL,
+  `region` text NOT NULL DEFAULT "deprecated",
+  `afk_channel_id` bigint DEFAULT NULL,
+  `afk_timeout` int DEFAULT 300,
+  `system_channel_id` bigint NOT NULL,
+  `verification_level` int NOT NULL DEFAULT 0,
+  `j_roles` JSON NOT NULL DEFAULT "[]",
+  `default_message_notifications` int NOT NULL DEFAULT 0,
+  `mfa_level` int NOT NULL DEFAULT 0,
+  `explicit_content_filter` int NOT NULL DEFAULT 0,
+  `max_members` int NOT NULL DEFAULT 100,
+  `vanity_url_code` text DEFAULT NULL,
+  `system_channel_flags` int NOT NULL DEFAULT 0,
+  `preferred_locale` text NOT NULL DEFAULT "en-US",
+  `premium_progress_bar_enabled` bool NOT NULL DEFAULT false,
+  `nsfw` bool NOT NULL DEFAULT false,
+  `nsfw_level` int NOT NULL DEFAULT 0,
+  UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `roles`;
+CREATE TABLE `roles` (
+  `id` bigint NOT NULL,
+  `guild_id` bigint NOT NULL,
+  `name` longtext NOT NULL,
+  `permissions` bigint NOT NULL DEFAULT 1071698660929,
+  `position` int NOT NULL DEFAULT 0,
+  `color` int NOT NULL DEFAULT 0,
+  `hoist` bool NOT NULL DEFAULT false,
+  `managed` bool NOT NULL DEFAULT false,
+  `mentionable` bool NOT NULL DEFAULT false,
+  `icon` text DEFAULT NULL,
+  `unicode_emoji` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `flags` int NOT NULL DEFAULT 0,
+  UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `guild_members`;
+CREATE TABLE `guild_members` (
+  `user_id` bigint NOT NULL,
+  `guild_id` bigint NOT NULL,
+  `joined_at` int NOT NULL,
+  `avatar` text DEFAULT NULL,
+  `communication_disabled_until` int DEFAULT NULL,
+  `flags` int NOT NULL DEFAULT 0,
+  `nick` text DEFAULT NULL,
+  `j_roles` JSON NOT NULL DEFAULT "[]",
+  `mute` bool NOT NULL DEFAULT false,
+  `deaf` bool NOT NULL DEFAULT false
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

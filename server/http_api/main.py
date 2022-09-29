@@ -675,10 +675,10 @@ async def api_channels_channel_patch(user, channel):
     await core.updateChannelDiff(channel, nChannel)
     await core.sendDMChannelUpdateEvent(channel)
     diff = channel.get_diff(nChannel)
-    if "name" in diff:
+    if "name" in diff and channel.type == ChannelType.GROUP_DM:
         message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
         await core.sendMessage(message)
-    if "icon" in diff:
+    if "icon" in diff and channel.type == ChannelType.GROUP_DM:
         message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_ICON_CHANGE, content="")
         await core.sendMessage(message)
     channel.set(**data)
@@ -765,7 +765,7 @@ async def api_channels_channel_messages_post(user, channel):
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
-    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data)
+    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
     await message.check()
     message = await core.sendMessage(message)
     if await core.delReadStateIfExists(user.id, channel.id):
@@ -903,7 +903,8 @@ async def api_channels_channel_pins_message_put(user, channel, message):
             channel_id=channel.id,
             type=MessageType.CHANNEL_PINNED_MESSAGE,
             content="",
-            message_reference=message.id
+            message_reference=message.id,
+            **({} if not channel.guild_id else {"guild_id": channel.guild_id})
         )
         await core.sendMessage(msg)
     return "", 204
@@ -1002,6 +1003,18 @@ async def api_invites_invite_post(user, invite):
             await core.sendMessage(msg)
         await core.sendDMChannelCreateEvent(channel, users=[user.id])
     return c_json(inv)
+
+
+# Guilds
+
+
+@app.route("/api/v9/guilds", methods=["POST"])
+@multipleDecorators(usingDB, getUser)
+async def api_guilds_post(user):
+    data = await request.get_json()
+    guild = await core.createGuild(user, data["name"])
+    Ctx["with_channels"] = True
+    return c_json(await guild.json)
 
 
 # Stickers & gifs

@@ -1,7 +1,10 @@
 from base64 import b64encode
 from datetime import datetime
+from typing import List
 
+from ..classes import GuildMember
 from ..config import Config
+from ..ctx import Ctx
 from ..utils import snowflake_timestamp
 from ..enums import GatewayOp, ChannelType
 from time import time
@@ -25,6 +28,8 @@ class ReadyEvent(DispatchEvent):
         userdata = await self.user.userdata
         settings = await self.user.settings
         proto = settings.to_proto()
+        Ctx["user_id"] = self.user.id
+        Ctx["with_channels"] = True
         return {
             "t": self.NAME,
             "op": self.OP,
@@ -53,23 +58,23 @@ class ReadyEvent(DispatchEvent):
                     "flags": 0,
                 },
                 "users": await self.core.getRelatedUsers(self.user),
-                "guilds": [],
+                "guilds": [await guild.json for guild in await self.core.getUserGuilds(self.user)], # TODO
                 "session_id": self.client.sid,
-                "presences": [],
+                "presences": [], # TODO
                 "relationships": await self.core.getRelationships(self.user),
-                "connected_accounts": [],
+                "connected_accounts": [], # TODO
                 "consents": {
                     "personalization": {
                         "consented": settings.personalization
                     }
                 },
                 "country_code": "US",
-                "experiments": [],
+                "experiments": [], # TODO
                 "friend_suggestion_count": 0,
                 "geo_ordered_rtc_regions": ["yepcord"],
-                "guild_experiments": [],
-                "guild_join_requests": [],
-                "merged_members": [],
+                "guild_experiments": [], # TODO
+                "guild_join_requests": [], # TODO
+                "merged_members": [], # TODO
                 "private_channels": await self.core.getPrivateChannels(self.user),
                 "read_state": {
                     "version": 1,
@@ -92,7 +97,7 @@ class ReadyEvent(DispatchEvent):
                 "user_guild_settings": {
                     "version": 0,
                     "partial": False,
-                    "entries": []
+                    "entries": [] # TODO
                 },
                 "user_settings": settings.to_json(),
                 "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
@@ -102,20 +107,22 @@ class ReadyEvent(DispatchEvent):
 class ReadySupplementalEvent(DispatchEvent):
     NAME = "READY_SUPPLEMENTAL"
 
-    def __init__(self, friends_presences):
+    def __init__(self, friends_presences, guilds_ids):
         self.friends_presences = friends_presences
+        self.guilds_ids = guilds_ids
 
     async def json(self) -> dict:
+        g = [{"voice_states": [], "id": str(i), "embedded_activities": []} for i in self.guilds_ids] # TODO
         return {
             "t": self.NAME,
             "op": self.OP,
             "d": {
                 "merged_presences": {
-                    "guilds": [], # TODO
+                    "guilds": [[]], # TODO
                     "friends": self.friends_presences
                 },
-                "merged_members": [], # TODO
-                "guilds": [] # TODO
+                "merged_members": [[]], # TODO
+                "guilds": g
             }
         }
 
@@ -388,3 +395,88 @@ class MessageReactionAddEvent(DispatchEvent):
 
 class MessageReactionRemoveEvent(MessageReactionAddEvent):
     NAME = "MESSAGE_REACTION_REMOVE"
+
+class GuildCreateEvent(DispatchEvent):
+    NAME = "GUILD_CREATE"
+
+    def __init__(self, guild_obj):
+        self.guild_obj = guild_obj
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.guild_obj
+        }
+
+class GuildMembersListUpdateEvent(DispatchEvent):
+    NAME = "GUILD_MEMBER_LIST_UPDATE"
+
+    def __init__(self, members: List[GuildMember], total_members: int, statuses, guild_id):
+        self.members = members
+        self.total_members = total_members
+        self.statuses = statuses
+        self.groups = {}
+        for s in statuses.values():
+            if s["status"] not in self.groups:
+                self.groups[s["status"]] = 0
+            self.groups[s["status"]] += 1
+        self.guild_id = guild_id
+
+    async def json(self) -> dict:
+        groups = [{"id": status, "count": count} for status, count in self.groups.items()]
+        items = []
+        for mem in self.members:
+            m = await mem.json
+            m["presence"] = {
+                "user": {"id": str(mem.user_id)},
+                "status": self.statuses[mem.user_id]["status"],
+                "client_status": {} if self.statuses[mem.user_id]["status"] == "offline" else {"desktop": self.statuses[mem.user_id]["status"]},
+                "activities": self.statuses[mem.user_id].get("activities", [])
+            }
+            items.append({"member": m})
+        items.sort(key=lambda i: i["member"]["presence"]["status"])
+        _ls = None
+        _ins = {}
+        _offset = 0
+        for idx, i in enumerate(items):
+            if (_s := i["member"]["presence"]["status"]) != _ls:
+                group = {"id": _s, "count": self.groups[_s]}
+                _ins[idx+_offset] = {"group": group}
+                _offset += 1
+            _ls = _s
+        for idx, ins in _ins.items():
+            items.insert(idx, ins)
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "ops": [{
+                    "range": [0, 99],
+                    "op": "SYNC",
+                    "items": items
+                }],
+                "online_count": self.statuses.get("online", 0),
+                "member_count": self.total_members,
+                "id": "everyone",
+                "guild_id": str(self.guild_id),
+                "groups": groups
+            }
+        }
+
+class UserNoteUpdateEvent(DispatchEvent):
+    NAME = "USER_NOTE_UPDATE"
+
+    def __init__(self, uid, note):
+        self.uid = uid
+        self.note = note
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "id": str(self.uid),
+                "note": self.note
+            }
+        }

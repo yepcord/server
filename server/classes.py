@@ -2,6 +2,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from time import mktime
+from typing import Any
 from uuid import uuid4, UUID
 from zlib import compressobj, Z_FULL_FLUSH
 
@@ -429,7 +430,6 @@ class UserSettings(DBModel):
             self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": False})
         return self
 
-
 class UserData(DBModel):
     FIELDS = ("birth", "username", "discriminator", "phone", "premium", "accent_color", "avatar", "avatar_decoration",
               "banner", "banner_color", "bio", "flags", "public_flags")
@@ -561,7 +561,7 @@ class Channel(_Channel, DBModel):
         "type": Use(int),
         Optional("guild_id"): Or(int, NoneType),
         Optional("position"): Or(int, NoneType),
-        Optional("permission_overwrites"): Or(dict, NoneType),
+        Optional("permission_overwrites"): Or(dict, list, NoneType),
         Optional("name"): Or(Use(str), NoneType),
         Optional("topic"): Or(Use(str), NoneType),
         Optional("nsfw"): Or(bool, NoneType),
@@ -616,6 +616,46 @@ class Channel(_Channel, DBModel):
             limit = 100
         return await getCore().getChannelMessages(self, limit, before, after)
 
+    @property
+    async def json(self):
+        if self.type == ChannelType.GUILD_CATEGORY:
+            return {
+                "type": self.type,
+                "position": self.position,
+                "permission_overwrites": self.permission_overwrites,
+                "name": self.name,
+                "id": str(self.id),
+                "flags": self.flags
+            }
+        elif self.type == ChannelType.GUILD_TEXT:
+            return {
+                "type": self.type,
+                "topic": self.topic,
+                "rate_limit_per_user": self.rate_limit,
+                "position": self.position,
+                "permission_overwrites": self.permission_overwrites,
+                "parent_id": str(self.parent_id),
+                "name": self.name,
+                "last_message_id": self.last_message_id,
+                "id": str(self.id),
+                "flags": self.flags
+            }
+        elif self.type == ChannelType.GUILD_VOICE:
+            return {
+                "user_limit": self.user_limit,
+                "type": self.type,
+                "rtc_region": self.rtc_region,
+                "rate_limit_per_user": self.rate_limit,
+                "position": self.position,
+                "permission_overwrites": self.permission_overwrites,
+                "parent_id": str(self.parent_id),
+                "name": self.name,
+                "last_message_id": self.last_message_id,
+                "id": str(self.id),
+                "flags": self.flags,
+                "bitrate": self.bitrate
+            }
+
 class _Message:
     id = None
 
@@ -625,12 +665,12 @@ class _Message:
 class Message(_Message, DBModel):
     FIELDS = ("channel_id", "author", "content", "edit_timestamp", "attachments", "embeds", "pinned",
               "webhook_id", "application_id", "type", "flags", "message_reference", "thread", "components",
-              "sticker_items", "extra_data")
+              "sticker_items", "extra_data", "guild_id")
     ID_FIELD = "id"
     ALLOWED_FIELDS = ("nonce",)
     DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "pinned": False,
                 "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
-                "thread": None, "components": [], "sticker_items": [], "extra_data": {}}
+                "thread": None, "components": [], "sticker_items": [], "extra_data": {}, "guild_id": None}
     SCHEMA = Schema({
         "id": Use(int),
         "channel_id": Use(int),
@@ -649,13 +689,14 @@ class Message(_Message, DBModel):
         Optional("components"): list,
         Optional("sticker_items"): list,
         Optional("extra_data"): dict,
+        Optional("guild_id"): Or(int, NoneType),
     })
     DB_FIELDS = {"attachments": "j_attachments", "embeds": "j_embeds", "components": "j_components",
                  "sticker_items": "j_sticker_items", "extra_data": "j_extra_data"}
 
     def __init__(self, id, channel_id, author, content=Null, edit_timestamp=Null, attachments=Null, embeds=Null,
                  pinned=Null, webhook_id=Null, application_id=Null, type=Null, flags=Null, message_reference=Null,
-                 thread=Null, components=Null, sticker_items=Null, extra_data=Null, **kwargs):
+                 thread=Null, components=Null, sticker_items=Null, extra_data=Null, guild_id=Null, **kwargs):
         self.id = id
         self.content = content
         self.channel_id = channel_id
@@ -673,6 +714,7 @@ class Message(_Message, DBModel):
         self.components = components
         self.sticker_items = sticker_items
         self.extra_data = extra_data
+        self.guild_id = guild_id
 
         self.set(**kwargs)
 
@@ -948,6 +990,7 @@ class Message(_Message, DBModel):
             "edited_timestamp": edit_timestamp,
             "flags": self.flags,
             "components": self.components,  # TODO: parse components
+            **({} if not self.guild_id else {"guild_id": self.guild_id})
         }
         if nonce := getattr(self, "nonce", None):
             j["nonce"] = nonce
@@ -1082,21 +1125,78 @@ class EmailMsg:
             pass # TODO: write warning to log
 
 class GuildTemplate(DBModel):
-    FIELDS = ("code", "template")
+    FIELDS = ("template",)
+    ID_FIELD = "id"
     DB_FIELDS = {"template": "j_template"}
     SCHEMA = Schema({
-        "code": And(Use(str), lambda s: bool(b64decode(s))),
-        "type": [{
-            "id": Use(int),
-            "parent_id": Or(int, NoneType),
-            "name": str,
-            "type": And(Use(int),lambda i: i in ChannelType.values())
-        }],
+        "id": int,
+        "updated_at": Or(int, NoneType),
+        "template": {
+           "name": str,
+           "description": Or(str, NoneType),
+           "usage_count": int,
+           "creator_id": Use(int),
+           "creator":{
+              "id": Use(int),
+              "username": str,
+              "avatar": Or(str, NoneType),
+              "avatar_decoration":Or(str, NoneType),
+              "discriminator": Use(int),
+              "public_flags": int
+           },
+           "source_guild_id": Use(int),
+           "serialized_source_guild": {
+              "name": str,
+              "description": Or(str, NoneType),
+              "region": str,
+              "verification_level": int,
+              "default_message_notifications": int,
+              "explicit_content_filter": int,
+              "preferred_locale": str,
+              "afk_timeout": int,
+              "roles":[{
+                    "id": int,
+                    "name": str,
+                    "color": int,
+                    "hoist": bool,
+                    "mentionable": bool,
+                    "permissions": Use(int),
+                    "icon": Or(str, NoneType),
+                    "unicode_emoji": Or(str, NoneType)
+              }],
+              "channels":[{
+                    "id": int,
+                    "type": And(Use(int), lambda i: i in ChannelType.values()),
+                    "name": str,
+                    "position": int,
+                    "topic": Or(str, NoneType),
+                    "bitrate": int,
+                    "user_limit": int,
+                    "nsfw": bool,
+                    "rate_limit_per_user": int,
+                    "parent_id": Or(int, NoneType),
+                    "default_auto_archive_duration": Or(int, NoneType),
+                    "permission_overwrites": [Any], # TODO
+                    "available_tags": Any, # TODO
+                    "template": str,
+                    "default_reaction_emoji": Or(str, NoneType),
+                    "default_thread_rate_limit_per_user": Or(int, NoneType),
+                    "default_sort_order": Any # TODO
+              }],
+              "afk_channel_id": Or(int, NoneType),
+              "system_channel_id": int,
+              "system_channel_flags": int
+           },
+           "is_dirty": Any # TODO
+        }
     })
 
-    def __init__(self, code, template):
-        self.code = code
+    def __init__(self, id, template):
+        self.code = id
         self.template = template
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)
 
 class UserFlags:
     def __init__(self, value: int):
@@ -1282,3 +1382,276 @@ class Invite(DBModel):
         for wo in without:
             del j[wo]
         return j
+
+class _Guild:
+    id = None
+
+    def __eq__(self, other):
+        return isinstance(other, _Guild) and self.id == other.id
+
+class GuildId(_Guild):
+    def __init__(self, id):
+        self.id = id
+
+class Guild(_Guild, DBModel):
+    FIELDS = ("owner_id", "name", "icon", "description", "splash", "discovery_splash", "features", "emojis", "stickers",
+              "banner", "region", "afk_channel_id", "afk_timeout", "system_channel_id", "verification_level", "roles",
+              "default_message_notifications", "mfa_level", "explicit_content_filter", "max_members", "vanity_url_code",
+              "system_channel_flags", "preferred_locale", "premium_progress_bar_enabled", "nsfw", "nsfw_level",)
+    DB_FIELDS = {"features": "j_features", "emojis": "j_emojis", "stickers": "j_stickers", "roles": "j_roles"}
+    ID_FIELD = "id"
+    DEFAULTS = {"icon": None, "description": None, "splash": None, "discovery_splash": None, "features": [],
+                "emojis": [], "stickers": [], "banner": None, "region": "deprecated", "afk_channel_id": None,
+                "afk_timeout": 300, "verification_level": 0, "default_message_notifications": 0, "mfa_level": 0,
+                "explicit_content_filter": 0, "max_members": 100, "vanity_url_code": None, "system_channel_flags": 0,
+                "preferred_locale": "en-US", "premium_progress_bar_enabled": False, "nsfw": False, "nsfw_level": 0}
+    SCHEMA = Schema({
+        "id": Use(int),
+        "owner_id": Use(int),
+        "name": str,
+        Optional("icon"): Or(str, NoneType),
+        Optional("description"): Or(str, NoneType),
+        Optional("splash"): Or(str, NoneType),
+        Optional("discovery_splash"): Or(str, NoneType),
+        Optional("features"): list,
+        Optional("emojis"): list,
+        Optional("stickers"): list,
+        Optional("banner"): Or(str, NoneType),
+        Optional("region"): str,
+        Optional("afk_channel_id"): Or(int, NoneType),
+        Optional("afk_timeout"): int,
+        Optional("system_channel_id"): int,
+        Optional("verification_level"): int,
+        Optional("roles"): [int],
+        Optional("default_message_notifications"): int,
+        Optional("mfa_level"): int,
+        Optional("explicit_content_filter"): int,
+        Optional("max_members"): int,
+        Optional("vanity_url_code"): Or(str, NoneType),
+        Optional("system_channel_flags"): int,
+        Optional("preferred_locale"): str,
+        Optional("premium_progress_bar_enabled"): Use(bool),
+        Optional("nsfw"): Use(bool),
+        Optional("nsfw_level"): int,
+    })
+
+    def __init__(self, id, owner_id, name, icon=Null, description=Null, splash=Null, discovery_splash=Null, features=Null,
+                 emojis=Null, stickers=Null, banner=Null, region=Null, afk_channel_id=Null, afk_timeout=Null,
+                 system_channel_id=Null, verification_level=Null, roles=Null, default_message_notifications=Null,
+                 mfa_level=Null, explicit_content_filter=Null, max_members=Null, vanity_url_code=Null,
+                 system_channel_flags=Null, preferred_locale=Null, premium_progress_bar_enabled=Null, nsfw=Null, nsfw_level=Null):
+        self.id = id
+        self.owner_id = owner_id
+        self.name = name
+        self.icon = icon
+        self.description = description
+        self.splash = splash
+        self.discovery_splash = discovery_splash
+        self.features = features
+        self.emojis = emojis
+        self.stickers = stickers
+        self.banner = banner
+        self.region = region
+        self.afk_channel_id = afk_channel_id
+        self.afk_timeout = afk_timeout
+        self.system_channel_id = system_channel_id
+        self.verification_level = verification_level
+        self.roles = roles
+        self.default_message_notifications = default_message_notifications
+        self.mfa_level = mfa_level
+        self.explicit_content_filter = explicit_content_filter
+        self.max_members = max_members
+        self.vanity_url_code = vanity_url_code
+        self.system_channel_flags = system_channel_flags
+        self.preferred_locale = preferred_locale
+        self.premium_progress_bar_enabled = premium_progress_bar_enabled
+        self.nsfw = nsfw
+        self.nsfw_level = nsfw_level
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)
+
+    @property
+    async def json(self) -> dict:
+        roles = [await role.json for role in [await getCore().getRole(role) for role in self.roles]] # TODO
+        members = []
+        channels = []
+        if Ctx.get("with_members"):
+            members = [await member.json for member in await getCore().getGuildMembers(self)]
+        if Ctx.get("with_channels"):
+            channels = [await channel.json for channel in await getCore().getGuildChannels(self)]
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "icon": self.icon,
+            "description": self.description,
+            "splash": self.splash,
+            "discovery_splash": self.discovery_splash,
+            "features": self.features,
+            **({} if not Ctx.get("user_id") else {
+                "joined_at": datetime.utcfromtimestamp(int(snowflake_timestamp(
+                    (await getCore().getGuildMember(self, Ctx.get("user_id"))).joined_at
+                ) / 1000)).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+            }),
+            "emojis": self.emojis,
+            "stickers": self.stickers,
+            "banner": self.banner,
+            "owner_id": str(self.owner_id),
+            "application_id": None, # TODO
+            "region": self.region,
+            "afk_channel_id": self.afk_channel_id,
+            "afk_timeout": self.afk_timeout,
+            "system_channel_id": str(self.system_channel_id),
+            "widget_enabled": False, # TODO
+            "widget_channel_id": None, # TODO
+            "verification_level": self.verification_level,
+            "roles": roles,
+            "default_message_notifications": self.default_message_notifications,
+            "mfa_level": self.mfa_level,
+            "explicit_content_filter": self.explicit_content_filter,
+            #"max_presences": None, # TODO
+            "max_members": self.max_members,
+            "max_stage_video_channel_users": 0, # TODO
+            "max_video_channel_users": 0, # TODO
+            "vanity_url_code": self.vanity_url_code,
+            "premium_tier": 3, # TODO
+            "premium_subscription_count": 30, # TODO
+            "system_channel_flags": self.system_channel_flags,
+            "preferred_locale": self.preferred_locale,
+            "rules_channel_id": None, # TODO
+            "public_updates_channel_id": None, # TODO
+            "hub_type": None, # TODO
+            "premium_progress_bar_enabled": bool(self.premium_progress_bar_enabled),
+            "nsfw": bool(self.nsfw),
+            "nsfw_level": self.nsfw_level,
+            "threads": [], # TODO
+            "guild_scheduled_events": [], # TODO
+            "stage_instances": [], # TODO
+            "application_command_counts": {}, # TODO
+            "large": False, # TODO
+            "lazy": True, # TODO
+            "member_count": await getCore().getGuildMemberCount(self),
+            **({} if not Ctx.get("with_members") else {"members": members}),
+            **({} if not Ctx.get("with_channels") else {"channels": channels}),
+        }
+
+class Role(DBModel):
+    FIELDS = ("guild_id", "name", "permissions", "position", "color", "hoist", "managed=, ""mentionable", "icon",
+              "unicode_emoji", "flags")
+    ID_FIELD = "id"
+    SCHEMA = Schema({
+        "id": Use(int),
+        "guild_id": int,
+        "name": str,
+        Optional("permissions"): int,
+        Optional("position"): int,
+        Optional("color"): int,
+        Optional("hoist"): Use(bool),
+        Optional("managed"): Use(bool),
+        Optional("mentionable"): Use(bool),
+        Optional("icon"): Or(str, NoneType),
+        Optional("unicode_emoji"): Or(str, NoneType),
+        Optional("flags"): int
+    })
+
+    def __init__(self, id, guild_id, name, permissions=Null, position=Null, color=Null, hoist=Null, managed=Null,
+                 mentionable=Null, icon=Null, unicode_emoji=Null, flags=Null):
+        self.id = id
+        self.guild_id = guild_id
+        self.name = name
+        self.permissions = permissions
+        self.position = position
+        self.color = color
+        self.hoist = hoist
+        self.managed = managed
+        self.mentionable = mentionable
+        self.icon = icon
+        self.unicode_emoji = unicode_emoji
+        self.flags = flags
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)
+
+    @property
+    async def json(self) -> dict:
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "permissions": str(self.permissions),
+            "position": self.position,
+            "color": self.color,
+            "hoist": bool(self.hoist),
+            "managed": bool(self.managed),
+            "mentionable": bool(self.mentionable),
+            "icon": self.icon,
+            "unicode_emoji": self.unicode_emoji,
+            "flags": self.flags
+        }
+
+class GuildMember(_User, DBModel):
+    FIELDS = ("user_id", "guild_id", "joined_at", "avatar", "communication_disabled_until", "flags", "nick", "roles",
+              "mute", "deaf",)
+    ALLOWED_FIELDS = ("_user")
+    DB_FIELDS = {"roles": "j_roles"}
+    SCHEMA = Schema({
+        "user_id": Use(int),
+        "guild_id": Use(int),
+        "joined_at": int,
+        Optional("avatar"): Or(str, NoneType),
+        Optional("communication_disabled_until"): Or(int, NoneType),
+        Optional("flags"): int,
+        Optional("nick"): Or(str, NoneType),
+        Optional("roles"): [int],
+        Optional("mute"): Use(bool),
+        Optional("deaf"): Use(bool)
+    })
+
+    def __init__(self, user_id, guild_id, joined_at, avatar=Null, communication_disabled_until=Null, flags=Null,
+                 nick=Null, roles=Null, mute=Null, deaf=Null):
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.joined_at = joined_at
+        self.avatar = avatar
+        self.communication_disabled_until = communication_disabled_until
+        self.flags = flags
+        self.nick = nick
+        self.roles = roles
+        self.mute = mute
+        self.deaf = deaf
+
+        self._user = User(user_id)
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)
+
+    @property
+    async def json(self) -> dict:
+        data = await getCore().getUserData(UserId(self.user_id))
+        return {
+            "avatar": self.avatar,
+            "communication_disabled_until": self.communication_disabled_until,
+            "flags": self.flags,
+            "joined_at": datetime.utcfromtimestamp(self.joined_at).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+            "nick": self.nick,
+            "is_pending": False,  # TODO
+            "pending": False,
+            "premium_since": datetime.utcfromtimestamp(int(snowflake_timestamp(self.user_id)/1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "roles": self.roles,
+            "user": {
+                "id": str(data.uid),
+                "username": data.username,
+                "avatar": data.avatar,
+                "avatar_decoration": data.avatar_decoration,
+                "discriminator": data.s_discriminator,
+                "public_flags": data.public_flags
+            },
+            "mute": self.mute,
+            "deaf": self.deaf
+        }
+
+    @property
+    async def data(self) -> UserData:
+        d = await self._user.data
+        if self.avatar:
+            d.avatar = self.avatar
+        return d
