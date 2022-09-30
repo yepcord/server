@@ -6,7 +6,7 @@ from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
-    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite, Role, Guild, GuildMember
+    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite, Role, Guild, GuildMember, _Guild
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
 from .ctx import Ctx
@@ -228,13 +228,22 @@ class DBConnection(ABC):
     async def getGuildChannels(self, guild: Guild) -> List[Channel]: ...
 
     @abstractmethod
-    async def getGuildMembers(self, guild: Guild) -> List[GuildMember]: ...
+    async def getGuildMembers(self, guild: _Guild) -> List[GuildMember]: ...
+
+    @abstractmethod
+    async def getGuildMembersIds(self, guild: _Guild) -> List[int]: ...
 
     @abstractmethod
     async def getUserGuilds(self, user: User) -> List[Guild]: ...
 
     @abstractmethod
     async def getGuildMemberCount(self, guild: Guild) -> int: ...
+
+    @abstractmethod
+    async def getGuild(self, guild_id: int) -> Optional[Guild]: ...
+
+    @abstractmethod
+    async def updateGuildDiff(self, before: Guild, after: Guild) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -642,12 +651,16 @@ class MySqlConnection:
         if r := await self.cur.fetchone():
             return GuildMember.from_result(self.cur.description, r)
 
-    async def getGuildMembers(self, guild: Guild) -> List[GuildMember]:
+    async def getGuildMembers(self, guild: _Guild) -> List[GuildMember]:
         members = []
         await self.cur.execute(f'SELECT * FROM `guild_members` WHERE `guild_id`={guild.id};')
         for r in await self.cur.fetchall():
             members.append(GuildMember.from_result(self.cur.description, r))
         return members
+
+    async def getGuildMembersIds(self, guild: _Guild) -> List[int]:
+        await self.cur.execute(f'SELECT `user_id` FROM `guild_members` WHERE `guild_id`={guild.id};')
+        return [r[0] for r in await self.cur.fetchall()]
 
     async def getGuildChannels(self, guild: Guild) -> List[Channel]:
         channels = []
@@ -668,3 +681,14 @@ class MySqlConnection:
         if r := await self.cur.fetchone():
             return r[0]
         return 0
+
+    async def getGuild(self, guild_id: int) -> Optional[Guild]:
+        await self.cur.execute(f'SELECT * FROM `guilds` WHERE `id`={guild_id};')
+        if r := await self.cur.fetchone():
+            return Guild.from_result(self.cur.description, r)
+
+    async def updateGuildDiff(self, before: Guild, after: Guild) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `guilds` SET {diff} WHERE `id`={before.id};')

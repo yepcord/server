@@ -102,11 +102,9 @@ def multipleDecorators(*decorators):
         return f
     return _multipleDecorators
 
-
 def usingDB(f):
     setattr(f, "__db", True)
     return f
-
 
 def getUser(f):
     @wraps(f)
@@ -120,7 +118,6 @@ def getUser(f):
         return await f(*args, **kwargs)
     return wrapped
 
-
 def getSession(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
@@ -132,7 +129,6 @@ def getSession(f):
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
-
 
 def getChannel(f):
     @wraps(f)
@@ -149,7 +145,6 @@ def getChannel(f):
         return await f(*args, **kwargs)
     return wrapped
 
-
 async def _getMessage(user, channel, message_id):
     if not channel:
         raise InvalidDataErr(404, mkError(10003))
@@ -160,7 +155,6 @@ async def _getMessage(user, channel, message_id):
     if not (message := await core.getMessage(channel, message_id)):
         raise InvalidDataErr(404, mkError(10008))
     return message
-
 
 def getMessage(f):
     @wraps(f)
@@ -187,6 +181,29 @@ def getInvite(f):
         return await f(*args, **kwargs)
     return wrapped
 
+def getGuild(with_member):
+    def _getGuild(f):
+        @wraps(f)
+        async def wrapped(*args, **kwargs):
+            if not (guild := int(kwargs.get("guild"))):
+                raise InvalidDataErr(404, mkError(10004))
+            if not (user := kwargs.get("user")):
+                raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+            if not (guild := await core.getGuild(guild)):
+                raise InvalidDataErr(404, mkError(10004))
+            if not (member := await core.getGuildMember(guild, user.id)):
+                raise InvalidDataErr(403, mkError(50001))
+            kwargs["guild"] = guild
+            if with_member:
+                kwargs["member"] = member
+            return await f(*args, **kwargs)
+        return wrapped
+    return _getGuild
+
+getGuildWithMember = getGuild(with_member=True)
+getGuildWithoutMember = getGuild(with_member=False)
+getGuildWM = getGuildWithMember
+getGuildWoM = getGuildWithoutMember
 
 # Auth
 
@@ -413,7 +430,9 @@ async def api_users_me_settingsproto_1_patch(user): # TODO
     await core.setSettingsDiff(settings_old, settings)
     user._uSettings = None
     settings = await user.settings
-    return c_json({"settings": _b64encode(settings.to_proto().SerializeToString()).decode("utf8")})
+    proto = _b64encode(settings.to_proto().SerializeToString()).decode("utf8")
+    await core.sendSettingsProtoUpdateEvent(user.id, proto, 1)
+    return c_json({"settings": proto})
 
 
 @app.route("/api/v9/users/@me/settings-proto/2", methods=["GET"])
@@ -438,8 +457,10 @@ async def api_users_me_settingsproto_2_patch(user):
     proto.ParseFromString(await user.frecency_settings_proto)
     proto.MergeFrom(proto_new)
     proto = proto.SerializeToString()
-    await core.setFrecencySettingsBytes(user.id, proto)
-    return c_json({"settings": _b64encode(proto).decode("utf8")})
+    proto = _b64encode(proto).decode("utf8")
+    await core.setFrecencySettings(user.id, proto)
+    await core.sendSettingsProtoUpdateEvent(user.id, proto, 2)
+    return c_json({"settings": proto})
 
 
 @app.route("/api/v9/users/@me/connections", methods=["GET"])
@@ -1016,6 +1037,31 @@ async def api_guilds_post(user):
     Ctx["with_channels"] = True
     return c_json(await guild.json)
 
+
+@app.route("/api/v9/guilds/<int:guild>", methods=["PATCH"])
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_patch(user, guild):
+    if guild.owner_id != user.id: # TODO: check permissions
+        raise InvalidDataErr(403, mkError(50013))
+    data = await request.get_json()
+    for j in ("id", "owner_id", "features", "emojis", "stickers", "roles", "max_members"):
+        if j in data: del data[j]
+    if "icon" in data:
+        img = data["icon"]
+        del data["icon"]
+        if (img := getImage(img)) or not validImage(img):
+            if h := await cdn.setGuildIconFromBytesIO(guild.id, img):
+                data["icon"] = h
+    nguild = guild.copy()
+    nguild.set(**data)
+    await core.updateGuildDiff(guild, nguild)
+    return c_json(await nguild.json)
+
+
+@app.route("/api/v9/guilds/<int:guild>/templates", methods=["GET"])
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_templates_get(user, guild):
+    return c_json([])
 
 # Stickers & gifs
 

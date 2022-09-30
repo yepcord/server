@@ -90,6 +90,7 @@ CREATE TABLE `settings` (
   `use_rich_chat_input` bool NOT NULL DEFAULT true,
   `expression_suggestions_enabled` bool NOT NULL DEFAULT true,
   `view_image_descriptions` bool NOT NULL DEFAULT true,
+  `dismissed_contents` tinytext NOT NULL DEFAULT "510109000002000080",
   UNIQUE KEY `uid` (`uid`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
