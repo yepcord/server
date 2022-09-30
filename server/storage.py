@@ -31,6 +31,11 @@ class _Storage:
             raise NotImplementedError
         return await self.storage.getChannelIcon(channel_id, icon_hash, size, fmt)
 
+    async def getGuildIcon(self, guild_id: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.getGuildIcon(guild_id, icon_hash, size, fmt)
+
     async def getAttachment(self, channel_id: int, message_id: int, name: str):
         if type(self) == _Storage:
             raise NotImplementedError
@@ -50,6 +55,11 @@ class _Storage:
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.setChannelIconFromBytesIO(channel_id, image)
+
+    async def setGuildIconFromBytesIO(self, guild_id: int, image: BytesIO) -> str:
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.setGuildIconFromBytesIO(guild_id, image)
 
     async def uploadAttachment(self, data, attachment):
         if type(self) == _Storage:
@@ -138,6 +148,11 @@ class FileStorage(_Storage):
         def_size = 256 if anim else 1024
         return await self._getImage("channel_icon", cid, icon_hash, size, fmt, def_size, lambda s: s)
 
+    async def getGuildIcon(self, gid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        anim = icon_hash.startswith("a_")
+        def_size = 256 if anim else 1024
+        return await self._getImage("icon", gid, icon_hash, size, fmt, def_size, lambda s: s)
+
     async def getBanner(self, uid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = banner_hash.startswith("a_")
         def_size = 480 if anim else 600
@@ -157,6 +172,11 @@ class FileStorage(_Storage):
         a = Image.open(image).n_frames > 1
         size = 256 if a else 1024
         return await self._setImage("channel_icon", cid, size, lambda s: s, image)
+
+    async def setGuildIconFromBytesIO(self, gid: int, image: BytesIO) -> str:
+        a = Image.open(image).n_frames > 1
+        size = 256 if a else 1024
+        return await self._setImage("icon", gid, size, lambda s: s, image)
 
     async def uploadAttachment(self, data, attachment):
         fpath = pjoin(self.root, "attachments", str(attachment.channel_id), str(attachment.id))

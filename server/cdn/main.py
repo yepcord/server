@@ -86,6 +86,21 @@ async def channelicons_cid_hash(cid, name):
         return b'', 400
     return avatar, 200, {"Content-Type": f"image/{fmt}"}
 
+@app.route("/icons/<int:gid>/<string:name>", methods=["GET"])
+async def icons_gid_hash(gid, name):
+    ihash = name.split(".")[0]
+    fmt = name.split(".")[1]
+    size = int(request.args.get("size", 1024))
+    if fmt not in ["webp", "png", "jpg", "gif"]:
+        return b'', 400
+    if size not in ALLOWED_AVATAR_SIZES:
+        return b'', 400
+    if size > 1024: size = 1024
+    avatar = await cdn.getGuildIcon(gid, ihash, size, fmt)
+    if not avatar:
+        return b'', 400
+    return avatar, 200, {"Content-Type": f"image/{fmt}"}
+
 @app.route("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>", methods=["GET"])
 async def attachments_channelid_attachmentid_name(channel_id, attachment_id, name):
     att = await core.getAttachment(attachment_id)

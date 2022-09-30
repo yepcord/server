@@ -57,6 +57,7 @@ class DBModel:
     FIELDS = ()
     ID_FIELD = None
     ALLOWED_FIELDS = ()
+    EXCLUDED_FIELDS = ()
     DEFAULTS = {}
     SCHEMA: Schema = Schema(dict)
     DB_FIELDS = {}
@@ -66,11 +67,15 @@ class DBModel:
             if getattr(self, f, None) == Null:
                 delattr(self, f)
 
-    def to_json(self, with_id=False, with_values=False):
+    def to_json(self, with_id=False, with_values=False, with_excluded=True):
         j = {}
         f = list(self.FIELDS)
         if with_id and self.ID_FIELD:
             f.append(self.ID_FIELD)
+        if self.EXCLUDED_FIELDS and not with_excluded:
+            for ef in self.EXCLUDED_FIELDS:
+                if ef in f:
+                    f.remove(ef)
         for k in f:
             if (v := getattr(self, k, Null)) == Null:
                 continue
@@ -184,7 +189,8 @@ class UserSettings(DBModel):
               "convert_emoticons", "passwordless", "mfa", "activity_restricted_guild_ids", "friend_source_flags",
               "guild_positions", "guild_folders", "restricted_guilds", "personalization", "usage_statistics",
               "render_spoilers", "inline_embed_media", "use_thread_sidebar", "use_rich_chat_input",
-              "expression_suggestions_enabled")
+              "expression_suggestions_enabled", "dismissed_contents",)
+    EXCLUDED_FIELDS = ("dismissed_contents",)
     ID_FIELD = "uid"
     DB_FIELDS = {"custom_status": "j_custom_status", "activity_restricted_guild_ids": "j_activity_restricted_guild_ids",
                  "friend_source_flags": "j_friend_source_flags", "guild_positions": "j_guild_positions",
@@ -235,6 +241,7 @@ class UserSettings(DBModel):
         Optional("use_rich_chat_input"): Use(bool),
         Optional("expression_suggestions_enabled"): Use(bool),
         Optional("view_image_descriptions"): Use(bool),
+        Optional("dismissed_contents"): And(Use(str), lambda s: len(s) % 2 == 0)
     })
 
     def __init__(self,
@@ -249,7 +256,7 @@ class UserSettings(DBModel):
                  friend_source_flags=Null, guild_positions=Null, guild_folders=Null, restricted_guilds=Null,
                  personalization=Null, usage_statistics=Null, render_spoilers=Null, inline_embed_media=Null,
                  use_thread_sidebar=Null, use_rich_chat_input=Null, expression_suggestions_enabled=Null,
-                 view_image_descriptions=Null, **kwargs):
+                 view_image_descriptions=Null, dismissed_contents=Null, **kwargs):
         self.uid = uid
         self.inline_attachment_media = inline_attachment_media
         self.show_current_game = show_current_game
@@ -298,12 +305,13 @@ class UserSettings(DBModel):
         self.use_rich_chat_input = use_rich_chat_input
         self.expression_suggestions_enabled = expression_suggestions_enabled
         self.view_image_descriptions = view_image_descriptions
+        self.dismissed_contents = dismissed_contents
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
 
-    def to_json(self, with_id=False, with_values=False):
-        j = super().to_json(with_id=with_id, with_values=with_values)
+    def to_json(self, with_id=False, with_values=False, with_excluded=True):
+        j = super().to_json(with_id=with_id, with_values=with_values, with_excluded=with_excluded)
         if not with_values:
             return j
         if "mfa" in j:
@@ -313,7 +321,7 @@ class UserSettings(DBModel):
     def to_proto(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
             versions=Version(client_version=14, data_version=1), # TODO: get data version from database
-            user_content=UserContentSettings(dismissed_contents=b'Q\x01\t\x00\x00\x02\x00\x00\x80'),
+            user_content=UserContentSettings(dismissed_contents=bytes.fromhex(self.dismissed_contents)),
             voice_and_video=VoiceAndVideoSettings(
                 afk_timeout=AfkTimeout(value=self.get("afk_timeout", 600)),
                 stream_notifications_enabled=StreamNotificationsEnabled(
@@ -386,8 +394,7 @@ class UserSettings(DBModel):
             theme="dark" if proto_get(proto, "appearance.theme", 1) == 1 else "light",
             allow_accessibility_detection=proto_get(proto, "privacy.allow_accessibility_detection", Null),
             locale=proto_get(proto, "localization.locale.locale_code", Null),
-            native_phone_integration_enabled=proto_get(proto, "voice_and_video.native_phone_integration_enabled.value",
-                                                       Null),
+            native_phone_integration_enabled=proto_get(proto, "voice_and_video.native_phone_integration_enabled.value", Null),
             timezone_offset=proto_get(proto, "localization.timezone_offset.offset", Null),
             friend_discovery_flags=proto_get(proto, "privacy.friend_discovery_flags.value", Null),
             contact_sync_enabled=proto_get(proto, "privacy.contact_sync_enabled.value", Null),
@@ -428,6 +435,8 @@ class UserSettings(DBModel):
                 self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": True})
         else:
             self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": False})
+        if (p := proto_get(proto, "user_content.dismissed_contents", Null)) is not Null:
+            self.set(dismissed_contents=p[:64].hex())
         return self
 
 class UserData(DBModel):

@@ -14,7 +14,7 @@ from time import time
 from .config import Config
 from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
-from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError
+from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError, execute_after
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
     UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, Guild, Role, GuildMember, GuildId, _Guild
 from .storage import _Storage
@@ -806,6 +806,10 @@ class Core:
         async with self.db() as db:
             return await db.getGuildMembers(guild)
 
+    async def getGuildMembersIds(self, guild: _Guild) -> List[int]:
+        async with self.db() as db:
+            return await db.getGuildMembersIds(guild)
+
     async def getGuildChannels(self, guild: Guild) -> List[Channel]:
         async with self.db() as db:
             return await db.getGuildChannels(guild)
@@ -817,6 +821,19 @@ class Core:
     async def getGuildMemberCount(self, guild: _Guild) -> int:
         async with self.db() as db:
             return await db.getGuildMemberCount(guild)
+
+    async def sendSettingsProtoUpdateEvent(self, uid: int, proto: str, stype: int) -> None:
+        await execute_after(self.mcl.broadcast("user_events", {"e": "settings_proto_update", "data": {"user": uid, "proto": proto, "stype": stype}}), 1)
+
+    async def getGuild(self, guild_id: int) -> Optional[Guild]:
+        async with self.db() as db:
+            return await db.getGuild(guild_id)
+
+    async def updateGuildDiff(self, before: Guild, after: Guild) -> None:
+        async with self.db() as db:
+            await db.updateGuildDiff(before, after)
+        await self.mcl.broadcast("guild_events", {"e": "guild_update", "data":
+            {"users": await self.getGuildMembersIds(before), "guild_obj": await after.json}})
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

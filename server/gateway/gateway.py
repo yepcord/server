@@ -313,6 +313,20 @@ class GatewayEvents:
             return
         for cl in clients:
             await cl.esend(UserNoteUpdateEvent(uid, note))
+            
+    async def settings_proto_update(self, user, proto, stype):
+        if not (clients := [c for c in self.clients if c.id == user and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(UserSettingsProtoUpdateEvent(proto, stype))
+
+    async def guild_update(self, users, guild_obj):
+        print(users)
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        print("guild update")
+        for cl in clients:
+            await cl.esend(GuildUpdateEvent(guild_obj))
 
 class Gateway:
     def __init__(self, core: Core):

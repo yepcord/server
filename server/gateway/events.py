@@ -99,7 +99,7 @@ class ReadyEvent(DispatchEvent):
                     "partial": False,
                     "entries": [] # TODO
                 },
-                "user_settings": settings.to_json(),
+                "user_settings": settings.to_json(with_excluded=False),
                 "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
             }
         }
@@ -409,6 +409,24 @@ class GuildCreateEvent(DispatchEvent):
             "d": self.guild_obj
         }
 
+class GuildUpdateEvent(GuildCreateEvent):
+    NAME = "GUILD_UPDATE"
+
+class GuildDeleteEvent(DispatchEvent):
+    NAME = "GUILD_DELETE"
+
+    def __init__(self, guild_id):
+        self.guild_id = guild_id
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "id": str(self.guild_id)
+            }
+        }
+
 class GuildMembersListUpdateEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_LIST_UPDATE"
 
@@ -478,5 +496,25 @@ class UserNoteUpdateEvent(DispatchEvent):
             "d": {
                 "id": str(self.uid),
                 "note": self.note
+            }
+        }
+
+class UserSettingsProtoUpdateEvent(DispatchEvent):
+    NAME = "USER_SETTINGS_PROTO_UPDATE"
+
+    def __init__(self, proto, stype):
+        self.proto = proto
+        self.type = stype
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "settings": {
+                    "type": self.type,
+                    "proto": self.proto
+                },
+                "partial": False
             }
         }
