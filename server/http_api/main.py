@@ -581,7 +581,7 @@ async def api_users_me_mfa_codesverification(user):
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_put(uid, user):
     data = await request.get_json()
-    if "type" not in data:
+    if not data or "type" not in data:
         await core.accRelationship(user, uid)
     elif data["type"] == 2:
         await core.blockUser(user, uid)
