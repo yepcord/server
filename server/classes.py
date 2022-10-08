@@ -12,7 +12,7 @@ from schema import Schema, Use, Optional, And, Or, Regex
 
 from .config import Config
 from .ctx import Ctx, getCore
-from .enums import ChannelType, MessageType, UserFlags as UserFlagsE
+from .enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
 from .errors import EmbedErr, InvalidDataErr
 from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAndVideoSettings, AfkTimeout, \
     StreamNotificationsEnabled, TextAndImagesSettings, UseRichChatInput, UseThreadSidebar, Theme, RenderSpoilers, \
@@ -1032,6 +1032,15 @@ class Relationship(DBModel):
 
         self._checkNulls()
         self.to_typed_json(with_id=True, with_values=True)
+
+    def discord_type(self, current_uid: int) -> int:
+        t: int = self.type
+        if t == RelationshipType.PENDING:
+            if self.u1 == current_uid:
+                return 4
+            else:
+                return 3
+        return t
 
 class ReadState(DBModel):
     FIELDS = ("channel_id", "last_read_id", "count",)

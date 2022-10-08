@@ -23,7 +23,7 @@ from ..classes import Session, UserSettings, UserData, Message, UserNote, UserCo
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
     parseMultipartRequest, LOCALES
-from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE
+from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
 from ..storage import FileStorage
 
@@ -580,7 +580,11 @@ async def api_users_me_mfa_codesverification(user):
 @app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["PUT"])
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_put(uid, user):
-    await core.accRelationship(user, uid)
+    data = await request.get_json()
+    if "type" not in data:
+        await core.accRelationship(user, uid)
+    elif data["type"] == 2:
+        await core.blockUser(user, uid)
     return "", 204
 
 
@@ -740,6 +744,15 @@ async def api_channels_channel_messages_get(user, channel):
 @app.route("/api/v9/channels/<int:channel>/messages", methods=["POST"])
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_post(user, channel):
+    if channel.type == ChannelType.DM:
+        oth = channel.recipients.copy()
+        oth.remove(user.id)
+        oth = oth[0]
+        rel = await core.getRelationship(user.id, oth)
+        if not rel:
+            ... # TODO: Check
+        if rel and rel.type == RelationshipType.BLOCK:
+            raise InvalidDataErr(403, mkError(50007))
     data = await request.get_json()
     if data is None and (ct := request.headers.get("Content-Type", "")).startswith("multipart/form-data;"):
         data = {}

@@ -245,6 +245,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def updateGuildDiff(self, before: Guild, after: Guild) -> None: ...
 
+    @abstractmethod
+    async def getRelationshipEx(self, u1: int, u2: int) -> Optional[Relationship]: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -366,6 +369,11 @@ class MySqlConnection:
 
     async def getRelationship(self, u1: int, u2: int) -> Optional[Relationship]:
         await self.cur.execute(f'SELECT * FROM `relationships` WHERE (`u1`={u1} AND `u2`={u2}) OR (`u1`={u2} AND `u2`={u1});')
+        if r := await self.cur.fetchone():
+            return Relationship.from_result(self.cur.description, r)
+
+    async def getRelationshipEx(self, u1: int, u2: int) -> Optional[Relationship]:
+        await self.cur.execute(f'SELECT * FROM `relationships` WHERE `u1`={u1} AND `u2`={u2};')
         if r := await self.cur.fetchone():
             return Relationship.from_result(self.cur.description, r)
 

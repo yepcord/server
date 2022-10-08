@@ -226,7 +226,9 @@ class Core:
         async with self.db() as db:
             for r in await db.getRelationships(user.id):
                 if r.type == RelationshipType.BLOCK:
-                    uid = r.u1 if r.u1 != user.id else r.u2
+                    if r.u1 != user.id:
+                        continue
+                    uid = r.u2
                     rel.append(await _d(uid, 2))
                 elif r.type == RelationshipType.FRIEND:
                     uid = r.u1 if r.u1 != user.id else r.u2
@@ -238,6 +240,10 @@ class Core:
                     uid = r.u1
                     rel.append(await _d(uid, 3))
         return rel
+
+    async def getRelationship(self, u1: int, u2: int) -> Optional[Relationship]:
+        async with self.db() as db:
+            return await db.getRelationship(u1, u2)
 
     async def getRelatedUsers(self, user: User, only_ids=False) -> list:
         users = []
@@ -287,20 +293,19 @@ class Core:
         async with self.db() as db:
             if not (rel := await db.getRelationship(user.id, uid)):
                 return
-        t = rel.type
-        t1 = 0
-        t2 = 0
-        if t == RelationshipType.PENDING:
-            if rel.u1 == user.id:
-                t1 = 4
-                t2 = 3
-            else:
-                t1 = 3
-                t2 = 4
+        if rel.type == RelationshipType.BLOCK:
+            if not (rel := await db.getRelationshipEx(user.id, uid)):
+                return
+            async with self.db() as db:
+                await db.delRelationship(rel)
+            await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": user.id, "target_user": uid, "type": rel.type}})
+            return
+        t1 = rel.discord_type(user.id)
+        t2 = rel.discord_type(uid)
         async with self.db() as db:
             await db.delRelationship(rel)
-        await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": user.id, "target_user": uid, "type": t or t1}})
-        await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": t or t2}})
+        await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": user.id, "target_user": uid, "type": t1}})
+        await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": t2}})
 
     async def changeUserPassword(self, user: User, new_password: str) -> None:
         new_password = self.encryptPassword(user.id, new_password)
@@ -834,6 +839,21 @@ class Core:
             await db.updateGuildDiff(before, after)
         await self.mcl.broadcast("guild_events", {"e": "guild_update", "data":
             {"users": await self.getGuildMembersIds(before), "guild_obj": await after.json}})
+
+    async def blockUser(self, user: User, uid: int) -> None:
+        rel = await self.getRelationship(user.id, uid)
+        if rel and rel.type != RelationshipType.BLOCK:
+            async with self.db() as db:
+                await db.delRelationship(rel)
+        elif rel and rel.type == RelationshipType.BLOCK and rel.u1 == user.id:
+            return
+        async with self.db() as db:
+            await db.insertRelationShip(Relationship(user.id, uid, RelationshipType.BLOCK))
+        if rel and rel.type != RelationshipType.BLOCK:
+            await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": rel.discord_type(uid)}})
+        await self.mcl.broadcast("user_events", {"e": "relationship_add", "data": {"current_user": user.id, "target_user": uid, "type": RelationshipType.BLOCK}})
+
+
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

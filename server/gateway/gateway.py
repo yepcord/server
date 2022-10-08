@@ -203,7 +203,6 @@ class GatewayEvents:
 
     async def message_ack(self, user, data):
         clients = [c for c in self.clients if c.id == user and c.connected]
-        data = data["data"]
         for cl in clients:
             await cl.esend(MessageAckEvent(data))
 
@@ -321,12 +320,17 @@ class GatewayEvents:
             await cl.esend(UserSettingsProtoUpdateEvent(proto, stype))
 
     async def guild_update(self, users, guild_obj):
-        print(users)
         if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
-        print("guild update")
         for cl in clients:
             await cl.esend(GuildUpdateEvent(guild_obj))
+
+    async def relationship_add(self, current_user, target_user, type):
+        if not (clients := [c for c in self.clients if c.id == current_user and c.connected]):
+            return
+        d = await self.core.getUserData(UserId(target_user))
+        for cl in clients:
+            await cl.esend(RelationshipAddEvent(current_user, d, type))
 
 class Gateway:
     def __init__(self, core: Core):
