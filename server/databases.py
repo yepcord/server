@@ -6,7 +6,8 @@ from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
-    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite, Role, Guild, GuildMember, _Guild
+    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite, Role, Guild, GuildMember, _Guild, \
+    Emoji
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
 from .ctx import Ctx
@@ -700,3 +701,22 @@ class MySqlConnection:
         diff = json_to_sql(diff)
         if diff:
             await self.cur.execute(f'UPDATE `guilds` SET {diff} WHERE `id`={before.id};')
+
+    async def addEmoji(self, emoji: Emoji) -> None:
+        fields, values = json_to_sql(emoji.to_typed_json(with_id=True), for_insert=True)
+        await self.cur.execute(f'INSERT INTO `emojis` ({fields}) VALUES ({values})')
+
+    async def getEmoji(self, emoji_id: int) -> Optional[Emoji]:
+        await self.cur.execute(f'SELECT * FROM `emojis` WHERE `id`={emoji_id};')
+        if r := await self.cur.fetchone():
+            return Emoji.from_result(self.cur.description, r)
+
+    async def getEmojis(self, guild_id: int) -> List[Emoji]:
+        emojis = []
+        await self.cur.execute(f'SELECT * FROM `emojis` WHERE `guild_id`={guild_id};')
+        for r in await self.cur.fetchall():
+            emojis.append(Emoji.from_result(self.cur.description, r))
+        return emojis
+
+    async def deleteEmoji(self, emoji: Emoji) -> None:
+        await self.cur.execute(f'DELETE FROM `emojis` WHERE `id`={emoji.id} LIMIT 1;')

@@ -1466,7 +1466,7 @@ class Guild(_Guild, DBModel):
         self.splash = splash
         self.discovery_splash = discovery_splash
         self.features = features
-        self.emojis = emojis
+        self.emojis = emojis # TODO: Deprecated, use `emoji.guild_id`
         self.stickers = stickers
         self.banner = banner
         self.region = region
@@ -1491,13 +1491,16 @@ class Guild(_Guild, DBModel):
 
     @property
     async def json(self) -> dict:
-        roles = [await role.json for role in [await getCore().getRole(role) for role in self.roles]] # TODO
+        roles = [await role.json for role in [await getCore().getRole(role) for role in self.roles]]
         members = []
         channels = []
         if Ctx.get("with_members"):
             members = [await member.json for member in await getCore().getGuildMembers(self)]
         if Ctx.get("with_channels"):
             channels = [await channel.json for channel in await getCore().getGuildChannels(self)]
+        emojis = []
+        for emoji in await getCore().getEmojis(self.id):
+            emojis.append(await emoji.json)
         return {
             "id": str(self.id),
             "name": self.name,
@@ -1511,7 +1514,7 @@ class Guild(_Guild, DBModel):
                     (await getCore().getGuildMember(self, Ctx.get("user_id"))).joined_at
                 ) / 1000)).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
             }),
-            "emojis": self.emojis,
+            "emojis": emojis,
             "stickers": self.stickers,
             "banner": self.banner,
             "owner_id": str(self.owner_id),
@@ -1673,3 +1676,61 @@ class GuildMember(_User, DBModel):
         if self.avatar:
             d.avatar = self.avatar
         return d
+
+class Emoji(DBModel):
+    FIELDS = ("name", "user_id", "guild_id", "roles", "require_colons", "managed", "animated", "available",)
+    ID_FIELD = "id"
+    DB_FIELDS = {"roles": "j_roles"}
+    DEFAULTS = {"roles": [], "require_colons": True, "managed": False, "animated": False, "available": True}
+    SCHEMA = Schema({
+        "id": Use(int),
+        "name": str,
+        "user_id": Use(int),
+        "guild_id": Use(int),
+        Optional("roles"): list,
+        Optional("require_colons"): Use(bool),
+        Optional("managed"): Use(bool),
+        Optional("animated"): Use(bool),
+        Optional("available"): Use(bool),
+    })
+
+    def __init__(self, id, name, user_id, guild_id, roles=Null, require_colons=Null, managed=Null, animated=Null,
+                 available=Null):
+        self.id = id
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.name = name
+        self.roles = roles
+        self.require_colons = require_colons
+        self.managed = managed
+        self.animated = animated
+        self.available = available
+
+        self._checkNulls()
+        self.to_typed_json(with_id=True, with_values=True)
+
+    @property
+    async def json(self) -> dict:
+        user = {}
+        if Ctx.get("with_user"):
+            user = await getCore().getUserData(UserId(self.user_id))
+            user = {
+                "user": {
+                    "id": str(self.user_id),
+                    "username": user.username,
+                    "avatar": user.avatar,
+                    "avatar_decoration": user.avatar_decoration,
+                    "discriminator": user.s_discriminator,
+                    "public_flags": user.public_flags
+                }
+            }
+        return {
+            "name": self.name,
+            "roles": self.roles,
+            "id": str(self.id),
+            "require_colons": bool(self.require_colons),
+            "managed": bool(self.managed),
+            "animated": bool(self.animated),
+            "available": bool(self.available),
+            **user
+        }

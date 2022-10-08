@@ -54,7 +54,7 @@ async def avatars_uid_hash(uid, name):
     if size > 1024: size = 1024
     avatar = await cdn.getAvatar(uid, ahash, size, fmt)
     if not avatar:
-        return b'', 400
+        return b'', 404
     return avatar, 200, {"Content-Type": f"image/{fmt}"}
 
 @app.route("/banners/<int:uid>/<string:name>", methods=["GET"])
@@ -68,7 +68,7 @@ async def banners_uid_hash(uid, name):
         return b'', 400
     banner = await cdn.getBanner(uid, bhash, size, fmt)
     if not banner:
-        return b'', 400
+        return b'', 404
     return banner, 200, {"Content-Type": "image/webp"}
 
 @app.route("/channel-icons/<int:cid>/<string:name>", methods=["GET"])
@@ -81,10 +81,10 @@ async def channelicons_cid_hash(cid, name):
     if size not in ALLOWED_AVATAR_SIZES:
         return b'', 400
     if size > 1024: size = 1024
-    avatar = await cdn.getChannelIcon(cid, ihash, size, fmt)
-    if not avatar:
-        return b'', 400
-    return avatar, 200, {"Content-Type": f"image/{fmt}"}
+    icon = await cdn.getChannelIcon(cid, ihash, size, fmt)
+    if not icon:
+        return b'', 404
+    return icon, 200, {"Content-Type": f"image/{fmt}"}
 
 @app.route("/icons/<int:gid>/<string:name>", methods=["GET"])
 async def icons_gid_hash(gid, name):
@@ -96,10 +96,28 @@ async def icons_gid_hash(gid, name):
     if size not in ALLOWED_AVATAR_SIZES:
         return b'', 400
     if size > 1024: size = 1024
-    avatar = await cdn.getGuildIcon(gid, ihash, size, fmt)
-    if not avatar:
+    icon = await cdn.getGuildIcon(gid, ihash, size, fmt)
+    if not icon:
+        return b'', 404
+    return icon, 200, {"Content-Type": f"image/{fmt}"}
+
+@app.route("/emojis/<string:name>", methods=["GET"])
+async def emojis_eid(name):
+    eid = int(name.split(".")[0])
+    fmt = name.split(".")[1]
+    size = int(request.args.get("size", 56))
+    if fmt not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    return avatar, 200, {"Content-Type": f"image/{fmt}"}
+    if size not in ALLOWED_AVATAR_SIZES:
+        return b'', 400
+    if size > 56: size = 56
+    em = await core.getEmoji(eid)
+    if not em:
+        return b'', 404
+    emoji = await cdn.getEmoji(eid, size, fmt, em.animated)
+    if not emoji:
+        return b'', 404
+    return emoji, 200, {"Content-Type": f"image/{fmt}"}
 
 @app.route("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>", methods=["GET"])
 async def attachments_channelid_attachmentid_name(channel_id, attachment_id, name):

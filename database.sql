@@ -291,3 +291,17 @@ CREATE TABLE `guild_members` (
   `mute` bool NOT NULL DEFAULT false,
   `deaf` bool NOT NULL DEFAULT false
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `emojis`;
+CREATE TABLE `emojis` (
+  `id` bigint NOT NULL,
+  `name` text NOT NULL,
+  `user_id` bigint NOT NULL,
+  `guild_id` bigint NOT NULL,
+  `j_roles` JSON NOT NULL DEFAULT "[]",
+  `require_colons` bool NOT NULL DEFAULT true,
+  `managed` bool NOT NULL DEFAULT false,
+  `animated` bool NOT NULL DEFAULT false,
+  `available` bool NOT NULL DEFAULT true,
+  UNIQUE KEY `id` (`id`) USING HASH
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
