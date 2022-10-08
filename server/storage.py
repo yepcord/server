@@ -98,6 +98,9 @@ async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
         res = await gather(get_event_loop().run_in_executor(pool, _resize))
     return res[0]
 
+def getImageFrames(img) -> int:
+    return getattr(img, "n_frames", 1)
+
 class FileStorage(_Storage):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -127,7 +130,7 @@ class FileStorage(_Storage):
         hash.update(image.getvalue())
         hash = hash.hexdigest()
         image = Image.open(image)
-        anim = image.n_frames > 1
+        anim = getImageFrames(image) > 1
         form = "gif" if anim else "png"
         hash = f"a_{hash}" if anim else hash
         makedirs(pjoin(self.root, f"{type}s", str(id)), exist_ok=True)
@@ -159,22 +162,23 @@ class FileStorage(_Storage):
         return await self._getImage("banner", uid, banner_hash, size, fmt, def_size, lambda s: int(240*s/600))
 
     async def setAvatarFromBytesIO(self, uid: int, image: BytesIO) -> str:
-        a = Image.open(image).n_frames > 1
+
+        a = getImageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("avatar", uid, size, lambda s: s, image)
 
     async def setBannerFromBytesIO(self, uid: int, image: BytesIO) -> str:
-        a = Image.open(image).n_frames > 1
+        a = getImageFrames(Image.open(image)) > 1
         size = 480 if a else 600
         return await self._setImage("banner", uid, size, lambda s: int(240*s/600), image)
 
     async def setChannelIconFromBytesIO(self, cid: int, image: BytesIO) -> str:
-        a = Image.open(image).n_frames > 1
+        a = getImageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("channel_icon", cid, size, lambda s: s, image)
 
     async def setGuildIconFromBytesIO(self, gid: int, image: BytesIO) -> str:
-        a = Image.open(image).n_frames > 1
+        a = getImageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("icon", gid, size, lambda s: s, image)
 
