@@ -16,7 +16,8 @@ from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError, execute_after
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, Guild, Role, GuildMember, GuildId, _Guild
+    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, Guild, Role, GuildMember, \
+    GuildId, _Guild, Emoji
 from .storage import _Storage
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
@@ -837,8 +838,7 @@ class Core:
     async def updateGuildDiff(self, before: Guild, after: Guild) -> None:
         async with self.db() as db:
             await db.updateGuildDiff(before, after)
-        await self.mcl.broadcast("guild_events", {"e": "guild_update", "data":
-            {"users": await self.getGuildMembersIds(before), "guild_obj": await after.json}})
+        await self.mcl.broadcast("guild_events", {"e": "guild_update", "data": {"users": await self.getGuildMembersIds(before), "guild_obj": await after.json}})
 
     async def blockUser(self, user: User, uid: int) -> None:
         rel = await self.getRelationship(user.id, uid)
@@ -853,7 +853,23 @@ class Core:
             await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": rel.discord_type(uid)}})
         await self.mcl.broadcast("user_events", {"e": "relationship_add", "data": {"current_user": user.id, "target_user": uid, "type": RelationshipType.BLOCK}})
 
+    async def getEmojis(self, guild_id: int) -> List[Emoji]:
+        async with self.db() as db:
+            return await db.getEmojis(guild_id)
 
+    async def addEmoji(self, emoji: Emoji, guild: Guild) -> None:
+        async with self.db() as db:
+            await db.addEmoji(emoji)
+        await self.mcl.broadcast("guild_events", {"e": "emojis_update", "data": {"users": await self.getGuildMembersIds(guild), "guild_id": guild.id}})
+
+    async def getEmoji(self, emoji_id: int) -> Optional[Emoji]:
+        async with self.db() as db:
+            return await db.getEmoji(emoji_id)
+
+    async def deleteEmoji(self, emoji: Emoji, guild: Guild) -> None:
+        async with self.db() as db:
+            await db.deleteEmoji(emoji)
+        await self.mcl.broadcast("guild_events", {"e": "emojis_update", "data": {"users": await self.getGuildMembersIds(guild), "guild_id": guild.id}})
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

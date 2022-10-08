@@ -332,6 +332,14 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(RelationshipAddEvent(current_user, d, type))
 
+    async def emojis_update(self, users, guild_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        emojis = await self.core.getEmojis(guild_id)
+        emojis = [await emoji.json for emoji in emojis]
+        for cl in clients:
+            await cl.esend(GuildEmojisUpdate(guild_id, emojis))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

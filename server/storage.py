@@ -36,6 +36,11 @@ class _Storage:
             raise NotImplementedError
         return await self.storage.getGuildIcon(guild_id, icon_hash, size, fmt)
 
+    async def getEmoji(self, emoji_id: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.getEmoji(emoji_id, size, fmt, anim)
+
     async def getAttachment(self, channel_id: int, message_id: int, name: str):
         if type(self) == _Storage:
             raise NotImplementedError
@@ -60,6 +65,11 @@ class _Storage:
         if type(self) == _Storage:
             raise NotImplementedError
         return await self.storage.setGuildIconFromBytesIO(guild_id, image)
+
+    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
+        if type(self) == _Storage:
+            raise NotImplementedError
+        return await self.storage.setEmojiFromBytesIO(emoji_id, image)
 
     async def uploadAttachment(self, data, attachment):
         if type(self) == _Storage:
@@ -156,6 +166,24 @@ class FileStorage(_Storage):
         def_size = 256 if anim else 1024
         return await self._getImage("icon", gid, icon_hash, size, fmt, def_size, lambda s: s)
 
+    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
+        def_fmt = "gif" if anim else "png"
+        paths = [(f"{eid}", f"{size}.{fmt}"), (f"{eid}", f"56.{fmt}"), (f"{eid}", f"56.{def_fmt}")]
+        paths = [pjoin(self.root, f"emojis", *name) for name in paths]
+        size = (size, size)
+        for i, p in enumerate(paths):
+            if isfile(p):
+                if i == 0:
+                    async with aopen(p, "rb") as f:
+                        return await f.read()
+                else:
+                    image = Image.open(p)
+                    coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
+                    data = await coro
+                    async with aopen(paths[0], "wb") as f:
+                        await f.write(data)
+                    return data
+
     async def getBanner(self, uid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = banner_hash.startswith("a_")
         def_size = 480 if anim else 600
@@ -181,6 +209,17 @@ class FileStorage(_Storage):
         a = getImageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("icon", gid, size, lambda s: s, image)
+
+    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
+        image = Image.open(image)
+        anim = getImageFrames(image) > 1
+        form = "gif" if anim else "png"
+        makedirs(pjoin(self.root, f"emojis", str(eid)), exist_ok=True)
+        coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
+        data = await coro
+        async with aopen(pjoin(self.root, f"emojis", str(eid), f"56.{form}"), "wb") as f:
+            await f.write(data)
+        return {"animated": anim}
 
     async def uploadAttachment(self, data, attachment):
         fpath = pjoin(self.root, "attachments", str(attachment.channel_id), str(attachment.id))

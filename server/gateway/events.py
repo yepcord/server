@@ -518,3 +518,20 @@ class UserSettingsProtoUpdateEvent(DispatchEvent):
                 "partial": False
             }
         }
+
+class GuildEmojisUpdate(DispatchEvent):
+    NAME = "GUILD_EMOJIS_UPDATE"
+
+    def __init__(self, guild_id, emojis):
+        self.guild_id = guild_id
+        self.emojis = emojis
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "guild_id": str(self.guild_id),
+                "emojis": self.emojis
+            }
+        }

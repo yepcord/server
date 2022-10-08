@@ -19,7 +19,7 @@ from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, \
-    UserFlags, Reaction, SearchFilter
+    UserFlags, Reaction, SearchFilter, Emoji
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
     parseMultipartRequest, LOCALES
@@ -1075,6 +1075,51 @@ async def api_guilds_guild_patch(user, guild):
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_templates_get(user, guild):
     return c_json([])
+
+
+@app.route("/api/v9/guilds/<int:guild>/emojis", methods=["GET"])
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_emojis_get(user, guild):
+    emojis = await core.getEmojis(guild.id)
+    Ctx["with_user"] = True
+    emojis = [await emoji.json for emoji in emojis]
+    return c_json(emojis)
+
+
+@app.route("/api/v9/guilds/<int:guild>/emojis", methods=["POST"])
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_emojis_post(user, guild):
+    if guild.owner_id != user.id: # TODO: check permissions
+        raise InvalidDataErr(403, mkError(50013))
+    data = await request.get_json()
+    if not data.get("image"):
+        raise InvalidDataErr(400, mkError(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+    if not data.get("name"):
+        raise InvalidDataErr(400, mkError(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+    if not (img := getImage(data["image"])) or not validImage(img):
+        raise InvalidDataErr(400, mkError(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
+    eid = mksf()
+    if not (emd := await cdn.setEmojiFromBytesIO(eid, img)):
+        raise InvalidDataErr(400, mkError(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
+    emoji = Emoji(eid, data["name"], user.id, guild.id, animated=emd["animated"])
+    await core.addEmoji(emoji, guild)
+    emoji.fill_defaults()
+    return c_json(await emoji.json)
+
+
+@app.route("/api/v9/guilds/<int:guild>/emojis/<int:emoji>", methods=["DELETE"])
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_emojis_emoji_delete(user, guild, emoji):
+    if guild.owner_id != user.id: # TODO: check permissions
+        raise InvalidDataErr(403, mkError(50013))
+    emoji = await core.getEmoji(emoji)
+    if not emoji:
+        return "", 204
+    if emoji.guild_id != guild.id:
+        return "", 204
+    await core.deleteEmoji(emoji, guild)
+    return "", 204
+
 
 # Stickers & gifs
 
