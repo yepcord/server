@@ -999,7 +999,7 @@ class Message(_Message, DBModel):
             "edited_timestamp": edit_timestamp,
             "flags": self.flags,
             "components": self.components,  # TODO: parse components
-            **({} if not self.guild_id else {"guild_id": self.guild_id})
+            **({} if not self.guild_id else {"guild_id": str(self.guild_id)})
         }
         if nonce := getattr(self, "nonce", None):
             j["nonce"] = nonce

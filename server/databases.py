@@ -603,16 +603,20 @@ class MySqlConnection:
 
     async def getMessageReactions(self, message_id: int, user_id: int) -> list:
         reactions = []
-        await self.cur.execute(f'SELECT `emoji_name` as ename, COUNT(*) AS ecount, ' +
-                               f'(SELECT COUNT(*) > 0 FROM `reactions` WHERE `emoji_name`=ename AND `user_id`={user_id}) as me ' +
-                               f'FROM `reactions` WHERE `message_id`={message_id} GROUP BY `emoji_name` COLLATE utf8mb4_unicode_520_ci;') # TODO: add custom emoji
-                                                                            # utf8mb4_unicode_520_ci for emoji --^^^^^^^^^^^^^^^^^^^^
+        await self.cur.execute(
+            f'SELECT `emoji_name` as ename, `emoji_id` as eid, COUNT(*) AS ecount, ' +
+            f'(SELECT COUNT(*) > 0 FROM `reactions` WHERE `emoji_name`=ename AND (`emoji_id`=eid OR (`emoji_id` IS NULL AND eid IS NULL)) AND `user_id`={user_id}) as me ' +
+            f'FROM `reactions` WHERE `message_id`={message_id} GROUP BY CONCAT(`emoji_name`, `emoji_id`) COLLATE utf8mb4_unicode_520_ci;'
+        ) #                                                                    utf8mb4_unicode_520_ci for emoji --^^^^^^^^^^^^^^^^^^^^
         for r in await self.cur.fetchall():
-            reactions.append({"emoji": {"emoji_id": None, "name": r[0]}, "count": r[1], "me": bool(r[2])})
+            reactions.append({"emoji": {"id": str(r[1]) if r[1] else None, "name": r[0]}, "count": r[2], "me": bool(r[3])})
         return reactions
 
     async def getReactedUsersIds(self, reaction: Reaction, limit: int) -> List[int]:
-        await self.cur.execute(f'SELECT `user_id` FROM `reactions` WHERE `message_id`={reaction.message_id} AND `emoji_name`="{escape_string(reaction.emoji_name)}" LIMIT {limit};')
+        sql = json_to_sql(reaction.to_typed_json(), as_list=True, is_none=True)
+        sql = [s for s in sql if "user_id" not in s]
+        sql = " AND ".join(sql)
+        await self.cur.execute(f'SELECT `user_id` FROM `reactions` WHERE {sql} LIMIT {limit};')
         return [r[0] for r in await self.cur.fetchall()]
 
     async def searchMessages(self, filter: SearchFilter) -> Tuple[List[Message], int]:

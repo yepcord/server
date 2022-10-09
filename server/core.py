@@ -728,17 +728,15 @@ class Core:
         async with self.db() as db:
             await db.addReaction(reaction)
         users = await self.getRelatedUsersToChannel(channel.id)
-        emoji = {"id": reaction.emoji_id, "name": reaction.emoji_name}
-        await self.mcl.broadcast("message_events", {"e": "reaction_add", "data":
-            {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
+        emoji = {"id": str(reaction.emoji_id) if reaction.emoji_id is not None else None, "name": reaction.emoji_name}
+        await self.mcl.broadcast("message_events", {"e": "reaction_add", "data": {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
 
     async def removeReaction(self, reaction: Reaction, channel: Channel) -> None:
         async with self.db() as db:
             await db.removeReaction(reaction)
         users = await self.getRelatedUsersToChannel(channel.id)
-        emoji = {"id": reaction.emoji_id, "name": reaction.emoji_name}
-        await self.mcl.broadcast("message_events", {"e": "reaction_remove", "data":
-            {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
+        emoji = {"id": str(reaction.emoji_id) if reaction.emoji_id is not None else None, "name": reaction.emoji_name}
+        await self.mcl.broadcast("message_events", {"e": "reaction_remove", "data": {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
 
     async def getMessageReactions(self, message_id: int, user_id: int) -> list:
         async with self.db() as db:
@@ -870,6 +868,19 @@ class Core:
         async with self.db() as db:
             await db.deleteEmoji(emoji)
         await self.mcl.broadcast("guild_events", {"e": "emojis_update", "data": {"users": await self.getGuildMembersIds(guild), "guild_id": guild.id}})
+
+    async def getEmojiByReaction(self, reaction: str) -> Optional[Emoji]:
+        try:
+            name, emoji_id = reaction.split(":")
+            emoji_id = int(emoji_id)
+            if "~" in name:
+                name = name.split("~")[0]
+        except ValueError:
+            return
+        async with self.db() as db:
+            if not (emoji := await db.getEmoji(emoji_id)):
+                return
+        return None if emoji.name != name else emoji
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

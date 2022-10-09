@@ -6,6 +6,7 @@ from magic import from_buffer
 from quart import Quart, request
 from uuid import UUID
 
+from server.classes import Emoji
 from ..config import Config
 from ..core import Core, CDN
 from ..storage import FileStorage
@@ -113,8 +114,12 @@ async def emojis_eid(name):
     if size > 56: size = 56
     em = await core.getEmoji(eid)
     if not em:
-        return b'', 404
-    emoji = await cdn.getEmoji(eid, size, fmt, em.animated)
+        for a in (False, True):
+            emoji = await cdn.getEmoji(eid, size, fmt, a)
+            if emoji:
+                break
+    else:
+        emoji = await cdn.getEmoji(eid, size, fmt, em.animated)
     if not emoji:
         return b'', 404
     return emoji, 200, {"Content-Type": f"image/{fmt}"}
