@@ -963,30 +963,42 @@ async def api_channels_channel_pins_get(user, channel):
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["PUT"])
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
-    if not is_emoji(reaction): # TODO: Check custom emoji
+    if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
         raise InvalidDataErr(400, mkError(10014))
-    await core.addReaction(Reaction(message.id, user.id, None, reaction), channel)
+    r = {
+        "emoji_id": None if isinstance(reaction, str) else reaction.id,
+        "emoji_name": reaction if isinstance(reaction, str) else reaction.name
+    }
+    await core.addReaction(Reaction(message.id, user.id, **r), channel)
     return "", 204
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["DELETE"])
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
-    if not is_emoji(reaction): # TODO: Check custom emoji
+    if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
         raise InvalidDataErr(400, mkError(10014))
-    await core.removeReaction(Reaction(message.id, user.id, None, reaction), channel)
+    r = {
+        "emoji_id": None if isinstance(reaction, str) else reaction.id,
+        "emoji_name": reaction if isinstance(reaction, str) else reaction.name
+    }
+    await core.removeReaction(Reaction(message.id, user.id, **r), channel)
     return "", 204
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>", methods=["GET"])
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_reaction_get(user, channel, message, reaction):
-    if not is_emoji(reaction): # TODO: Check custom emoji
+    if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
         raise InvalidDataErr(400, mkError(10014))
+    r = {
+        "emoji_id": None if isinstance(reaction, str) else reaction.id,
+        "emoji_name": reaction if isinstance(reaction, str) else reaction.name
+    }
     limit = int(request.args.get("limit", 3))
     if limit > 10:
         limit = 10
-    return await core.getReactedUsers(Reaction(message.id, 0, None, reaction), limit)
+    return await core.getReactedUsers(Reaction(message.id, 0, **r), limit)
 
 
 @app.route("/api/v9/channels/<int:channel>/messages/search", methods=["GET"])
