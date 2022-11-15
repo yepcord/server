@@ -12,6 +12,6 @@ protobuf==4.21.6
 schema==0.7.5
 python-dateutil==2.8.2
 aiosmtplib==1.1.7
-cryptography==38.0.1
+cryptography==38.0.3
 emoji==2.1.0
 aioboto3==10.1.0
