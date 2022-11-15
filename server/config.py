@@ -26,10 +26,10 @@ class _Config:
             cls.def_ACTIVITYAPPLICATION_HOST = f"{cls.def_DOMAIN}:8007"
         return cls._instance
 
-    def __call__(self, var):
+    def __call__(self, var, default=None):
         if (v := environ.get(var)):
             return v
-        return getattr(self, f"def_{var}", None)
+        return getattr(self, f"def_{var}", default)
 
     def __getitem__(self, var):
         return self(var)

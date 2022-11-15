@@ -22,11 +22,13 @@ from .storage import _Storage
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
 
-class CDN(_Storage):
+class CDN:
     def __init__(self, storage, core):
-        super().__init__()
         self.storage = storage
         self.core = core
+
+    def __getattr__(self, item):
+        return getattr(self.storage, item)
 
 class Core:
     _instance = None
