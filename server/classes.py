@@ -2,7 +2,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from time import mktime
-from typing import Any
+from typing import Any, List, Tuple, Dict, Optional as tOptional
 from uuid import uuid4, UUID
 from zlib import compressobj, Z_FULL_FLUSH
 
@@ -11,7 +11,7 @@ from aiomysql import escape_string
 from schema import Schema, Use, Optional, And, Or, Regex
 
 from .config import Config
-from .ctx import Ctx, getCore
+from .ctx import Ctx, getCore, getGateway
 from .enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
 from .errors import EmbedErr, InvalidDataErr
 from .proto import PreloadedUserSettings, Version, UserContentSettings, VoiceAndVideoSettings, AfkTimeout, \
@@ -1008,6 +1008,20 @@ class Message(_Message, DBModel):
         if not Ctx.get("search", False):
             if reactions := await getCore().getMessageReactions(self.id, Ctx.get("user_id", 0)):
                 j["reactions"] = reactions
+        if Ctx.get("with_member") and self.guild_id:
+            member = await getCore().getGuildMember(GuildId(self.guild_id), self.author)
+            j["member"] = {
+                "roles": member.roles,
+                "premium_since": member.s_premium_since,
+                "pending": False,
+                "nick": member.nick,
+                "mute": member.mute,
+                "joined_at": datetime.utcfromtimestamp(int(snowflake_timestamp(member.joined_at) / 1000)).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+                "flags": member.flags,
+                "deaf": member.deaf,
+                "communication_disabled_until": member.communication_disabled_until,
+                "avatar": member.avatar
+            }
         return j
 
 class ZlibCompressor:
@@ -1386,7 +1400,22 @@ class Invite(DBModel):
             },
             "max_age": self.max_age,
         }
-        # TODO: add guild field
+        if channel.guild_id and (guild := await getCore().getGuild(channel.guild_id)):
+            j["type"] = 0
+            j["guild"] = {
+                "banner": guild.banner,
+                "description": guild.description,
+                "features": guild.features,
+                "icon": guild.icon,
+                "id": str(guild.id),
+                "name": guild.name,
+                "nsfw": guild.nsfw,
+                "nsfw_level": guild.nsfw_level,
+                "premium_subscription_count": 30,
+                "splash": guild.splash,
+                "vanity_url_code": guild.vanity_url_code,
+                "verification_level": guild.verification_level,
+            }
         return j
 
     async def getJson(self, with_counts=False, without=None):
@@ -1647,7 +1676,7 @@ class GuildMember(_User, DBModel):
 
     @property
     async def json(self) -> dict:
-        data = await getCore().getUserData(UserId(self.user_id))
+        data = await self.data
         return {
             "avatar": self.avatar,
             "communication_disabled_until": self.communication_disabled_until,
@@ -1656,7 +1685,7 @@ class GuildMember(_User, DBModel):
             "nick": self.nick,
             "is_pending": False,  # TODO
             "pending": False,
-            "premium_since": datetime.utcfromtimestamp(int(snowflake_timestamp(self.user_id)/1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "premium_since": self.s_premium_since,
             "roles": self.roles,
             "user": {
                 "id": str(data.uid),
@@ -1669,6 +1698,10 @@ class GuildMember(_User, DBModel):
             "mute": self.mute,
             "deaf": self.deaf
         }
+
+    @property
+    def s_premium_since(self) -> str:
+        return datetime.utcfromtimestamp(int(snowflake_timestamp(self.user_id) / 1000)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     @property
     async def data(self) -> UserData:
@@ -1734,3 +1767,86 @@ class Emoji(DBModel):
             "available": bool(self.available),
             **user
         }
+
+class GuildMemberStatus:
+    def __init__(self, member: GuildMember):
+        self.member = member
+
+    @property
+    async def json(self) -> dict:
+        j = await self.member.json
+        status = getGateway().statuses.get(self.member.user_id) or getGateway().getOfflineStatus(self.member.user_id)
+        j["presence"] = {
+            "user": {"id": str(self.member.user_id)},
+            "status": status["status"],
+            "client_status": {} if status["status"] == "offline" else {"desktop": status["status"]},
+            "activities": status.get("activities", [])
+        }
+        return j
+
+    @property
+    def group(self) -> str:
+        status = getGateway().statuses.get(self.member.user_id)
+        if not status:
+            return "offline"
+        return status["status"] # TODO: add roles check
+
+class GuildMembers:
+    def __init__(self, guild_id: int):
+        self.guild_id: int = guild_id
+        self.ids: List[int] = []
+        self.members: Dict[str, List[GuildMemberStatus]] = {}
+        self.subscribers: List[str] = []
+
+    def getIndex(self, uid: int) -> tOptional[int]:
+        for _, v in self.members.values():
+            try:
+                return v.index(key=lambda e: e.user_id == uid)
+            except ValueError:
+                continue
+
+    def addMember(self, member: GuildMember) -> tOptional[int]:
+        if member.user_id in self.ids:
+            return self.getIndex(member.user_id)
+        mem = GuildMemberStatus(member)
+        if mem.group not in self.members:
+            self.members[mem.group] = []
+        self.members[mem.group].append(mem)
+        self.ids.append(member.user_id)
+
+        return self.getIndex(member.user_id)
+
+    # FROM https://github.com/fosscord/fosscord-server/blob/c2ced3f5ca02732501d29cfdf791ef8a79a0b7af/src/gateway/opcodes/LazyRequest.ts#L22
+    #
+    #.createQueryBuilder("member")
+    #.where("member.guild_id = :guild_id", {guild_id})
+    #.leftJoinAndSelect("member.roles", "role")
+    #.leftJoinAndSelect("member.user", "user")
+    #.leftJoinAndSelect("user.sessions", "session")
+    #.innerJoinAndSelect("user.settings", "settings")
+    #.addSelect("CASE WHEN session.status = 'offline' THEN 0 ELSE 1 END", "_status")
+    #.orderBy("role.position", "DESC")
+    #.addOrderBy("_status", "DESC")
+    #.addOrderBy("user.username", "ASC")
+    #.offset(Number(range[0]) | | 0)
+    #.limit(Number(range[1]) | | 100)
+
+    async def load(self, s, e) -> None:
+        if len(self.members) < e+1:
+            s = len(self.members)
+            if s > 0:
+                s -= 1
+            for member in await getCore().getGuildMembersRange(self.guild_id, s, e):
+                self.addMember(member)
+
+    async def sync(self, rng: Tuple[int, int]) -> Tuple[dict, dict, int, int]:
+        # -> groups, members, total, online
+        j = {}
+        for member in self.members[rng[0]:rng[1]]:
+            if member.group not in j:
+                j[member.group] = []
+            j[member.group].append(await member.json)
+        for k in j.keys():
+            j[k].sort(key=lambda i: i["nick"] or i["user"]["username"])
+        groups = {} # TODO
+        return j

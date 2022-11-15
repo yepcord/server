@@ -1,3 +1,6 @@
+from typing import Dict, Union
+
+
 class YDataError(Exception):
     pass
 
@@ -7,7 +10,7 @@ class EmbedErr(YDataError):
         self.error = error
 
 class InvalidDataErr(YDataError):
-    def __init__(self, code, error):
+    def __init__(self, code: int, error: Dict[str, Union[int, str]]):
         super().__init__()
         self.code = code
         self.error = error
@@ -55,7 +58,7 @@ class _Errors:
             cls._instance = super(_Errors, cls).__new__(cls)
         return cls._instance
 
-    def __call__(self, code):
+    def __call__(self, code: int) -> str:
         return getattr(self, f"err_{code}", None)
 
     def __getitem__(self, code):

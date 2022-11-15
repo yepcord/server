@@ -882,6 +882,19 @@ class Core:
                 return
         return None if emoji.name != name else emoji
 
+    async def addUserToGuild(self, guild: Guild, uid: int) -> GuildMember:
+        ...
+        # members = ...
+        # member = ...
+        # ... add member
+        # ... await self.sendGuildMemberAddEvent(members, member)
+
+    async def sendGuildMemberAddEvent(self, users: List[int], member: GuildMember) -> None:
+        ...
+
+    async def getGuildMembersRange(self, guild_id: int, start: int, end: int) -> List[GuildMember]:
+        ...
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
 from server.ctx import Ctx

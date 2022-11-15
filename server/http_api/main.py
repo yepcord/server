@@ -1048,6 +1048,14 @@ async def api_invites_invite_post(user, invite):
             await core.sendDMRepicientAddEvent(channel.recipients, channel.id, user.id)
             await core.sendMessage(msg)
         await core.sendDMChannelCreateEvent(channel, users=[user.id])
+    #elif channel.guild_id:
+    #    guild = await core.getGuild(channel.guild_id)
+    #    inv["new_member"] = not await core.getGuildMember(GuildId(channel.guild_id), user.id)
+    #    if inv["new_member"]:
+    #        msg = Message(id=mksf(), author=user.id, channel_id=channel.id, content="", type=MessageType.USER_JOIN)
+    #        member = await core.addUserToGuild(guild, user.id)
+    #        #await core.sendMessage(msg)
+    #    #await core.sendGuildCreateEvent(channel, users=[user.id])
     return c_json(inv)
 
 

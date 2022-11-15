@@ -75,7 +75,7 @@ class Broadcaster:
         self.ws = await connect(connect_string).__await_impl__()
         get_event_loop().create_task(self._run())
 
-    async def wait_until_start(self):
+    async def wait_until_start(self) -> None:
         while not self.running:
             await asleep(0.1)
 
@@ -101,7 +101,7 @@ class Broadcaster:
             if data["t"] == "request":
                 get_event_loop().create_task(self._handle_request(data["request_id"], data["data"]))
 
-    async def broadcast(self, topic, data):
+    async def broadcast(self, topic: str, data: dict) -> None:
         await self.wait_until_start()
         if self.online:
             await self.ws.send(jdumps({"t": "broadcast", "topic": topic, "data": data}))

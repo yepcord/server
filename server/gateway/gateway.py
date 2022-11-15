@@ -40,7 +40,6 @@ class GatewayClient:
         self.z = getattr(ws, "zlib", None)
         self._connected = True
 
-
 class ClientStatus:
     def __init__(self, uid, status, activities):
         self.id = uid
@@ -341,12 +340,27 @@ class GatewayEvents:
             await cl.esend(GuildEmojisUpdate(guild_id, emojis))
 
 class Gateway:
+    _instance = None
+
     def __init__(self, core: Core):
         self.core = core
         self.mcl = Client()
         self.clients = []
         self.statuses = {}
         self.ev = GatewayEvents(self)
+
+    def __new__(cls, *args, **kwargs):
+        if not isinstance(cls._instance, cls):
+            cls._instance = super(Gateway, cls).__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def getInstance(cls):
+        return cls._instance
+
+    @staticmethod
+    def getOfflineStatus(user_id: int):
+        return ClientStatus(user_id, "offline", None)
 
     async def init(self):
         await self.mcl.start("ws://127.0.0.1:5050")
@@ -484,3 +498,6 @@ class Gateway:
                 "activities": []
             })
         return pr
+
+import server.ctx as c
+c._getGateway = lambda: Gateway.getInstance()

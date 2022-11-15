@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .core import Core
+    from .gateway.gateway import Gateway
 
 class _Ctx:
     _CTX = ContextVar("ctx")
@@ -41,3 +42,8 @@ def _getCore(): pass
 
 def getCore() -> Core:
     return Ctx.get("CORE") or _getCore()
+
+def _getGateway(): pass
+
+def getGateway() -> Gateway:
+    return Ctx.get("GATEWAY") or _getGateway()

@@ -8,11 +8,11 @@ from magic import from_buffer
 from hmac import new as hnew
 from struct import pack as spack, unpack as sunpack
 from asyncio import get_event_loop, sleep as asleep
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 from aiomysql import escape_string
 from re import compile as rcompile
 
-from server.errors import Errors
+from .errors import Errors
 
 
 def b64decode(data: Union[str, bytes]) -> bytes:
@@ -40,7 +40,7 @@ _WORKER_ID = randint(0, 32)
 _PROCESS_ID = getpid()
 
 
-def _mksnowflake(ms, wr, pi, ic):
+def _mksnowflake(ms: int, wr: int, pi: int, ic: int) -> int:
     sf = (ms % _MAX_TIMESTAMP) << 22
     sf += (wr % 32) << 17
     sf += (pi % 32) << 12
@@ -48,14 +48,14 @@ def _mksnowflake(ms, wr, pi, ic):
     return sf
 
 
-def mkSnowflake():
+def mkSnowflake() -> int:
     global _INCREMENT_ID
     sf = _mksnowflake(int(time()*1000) - _EPOCH, _WORKER_ID, _PROCESS_ID, _INCREMENT_ID)
     _INCREMENT_ID += 1
     return sf
 
 
-def lastSnowflake():
+def lastSnowflake() -> int:
     return _mksnowflake(int(time()*1000) - _EPOCH, _WORKER_ID, _PROCESS_ID, _INCREMENT_ID)
 
 
@@ -63,13 +63,13 @@ mksf = mkSnowflake
 lsf = lastSnowflake
 
 
-def snowflake_timestamp(sf):
+def snowflake_timestamp(sf: int) -> int:
     return (sf >> 22) + _EPOCH
 
 sf_ts = snowflake_timestamp
 
 
-def c_json(json, code=200, headers=None):
+def c_json(json, code: int=200, headers: Optional[dict]=None):
     if headers is None:
         headers = {}
     if not isinstance(json, str):
@@ -80,7 +80,7 @@ def c_json(json, code=200, headers=None):
     return json, code, h
 
 
-def mkError(code, errors=None, message=None):
+def mkError(code: int, errors=None, message=None):
     if errors is None:
         return {"code": code, "message": Errors(code) or message}
     err = {"code": code, "errors": {}, "message": Errors(code) or message}
@@ -143,7 +143,7 @@ async def execute_after(coro, seconds):
     get_event_loop().create_task(_wait_exec(coro, seconds))
 
 
-def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False, for_insert=False) -> Union[str, list, Tuple[str, str]]:
+def json_to_sql(json: dict, as_list: bool=False, as_tuples: bool=False, is_none: bool=False, for_insert: bool=False) -> Union[str, list, Tuple[str, str]]:
     if not as_tuples: as_tuples = for_insert
     query = []
     for k,v in json.items():
@@ -246,3 +246,20 @@ def byte_length(i):
 
 LOCALES = ["bg", "cs", "da", "de", "el", "en-GB", "es-ES", "fi", "fr", "hi", "hr", "hu", "it", "ja", "ko", "lt", "nl",
              "no", "pl", "pt-BR", "ro", "ru", "sv-SE", "th", "tr", "uk", "vi", "zh-CN", "zh-TW", "en-US"]
+
+def binSearch(arr, att, f, low=None, high=None, mid=None) -> int:
+    if low is None:
+        low = 0
+    if high is None:
+        high = len(arr)-1
+    if mid is None:
+        mid = 0
+    if high >= low:
+        mid = (high + low) // 2
+        if f(arr[mid]) == att:
+            return mid
+        elif f(arr[mid]) > att:
+            return binSearch(arr, att, f, low, mid - 1, mid)
+        else:
+            return binSearch(arr, att, f, mid + 1, high, mid)
+    return mid-1
