@@ -25,7 +25,7 @@ from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MF
     parseMultipartRequest, LOCALES
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
-from ..storage import FileStorage
+from ..storage import FileStorage, S3Storage
 
 
 class YEPcord(Quart):
@@ -62,7 +62,15 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-api")
 core = Core(b64decode(Config("KEY")))
-cdn = CDN(FileStorage(), core)
+storage = Config("STORAGE_TYPE")
+if storage == "local" or storage is None:
+    storage = FileStorage(Config("STORAGE_PATH", "files/"))
+elif storage.lower() == "s3":
+    a = (Config("S3_ENDPOINT"), Config("S3_KEYID"), Config("S3_ACCESSKEY"), Config("S3_BUCKET"))
+    if None in a:
+        raise Exception("You must set 'S3_ENDPOINT', 'S3_KEYID', 'S3_ACCESSKEY', 'S3_BUCKET' variables for using s3 storage type.")
+    storage = S3Storage(*a)
+cdn = CDN(storage, core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 

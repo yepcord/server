@@ -9,7 +9,7 @@ from uuid import UUID
 from server.classes import Emoji
 from ..config import Config
 from ..core import Core, CDN
-from ..storage import FileStorage
+from ..storage import FileStorage, S3Storage
 from ..utils import b64decode, ALLOWED_AVATAR_SIZES
 
 
@@ -26,7 +26,15 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-api")
 core = Core(b64decode(Config("KEY")))
-cdn = CDN(FileStorage(), core)
+storage = Config("STORAGE_TYPE")
+if storage == "local" or storage is None:
+    storage = FileStorage(Config("STORAGE_PATH", "files/"))
+elif storage.lower() == "s3":
+    a = (Config("S3_ENDPOINT"), Config("S3_KEYID"), Config("S3_ACCESSKEY"), Config("S3_BUCKET"))
+    if None in a:
+        raise Exception("You must set 'S3_ENDPOINT', 'S3_KEYID', 'S3_ACCESSKEY', 'S3_BUCKET' variables for using s3 storage type.")
+    storage = S3Storage(*a)
+cdn = CDN(storage, core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
