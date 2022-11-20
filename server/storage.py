@@ -8,10 +8,26 @@ from os.path import join as pjoin, isfile
 from PIL import Image, ImageSequence
 from aioboto3 import Session
 from aiofiles import open as aopen
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
+from aioftp import Client, StatusCodeError
 from botocore.exceptions import ClientError
 
+class FClient(Client):
+    async def s_download(self, path: str) -> bytes:
+        data = b''
+        async with self.download_stream(path) as stream:
+            async for block in stream.iter_by_block():
+                data += block
+        return data
+
+    async def s_upload(self, path: str, data: Union[bytes, BytesIO]) -> None:
+        dirs = path.split("/")[:-1]
+        for dir in dirs:
+            await self.make_directory(dir)
+            await self.change_directory(dir)
+        async with self.upload_stream(path.split("/")[-1]) as stream:
+            await stream.write(data if isinstance(data, bytes) else data.getvalue())
 
 async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str):
     def _resize(img: Image, size: Tuple[int, int], form: str) -> bytes:
@@ -291,3 +307,99 @@ class S3Storage(_Storage):
                     raise
             else:
                 return f.getvalue()
+
+class FTPStorage(_Storage):
+    def __init__(self, host: str, user: str, password: str, port: int=22):
+        self.host = host
+        self.user = user
+        self.password = password
+        self.port = port
+
+    def _getClient(self) -> FClient:
+        return FClient.context(self.host, user=self.user, password=self.password, port=self.port)
+
+    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]:
+        async with self._getClient() as ftp:
+            anim = hash.startswith("a_")
+            def_fmt = "gif" if anim else "png"
+            paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
+            paths = [f"{type}s/{id}/{name}" for name in paths]
+            size = (size, size_f(size))
+            for i, p in enumerate(paths):
+                f = BytesIO()
+                try:
+                    f.write(await ftp.s_download(p))
+                except StatusCodeError as sce:
+                    if "550" not in sce.received_codes:
+                        raise
+                    continue
+                else:
+                    if i == 0:
+                        return f.getvalue()
+                    else:
+                        image = Image.open(f)
+                        coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
+                        data = await coro
+                        await ftp.s_upload(paths[0], data)
+                        return data
+
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
+        async with self._getClient() as ftp:
+            hash = md5()
+            hash.update(image.getvalue())
+            hash = hash.hexdigest()
+            image = Image.open(image)
+            anim = imageFrames(image) > 1
+            form = "gif" if anim else "png"
+            hash = f"a_{hash}" if anim else hash
+            size = (size, size_f(size))
+            coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
+            data = await coro
+            await ftp.s_upload(f"{type}s/{id}/{hash}_{size[0]}.{form}", data)
+        return hash
+
+    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
+        async with self._getClient() as ftp:
+            def_fmt = "gif" if anim else "png"
+            paths = [(f"{eid}", f"{size}.{fmt}"), (f"{eid}", f"56.{fmt}"), (f"{eid}", f"56.{def_fmt}")]
+            paths = [f"emojis/{'/'.join(name)}" for name in paths]
+            size = (size, size)
+            for i, p in enumerate(paths):
+                f = BytesIO()
+                try:
+                    f.write(await ftp.s_download(p))
+                except StatusCodeError as sce:
+                    if "550" not in sce.received_codes:
+                        raise
+                    continue
+                else:
+                    if i == 0:
+                        return f.getvalue()
+                    else:
+                        image = Image.open(p)
+                        coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
+                        data = await coro
+                        await ftp.s_upload(paths[0], data)
+                        return data
+
+    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
+        async with self._getClient() as ftp:
+            image = Image.open(image)
+            anim = imageFrames(image) > 1
+            form = "gif" if anim else "png"
+            coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
+            data = await coro
+            await ftp.s_upload(f"emojis/{eid}/56.{form}", data)
+            return {"animated": anim}
+
+    async def uploadAttachment(self, data, attachment):
+        async with self._getClient() as ftp:
+            await ftp.s_upload(f"attachments/{attachment.channel_id}/{attachment.id}/{attachment.filename}", data)
+
+    async def getAttachment(self, channel_id, attachment_id, name):
+        async with self._getClient() as ftp:
+            try:
+                return await ftp.s_download(f"attachments/{channel_id}/{attachment_id}/{name}")
+            except ClientError as ce:
+                if "(404)" not in str(ce):
+                    raise

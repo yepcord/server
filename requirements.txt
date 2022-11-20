@@ -15,3 +15,4 @@ aiosmtplib==1.1.7
 cryptography==38.0.3
 emoji==2.1.0
 aioboto3==10.1.0
+aioftp==0.21.4

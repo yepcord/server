@@ -9,7 +9,7 @@ from uuid import UUID
 from server.classes import Emoji
 from ..config import Config
 from ..core import Core, CDN
-from ..storage import FileStorage, S3Storage
+from ..storage import FileStorage, S3Storage, FTPStorage
 from ..utils import b64decode, ALLOWED_AVATAR_SIZES
 
 
@@ -34,6 +34,11 @@ elif storage.lower() == "s3":
     if None in a:
         raise Exception("You must set 'S3_ENDPOINT', 'S3_KEYID', 'S3_ACCESSKEY', 'S3_BUCKET' variables for using s3 storage type.")
     storage = S3Storage(*a)
+elif storage.lower() == "ftp":
+    a = (Config("FTP_HOST"), Config("FTP_USER"), Config("FTP_PASSWORD"), int(Config("FTP_PORT", 21)))
+    if None in a:
+        raise Exception("You must set 'FTP_HOST', 'FTP_USER', 'FTP_PASSWORD' variables for using ftp storage type.")
+    storage = FTPStorage(*a)
 cdn = CDN(storage, core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
