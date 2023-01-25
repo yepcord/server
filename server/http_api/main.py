@@ -18,7 +18,7 @@ from server.geoip import getLanguageCode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..config import Config
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, \
+from ..classes import Session, UserSettings, UserData, Message, UserNote, Attachment, Channel, \
     UserFlags, Reaction, SearchFilter, Emoji
 from ..core import Core, CDN
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
@@ -617,59 +617,27 @@ async def api_users_me_harvest(user):
 # Connections
 
 
-@app.route("/api/v9/connections/<string:connection>/authorize", methods=["GET"])
-@multipleDecorators(usingDB, getUser)
-async def api_connections_connection_authorize(user, connection):
-    url = ""
-    kwargs = {}
-    if connection == "github":
-        CLIENT_ID = ""
-        state = urandom(16).hex()
-        kwargs["state"] = state
-        url = f"https://github.com/login/oauth/authorize?client_id={CLIENT_ID}&redirect_uri=https%3A%2F%2F127.0.0.1:8080%2Fapi%2Fconnections%2Fgithub%2Fcallback&scope=read%3Auser&state={state}"
-    await core.putUserConnection(UserConnection(user, connection, **kwargs))
-    return c_json({"url": url})
-
-
-@app.route("/api/v9/connections/<string:connection>/callback", methods=["POST"])
-@multipleDecorators(usingDB, getUser)
-async def api_connections_connection_callback(user, connection):
-    data = await request.get_json()
-    if connection == "github":
-        ...
-    return ...
-
-
-@app.route("/api/v9/users/@me/channels", methods=["GET"])
-@multipleDecorators(usingDB, getUser)
-async def api_users_me_channels_get(user):
-    return c_json(await core.getPrivateChannels(user))
-
-
-@app.route("/api/v9/users/@me/channels", methods=["POST"])
-@multipleDecorators(usingDB, getUser)
-async def api_users_me_channels_post(user):
-    data = await request.get_json()
-    rep = data.get("recipients", [])
-    rep = [int(r) for r in rep]
-    if len(rep) == 1:
-        if int(rep[0]) == user.id:
-            raise InvalidDataErr(400, mkError(50007))
-        ch = await core.getDMChannelOrCreate(user.id, rep[0])
-    elif len(rep) == 0:
-        ch = await core.createDMGroupChannel(user, [])
-    else:
-        if user.id in rep:
-            rep.remove(user.id)
-        if len(rep) == 0:
-            raise InvalidDataErr(400, mkError(50007))
-        elif len(rep) == 1:
-            ch = await core.getDMChannelOrCreate(user.id, rep[0])
-        else:
-            ch = await core.createDMGroupChannel(user, rep)
-    await core.sendDMChannelCreateEvent(ch)
-    return c_json(await channelInfoResponse(ch, user, ids=False))
-
+#@app.route("/api/v9/connections/<string:connection>/authorize", methods=["GET"]) # TODO: implement UserConnection
+#@multipleDecorators(usingDB, getUser)
+#async def api_connections_connection_authorize(user, connection):
+#    url = ""
+#    kwargs = {}
+#    if connection == "github":
+#        CLIENT_ID = ""
+#        state = urandom(16).hex()
+#        kwargs["state"] = state
+#        url = f"https://github.com/login/oauth/authorize?client_id={CLIENT_ID}&redirect_uri=https%3A%2F%2F127.0.0.1:8080%2Fapi%2Fconnections%2Fgithub%2Fcallback&scope=read%3Auser&state={state}"
+#    await core.putUserConnection(UserConnection(user, connection, **kwargs))
+#    return c_json({"url": url})
+#
+#
+#@app.route("/api/v9/connections/<string:connection>/callback", methods=["POST"])
+#@multipleDecorators(usingDB, getUser)
+#async def api_connections_connection_callback(user, connection):
+#    data = await request.get_json()
+#    if connection == "github":
+#        ...
+#    return ...
 
 # Users
 
@@ -790,7 +758,7 @@ async def api_channels_channel_messages_post(user, channel):
                     att = atts[idx]
                 name = att.get("filename") or file.get("filename") or "unknown"
                 data["attachments"].append({"uploaded_filename": f"{uuid}/{name}"})
-                att = Attachment(mksf(), channel.id, name, len(file["data"]), uuid)
+                att = Attachment(mksf(), channel.id, name, len(file["data"]), {}, uuid)
                 if file.get("content_type"):
                     cot = file.get("content_type").strip()
                     att.set(content_type=cot)
@@ -893,7 +861,7 @@ async def api_channels_channel_attachments_post(user, channel):
             raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.file_size": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         if not (fid := file.get("id")):
             raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-        att = Attachment(mksf(), channel.id, filename, size)
+        att = Attachment(mksf(), channel.id, filename, size, {})
         await core.putAttachment(att)
         attachments.append({
             "id": int(fid),
@@ -1023,6 +991,37 @@ async def api_channels_channel_messages_search(user, channel):
     for message in messages:
         message[0]["hit"] = True
     return c_json({"messages": messages, "total_results": total})
+
+
+@app.route("/api/v9/users/@me/channels", methods=["GET"])
+@multipleDecorators(usingDB, getUser)
+async def api_users_me_channels_get(user):
+    return c_json(await core.getPrivateChannels(user))
+
+
+@app.route("/api/v9/users/@me/channels", methods=["POST"])
+@multipleDecorators(usingDB, getUser)
+async def api_users_me_channels_post(user):
+    data = await request.get_json()
+    rep = data.get("recipients", [])
+    rep = [int(r) for r in rep]
+    if len(rep) == 1:
+        if int(rep[0]) == user.id:
+            raise InvalidDataErr(400, mkError(50007))
+        ch = await core.getDMChannelOrCreate(user.id, rep[0])
+    elif len(rep) == 0:
+        ch = await core.createDMGroupChannel(user, [])
+    else:
+        if user.id in rep:
+            rep.remove(user.id)
+        if len(rep) == 0:
+            raise InvalidDataErr(400, mkError(50007))
+        elif len(rep) == 1:
+            ch = await core.getDMChannelOrCreate(user.id, rep[0])
+        else:
+            ch = await core.createDMGroupChannel(user, rep)
+    await core.sendDMChannelCreateEvent(ch)
+    return c_json(await channelInfoResponse(ch, user, ids=False))
 
 
 # Invites

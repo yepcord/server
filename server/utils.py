@@ -225,7 +225,7 @@ def parseMultipartRequest(body, boundary):
             d["content_type"] = ct
     return res
 
-def proto_get(protoObj, path, default):
+def proto_get(protoObj, path, default=None):
     path = path.split(".")
     try:
         o = protoObj

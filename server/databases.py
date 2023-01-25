@@ -6,7 +6,7 @@ from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
-    ChannelId, UserNote, UserConnection, Attachment, Reaction, SearchFilter, Invite, Role, Guild, GuildMember, _Guild, \
+    ChannelId, UserNote, Attachment, Reaction, SearchFilter, Invite, Role, Guild, GuildMember, _Guild, \
     Emoji
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
@@ -147,8 +147,8 @@ class DBConnection(ABC):
     @abstractmethod
     async def putUserNote(self, note: UserNote) -> None: ...
 
-    @abstractmethod
-    async def putUserConnection(self, uc: UserConnection) -> None: ...
+    #@abstractmethod # TODO: implement UserConnection
+    #async def putUserConnection(self, uc: UserConnection) -> None: ...
 
     @abstractmethod
     async def putAttachment(self, attachment: Attachment) -> None: ...
@@ -330,7 +330,7 @@ class MySqlConnection:
         return UserData.from_result(self.cur.description, r)
 
     async def setSettings(self, settings: UserSettings) -> None:
-        if not (j := settings.to_sql_json(settings.to_typed_json, with_values=True)):
+        if not (j := settings.toJSON(for_db=True)):
             return
         await self.cur.execute(f'UPDATE `settings` SET {json_to_sql(j)} WHERE `uid`={settings.uid};')
 
@@ -341,7 +341,7 @@ class MySqlConnection:
             await self.cur.execute(f'UPDATE `settings` SET {diff} WHERE `uid`={before.uid};')
 
     async def setUserData(self, data: UserData) -> None:
-        if not (j := data.to_sql_json(data.to_typed_json, with_values=True)):
+        if not (j := data.toJSON(for_db=True)):
             return
         await self.cur.execute(f'UPDATE `userdata` SET {json_to_sql(j)} WHERE `uid`={data.uid};')
 
@@ -452,7 +452,7 @@ class MySqlConnection:
             return Message.from_result(self.cur.description, r)
 
     async def insertMessage(self, message: Message) -> None:
-        q = json_to_sql(message.to_sql_json(message.to_typed_json, with_id=True), as_tuples=True)
+        q = json_to_sql(message.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
         await self.cur.execute(f'INSERT INTO `messages` ({fields}) VALUES ({values});')
@@ -496,19 +496,19 @@ class MySqlConnection:
     async def putUserNote(self, note: UserNote) -> None:
         await self.cur.execute(f'UPDATE `notes` SET `note`="{note.note}" WHERE `uid`={note.uid} AND `target_uid`={note.target_uid}')
         if self.cur.rowcount == 0:
-            q = json_to_sql(note.to_sql_json(note.to_typed_json), as_tuples=True)
+            q = json_to_sql(note.toJSON(), as_tuples=True)
             fields = ", ".join([f"`{f}`" for f, v in q])
             values = ", ".join([f"{v}" for f, v in q])
             await self.cur.execute(f'INSERT INTO `notes` ({fields}) VALUES ({values});')
 
-    async def putUserConnection(self, uc: UserConnection) -> None:
-        q = json_to_sql(uc.to_sql_json(uc.to_typed_json, with_id=True), as_tuples=True)
-        fields = ", ".join([f"`{f}`" for f, v in q])
-        values = ", ".join([f"{v}" for f, v in q])
-        await self.cur.execute(f'INSERT INTO `connections` ({fields}) VALUES ({values});')
+    #async def putUserConnection(self, uc: UserConnection) -> None: # TODO: implement UserConnection
+    #    q = json_to_sql(uc.to_sql_json(uc.to_typed_json, with_id=True), as_tuples=True)
+    #    fields = ", ".join([f"`{f}`" for f, v in q])
+    #    values = ", ".join([f"{v}" for f, v in q])
+    #    await self.cur.execute(f'INSERT INTO `connections` ({fields}) VALUES ({values});')
 
     async def putAttachment(self, attachment: Attachment) -> None:
-        q = json_to_sql(attachment.to_sql_json(attachment.to_typed_json, with_id=True), as_tuples=True)
+        q = json_to_sql(attachment.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
         await self.cur.execute(f'INSERT INTO `attachments` ({fields}) VALUES ({values});')
@@ -516,12 +516,12 @@ class MySqlConnection:
     async def getAttachment(self, id: int) -> Optional[Attachment]:
         await self.cur.execute(f'SELECT * FROM `attachments` WHERE `id`="{id}"')
         if r := await self.cur.fetchone():
-            return Attachment.from_result(self.cur.description, r)
+            return Attachment.fromResult(self.cur.description, r)
 
     async def getAttachmentByUUID(self, uuid: str) -> Optional[Attachment]:
         await self.cur.execute(f'SELECT * FROM `attachments` WHERE `uuid`="{uuid}"')
         if r := await self.cur.fetchone():
-            return Attachment.from_result(self.cur.description, r)
+            return Attachment.fromResult(self.cur.description, r)
 
     async def updateAttachment(self, before: Attachment, after: Attachment) -> None:
         diff = before.get_diff(after)
@@ -586,18 +586,18 @@ class MySqlConnection:
         await self.cur.execute(f'UPDATE `messages` SET {sql} WHERE `id`={message.id};')
 
     async def addReaction(self, reaction: Reaction) -> None:
-        sql = json_to_sql(reaction.to_typed_json(), as_list=True)
+        sql = json_to_sql(reaction.toJSON(for_db=True), as_list=True)
         ssql = " AND ".join(sql)
         await self.cur.execute(f'SELECT * FROM `reactions` WHERE {ssql} LIMIT 1;')
         if await self.cur.fetchone():
             return
-        sql = json_to_sql(reaction.to_typed_json(), as_tuples=True)
+        sql = json_to_sql(reaction.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([r[0] for r in sql])
         isql = ", ".join([str(r[1]) for r in sql])
         await self.cur.execute(f'INSERT INTO `reactions` ({fields}) VALUES ({isql});')
 
     async def removeReaction(self, reaction: Reaction) -> None:
-        sql = json_to_sql(reaction.to_typed_json(), as_list=True, is_none=True)
+        sql = json_to_sql(reaction.toJSON(for_db=True), as_list=True, is_none=True)
         dsql = " AND ".join(sql)
         await self.cur.execute(f'DELETE FROM `reactions` WHERE {dsql} LIMIT 1;')
 
@@ -613,7 +613,7 @@ class MySqlConnection:
         return reactions
 
     async def getReactedUsersIds(self, reaction: Reaction, limit: int) -> List[int]:
-        sql = json_to_sql(reaction.to_typed_json(), as_list=True, is_none=True)
+        sql = json_to_sql(reaction.toJSON(for_db=True), as_list=True, is_none=True)
         sql = [s for s in sql if "user_id" not in s]
         sql = " AND ".join(sql)
         await self.cur.execute(f'SELECT `user_id` FROM `reactions` WHERE {sql} LIMIT {limit};')
@@ -631,7 +631,7 @@ class MySqlConnection:
         return messages, total
 
     async def putInvite(self, invite: Invite) -> None:
-        sql = json_to_sql(invite.to_typed_json(with_id=True), as_tuples=True)
+        sql = json_to_sql(invite.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([r[0] for r in sql])
         isql = ", ".join([str(r[1]) for r in sql])
         await self.cur.execute(f'INSERT INTO `invites` ({fields}) VALUES ({isql});')

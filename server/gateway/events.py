@@ -99,7 +99,7 @@ class ReadyEvent(DispatchEvent):
                     "partial": False,
                     "entries": [] # TODO
                 },
-                "user_settings": settings.to_json(with_excluded=False),
+                "user_settings": settings.to_json(for_db=False),
                 "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
             }
         }

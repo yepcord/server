@@ -16,9 +16,8 @@ from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError, execute_after
 from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, Guild, Role, GuildMember, \
+    Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, Guild, Role, GuildMember, \
     GuildId, _Guild, Emoji
-from .storage import _Storage
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
 
@@ -543,9 +542,9 @@ class Core:
             await db.putUserNote(note)
         await self.mcl.broadcast("user_events", {"e": "note_update", "data": {"user": note.uid, "uid": note.target_uid, "note": note.note}})
 
-    async def putUserConnection(self, uc: UserConnection) -> None:
-        async with self.db() as db:
-            await db.putUserConnection(uc)
+    #async def putUserConnection(self, uc: UserConnection) -> None: # TODO: implement UserConnection
+    #    async with self.db() as db:
+    #        await db.putUserConnection(uc)
 
     async def putAttachment(self, attachment: Attachment) -> None:
         async with self.db() as db:
