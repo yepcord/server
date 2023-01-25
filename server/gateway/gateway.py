@@ -349,7 +349,7 @@ class Gateway:
         self.ev = GatewayEvents(self)
 
     async def init(self):
-        await self.mcl.start("ws://127.0.0.1:5050")
+        await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
         await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("channel_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("message_events", self.mcl_eventsCallback)
