@@ -52,7 +52,7 @@ class Core:
 
     async def initMCL(self):
         try:
-            await self.mcl.start("ws://127.0.0.1:5050")
+            await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
             self.mcl.set_callback(self.mclCallback)
         except ConnectionRefusedError:
             self.mcl.online = False

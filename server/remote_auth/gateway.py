@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives.hashes import SHA256
 
+from ..config import Config
 from ..utils import b64encode, b64decode
 from ..pubsub_client import Client
 
@@ -47,7 +48,7 @@ class Gateway:
         self.mcl = Client()
 
     async def init(self):
-        await self.mcl.start("ws://127.0.0.1:5050")
+        await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
         await self.mcl.subscribe("remote_auth", self.mclCallback)
 
     async def mclCallback(self, data):

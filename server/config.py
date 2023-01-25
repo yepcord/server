@@ -11,6 +11,7 @@ class _Config:
     def_DOMAIN = "127.0.0.1"
     def_SMTP_HOST = "127.0.0.1"
     def_SMTP_PORT = 25
+    def_PS_ADDRESS = "127.0.0.1"
 
     def __new__(cls, *args, **kwargs):
         if not isinstance(cls._instance, cls):
