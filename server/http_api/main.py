@@ -1311,6 +1311,11 @@ async def api_users_me_settingsproto_type(t):
     raise InvalidDataErr(400, mkError(50013, {"type": {"code": "BASE_TYPE_CHOICES", "message": "Value must be one of (<UserSettingsTypes.PRELOADED_USER_SETTINGS: 1>, <UserSettingsTypes.FRECENCY_AND_FAVORITES_SETTINGS: 2>, <UserSettingsTypes.TEST_SETTINGS: 3>)."}}))
 
 
+@app.route("/api/v9/gateway", methods=["GET"])
+async def api_gateway():
+    return c_json("{\"url\": \"wss://gw.yepcord.ml\"}")
+
+
 # OAuth
 
 

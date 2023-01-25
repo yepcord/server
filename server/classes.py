@@ -82,9 +82,11 @@ class DBModel:
             j[k] = v
         return j
 
-    def to_typed_json(self, **json_args):
+    def to_typed_json(self, func=None, **json_args):
+        if func is None:
+            func = self.to_json
         schema = self.SCHEMA
-        json = self.to_json(**json_args)
+        json = func(**json_args)
         if self.ID_FIELD and self.ID_FIELD not in json:
             schema = schema.schema.copy()
             del schema[self.ID_FIELD]
@@ -222,11 +224,11 @@ class UserSettings(DBModel):
         Optional("disable_games_tab"): Use(bool),
         Optional("developer_mode"): Use(bool),
         Optional("render_embeds"): Use(bool),
-        Optional("animate_stickers"): Use(bool),
+        Optional("animate_stickers"): Use(int),
         Optional("message_display_compact"): Use(bool),
         Optional("convert_emoticons"): Use(bool),
         Optional("passwordless"): Use(bool),
-        Optional("mfa"): Or(And(Use(str), lambda s: 16 <= len(s) <= 32 and len(s) % 4 == 0), NoneType),
+        Optional("mfa"): Or(bool, And(Use(str), lambda s: 16 <= len(s) <= 32 and len(s) % 4 == 0), NoneType),
         Optional("activity_restricted_guild_ids"): [Use(int)],
         Optional("friend_source_flags"): {"all": Use(bool),Optional("mutual_friends"): Use(bool),
                                           Optional("mutual_guilds"): Use(bool)},
@@ -311,7 +313,7 @@ class UserSettings(DBModel):
         self.to_typed_json(with_id=True, with_values=True)
 
     def to_json(self, with_id=False, with_values=False, with_excluded=True):
-        j = super().to_json(with_id=with_id, with_values=with_values, with_excluded=with_excluded)
+        j = self.to_typed_json(func=super().to_json, with_id=with_id, with_values=with_values, with_excluded=with_excluded)
         if not with_values:
             return j
         if "mfa" in j:
@@ -339,7 +341,7 @@ class UserSettings(DBModel):
                 explicit_content_filter=ExplicitContentFilter(value=self.get("explicit_content_filter", True)),
                 view_nsfw_guilds=ViewNsfwGuilds(value=self.get("view_nsfw_guilds", False)),
                 convert_emoticons=ConvertEmoticons(value=self.get("convert_emoticons", True)),
-                animate_stickers=AnimateStickers(value=self.get("animate_stickers", True)),
+                animate_stickers=AnimateStickers(value=self.get("animate_stickers", 1)),
                 expression_suggestions_enabled=ExpressionSuggestionsEnabled(value=self.get("expression_suggestions_enabled", True)),
                 message_display_compact=MessageDisplayCompact(value=self.get("message_display_compact", False)),
                 view_image_descriptions=ViewImageDescriptions(value=self.get("view_image_descriptions", False))
@@ -992,7 +994,7 @@ class Message(_Message, DBModel):
             "embeds": self.embeds,
             "mentions": mentions,
             "mention_roles": role_mentions,
-            "pinned": self.pinned,
+            "pinned": bool(self.pinned),
             "mention_everyone": ("@everyone" in self.content or "@here" in self.content) if self.content else None,
             "tts": False,
             "timestamp": timestamp,

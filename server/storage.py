@@ -6,12 +6,27 @@ from os import makedirs
 from os.path import join as pjoin, isfile
 
 from PIL import Image, ImageSequence
-from aioboto3 import Session
 from aiofiles import open as aopen
 from typing import Optional, Tuple, Union
 
-from aioftp import Client, StatusCodeError
-from botocore.exceptions import ClientError
+try:
+    from aioftp import Client, StatusCodeError
+
+    _SUPPORT_FTP = True
+except ImportError:
+    Client = None
+    StatusCodeError = None
+    _SUPPORT_FTP = False
+
+try:
+    from aioboto3 import Session
+    from botocore.exceptions import ClientError
+
+    _SUPPORT_S3 = True
+except ImportError:
+    Session = None
+    ClientError = None
+    _SUPPORT_S3 = False
 
 class FClient(Client):
     async def s_download(self, path: str) -> bytes:
@@ -208,6 +223,8 @@ class FileStorage(_Storage):
 
 class S3Storage(_Storage):
     def __init__(self, endpoint: str, key_id: str, access_key: str, bucket: str):
+        if not _SUPPORT_S3:
+            raise RuntimeError("S3 module not found! To use s3 storage type, install dependencies from requirements-s3.txt")
         self.endpoint = endpoint
         self.key_id = key_id
         self.access_key = access_key
@@ -309,7 +326,9 @@ class S3Storage(_Storage):
                 return f.getvalue()
 
 class FTPStorage(_Storage):
-    def __init__(self, host: str, user: str, password: str, port: int=22):
+    def __init__(self, host: str, user: str, password: str, port: int=21):
+        if not _SUPPORT_FTP:
+            raise RuntimeError("Ftp module not found! To use ftp storage type, install dependencies from requirements-ftp.txt")
         self.host = host
         self.user = user
         self.password = password
