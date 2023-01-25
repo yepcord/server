@@ -1313,7 +1313,7 @@ async def api_users_me_settingsproto_type(t):
 
 @app.route("/api/v9/gateway", methods=["GET"])
 async def api_gateway():
-    return c_json("{\"url\": \"wss://gw.yepcord.ml\"}")
+    return c_json("{\"url\": \"wss://gateway.yepcord.ml\"}")
 
 
 # OAuth
