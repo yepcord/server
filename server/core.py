@@ -15,9 +15,11 @@ from .config import Config
 from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError, execute_after
-from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, Guild, Role, GuildMember, \
-    GuildId, _Guild, Emoji
+from .classes.channel import Channel
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild
+from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
+from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
+from .classes.other import EmailMsg
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
 

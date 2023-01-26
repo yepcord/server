@@ -2,7 +2,7 @@ from base64 import b64encode
 from datetime import datetime
 from typing import List
 
-from ..classes import GuildMember
+from ..classes.user import GuildMember
 from ..config import Config
 from ..ctx import Ctx
 from ..utils import snowflake_timestamp

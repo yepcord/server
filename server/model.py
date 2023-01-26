@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass, field as _field
-from typing import Optional, Any
+from typing import Optional, Any, get_type_hints
 
 from schema import Schema, Use, Optional as sOptional
 
@@ -45,6 +45,7 @@ class Model:
     __discord_schema__ = None
     __id_field__ = None
 
+    # Default __post_init__, checks all fields, deletes field if it's None and not nullable
     def __post_init__(self) -> None:
         for field in self.__model_fields__["all"]:
             if getattr(self, field.name, 0) is None and not field.nullable:
@@ -77,6 +78,9 @@ class Model:
                     del json[field.name]
         return json
 
+    async def discordJSON(self) -> dict:
+        ... # TODO: generate json for discord
+
     def set(self, **kwargs):
         for k, v in kwargs.items():
             if k not in list(self.__dataclass_fields__):
@@ -108,7 +112,6 @@ class Model:
 def _fromResult(cls, desc, result):
     return cls(**result_to_json(desc, result))
 
-
 def model(cls):
     cls.toJSON = Model.toJSON
     cls.to_json = Model.toJSON  # for backward compatibility, will be removed
@@ -123,12 +126,13 @@ def model(cls):
     cls.__id_field__ = None
     schema = {}
     discord_schema = {}
+    type_hints = get_type_hints(cls)
     for name, field in cls.__dataclass_fields__.items():
         if field.name in cls.__model_fields__["all"]:
             continue
         meta = field.metadata or _DEFAULT_META
         opt = field.type == Optional[field.type]
-        _type = field.type.__args__[0] if opt else field.type
+        _type = field.type.__args__[0] if opt else type_hints[field.name]
         s_name = sOptional(field.name) if opt else field.name
         schema[s_name] = Use(_type) if meta["validation"] is None else meta["validation"]
         if meta["discord_type"] is not None:
@@ -147,7 +151,7 @@ def model(cls):
     return cls
 
 
-def field(excluded=False, nullable=False, id_field=False, db_name=None, validation=None, private=False, discord_type=None, *args, **kwargs) -> Any:
+def field(excluded=False, nullable=False, id_field=False, db_name=None, validation=None, private=False, discord_type=None, ddefault=None, *args, **kwargs) -> Any:
     default = kwargs["default"] if "default" in kwargs else None
     metadata = {
         "excluded": bool(excluded),
@@ -158,12 +162,6 @@ def field(excluded=False, nullable=False, id_field=False, db_name=None, validati
         "id_field": bool(id_field),
         "private": bool(private),
         "discord_type": discord_type,
+        "ddefault": ddefault
     }
     return _field(*args, metadata=metadata, **kwargs)
-
-
-@model
-@dataclass
-class User:
-    yep: str
-    login: Optional[str] = field(db_name="asd", default="test")

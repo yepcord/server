@@ -5,9 +5,10 @@ from typing import Optional, List, Tuple
 from json import dumps as jdumps
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
-from .classes import User, Session, UserData, _User, UserSettings, Relationship, Channel, Message, ReadState, _Channel, \
-    ChannelId, UserNote, Attachment, Reaction, SearchFilter, Invite, Role, Guild, GuildMember, _Guild, \
-    Emoji
+from .classes.channel import Channel, _Channel, ChannelId
+from .classes.guild import Emoji, Invite, Guild, Role, _Guild
+from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
+from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .utils import json_to_sql, lsf
 from .enums import ChannelType
 from .ctx import Ctx

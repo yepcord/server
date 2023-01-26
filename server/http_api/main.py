@@ -1,31 +1,34 @@
-from io import BytesIO
-from time import time
-from uuid import uuid4
-from PIL import Image
-from async_timeout import timeout
-from magic import from_buffer
-from quart import Quart, request
+from base64 import b64encode as _b64encode, b64decode as _b64decode
 from functools import wraps
-from os import urandom
+from io import BytesIO
 from json import dumps as jdumps, loads as jloads
 from random import choice
-from base64 import b64encode as _b64encode, b64decode as _b64decode
+from time import time
+from uuid import uuid4
+
+from PIL import Image
+from async_timeout import timeout
 from emoji import is_emoji
+from magic import from_buffer
+from quart import Quart, request
 from quart.globals import request_ctx
 
 from server.ctx import Ctx
 from server.geoip import getLanguageCode
-from ..proto import PreloadedUserSettings, FrecencyUserSettings
+from ..classes.channel import Channel
+from ..classes.guild import Emoji
+from ..classes.message import Message, Attachment, Reaction, SearchFilter
+from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags
 from ..config import Config
-from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, Attachment, Channel, \
-    UserFlags, Reaction, SearchFilter, Emoji
 from ..core import Core, CDN
+from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
+from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
+from ..proto import PreloadedUserSettings, FrecencyUserSettings
+from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, \
+    channelInfoResponse
+from ..storage import FileStorage, S3Storage, FTPStorage
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
     parseMultipartRequest, LOCALES
-from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
-from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
-from ..storage import FileStorage, S3Storage, FTPStorage
 
 
 class YEPcord(Quart):
@@ -506,7 +509,7 @@ async def api_users_me_relationships_get(user):
 async def api_users_me_notes_get(user, target_uid):
     if not (note := await core.getUserNote(user.id, target_uid)):
         raise InvalidDataErr(404, mkError(10013))
-    return c_json(note.to_response())
+    return c_json(note.toJSON())
 
 
 @app.route("/api/v9/users/@me/notes/<int:target_uid>", methods=["PUT"])

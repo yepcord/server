@@ -4,7 +4,8 @@ from .events import *
 from ..pubsub_client import Client
 from ..enums import GatewayOp
 from ..core import Core
-from ..classes import UserId, Session, GuildId
+from ..classes.user import UserId, Session
+from ..classes.guild import GuildId
 from os import urandom
 from json import dumps as jdumps
 
