@@ -2,7 +2,7 @@ from base64 import b64encode
 from datetime import datetime
 from typing import List
 
-from ..classes import GuildMember
+from ..classes.user import GuildMember
 from ..config import Config
 from ..ctx import Ctx
 from ..utils import snowflake_timestamp
@@ -99,7 +99,7 @@ class ReadyEvent(DispatchEvent):
                     "partial": False,
                     "entries": [] # TODO
                 },
-                "user_settings": settings.to_json(with_excluded=False),
+                "user_settings": await settings.json,
                 "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
             }
         }
@@ -535,3 +535,17 @@ class GuildEmojisUpdate(DispatchEvent):
                 "emojis": self.emojis
             }
         }
+
+class ChannelUpdateEvent(DispatchEvent):
+    NAME = "CHANNEL_UPDATE"
+
+    def __init__(self, channel):
+        self.channel = channel
+
+    async def json(self) -> dict:
+        j = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.channel
+        }
+        return j

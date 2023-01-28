@@ -1,7 +1,7 @@
 from quart import Quart, websocket
 
 from ..config import Config
-from ..classes import ZlibCompressor
+from ..classes.other import ZlibCompressor
 from ..core import Core
 from ..utils import b64decode
 from json import loads as jloads

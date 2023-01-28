@@ -4,7 +4,8 @@ from .events import *
 from ..pubsub_client import Client
 from ..enums import GatewayOp
 from ..core import Core
-from ..classes import UserId, Session, GuildId
+from ..classes.user import UserId, Session
+from ..classes.guild import GuildId
 from os import urandom
 from json import dumps as jdumps
 
@@ -339,6 +340,12 @@ class GatewayEvents:
         emojis = [await emoji.json for emoji in emojis]
         for cl in clients:
             await cl.esend(GuildEmojisUpdate(guild_id, emojis))
+
+    async def channel_update(self, users, channel_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(ChannelUpdateEvent(channel_obj))
 
 class Gateway:
     def __init__(self, core: Core):

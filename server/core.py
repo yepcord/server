@@ -14,11 +14,13 @@ from time import time
 from .config import Config
 from .databases import MySQL
 from .errors import InvalidDataErr, MfaRequiredErr
+from .responses import channelInfoResponse
 from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError, execute_after
-from .classes import Session, User, Channel, UserId, Message, _User, UserSettings, UserData, ReadState, UserNote, \
-    UserConnection, Attachment, Relationship, EmailMsg, Reaction, SearchFilter, Invite, Guild, Role, GuildMember, \
-    GuildId, _Guild, Emoji
-from .storage import _Storage
+from .classes.channel import Channel
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild
+from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
+from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
+from .classes.other import EmailMsg
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
 
@@ -98,7 +100,7 @@ class Core:
 
         user = User(uid, email, password, key)
         session = Session(uid, session, signature)
-        data = UserData(uid, birth=birth, username=login, discriminator=discriminator, locale=locale)
+        data = UserData(uid, birth=birth, username=login, discriminator=discriminator)
         async with self.db() as db:
             await db.registerUser(user, session, data, UserSettings(uid, locale=locale))
         await self.sendVerificationEmail(user)
@@ -326,7 +328,7 @@ class Core:
         if type(user) == Session:
             user = self._sessionToUser(user)
         settings = await user.settings
-        mfa = MFA(settings.get("mfa_key"), user.id)
+        mfa = MFA(settings.get("mfa"), user.id)
         if mfa.valid:
             return mfa
 
@@ -357,7 +359,7 @@ class Core:
         if sig != self.generateSessionSignature(uid, int.from_bytes(sid, "big"), b64decode(user.key)):
             return
         settings = await user.settings
-        return MFA(settings.mfa_key, uid)
+        return MFA(settings.mfa, uid)
 
     async def generateUserMfaNonce(self, user: User) -> Tuple[str, str]:
         mfa = await self.getMfa(user)
@@ -483,6 +485,7 @@ class Core:
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             return channel.recipients
         elif channel.type in (ChannelType.GUILD_CATEGORY, ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
+            print(channel.guild_id)
             return [member.user_id for member in await self.getGuildMembers(GuildId(channel.guild_id))]
 
     async def sendTypingEvent(self, user: _User, channel: Channel) -> None:
@@ -543,9 +546,9 @@ class Core:
             await db.putUserNote(note)
         await self.mcl.broadcast("user_events", {"e": "note_update", "data": {"user": note.uid, "uid": note.target_uid, "note": note.note}})
 
-    async def putUserConnection(self, uc: UserConnection) -> None:
-        async with self.db() as db:
-            await db.putUserConnection(uc)
+    #async def putUserConnection(self, uc: UserConnection) -> None: # TODO: implement UserConnection
+    #    async with self.db() as db:
+    #        await db.putUserConnection(uc)
 
     async def putAttachment(self, attachment: Attachment) -> None:
         async with self.db() as db:
@@ -883,6 +886,11 @@ class Core:
             if not (emoji := await db.getEmoji(emoji_id)):
                 return
         return None if emoji.name != name else emoji
+
+    async def sendChannelUpdateEvent(self, channel: Channel) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "channel_update",
+                                                  "data": {"users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
+                                                           "channel_obj": await channelInfoResponse(channel)}})
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

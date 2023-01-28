@@ -1,31 +1,34 @@
-from io import BytesIO
-from time import time
-from uuid import uuid4
-from PIL import Image
-from async_timeout import timeout
-from magic import from_buffer
-from quart import Quart, request
+from base64 import b64encode as _b64encode, b64decode as _b64decode
 from functools import wraps
-from os import urandom
+from io import BytesIO
 from json import dumps as jdumps, loads as jloads
 from random import choice
-from base64 import b64encode as _b64encode, b64decode as _b64decode
+from time import time
+from uuid import uuid4
+
+from PIL import Image
+from async_timeout import timeout
 from emoji import is_emoji
+from magic import from_buffer
+from quart import Quart, request
 from quart.globals import request_ctx
 
 from server.ctx import Ctx
 from server.geoip import getLanguageCode
-from ..proto import PreloadedUserSettings, FrecencyUserSettings
+from ..classes.channel import Channel
+from ..classes.guild import Emoji
+from ..classes.message import Message, Attachment, Reaction, SearchFilter
+from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags
 from ..config import Config
-from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
-from ..classes import Session, UserSettings, UserData, Message, UserNote, UserConnection, Attachment, Channel, \
-    UserFlags, Reaction, SearchFilter, Emoji
 from ..core import Core, CDN
+from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
+from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
+from ..proto import PreloadedUserSettings, FrecencyUserSettings
+from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, \
+    channelInfoResponse
+from ..storage import FileStorage, S3Storage, FTPStorage
 from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
     parseMultipartRequest, LOCALES
-from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
-from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, channelInfoResponse
-from ..storage import FileStorage, S3Storage, FTPStorage
 
 
 class YEPcord(Quart):
@@ -342,6 +345,7 @@ async def api_users_me_patch(user):
         await core.changeUserEmail(user, _settings["email"])
         await core.sendVerificationEmail(user)
         del _settings["email"]
+    if "password" in _settings: del _settings["password"]
 
     settings = {}
     for k,v in _settings.items():
@@ -506,7 +510,7 @@ async def api_users_me_relationships_get(user):
 async def api_users_me_notes_get(user, target_uid):
     if not (note := await core.getUserNote(user.id, target_uid)):
         raise InvalidDataErr(404, mkError(10013))
-    return c_json(note.to_response())
+    return c_json(note.toJSON())
 
 
 @app.route("/api/v9/users/@me/notes/<int:target_uid>", methods=["PUT"])
@@ -617,59 +621,27 @@ async def api_users_me_harvest(user):
 # Connections
 
 
-@app.route("/api/v9/connections/<string:connection>/authorize", methods=["GET"])
-@multipleDecorators(usingDB, getUser)
-async def api_connections_connection_authorize(user, connection):
-    url = ""
-    kwargs = {}
-    if connection == "github":
-        CLIENT_ID = ""
-        state = urandom(16).hex()
-        kwargs["state"] = state
-        url = f"https://github.com/login/oauth/authorize?client_id={CLIENT_ID}&redirect_uri=https%3A%2F%2F127.0.0.1:8080%2Fapi%2Fconnections%2Fgithub%2Fcallback&scope=read%3Auser&state={state}"
-    await core.putUserConnection(UserConnection(user, connection, **kwargs))
-    return c_json({"url": url})
-
-
-@app.route("/api/v9/connections/<string:connection>/callback", methods=["POST"])
-@multipleDecorators(usingDB, getUser)
-async def api_connections_connection_callback(user, connection):
-    data = await request.get_json()
-    if connection == "github":
-        ...
-    return ...
-
-
-@app.route("/api/v9/users/@me/channels", methods=["GET"])
-@multipleDecorators(usingDB, getUser)
-async def api_users_me_channels_get(user):
-    return c_json(await core.getPrivateChannels(user))
-
-
-@app.route("/api/v9/users/@me/channels", methods=["POST"])
-@multipleDecorators(usingDB, getUser)
-async def api_users_me_channels_post(user):
-    data = await request.get_json()
-    rep = data.get("recipients", [])
-    rep = [int(r) for r in rep]
-    if len(rep) == 1:
-        if int(rep[0]) == user.id:
-            raise InvalidDataErr(400, mkError(50007))
-        ch = await core.getDMChannelOrCreate(user.id, rep[0])
-    elif len(rep) == 0:
-        ch = await core.createDMGroupChannel(user, [])
-    else:
-        if user.id in rep:
-            rep.remove(user.id)
-        if len(rep) == 0:
-            raise InvalidDataErr(400, mkError(50007))
-        elif len(rep) == 1:
-            ch = await core.getDMChannelOrCreate(user.id, rep[0])
-        else:
-            ch = await core.createDMGroupChannel(user, rep)
-    await core.sendDMChannelCreateEvent(ch)
-    return c_json(await channelInfoResponse(ch, user, ids=False))
-
+#@app.route("/api/v9/connections/<string:connection>/authorize", methods=["GET"]) # TODO: implement UserConnection
+#@multipleDecorators(usingDB, getUser)
+#async def api_connections_connection_authorize(user, connection):
+#    url = ""
+#    kwargs = {}
+#    if connection == "github":
+#        CLIENT_ID = ""
+#        state = urandom(16).hex()
+#        kwargs["state"] = state
+#        url = f"https://github.com/login/oauth/authorize?client_id={CLIENT_ID}&redirect_uri=https%3A%2F%2F127.0.0.1:8080%2Fapi%2Fconnections%2Fgithub%2Fcallback&scope=read%3Auser&state={state}"
+#    await core.putUserConnection(UserConnection(user, connection, **kwargs))
+#    return c_json({"url": url})
+#
+#
+#@app.route("/api/v9/connections/<string:connection>/callback", methods=["POST"])
+#@multipleDecorators(usingDB, getUser)
+#async def api_connections_connection_callback(user, connection):
+#    data = await request.get_json()
+#    if connection == "github":
+#        ...
+#    return ...
 
 # Users
 
@@ -709,10 +681,14 @@ async def api_channels_channel_patch(user, channel):
         del data["owner"]
     if "id" in data: del data["id"]
     if "type" in data: del data["type"]
-    nChannel = Channel(channel.id, channel.type, **data)
+    if "rate_limit_per_user" in data: del data["rate_limit_per_user"] # TODO
+    if "default_thread_rate_limit_per_user" in data: del data["default_thread_rate_limit_per_user"] # TODO
+    if "default_reaction_emoji" in data: del data["default_reaction_emoji"] # TODO
+    nChannel = Channel(channel.id, channel.type, channel.guild_id, **data)
     await core.updateChannelDiff(channel, nChannel)
-    await core.sendDMChannelUpdateEvent(channel)
-    diff = channel.get_diff(nChannel)
+    if channel.type in (ChannelType.GROUP_DM, ChannelType.GUILD_TEXT):
+        await core.sendDMChannelUpdateEvent(channel)
+    diff = channel.getDiff(nChannel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
         message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
         await core.sendMessage(message)
@@ -790,7 +766,7 @@ async def api_channels_channel_messages_post(user, channel):
                     att = atts[idx]
                 name = att.get("filename") or file.get("filename") or "unknown"
                 data["attachments"].append({"uploaded_filename": f"{uuid}/{name}"})
-                att = Attachment(mksf(), channel.id, name, len(file["data"]), uuid)
+                att = Attachment(mksf(), channel.id, name, len(file["data"]), {}, uuid)
                 if file.get("content_type"):
                     cot = file.get("content_type").strip()
                     att.set(content_type=cot)
@@ -893,7 +869,7 @@ async def api_channels_channel_attachments_post(user, channel):
             raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.file_size": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         if not (fid := file.get("id")):
             raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-        att = Attachment(mksf(), channel.id, filename, size)
+        att = Attachment(mksf(), channel.id, filename, size, {})
         await core.putAttachment(att)
         attachments.append({
             "id": int(fid),
@@ -1025,6 +1001,37 @@ async def api_channels_channel_messages_search(user, channel):
     return c_json({"messages": messages, "total_results": total})
 
 
+@app.route("/api/v9/users/@me/channels", methods=["GET"])
+@multipleDecorators(usingDB, getUser)
+async def api_users_me_channels_get(user):
+    return c_json(await core.getPrivateChannels(user))
+
+
+@app.route("/api/v9/users/@me/channels", methods=["POST"])
+@multipleDecorators(usingDB, getUser)
+async def api_users_me_channels_post(user):
+    data = await request.get_json()
+    rep = data.get("recipients", [])
+    rep = [int(r) for r in rep]
+    if len(rep) == 1:
+        if int(rep[0]) == user.id:
+            raise InvalidDataErr(400, mkError(50007))
+        ch = await core.getDMChannelOrCreate(user.id, rep[0])
+    elif len(rep) == 0:
+        ch = await core.createDMGroupChannel(user, [])
+    else:
+        if user.id in rep:
+            rep.remove(user.id)
+        if len(rep) == 0:
+            raise InvalidDataErr(400, mkError(50007))
+        elif len(rep) == 1:
+            ch = await core.getDMChannelOrCreate(user.id, rep[0])
+        else:
+            ch = await core.createDMGroupChannel(user, rep)
+    await core.sendDMChannelCreateEvent(ch)
+    return c_json(await channelInfoResponse(ch, user, ids=False))
+
+
 # Invites
 
 
@@ -1143,6 +1150,27 @@ async def api_guilds_guild_emojis_emoji_delete(user, guild, emoji):
     if emoji.guild_id != guild.id:
         return "", 204
     await core.deleteEmoji(emoji, guild)
+    return "", 204
+
+
+@app.route("/api/v9/guilds/<int:guild>/channels", methods=["PATCH"])
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_channels_patch(user, guild):
+    if guild.owner_id != user.id: # TODO: check permissions
+        raise InvalidDataErr(403, mkError(50013))
+    if not (data := await request.get_json()):
+        return "", 204
+    for change in data:
+        if not (channel := await core.getChannel(int(change["id"]))):
+            continue
+        del change["id"]
+        if "type" in change: del change["type"]
+        if "guild_id" in change: del change["guild_id"]
+        if "parent_id" in change and change["parent_id"] is not None: change["parent_id"] = int(change["parent_id"])
+        nChannel = Channel(channel.id, channel.type, channel.guild_id, **change)
+        await core.updateChannelDiff(channel, nChannel)
+        channel.set(**change)
+        await core.sendChannelUpdateEvent(channel)
     return "", 204
 
 

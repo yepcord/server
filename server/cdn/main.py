@@ -1,12 +1,11 @@
 from io import BytesIO
+from uuid import UUID
 
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
 from quart import Quart, request
-from uuid import UUID
 
-from server.classes import Emoji
 from ..config import Config
 from ..core import Core, CDN
 from ..storage import FileStorage, S3Storage, FTPStorage
