@@ -345,6 +345,7 @@ async def api_users_me_patch(user):
         await core.changeUserEmail(user, _settings["email"])
         await core.sendVerificationEmail(user)
         del _settings["email"]
+    if "password" in _settings: del _settings["password"]
 
     settings = {}
     for k,v in _settings.items():
