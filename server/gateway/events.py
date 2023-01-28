@@ -99,7 +99,7 @@ class ReadyEvent(DispatchEvent):
                     "partial": False,
                     "entries": [] # TODO
                 },
-                "user_settings": settings.to_json(for_db=False),
+                "user_settings": await settings.json,
                 "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
             }
         }
@@ -535,3 +535,17 @@ class GuildEmojisUpdate(DispatchEvent):
                 "emojis": self.emojis
             }
         }
+
+class ChannelUpdateEvent(DispatchEvent):
+    NAME = "CHANNEL_UPDATE"
+
+    def __init__(self, channel):
+        self.channel = channel
+
+    async def json(self) -> dict:
+        j = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.channel
+        }
+        return j

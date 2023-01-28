@@ -643,16 +643,16 @@ class MySqlConnection:
             return Invite.from_result(self.cur.description, r)
 
     async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel], members: List[GuildMember]) -> None:
-        fields, values = json_to_sql(guild.to_typed_json(with_id=True), for_insert=True)
+        fields, values = json_to_sql(guild.toJSON(for_db=True), for_insert=True)
         await self.cur.execute(f'INSERT INTO `guilds` ({fields}) VALUES ({values})')
         for role in roles:
-            fields, values = json_to_sql(role.to_typed_json(with_id=True), for_insert=True)
+            fields, values = json_to_sql(role.toJSON(for_db=True), for_insert=True)
             await self.cur.execute(f'INSERT INTO `roles` ({fields}) VALUES ({values})')
         for channel in channels:
-            fields, values = json_to_sql(channel.to_typed_json(with_id=True), for_insert=True)
+            fields, values = json_to_sql(channel.toJSON(for_db=True), for_insert=True)
             await self.cur.execute(f'INSERT INTO `channels` ({fields}) VALUES ({values})')
         for member in members:
-            fields, values = json_to_sql(member.to_typed_json(with_id=True), for_insert=True)
+            fields, values = json_to_sql(member.toJSON(for_db=True), for_insert=True)
             await self.cur.execute(f'INSERT INTO `guild_members` ({fields}) VALUES ({values})')
 
     async def getRole(self, role_id: int) -> Role:
@@ -708,7 +708,7 @@ class MySqlConnection:
             await self.cur.execute(f'UPDATE `guilds` SET {diff} WHERE `id`={before.id};')
 
     async def addEmoji(self, emoji: Emoji) -> None:
-        fields, values = json_to_sql(emoji.to_typed_json(with_id=True), for_insert=True)
+        fields, values = json_to_sql(emoji.toJSON(for_db=True), for_insert=True)
         await self.cur.execute(f'INSERT INTO `emojis` ({fields}) VALUES ({values})')
 
     async def getEmoji(self, emoji_id: int) -> Optional[Emoji]:

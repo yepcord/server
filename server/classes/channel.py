@@ -27,14 +27,14 @@ class Channel(_Channel, Model):
     type: int
     guild_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     position: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
-    permission_overwrites: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True, db_name="j_permission_overwrites")
+    permission_overwrites: Optional[list] = field(validation=Or(list, NoneType), default=None, nullable=True, db_name="j_permission_overwrites")
     name: Optional[str] = None
     topic: Optional[str] = None
-    nsfw: Optional[bool] = field(validation=Or(bool, NoneType), default=None, nullable=True)
+    nsfw: Optional[bool] = None
     bitrate: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     user_limit: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     rate_limit: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
-    recipients: Optional[int] = field(validation=Or([int], NoneType), default=None, nullable=True, db_name="j_recipients")
+    recipients: Optional[list] = field(validation=Or([int], NoneType), default=None, nullable=True, db_name="j_recipients")
     icon: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     owner_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     application_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)

@@ -680,10 +680,14 @@ async def api_channels_channel_patch(user, channel):
         del data["owner"]
     if "id" in data: del data["id"]
     if "type" in data: del data["type"]
-    nChannel = Channel(channel.id, channel.type, **data)
+    if "rate_limit_per_user" in data: del data["rate_limit_per_user"] # TODO
+    if "default_thread_rate_limit_per_user" in data: del data["default_thread_rate_limit_per_user"] # TODO
+    if "default_reaction_emoji" in data: del data["default_reaction_emoji"] # TODO
+    nChannel = Channel(channel.id, channel.type, channel.guild_id, **data)
     await core.updateChannelDiff(channel, nChannel)
-    await core.sendDMChannelUpdateEvent(channel)
-    diff = channel.get_diff(nChannel)
+    if channel.type in (ChannelType.GROUP_DM, ChannelType.GUILD_TEXT):
+        await core.sendDMChannelUpdateEvent(channel)
+    diff = channel.getDiff(nChannel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
         message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
         await core.sendMessage(message)
@@ -1145,6 +1149,27 @@ async def api_guilds_guild_emojis_emoji_delete(user, guild, emoji):
     if emoji.guild_id != guild.id:
         return "", 204
     await core.deleteEmoji(emoji, guild)
+    return "", 204
+
+
+@app.route("/api/v9/guilds/<int:guild>/channels", methods=["PATCH"])
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_channels_patch(user, guild):
+    if guild.owner_id != user.id: # TODO: check permissions
+        raise InvalidDataErr(403, mkError(50013))
+    if not (data := await request.get_json()):
+        return "", 204
+    for change in data:
+        if not (channel := await core.getChannel(int(change["id"]))):
+            continue
+        del change["id"]
+        if "type" in change: del change["type"]
+        if "guild_id" in change: del change["guild_id"]
+        if "parent_id" in change and change["parent_id"] is not None: change["parent_id"] = int(change["parent_id"])
+        nChannel = Channel(channel.id, channel.type, channel.guild_id, **change)
+        await core.updateChannelDiff(channel, nChannel)
+        channel.set(**change)
+        await core.sendChannelUpdateEvent(channel)
     return "", 204
 
 

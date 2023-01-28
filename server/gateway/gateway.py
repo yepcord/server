@@ -341,6 +341,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(GuildEmojisUpdate(guild_id, emojis))
 
+    async def channel_update(self, users, channel_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(ChannelUpdateEvent(channel_obj))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

@@ -67,7 +67,7 @@ class Session(_User, Model):
 @dataclass
 class UserSettings(Model):
     uid: int = field(id_field=True)
-    mfa: Optional[bool] = field(default=None, nullable=True)
+    mfa: Optional[str] = field(default=None, nullable=True)
     inline_attachment_media: Optional[bool] = None
     show_current_game: Optional[bool] = None
     view_nsfw_guilds: Optional[bool] = None
@@ -113,10 +113,11 @@ class UserSettings(Model):
     render_spoilers: Optional[str] = field(validation=And(Use(str), Use(str.upper), lambda s: s in ("ON_CLICK", "IF_MODERATOR", "ALWAYS")), default=None)
     dismissed_contents: Optional[str] = field(validation=And(Use(str), lambda s: len(s) % 2 == 0), excluded=True, default=None)
 
-    def toJSON(self, **kwargs) -> dict:
-        j = super().toJSON(**kwargs)
-        if "for_db" in kwargs and "mfa" in j:
-            j["mfa"] = self.mfa
+    @property
+    async def json(self) -> dict:
+        print(self.__dict__)
+        j = self.toJSON()
+        j["mfa"] = bool(j["mfa"])
         return j
 
     def to_proto(self) -> PreloadedUserSettings:

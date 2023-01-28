@@ -172,7 +172,7 @@ class Emoji(Model):
     name: str
     user_id: int
     guild_id: int
-    roles: Optional[list] = field(db_name="j_roles")
+    roles: Optional[list] = field(default=None, db_name="j_roles")
     require_colons: Optional[bool] = False
     managed: Optional[bool] = False
     animated: Optional[bool] = False

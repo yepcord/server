@@ -131,8 +131,9 @@ def model(cls):
         if field.name in cls.__model_fields__["all"]:
             continue
         meta = field.metadata or _DEFAULT_META
-        opt = field.type == Optional[field.type]
-        _type = field.type.__args__[0] if opt else type_hints[field.name]
+        _type = type_hints[field.name]
+        opt = _type == Optional[_type]
+        _type = _type.__args__[0] if opt else _type
         s_name = sOptional(field.name) if opt else field.name
         schema[s_name] = Use(_type) if meta["validation"] is None else meta["validation"]
         if meta["discord_type"] is not None:
