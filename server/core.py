@@ -100,7 +100,7 @@ class Core:
 
         user = User(uid, email, password, key)
         session = Session(uid, session, signature)
-        data = UserData(uid, birth=birth, username=login, discriminator=discriminator, locale=locale)
+        data = UserData(uid, birth=birth, username=login, discriminator=discriminator)
         async with self.db() as db:
             await db.registerUser(user, session, data, UserSettings(uid, locale=locale))
         await self.sendVerificationEmail(user)
