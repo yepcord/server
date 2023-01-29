@@ -13,15 +13,7 @@ from ..utils import b64decode, ALLOWED_AVATAR_SIZES
 
 
 class YEPcord(Quart):
-    async def process_response(self, response, request_context=None):
-        response = await super(YEPcord, self).process_response(response, request_context)
-        response.headers['Server'] = "YEPcord"
-        response.headers['Access-Control-Allow-Origin'] = "*"
-        response.headers['Access-Control-Allow-Headers'] = "*"
-        response.headers['Access-Control-Allow-Methods'] = "*"
-        response.headers['Content-Security-Policy'] = "connect-src *;"
-        
-        return response
+    pass # Maybe it will be needed in the future
 
 app = YEPcord("YEPcord-api")
 core = Core(b64decode(Config("KEY")))
@@ -53,9 +45,18 @@ async def before_serving():
         autocommit=True
     )
 
+@app.after_request
+async def set_cors_headers(response):
+    response.headers['Server'] = "YEPcord"
+    response.headers['Access-Control-Allow-Origin'] = "*"
+    response.headers['Access-Control-Allow-Headers'] = "*"
+    response.headers['Access-Control-Allow-Methods'] = "*"
+    response.headers['Content-Security-Policy'] = "connect-src *;"
+    return response
+
 # Auth
 
-@app.route("/avatars/<int:uid>/<string:name>", methods=["GET"])
+@app.get("/avatars/<int:uid>/<string:name>")
 async def avatars_uid_hash(uid, name):
     ahash = name.split(".")[0]
     fmt = name.split(".")[1]
@@ -70,7 +71,7 @@ async def avatars_uid_hash(uid, name):
         return b'', 404
     return avatar, 200, {"Content-Type": f"image/{fmt}"}
 
-@app.route("/banners/<int:uid>/<string:name>", methods=["GET"])
+@app.get("/banners/<int:uid>/<string:name>")
 async def banners_uid_hash(uid, name):
     bhash = name.split(".")[0]
     fmt = name.split(".")[1]
@@ -84,7 +85,7 @@ async def banners_uid_hash(uid, name):
         return b'', 404
     return banner, 200, {"Content-Type": "image/webp"}
 
-@app.route("/channel-icons/<int:cid>/<string:name>", methods=["GET"])
+@app.get("/channel-icons/<int:cid>/<string:name>")
 async def channelicons_cid_hash(cid, name):
     ihash = name.split(".")[0]
     fmt = name.split(".")[1]
@@ -99,7 +100,7 @@ async def channelicons_cid_hash(cid, name):
         return b'', 404
     return icon, 200, {"Content-Type": f"image/{fmt}"}
 
-@app.route("/icons/<int:gid>/<string:name>", methods=["GET"])
+@app.get("/icons/<int:gid>/<string:name>")
 async def icons_gid_hash(gid, name):
     ihash = name.split(".")[0]
     fmt = name.split(".")[1]
@@ -114,7 +115,7 @@ async def icons_gid_hash(gid, name):
         return b'', 404
     return icon, 200, {"Content-Type": f"image/{fmt}"}
 
-@app.route("/emojis/<string:name>", methods=["GET"])
+@app.get("/emojis/<string:name>")
 async def emojis_eid(name):
     eid = int(name.split(".")[0])
     fmt = name.split(".")[1]
@@ -136,7 +137,7 @@ async def emojis_eid(name):
         return b'', 404
     return emoji, 200, {"Content-Type": f"image/{fmt}"}
 
-@app.route("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>", methods=["GET"])
+@app.get("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")
 async def attachments_channelid_attachmentid_name(channel_id, attachment_id, name):
     att = await core.getAttachment(attachment_id)
     if not att:
@@ -149,7 +150,7 @@ async def attachments_channelid_attachmentid_name(channel_id, attachment_id, nam
         return b'', 404
     return att, 200, h
 
-@app.route("/upload/attachment/<string:uuid>/<string:filename>", methods=["PUT"])
+@app.put("/upload/attachment/<string:uuid>/<string:filename>")
 async def upload_attachment_uuid_filename(uuid, filename):
     try:
         uuid = str(UUID(uuid))

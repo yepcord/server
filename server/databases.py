@@ -218,6 +218,9 @@ class DBConnection(ABC):
     async def getInvite(self, invite_id: int) -> Optional[Invite]: ...
 
     @abstractmethod
+    async def createGuildChannel(self, channel: Channel) -> None: ...
+
+    @abstractmethod
     async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel]) -> None: ...
 
     @abstractmethod
@@ -555,7 +558,10 @@ class MySqlConnection:
             await self.cur.execute(f'UPDATE `channels` SET {diff} WHERE `id`={before.id};')
 
     async def deleteChannel(self, channel: Channel) -> None:
-        await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id} AND JSON_LENGTH(j_recipients) = 0;")
+        if channel.type == ChannelType.GROUP_DM:
+            await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id} AND JSON_LENGTH(j_recipients) = 0;")
+        elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+            await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id};")
         await self.cur.execute(f"DELETE FROM `read_states` WHERE `channel_id`={channel.id};")
         # TODO: delete all messages in channel
 
@@ -642,6 +648,10 @@ class MySqlConnection:
         if r := await self.cur.fetchone():
             return Invite.from_result(self.cur.description, r)
 
+    async def createGuildChannel(self, channel: Channel) -> None:
+        fields, values = json_to_sql(channel.toJSON(for_db=True), for_insert=True)
+        await self.cur.execute(f'INSERT INTO `channels` ({fields}) VALUES ({values})')
+
     async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel], members: List[GuildMember]) -> None:
         fields, values = json_to_sql(guild.toJSON(for_db=True), for_insert=True)
         await self.cur.execute(f'INSERT INTO `guilds` ({fields}) VALUES ({values})')
@@ -649,8 +659,7 @@ class MySqlConnection:
             fields, values = json_to_sql(role.toJSON(for_db=True), for_insert=True)
             await self.cur.execute(f'INSERT INTO `roles` ({fields}) VALUES ({values})')
         for channel in channels:
-            fields, values = json_to_sql(channel.toJSON(for_db=True), for_insert=True)
-            await self.cur.execute(f'INSERT INTO `channels` ({fields}) VALUES ({values})')
+            await self.createGuildChannel(channel)
         for member in members:
             fields, values = json_to_sql(member.toJSON(for_db=True), for_insert=True)
             await self.cur.execute(f'INSERT INTO `guild_members` ({fields}) VALUES ({values})')

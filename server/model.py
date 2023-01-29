@@ -93,8 +93,8 @@ class Model:
             return default
         return getattr(self, item)
 
-    def copy(self):
-        return deepcopy(self)
+    def copy(self, **kwargs):
+        return deepcopy(self).set(**kwargs)
 
     def getDiff(self, other) -> dict:
         this = self.toJSON()
