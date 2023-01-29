@@ -892,6 +892,17 @@ class Core:
                                                   "data": {"users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
                                                            "channel_obj": await channelInfoResponse(channel)}})
 
+    async def createGuildChannel(self, channel: Channel) -> Channel:
+        async with self.db() as db:
+            await db.createGuildChannel(channel)
+        return await self.getChannel(channel.id)
+
+    async def sendChannelCreateEvent(self, channel: Channel) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "channel_create",
+                                                  "data": {
+                                                      "users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
+                                                      "channel_obj": await channelInfoResponse(channel)}})
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
 from server.ctx import Ctx

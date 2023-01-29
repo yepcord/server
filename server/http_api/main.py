@@ -1173,6 +1173,23 @@ async def api_guilds_guild_channels_patch(user, guild):
     return "", 204
 
 
+@app.post("/api/v9/guilds/<int:guild>/channels")
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_channels_post(user, guild):
+    if guild.owner_id != user.id: # TODO: check permissions
+        raise InvalidDataErr(403, mkError(50013))
+    data = await request.get_json()
+    if not data.get("name"):
+        raise InvalidDataErr(400, mkError(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+    if "id" in data: del data["id"]
+    ctype = data.get("type", ChannelType.GUILD_TEXT)
+    if "type" in data: del data["type"]
+    channel = Channel(mksf(), ctype, guild_id=guild.id, **data)
+    channel = await core.createGuildChannel(channel)
+    await core.sendChannelCreateEvent(channel)
+    return await channelInfoResponse(channel)
+
+
 # Stickers & gifs
 
 

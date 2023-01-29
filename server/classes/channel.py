@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from ..utils import NoneType
 from typing import Optional
 
-from schema import Or
+from schema import Or, Use
 
 from server.ctx import getCore
 from server.enums import ChannelType
@@ -38,7 +38,7 @@ class Channel(_Channel, Model):
     icon: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     owner_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     application_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
-    parent_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
+    parent_id: Optional[int] = field(validation=Or(Use(int), NoneType), default=None, nullable=True)
     rtc_region: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     video_quality_mode: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     thread_metadata: Optional[dict] = field(validation=Or(dict, NoneType), default=None, nullable=True, db_name="j_thread_metadata")

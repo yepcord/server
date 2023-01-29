@@ -148,7 +148,7 @@ async def channelInfoResponse(channel, user=None, ids=True) -> dict:
     elif channel.type == ChannelType.GUILD_TEXT:
         j = {
             "id": str(channel.id),
-            "last_message_id": str(channel.last_message_id),
+            "last_message_id": str(channel.last_message_id) if channel.last_message_id is not None else channel.last_message_id,
             "type": channel.type,
             "name": channel.name,
             "position": channel.position,
@@ -171,7 +171,7 @@ async def channelInfoResponse(channel, user=None, ids=True) -> dict:
             "parent_id": str(channel.parent_id) if channel.parent_id is not None else channel.parent_id,
             "nsfw": channel.nsfw,
             "name": channel.name,
-            "last_message_id": channel.last_message_id,
+            "last_message_id": str(channel.last_message_id) if channel.last_message_id is not None else channel.last_message_id,
             "id": str(channel.id),
             "guild_id": str(channel.guild_id),
             "flags": channel.flags,

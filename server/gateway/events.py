@@ -549,3 +549,6 @@ class ChannelUpdateEvent(DispatchEvent):
             "d": self.channel
         }
         return j
+
+class ChannelCreateEvent(ChannelUpdateEvent):
+    NAME = "CHANNEL_CREATE"
