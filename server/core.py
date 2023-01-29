@@ -485,7 +485,6 @@ class Core:
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             return channel.recipients
         elif channel.type in (ChannelType.GUILD_CATEGORY, ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
-            print(channel.guild_id)
             return [member.user_id for member in await self.getGuildMembers(GuildId(channel.guild_id))]
 
     async def sendTypingEvent(self, user: _User, channel: Channel) -> None:
@@ -899,6 +898,12 @@ class Core:
 
     async def sendChannelCreateEvent(self, channel: Channel) -> None:
         await self.mcl.broadcast("guild_events", {"e": "channel_create",
+                                                  "data": {
+                                                      "users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
+                                                      "channel_obj": await channelInfoResponse(channel)}})
+
+    async def sendGuildChannelDeleteEvent(self, channel: Channel) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "channel_delete",
                                                   "data": {
                                                       "users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
                                                       "channel_obj": await channelInfoResponse(channel)}})

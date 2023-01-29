@@ -683,10 +683,13 @@ async def api_channels_channel_patch(user, channel):
     if "rate_limit_per_user" in data: del data["rate_limit_per_user"] # TODO
     if "default_thread_rate_limit_per_user" in data: del data["default_thread_rate_limit_per_user"] # TODO
     if "default_reaction_emoji" in data: del data["default_reaction_emoji"] # TODO
-    nChannel = Channel(channel.id, channel.type, channel.guild_id, **data)
+    if "guild_id" in data: del data["guild_id"]
+    nChannel = channel.copy(**data)
     await core.updateChannelDiff(channel, nChannel)
-    if channel.type in (ChannelType.GROUP_DM, ChannelType.GUILD_TEXT):
-        await core.sendDMChannelUpdateEvent(channel)
+    if channel.type == ChannelType.GROUP_DM:
+        await core.sendDMChannelUpdateEvent(nChannel)
+    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+        await core.sendChannelUpdateEvent(nChannel)
     diff = channel.getDiff(nChannel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
         message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
@@ -717,6 +720,10 @@ async def api_channels_channel_delete(user, channel):
             nChannel.owner_id = choice(channel.recipients)
             await core.updateChannelDiff(channel, nChannel)
             await core.sendDMChannelUpdateEvent(channel)
+    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+        await core.deleteChannel(channel)
+        await core.sendGuildChannelDeleteEvent(channel)
+        return await channelInfoResponse(channel)
     return "", 204
 
 
@@ -1165,7 +1172,6 @@ async def api_guilds_guild_channels_patch(user, guild):
         del change["id"]
         if "type" in change: del change["type"]
         if "guild_id" in change: del change["guild_id"]
-        if "parent_id" in change and change["parent_id"] is not None: change["parent_id"] = int(change["parent_id"])
         nChannel = Channel(channel.id, channel.type, channel.guild_id, **change)
         await core.updateChannelDiff(channel, nChannel)
         channel.set(**change)
@@ -1383,6 +1389,8 @@ async def other_api_endpoints(path):
         print(f"  Data: {await request.get_json()}")
     print("----------------")
     return "Not Implemented!", 502
+
+# TODO: /api/v9/guilds/<int:guild>/roles/member-counts -> {role_id: count (???) }
 
 
 if __name__ == "__main__":

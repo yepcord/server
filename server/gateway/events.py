@@ -552,3 +552,6 @@ class ChannelUpdateEvent(DispatchEvent):
 
 class ChannelCreateEvent(ChannelUpdateEvent):
     NAME = "CHANNEL_CREATE"
+
+class ChannelDeleteEvent(ChannelUpdateEvent):
+    NAME = "CHANNEL_DELETE"

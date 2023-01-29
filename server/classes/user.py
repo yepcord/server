@@ -115,7 +115,6 @@ class UserSettings(Model):
 
     @property
     async def json(self) -> dict:
-        print(self.__dict__)
         j = self.toJSON()
         j["mfa"] = bool(j["mfa"])
         return j
