@@ -32,16 +32,6 @@ from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MF
 
 
 class YEPcord(Quart):
-    async def process_response(self, response, request_context=None):
-        response = await super(YEPcord, self).process_response(response, request_context)
-        response.headers['Server'] = "YEPcord"
-        response.headers['Access-Control-Allow-Origin'] = "*"
-        response.headers['Access-Control-Allow-Headers'] = "*"
-        response.headers['Access-Control-Allow-Methods'] = "*"
-        response.headers['Content-Security-Policy'] = "connect-src *;"
-        
-        return response
-
     async def dispatch_request(self, request_context=None):
         request_ = (request_context or request_ctx).request
         if request_.routing_exception is not None:
@@ -107,6 +97,15 @@ async def ydataerror_handler(e):
         ticket += f".{e.sid}.{e.sig}"
         return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
 
+
+@app.after_request
+async def set_cors_headers(response):
+    response.headers['Server'] = "YEPcord"
+    response.headers['Access-Control-Allow-Origin'] = "*"
+    response.headers['Access-Control-Allow-Headers'] = "*"
+    response.headers['Access-Control-Allow-Methods'] = "*"
+    response.headers['Content-Security-Policy'] = "connect-src *;"
+    return response
 
 # Decorators
 
@@ -224,7 +223,7 @@ getGuildWoM = getGuildWithoutMember
 # Auth
 
 
-@app.route("/api/v9/auth/register", methods=["POST"])
+@app.post("/api/v9/auth/register")
 @usingDB
 async def api_auth_register():
     data = await request.get_json()
@@ -233,7 +232,7 @@ async def api_auth_register():
     return c_json({"token": sess.token})
 
 
-@app.route("/api/v9/auth/login", methods=["POST"])
+@app.post("/api/v9/auth/login")
 @usingDB
 async def api_auth_login():
     data = await request.get_json()
@@ -243,7 +242,7 @@ async def api_auth_login():
     return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
 
 
-@app.route("/api/v9/auth/mfa/totp", methods=["POST"])
+@app.post("/api/v9/auth/mfa/totp")
 @usingDB
 async def api_auth_mfa_totp(): # TODO: test
     data = await request.get_json()
@@ -263,14 +262,14 @@ async def api_auth_mfa_totp(): # TODO: test
     return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
 
 
-@app.route("/api/v9/auth/logout", methods=["POST"])
+@app.post("/api/v9/auth/logout")
 @multipleDecorators(usingDB, getSession)
 async def api_auth_logout(session):
     await core.logoutUser(session)
     return "", 204
 
 
-@app.route("/api/v9/auth/verify/view-backup-codes-challenge", methods=["POST"])
+@app.post("/api/v9/auth/verify/view-backup-codes-challenge")
 @multipleDecorators(usingDB, getUser)
 async def api_auth_verify_viewbackupcodeschallenge(user):
     data = await request.get_json()
@@ -283,7 +282,7 @@ async def api_auth_verify_viewbackupcodeschallenge(user):
     return c_json({"nonce": nonce[0], "regenerate_nonce": nonce[1]})
 
 
-@app.route("/api/v9/auth/verify/resend", methods=["POST"])
+@app.post("/api/v9/auth/verify/resend")
 @multipleDecorators(usingDB, getUser)
 async def api_auth_verify_resend(user):
     if not user.verified:
@@ -291,7 +290,7 @@ async def api_auth_verify_resend(user):
     return "", 204
 
 
-@app.route("/api/v9/auth/verify", methods=["POST"])
+@app.post("/api/v9/auth/verify")
 @usingDB
 async def api_auth_verify():
     data = await request.get_json()
@@ -310,12 +309,12 @@ async def api_auth_verify():
 # Users (@me)
 
 
-@app.route("/api/v9/users/@me", methods=["GET"])
+@app.get("/api/v9/users/@me")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_get(user):
     return c_json(await userdataResponse(user))
 
-@app.route("/api/v9/users/@me", methods=["PATCH"])
+@app.patch("/api/v9/users/@me")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_patch(user):
     data = await user.data
@@ -367,7 +366,7 @@ async def api_users_me_patch(user):
     await core.sendUserUpdateEvent(user.id)
     return c_json(await userdataResponse(user))
 
-@app.route("/api/v9/users/@me/profile", methods=["PATCH"])
+@app.patch("/api/v9/users/@me/profile")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_profile_patch(user):
     _settings = await request.get_json()
@@ -385,12 +384,12 @@ async def api_users_me_profile_patch(user):
     await core.sendUserUpdateEvent(user.id)
     return c_json(await userdataResponse(user))
 
-@app.route("/api/v9/users/@me/consent", methods=["GET"])
+@app.get("/api/v9/users/@me/consent")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_consent_get(user):
     return c_json(await userConsentResponse(user))
 
-@app.route("/api/v9/users/@me/consent", methods=["POST"])
+@app.post("/api/v9/users/@me/consent")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_consent_set(user):
     data = await request.get_json()
@@ -406,13 +405,13 @@ async def api_users_me_consent_set(user):
     return c_json(await userConsentResponse(user))
 
 
-@app.route("/api/v9/users/@me/settings", methods=["GET"])
+@app.get("/api/v9/users/@me/settings")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_settings_get(user):
     return c_json(await userSettingsResponse(user))
 
 
-@app.route("/api/v9/users/@me/settings", methods=["PATCH"])
+@app.patch("/api/v9/users/@me/settings")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_settings_patch(user):
     settings = await request.get_json()
@@ -423,14 +422,14 @@ async def api_users_me_settings_patch(user):
     return c_json(await userSettingsResponse(user))
 
 
-@app.route("/api/v9/users/@me/settings-proto/1", methods=["GET"])
+@app.get("/api/v9/users/@me/settings-proto/1")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_settingsproto_1_get(user):
     proto = await user.settings_proto
     return c_json({"settings": _b64encode(proto.SerializeToString()).decode("utf8")})
 
 
-@app.route("/api/v9/users/@me/settings-proto/1", methods=["PATCH"])
+@app.patch("/api/v9/users/@me/settings-proto/1")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_settingsproto_1_patch(user): # TODO
     data = await request.get_json()
@@ -452,14 +451,14 @@ async def api_users_me_settingsproto_1_patch(user): # TODO
     return c_json({"settings": proto})
 
 
-@app.route("/api/v9/users/@me/settings-proto/2", methods=["GET"])
+@app.get("/api/v9/users/@me/settings-proto/2")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_settingsproto_2_get(user):
     proto = await user.frecency_settings_proto
     return c_json({"settings": _b64encode(proto).decode("utf8")})
 
 
-@app.route("/api/v9/users/@me/settings-proto/2", methods=["PATCH"])
+@app.patch("/api/v9/users/@me/settings-proto/2")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_settingsproto_2_patch(user):
     data = await request.get_json()
@@ -480,13 +479,13 @@ async def api_users_me_settingsproto_2_patch(user):
     return c_json({"settings": proto})
 
 
-@app.route("/api/v9/users/@me/connections", methods=["GET"])
+@app.get("/api/v9/users/@me/connections")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_connections(user): # TODO
     return c_json("[]") # friend_sync: bool, id: str(int), integrations: list, name: str, revoked: bool, show_activity: bool, two_way_link: bool, type: str, verified: bool, visibility: int
 
 
-@app.route("/api/v9/users/@me/relationships", methods=["POST"])
+@app.post("/api/v9/users/@me/relationships")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_post(user):
     udata = await request.get_json()
@@ -499,13 +498,13 @@ async def api_users_me_relationships_post(user):
     return "", 204
 
 
-@app.route("/api/v9/users/@me/relationships", methods=["GET"])
+@app.get("/api/v9/users/@me/relationships")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_get(user):
     return c_json(await core.getRelationships(user, with_data=True))
 
 
-@app.route("/api/v9/users/@me/notes/<int:target_uid>", methods=["GET"])
+@app.get("/api/v9/users/@me/notes/<int:target_uid>")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_notes_get(user, target_uid):
     if not (note := await core.getUserNote(user.id, target_uid)):
@@ -513,7 +512,7 @@ async def api_users_me_notes_get(user, target_uid):
     return c_json(note.toJSON())
 
 
-@app.route("/api/v9/users/@me/notes/<int:target_uid>", methods=["PUT"])
+@app.put("/api/v9/users/@me/notes/<int:target_uid>")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_notes_put(user, target_uid):
     data = await request.get_json()
@@ -522,7 +521,7 @@ async def api_users_me_notes_put(user, target_uid):
     return "", 204
 
 
-@app.route("/api/v9/users/@me/mfa/totp/enable", methods=["POST"])
+@app.post("/api/v9/users/@me/mfa/totp/enable")
 @multipleDecorators(usingDB, getSession)
 async def api_users_me_mfa_totp_enable(session):
     data = await request.get_json()
@@ -547,7 +546,7 @@ async def api_users_me_mfa_totp_enable(session):
     return c_json({"token": session.token, "backup_codes": codes})
 
 
-@app.route("/api/v9/users/@me/mfa/totp/disable", methods=["POST"])
+@app.post("/api/v9/users/@me/mfa/totp/disable")
 @multipleDecorators(usingDB, getSession)
 async def api_users_me_mfa_totp_disable(session):
     data = await request.get_json()
@@ -567,7 +566,7 @@ async def api_users_me_mfa_totp_disable(session):
     return c_json({"token": session.token})
 
 
-@app.route("/api/v9/users/@me/mfa/codes-verification", methods=["POST"])
+@app.post("/api/v9/users/@me/mfa/codes-verification")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_mfa_codesverification(user):
     data = await request.get_json()
@@ -594,7 +593,7 @@ async def api_users_me_mfa_codesverification(user):
     return c_json({"backup_codes": codes})
 
 
-@app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["PUT"])
+@app.put("/api/v9/users/@me/relationships/<int:uid>")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_put(uid, user):
     data = await request.get_json()
@@ -605,14 +604,14 @@ async def api_users_me_relationships_put(uid, user):
     return "", 204
 
 
-@app.route("/api/v9/users/@me/relationships/<int:uid>", methods=["DELETE"])
+@app.delete("/api/v9/users/@me/relationships/<int:uid>")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_delete(uid, user):
     await core.delRelationship(user, uid)
     return "", 204
 
 
-@app.route("/api/v9/users/@me/harvest", methods=["GET"])
+@app.get("/api/v9/users/@me/harvest")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_harvest(user):
     return "", 204
@@ -646,7 +645,7 @@ async def api_users_me_harvest(user):
 # Users
 
 
-@app.route("/api/v9/users/<int:t_user_id>/profile", methods=["GET"])
+@app.get("/api/v9/users/<int:t_user_id>/profile")
 @multipleDecorators(usingDB, getUser)
 async def api_users_user_profile(user, t_user_id):
     user = await core.getUserProfile(t_user_id, user)
@@ -656,13 +655,13 @@ async def api_users_user_profile(user, t_user_id):
 # Channels
 
 
-@app.route("/api/v9/channels/<channel>", methods=["GET"])
+@app.get("/api/v9/channels/<channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel(user, channel):
     return c_json(await channelInfoResponse(channel, user))
 
 
-@app.route("/api/v9/channels/<int:channel>", methods=["PATCH"])
+@app.patch("/api/v9/channels/<int:channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_patch(user, channel):
     data = dict(await request.get_json())
@@ -699,7 +698,7 @@ async def api_channels_channel_patch(user, channel):
     return c_json(await channelInfoResponse(channel, user))
 
 
-@app.route("/api/v9/channels/<int:channel>", methods=["DELETE"])
+@app.delete("/api/v9/channels/<int:channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_delete(user, channel):
     if channel.type == ChannelType.DM:
@@ -721,7 +720,7 @@ async def api_channels_channel_delete(user, channel):
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/messages", methods=["GET"])
+@app.get("/api/v9/channels/<int:channel>/messages")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_get(user, channel):
     args = request.args
@@ -730,7 +729,7 @@ async def api_channels_channel_messages_get(user, channel):
     return c_json(messages)
 
 
-@app.route("/api/v9/channels/<int:channel>/messages", methods=["POST"])
+@app.post("/api/v9/channels/<int:channel>/messages")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_post(user, channel):
     if channel.type == ChannelType.DM:
@@ -796,7 +795,7 @@ async def api_channels_channel_messages_post(user, channel):
     return c_json(await message.json)
 
 
-@app.route("/api/v9/channels/<int:channel>/messages/<int:message>", methods=["DELETE"])
+@app.delete("/api/v9/channels/<int:channel>/messages/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_delete(user, channel, message):
     if message.author != user.id:
@@ -805,7 +804,7 @@ async def api_channels_channel_messages_message_delete(user, channel, message):
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/messages/<int:message>", methods=["PATCH"])
+@app.patch("/api/v9/channels/<int:channel>/messages/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_patch(user, channel, message):
     data = await request.get_json()
@@ -820,7 +819,7 @@ async def api_channels_channel_messages_message_patch(user, channel, message):
     after = await core.editMessage(before, after)
     return c_json(await after.json)
 
-@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/ack", methods=["POST"])
+@app.post("/api/v9/channels/<int:channel>/messages/<int:message>/ack")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_message_ack(user, channel, message):
     data = await request.get_json()
@@ -835,21 +834,21 @@ async def api_channels_channel_messages_message_ack(user, channel, message):
     return c_json({"token": None})
 
 
-@app.route("/api/v9/channels/<int:channel>/messages/ack", methods=["DELETE"])
+@app.delete("/api/v9/channels/<int:channel>/messages/ack")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_ack_delete(user, channel):
     await core.deleteMessagesAck(channel, user)
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/typing", methods=["POST"])
+@app.post("/api/v9/channels/<int:channel>/typing")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_typing(user, channel):
     await core.sendTypingEvent(user, channel)
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/attachments", methods=["POST"])
+@app.post("/api/v9/channels/<int:channel>/attachments")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_attachments_post(user, channel):
     data = await request.get_json()
@@ -878,7 +877,7 @@ async def api_channels_channel_attachments_post(user, channel):
         })
     return {"attachments": attachments}
 
-@app.route("/api/v9/channels/<int:channel>/recipients/<int:nUser>", methods=["PUT"])
+@app.put("/api/v9/channels/<int:channel>/recipients/<int:nUser>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
@@ -899,7 +898,7 @@ async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/recipients/<int:nUser>", methods=["DELETE"])
+@app.delete("/api/v9/channels/<int:channel>/recipients/<int:nUser>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_repicients_recipient_delete(user, channel, nUser):
     if channel.type not in (ChannelType.GROUP_DM,):
@@ -915,7 +914,7 @@ async def api_channels_channel_repicients_recipient_delete(user, channel, nUser)
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/pins/<int:message>", methods=["PUT"])
+@app.put("/api/v9/channels/<int:channel>/pins/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_pins_message_put(user, channel, message):
     if not message.pinned:
@@ -933,7 +932,7 @@ async def api_channels_channel_pins_message_put(user, channel, message):
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/pins/<int:message>", methods=["DELETE"])
+@app.delete("/api/v9/channels/<int:channel>/pins/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_pins_message_delete(user, channel, message):
     if message.pinned:
@@ -941,7 +940,7 @@ async def api_channels_channel_pins_message_delete(user, channel, message):
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/pins", methods=["GET"])
+@app.get("/api/v9/channels/<int:channel>/pins")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_pins_get(user, channel):
     messages = await core.getPinnedMessages(channel.id)
@@ -949,7 +948,7 @@ async def api_channels_channel_pins_get(user, channel):
     return messages
 
 
-@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["PUT"])
+@app.put("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
@@ -962,7 +961,7 @@ async def api_channels_channel_messages_message_reactions_put(user, channel, mes
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me", methods=["DELETE"])
+@app.delete("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
@@ -975,7 +974,7 @@ async def api_channels_channel_messages_message_reactions_delete(user, channel, 
     return "", 204
 
 
-@app.route("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>", methods=["GET"])
+@app.get("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_reaction_get(user, channel, message, reaction):
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
@@ -990,7 +989,7 @@ async def api_channels_channel_messages_message_reactions_reaction_get(user, cha
     return await core.getReactedUsers(Reaction(message.id, 0, **r), limit)
 
 
-@app.route("/api/v9/channels/<int:channel>/messages/search", methods=["GET"])
+@app.get("/api/v9/channels/<int:channel>/messages/search")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_search(user, channel):
     messages, total = await core.searchMessages(SearchFilter(**request.args))
@@ -1001,13 +1000,13 @@ async def api_channels_channel_messages_search(user, channel):
     return c_json({"messages": messages, "total_results": total})
 
 
-@app.route("/api/v9/users/@me/channels", methods=["GET"])
+@app.get("/api/v9/users/@me/channels")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_channels_get(user):
     return c_json(await core.getPrivateChannels(user))
 
 
-@app.route("/api/v9/users/@me/channels", methods=["POST"])
+@app.post("/api/v9/users/@me/channels")
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_channels_post(user):
     data = await request.get_json()
@@ -1035,7 +1034,7 @@ async def api_users_me_channels_post(user):
 # Invites
 
 
-@app.route("/api/v9/channels/<int:channel>/invites", methods=["POST"])
+@app.post("/api/v9/channels/<int:channel>/invites")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_invites_post(user, channel):
     data = await request.get_json()
@@ -1044,7 +1043,7 @@ async def api_channels_channel_invites_post(user, channel):
     return c_json(await invite.json)
 
 
-@app.route("/api/v9/invites/<string:invite>", methods=["GET"])
+@app.get("/api/v9/invites/<string:invite>")
 @multipleDecorators(usingDB, getInvite)
 async def api_invites_invite_get(invite):
     data = request.args
@@ -1053,7 +1052,7 @@ async def api_invites_invite_get(invite):
     return c_json(inv)
 
 
-@app.route("/api/v9/invites/<string:invite>", methods=["POST"])
+@app.post("/api/v9/invites/<string:invite>")
 @multipleDecorators(usingDB, getUser, getInvite)
 async def api_invites_invite_post(user, invite):
     channel = await core.getChannel(invite.channel_id)
@@ -1074,7 +1073,7 @@ async def api_invites_invite_post(user, invite):
 # Guilds
 
 
-@app.route("/api/v9/guilds", methods=["POST"])
+@app.post("/api/v9/guilds")
 @multipleDecorators(usingDB, getUser)
 async def api_guilds_post(user):
     data = await request.get_json()
@@ -1083,7 +1082,7 @@ async def api_guilds_post(user):
     return c_json(await guild.json)
 
 
-@app.route("/api/v9/guilds/<int:guild>", methods=["PATCH"])
+@app.patch("/api/v9/guilds/<int:guild>")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_patch(user, guild):
     if guild.owner_id != user.id: # TODO: check permissions
@@ -1103,13 +1102,13 @@ async def api_guilds_guild_patch(user, guild):
     return c_json(await nguild.json)
 
 
-@app.route("/api/v9/guilds/<int:guild>/templates", methods=["GET"])
+@app.get("/api/v9/guilds/<int:guild>/templates")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_templates_get(user, guild):
     return c_json([])
 
 
-@app.route("/api/v9/guilds/<int:guild>/emojis", methods=["GET"])
+@app.get("/api/v9/guilds/<int:guild>/emojis")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_emojis_get(user, guild):
     emojis = await core.getEmojis(guild.id)
@@ -1118,7 +1117,7 @@ async def api_guilds_guild_emojis_get(user, guild):
     return c_json(emojis)
 
 
-@app.route("/api/v9/guilds/<int:guild>/emojis", methods=["POST"])
+@app.post("/api/v9/guilds/<int:guild>/emojis")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_emojis_post(user, guild):
     if guild.owner_id != user.id: # TODO: check permissions
@@ -1139,7 +1138,7 @@ async def api_guilds_guild_emojis_post(user, guild):
     return c_json(await emoji.json)
 
 
-@app.route("/api/v9/guilds/<int:guild>/emojis/<int:emoji>", methods=["DELETE"])
+@app.delete("/api/v9/guilds/<int:guild>/emojis/<int:emoji>")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_emojis_emoji_delete(user, guild, emoji):
     if guild.owner_id != user.id: # TODO: check permissions
@@ -1153,7 +1152,7 @@ async def api_guilds_guild_emojis_emoji_delete(user, guild, emoji):
     return "", 204
 
 
-@app.route("/api/v9/guilds/<int:guild>/channels", methods=["PATCH"])
+@app.patch("/api/v9/guilds/<int:guild>/channels")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_channels_patch(user, guild):
     if guild.owner_id != user.id: # TODO: check permissions
@@ -1177,12 +1176,12 @@ async def api_guilds_guild_channels_patch(user, guild):
 # Stickers & gifs
 
 
-@app.route("/api/v9/sticker-packs", methods=["GET"])
+@app.get("/api/v9/sticker-packs")
 async def api_stickerpacks_get():
     return c_json('{"sticker_packs": []}') # TODO
 
 
-@app.route("/api/v9/gifs/trending", methods=["GET"])
+@app.get("/api/v9/gifs/trending")
 async def api_gifs_trending_get():
     return c_json('{"gifs": [], "categories": []}') # TODO
 
@@ -1190,7 +1189,7 @@ async def api_gifs_trending_get():
 # Hypesquad
 
 
-@app.route("/api/v9/hypesquad/online", methods=["POST"])
+@app.post("/api/v9/hypesquad/online")
 @multipleDecorators(usingDB, getUser)
 async def api_hypesquad_online(user):
     data = await request.get_json()
@@ -1212,91 +1211,91 @@ async def api_hypesquad_online(user):
 # Other
 
 
-@app.route("/api/v9/auth/location-metadata", methods=["GET"])
+@app.get("/api/v9/auth/location-metadata")
 async def api_auth_locationmetadata():
     return c_json("{\"consent_required\": false, \"country_code\": \"US\", \"promotional_email_opt_in\": {\"required\": true, \"pre_checked\": false}}")
 
 
-@app.route("/api/v9/science", methods=["POST"])
+@app.post("/api/v9/science")
 async def api_science():
     return "", 204
 
 
-@app.route("/api/v9/experiments", methods=["GET"])
+@app.get("/api/v9/experiments")
 async def api_experiments():
     return c_json("{\"fingerprint\":\"0.A\",\"assignments\":[],\"guild_experiments\":[]}")
 
 
-@app.route("/api/v9/applications/detectable", methods=["GET"])
+@app.get("/api/v9/applications/detectable")
 async def api_applications_detectable():
     return c_json("[]")
 
-@app.route("/api/v9/users/@me/survey", methods=["GET"])
+@app.get("/api/v9/users/@me/survey")
 async def api_users_me_survey():
     return c_json("{\"survey\":null}")
 
 
-@app.route("/api/v9/users/@me/affinities/guilds", methods=["GET"])
+@app.get("/api/v9/users/@me/affinities/guilds")
 async def api_users_me_affinities_guilds():
     return c_json("{\"guild_affinities\":[]}")
 
 
-@app.route("/api/v9/users/@me/affinities/users", methods=["GET"])
+@app.get("/api/v9/users/@me/affinities/users")
 async def api_users_me_affinities_users():
     return c_json("{\"user_affinities\":[],\"inverse_user_affinities\":[]}")
 
 
-@app.route("/api/v9/users/@me/library", methods=["GET"])
+@app.get("/api/v9/users/@me/library")
 async def api_users_me_library():
     return c_json("[]")
 
 
-@app.route("/api/v9/users/@me/billing/payment-sources", methods=["GET"])
+@app.get("/api/v9/users/@me/billing/payment-sources")
 async def api_users_me_billing_paymentsources():
     return c_json("[]")
 
 
-@app.route("/api/v9/users/@me/billing/country-code", methods=["GET"])
+@app.get("/api/v9/users/@me/billing/country-code")
 async def api_users_me_billing_countrycode():
     return c_json("{\"country_code\": \"US\"}")
 
 
-@app.route("/api/v9/users/@me/billing/localized-pricing-promo", methods=["GET"])
+@app.get("/api/v9/users/@me/billing/localized-pricing-promo")
 async def api_users_me_billing_localizedpricingpromo():
     return c_json("{\"country_code\": \"US\", \"localized_pricing_promo\": null}")
 
 
-@app.route("/api/v9/users/@me/billing/user-trial-offer", methods=["GET"])
+@app.get("/api/v9/users/@me/billing/user-trial-offer")
 async def api_users_me_billing_usertrialoffer():
     return c_json("{\"message\": \"404: Not Found\", \"code\": 0}", 404)
 
 
-@app.route("/api/v9/users/@me/billing/subscriptions", methods=["GET"])
+@app.get("/api/v9/users/@me/billing/subscriptions")
 async def api_users_me_billing_subscriptions():
     return c_json("[{\"items\": [{\"id\": 1, \"plan_id\": 511651880837840896, \"quantity\": 1200}], \"id\": 1, \"type\": 2, \"created_at\": 1640995200000, \"canceled_at\": null, \"current_period_start\": 1640995200000, \"current_period_end\": 4794595201000, \"status\": \"idk\", \"payment_source_id\": 0, \"payment_gateway\": null, \"payment_gateway_plan_id\": null, \"payment_gateway_subscription_id\": null, \"trial_id\": null, \"trial_ends_at\": null, \"renewal_mutations\": null, \"streak_started_at\": 1640995200000, \"currency\": \"USD\", \"metadata\": null}]")
 
 
-@app.route("/api/v9/users/@me/billing/subscription-slots", methods=["GET"])
+@app.get("/api/v9/users/@me/billing/subscription-slots")
 async def api_users_me_billing_subscriptionslots():
     return c_json("[]")
 
 
-@app.route("/api/v9/users/@me/guilds/premium/subscription-slots", methods=["GET"])
+@app.get("/api/v9/users/@me/guilds/premium/subscription-slots")
 async def api_users_me_guilds_premium_subscriptionslots():
     return c_json("[]")
 
 
-@app.route("/api/v9/outbound-promotions", methods=["GET"])
+@app.get("/api/v9/outbound-promotions")
 async def api_outboundpromotions():
     return c_json("[]")
 
 
-@app.route("/api/v9/users/@me/applications/<aid>/entitlements", methods=["GET"])
+@app.get("/api/v9/users/@me/applications/<aid>/entitlements")
 async def api_users_me_applications_id_entitlements(aid):
     return c_json("[]")
 
 
-@app.route("/api/v9/store/published-listings/skus/<int:sku>/subscription-plans", methods=["GET"])
+@app.get("/api/v9/store/published-listings/skus/<int:sku>/subscription-plans")
 async def api_store_publishedlistings_skus_id_subscriptionplans(sku):
     if sku == 978380684370378762:
         return c_json("[{\"id\": \"978380692553465866\",\"name\": \"Nitro Basic Monthly\",\"interval\": 1,\"interval_count\": 1,\"tax_inclusive\": true,\"sku_id\": \"978380684370378762\",\"currency\": \"usd\",\"price\": 0,\"price_tier\": null}]")
@@ -1309,22 +1308,22 @@ async def api_store_publishedlistings_skus_id_subscriptionplans(sku):
     return c_json("[]")
 
 
-@app.route("/api/v9/users/@me/outbound-promotions/codes", methods=["GET"])
+@app.get("/api/v9/users/@me/outbound-promotions/codes")
 async def api_users_me_outboundpromotions_codes():
     return c_json("[]")
 
 
-@app.route("/api/v9/users/@me/entitlements/gifts", methods=["GET"])
+@app.get("/api/v9/users/@me/entitlements/gifts")
 async def api_users_me_entitlements_gifts():
     return c_json("[]")
 
 
-@app.route("/api/v9/users/@me/activities/statistics/applications", methods=["GET"])
+@app.get("/api/v9/users/@me/activities/statistics/applications")
 async def api_users_me_activities_statistics_applications():
     return c_json("[]")
 
 
-@app.route("/api/v9/users/@me/billing/payments", methods=["GET"])
+@app.get("/api/v9/users/@me/billing/payments")
 async def api_users_me_billing_payments():
     return c_json("[]")
 
@@ -1339,7 +1338,7 @@ async def api_users_me_settingsproto_type(t):
     raise InvalidDataErr(400, mkError(50013, {"type": {"code": "BASE_TYPE_CHOICES", "message": "Value must be one of (<UserSettingsTypes.PRELOADED_USER_SETTINGS: 1>, <UserSettingsTypes.FRECENCY_AND_FAVORITES_SETTINGS: 2>, <UserSettingsTypes.TEST_SETTINGS: 3>)."}}))
 
 
-@app.route("/api/v9/gateway", methods=["GET"])
+@app.get("/api/v9/gateway")
 async def api_gateway():
     return c_json("{\"url\": \"wss://gateway.yepcord.ml\"}")
 
@@ -1347,7 +1346,7 @@ async def api_gateway():
 # OAuth
 
 
-@app.route("/api/v9/oauth2/tokens", methods=["GET"])
+@app.get("/api/v9/oauth2/tokens")
 async def api_oauth_tokens():
     return c_json("[]")
 

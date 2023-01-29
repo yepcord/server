@@ -248,7 +248,7 @@ class UserData(Model):
     birth: Optional[str] = None
     username: Optional[str] = None
     discriminator: Optional[int] = None
-    bio: Optional[str] = ""
+    bio: Optional[str] = None
     flags: Optional[int] = None
     public_flags: Optional[int] = None
     phone: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)

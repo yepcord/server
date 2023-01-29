@@ -4,15 +4,7 @@ from json import loads as jloads
 from asyncio import CancelledError
 
 class YEPcord(Quart):
-    async def process_response(self, response, request_context=None):
-        response = await super(YEPcord, self).process_response(response, request_context)
-        response.headers['Server'] = "YEPcord"
-        response.headers['Access-Control-Allow-Origin'] = "*"
-        response.headers['Access-Control-Allow-Headers'] = "*"
-        response.headers['Access-Control-Allow-Methods'] = "*"
-        response.headers['Content-Security-Policy'] = "connect-src *;"
-        
-        return response
+    pass # Maybe it will be needed in the future
 
 app = YEPcord("YEPcord-RAG")
 gw = Gateway()
@@ -20,6 +12,15 @@ gw = Gateway()
 @app.before_serving
 async def before_serving():
     await gw.init()
+
+@app.after_request
+async def set_cors_headers(response):
+    response.headers['Server'] = "YEPcord"
+    response.headers['Access-Control-Allow-Origin'] = "*"
+    response.headers['Access-Control-Allow-Headers'] = "*"
+    response.headers['Access-Control-Allow-Methods'] = "*"
+    response.headers['Content-Security-Policy'] = "connect-src *;"
+    return response
 
 @app.websocket("/")
 async def ws_gateway():
