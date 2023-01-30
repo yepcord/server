@@ -1,8 +1,8 @@
 # All 'User' classes (User, Session, UserSettings, etc.)
 from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from ..utils import NoneType
 from typing import Optional
 
 from schema import And, Use, Or, Optional as sOptional, Regex
@@ -16,7 +16,9 @@ from server.proto import AppearanceSettings, Locale, TimezoneOffset, Theme, Loca
     RenderReactions, RenderEmbeds, InlineEmbedMedia, InlineAttachmentMedia, RenderSpoilers, UseThreadSidebar, \
     UseRichChatInput, TextAndImagesSettings, StreamNotificationsEnabled, AfkTimeout, VoiceAndVideoSettings, \
     UserContentSettings, Version, PreloadedUserSettings
-from server.utils import b64encode, b64decode, proto_get, snowflake_timestamp
+from server.utils import b64encode, b64decode, proto_get
+from ..discord_converters.user import discord_UserSettings, discord_GuildMember, discord_UserData
+from ..utils import NoneType
 
 
 class _User:
@@ -62,7 +64,7 @@ class Session(_User, Model):
         except ValueError:
             return
         return cls(uid, sid, sig)
-    
+
 @model
 @dataclass
 class UserSettings(Model):
@@ -113,11 +115,7 @@ class UserSettings(Model):
     render_spoilers: Optional[str] = field(validation=And(Use(str), Use(str.upper), lambda s: s in ("ON_CLICK", "IF_MODERATOR", "ALWAYS")), default=None)
     dismissed_contents: Optional[str] = field(validation=And(Use(str), lambda s: len(s) % 2 == 0), excluded=True, default=None)
 
-    @property
-    async def json(self) -> dict:
-        j = self.toJSON()
-        j["mfa"] = bool(j["mfa"])
-        return j
+    json = property(discord_UserSettings)
 
     def to_proto(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
@@ -239,7 +237,7 @@ class UserSettings(Model):
         if (p := proto_get(proto, "user_content.dismissed_contents")) is not None:
             self.set(dismissed_contents=p[:64].hex())
         return self
-    
+
 @model
 @dataclass
 class UserData(Model):
@@ -257,6 +255,8 @@ class UserData(Model):
     avatar_decoration: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     banner: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     banner_color: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
+
+    json = property(discord_UserData)
 
     @property
     def s_discriminator(self) -> str:
@@ -386,30 +386,7 @@ class GuildMember(_User, Model):
     mute: Optional[bool] = False
     deaf: Optional[bool] = False
 
-    @property
-    async def json(self) -> dict:
-        data = await getCore().getUserData(UserId(self.user_id))
-        return {
-            "avatar": self.avatar,
-            "communication_disabled_until": self.communication_disabled_until,
-            "flags": self.flags,
-            "joined_at": datetime.utcfromtimestamp(self.joined_at).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
-            "nick": self.nick,
-            "is_pending": False, # TODO
-            "pending": False, # TODO
-            "premium_since": datetime.utcfromtimestamp(int(snowflake_timestamp(self.user_id)/1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "roles": self.roles,
-            "user": {
-                "id": str(data.uid),
-                "username": data.username,
-                "avatar": data.avatar,
-                "avatar_decoration": data.avatar_decoration,
-                "discriminator": data.s_discriminator,
-                "public_flags": data.public_flags
-            },
-            "mute": self.mute,
-            "deaf": self.deaf
-        }
+    json = property(discord_GuildMember)
 
     @property
     async def data(self) -> UserData:

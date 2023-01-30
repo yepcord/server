@@ -543,7 +543,7 @@ class Core:
     async def putUserNote(self, note: UserNote) -> None:
         async with self.db() as db:
             await db.putUserNote(note)
-        await self.mcl.broadcast("user_events", {"e": "note_update", "data": {"user": note.uid, "uid": note.target_uid, "note": note.note}})
+        await self.mcl.broadcast("user_events", {"e": "note_update", "data": {"user": note.user_id, "uid": note.note_user_id, "note": note.note}})
 
     #async def putUserConnection(self, uc: UserConnection) -> None: # TODO: implement UserConnection
     #    async with self.db() as db:
@@ -766,8 +766,9 @@ class Core:
         async with self.db() as db:
             return await db.searchMessages(filter)
 
-    async def createInvite(self, channel: Channel, inviter: User, max_age: int) -> Invite:
-        invite = Invite(mksf(), channel.id, inviter.id, int(time()), max_age)
+    async def createInvite(self, channel: Channel, inviter: User, **kwargs) -> Invite:
+        guild_id = channel.guild_id
+        invite = Invite(mksf(), channel.id, inviter.id, int(time()), guild_id=guild_id, **kwargs)
         async with self.db() as db:
             await db.putInvite(invite)
         return invite
@@ -797,14 +798,22 @@ class Core:
         guild.fill_defaults()
         Ctx["with_members"] = True
         Ctx["with_channels"] = True
-        await self.mcl.broadcast("guild_events", {"e": "guild_create", "data": {"users": [user.id], "guild_obj": await guild.json}})
+        await self.sendGuildCreateEvent(guild, [user.id])
         Ctx["with_members"] = False
         Ctx["with_channels"] = False
         return guild
 
+    async def sendGuildCreateEvent(self, guild: Guild, users: List[int]) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_create", "data": {"users": users, "guild_obj": await guild.json}})
+
     async def getRole(self, role_id: int) -> Role:
         async with self.db() as db:
             return await db.getRole(role_id)
+
+    async def getRoles(self, guild: Guild) -> List[Role]:
+        async with self.db() as db:
+            return await db.getRoles(guild)
 
     async def getGuildMember(self, guild: _Guild, user_id: int) -> Optional[GuildMember]:
         async with self.db() as db:
@@ -907,6 +916,12 @@ class Core:
                                                   "data": {
                                                       "users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
                                                       "channel_obj": await channelInfoResponse(channel)}})
+
+    async def createGuildMember(self, guild: Guild, user: _User) -> GuildMember:
+        member = GuildMember(user.id, guild.id, int(time()))
+        async with self.db() as db:
+            await db.createGuildMember(member)
+        return member
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

@@ -1,21 +1,19 @@
 # All 'Message' classes (Message, etc.)
 from dataclasses import dataclass
-from datetime import datetime
 from time import mktime
-from ..utils import NoneType
 from typing import Optional
 from uuid import UUID, uuid4
+
 from dateutil.parser import parse as dparse
 from pymysql.converters import escape_string
-
 from schema import Or, And
-from server.classes.user import UserId
-from server.config import Config
-from server.ctx import getCore, Ctx
-from server.enums import MessageType
+
+from server.ctx import getCore
 from server.errors import EmbedErr, InvalidDataErr
 from server.model import Model, field, model
-from server.utils import mkError, snowflake_timestamp, ping_regex
+from server.utils import mkError
+from ..discord_converters.message import discord_Message
+from ..utils import NoneType
 
 
 class _Message:
@@ -258,53 +256,7 @@ class Message(_Message, Model):
             att = await getCore().getAttachmentByUUID(uuid)
             self.attachments.append(att.id)
 
-    @property
-    async def json(self):
-        j = self.toJSON(for_db=False, discord_types=True, with_private=False)
-        j["author"] = (await getCore().getUserData(UserId(self.author))).author
-        j["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None
-        j["tts"] = False
-        timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.id) / 1000))
-        j["timestamp"] = timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
-        if self.edit_timestamp:
-            edit_timestamp = datetime.utcfromtimestamp(int(snowflake_timestamp(self.edit_timestamp) / 1000))
-            j["edit_timestamp"] = edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
-        j["mentions"] = []
-        j["mention_roles"] = []
-        j["attachments"] = []
-        if self.content:
-            for m in ping_regex.findall(self.content):
-                if m.startswith("!"):
-                    m = m[1:]
-                if m.startswith("&"):
-                    j["mention_roles"].append(m[1:])
-                if mem := await getCore().getUserByChannelId(self.channel_id, int(m)):
-                    mdata = await mem.data
-                    j["mentions"].append(mdata.author)
-        if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
-            if u := self.extra_data.get("user"):
-                u = await getCore().getUserData(UserId(u))
-                j["mentions"].append(u.author)
-        for att in self.attachments:
-            att = await getCore().getAttachment(att)
-            j["attachments"].append({
-                "filename": att.filename,
-                "id": str(att.id),
-                "size": att.size,
-                "url": f"https://{Config('CDN_HOST')}/attachments/{self.channel_id}/{att.id}/{att.filename}"
-            })
-            if att.get("content_type"):
-                j["attachments"][-1]["content_type"] = att.get("content_type")
-            if att.get("metadata"):
-                j["attachments"][-1].update(att.metadata)
-        if self.message_reference:
-            j["message_reference"] = {"message_id": str(self.message_reference), "channel_id": str(self.channel_id)}
-        if self.nonce is not None:
-            j["nonce"] = self.nonce
-        if not Ctx.get("search", False):
-            if reactions := await getCore().getMessageReactions(self.id, Ctx.get("user_id", 0)):
-                j["reactions"] = reactions
-        return j
+    json = property(discord_Message)
 
 @model
 @dataclass

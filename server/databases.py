@@ -221,10 +221,16 @@ class DBConnection(ABC):
     async def createGuildChannel(self, channel: Channel) -> None: ...
 
     @abstractmethod
+    async def createGuildMember(self, member: GuildMember) -> None: ...
+
+    @abstractmethod
     async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel]) -> None: ...
 
     @abstractmethod
     async def getRole(self, role_id: int) -> Role: ...
+
+    @abstractmethod
+    async def getRoles(self, guild: Guild) -> List[Role]: ...
 
     @abstractmethod
     async def getGuildMember(self, guild: Guild, user_id: int) -> GuildMember: ...
@@ -498,7 +504,7 @@ class MySqlConnection:
             return UserNote.from_result(self.cur.description, r)
 
     async def putUserNote(self, note: UserNote) -> None:
-        await self.cur.execute(f'UPDATE `notes` SET `note`="{note.note}" WHERE `uid`={note.uid} AND `target_uid`={note.target_uid}')
+        await self.cur.execute(f'UPDATE `notes` SET `note`="{note.note}" WHERE `uid`={note.user_id} AND `target_uid`={note.note_user_id}')
         if self.cur.rowcount == 0:
             q = json_to_sql(note.toJSON(), as_tuples=True)
             fields = ", ".join([f"`{f}`" for f, v in q])
@@ -652,6 +658,10 @@ class MySqlConnection:
         fields, values = json_to_sql(channel.toJSON(for_db=True), for_insert=True)
         await self.cur.execute(f'INSERT INTO `channels` ({fields}) VALUES ({values})')
 
+    async def createGuildMember(self, member: GuildMember) -> None:
+        fields, values = json_to_sql(member.toJSON(for_db=True), for_insert=True)
+        await self.cur.execute(f'INSERT INTO `guild_members` ({fields}) VALUES ({values})')
+
     async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel], members: List[GuildMember]) -> None:
         fields, values = json_to_sql(guild.toJSON(for_db=True), for_insert=True)
         await self.cur.execute(f'INSERT INTO `guilds` ({fields}) VALUES ({values})')
@@ -661,13 +671,19 @@ class MySqlConnection:
         for channel in channels:
             await self.createGuildChannel(channel)
         for member in members:
-            fields, values = json_to_sql(member.toJSON(for_db=True), for_insert=True)
-            await self.cur.execute(f'INSERT INTO `guild_members` ({fields}) VALUES ({values})')
+            await self.createGuildMember(member)
 
     async def getRole(self, role_id: int) -> Role:
         await self.cur.execute(f'SELECT * FROM `roles` WHERE `id`={role_id} LIMIT 1;')
         if r := await self.cur.fetchone():
             return Role.from_result(self.cur.description, r)
+
+    async def getRoles(self, guild: Guild) -> List[Role]:
+        roles = []
+        await self.cur.execute(f'SELECT * FROM `roles` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            roles.append(Role.from_result(self.cur.description, r))
+        return roles
 
     async def getGuildMember(self, guild: Guild, user_id: int) -> GuildMember:
         await self.cur.execute(f'SELECT * FROM `guild_members` WHERE `user_id`={user_id} AND `guild_id`={guild.id} LIMIT 1;')

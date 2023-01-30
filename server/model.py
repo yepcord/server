@@ -1,10 +1,10 @@
 from copy import deepcopy
 from dataclasses import dataclass, field as _field
-from typing import Optional, Any, get_type_hints
+from typing import Optional, Any, get_type_hints, Callable
 
-from schema import Schema, Use, Optional as sOptional
+from schema import Schema, Use, Optional as sOptional, Or
 
-from server.utils import result_to_json
+from server.utils import result_to_json, NoneType
 
 _DEFAULT_META = {"excluded": False, "nullable": False, "db_name": None, "default": None, "validation": None,
                  "id_field": False, "private": False, "discord_type": None}
@@ -78,8 +78,9 @@ class Model:
                     del json[field.name]
         return json
 
-    async def discordJSON(self) -> dict:
-        ... # TODO: generate json for discord
+    @property
+    async def json(self) -> dict:
+        raise NotImplemented(f"Converter method for {self.__class__.__name__} is not defined!")
 
     def set(self, **kwargs):
         for k, v in kwargs.items():
@@ -110,6 +111,12 @@ class Model:
 
 
 def _fromResult(cls, desc, result):
+    desc = list(desc)
+    fields = {field.db_name: field for field in cls.__model_fields__["all"] if field.db_name is not None and not field.excluded}
+    for idx, field in enumerate(desc):
+        field = field[0]
+        if field in fields and not field.startswith("j_"):
+            desc[idx] = (fields[field].name,)
     return cls(**result_to_json(desc, result))
 
 def model(cls):
@@ -121,7 +128,7 @@ def model(cls):
     cls.set = Model.set
     cls.copy = Model.copy
     cls.getDiff = Model.getDiff
-    cls.get_diff = Model.getDiff
+    cls.get_diff = Model.getDiff  # for backward compatibility, will be removed
     cls.__model_fields__ = {"all": [], "not_excluded": [], "excluded_names": [], "private_names": []}
     cls.__id_field__ = None
     schema = {}

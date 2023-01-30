@@ -224,6 +224,7 @@ CREATE TABLE `invites` (
   `inviter` bigint NOT NULL,
   `created_at` bigint NOT NULL,
   `max_age` bigint NOT NULL,
+  `max_uses` bigint NOT NULL DEFAULT 0,
   `guild_id` bigint DEFAULT NULL,
   `type` int NOT NULL DEFAULT 1,
   UNIQUE KEY `id` (`id`) USING HASH
