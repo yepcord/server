@@ -7,8 +7,11 @@ from ..ctx import getCore
 from ..utils import sf_ts
 
 if TYPE_CHECKING:
-    from ..classes.user import UserData, UserSettings, GuildMember, UserId
+    from ..classes.user import UserData, UserSettings, GuildMember
 
+class UserId:
+    def __init__(self, i: int):
+        self.id = i
 
 async def discord_UserData(userdata: UserData) -> dict:
     return {
@@ -26,7 +29,7 @@ async def discord_UserSettings(settings: UserSettings) -> dict:
     return data
 
 async def discord_GuildMember(member: GuildMember) -> dict:
-    userdata = await getCore().getUserData(UserId(member.user_id))
+    userdata = await getCore().getUserData(UserId(member.user_id)) # TODO: Replace with normal UserId
     return {
         "avatar": member.avatar,
         "communication_disabled_until": member.communication_disabled_until,

@@ -111,6 +111,12 @@ class Model:
 
 
 def _fromResult(cls, desc, result):
+    desc = list(desc)
+    fields = {field.db_name: field for field in cls.__model_fields__["all"] if field.db_name is not None and not field.excluded}
+    for idx, field in enumerate(desc):
+        field = field[0]
+        if field in fields and not field.startswith("j_"):
+            desc[idx] = (fields[field].name,)
     return cls(**result_to_json(desc, result))
 
 def model(cls):
@@ -122,7 +128,7 @@ def model(cls):
     cls.set = Model.set
     cls.copy = Model.copy
     cls.getDiff = Model.getDiff
-    cls.get_diff = Model.getDiff
+    cls.get_diff = Model.getDiff  # for backward compatibility, will be removed
     cls.__model_fields__ = {"all": [], "not_excluded": [], "excluded_names": [], "private_names": []}
     cls.__id_field__ = None
     schema = {}

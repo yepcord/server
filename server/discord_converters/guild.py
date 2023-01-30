@@ -127,8 +127,7 @@ async def discord_Invite(invite: Invite) -> dict:
         },
         "max_age": invite.max_age,
     }
-    if channel.type == ChannelType.GROUP_DM:
-        data["channel"].update({"name": channel.name, "icon": channel.icon})
+
     if Ctx.get("with_counts"):
         related_users = await getCore().getRelatedUsersToChannel(invite.channel_id)
         data["approximate_member_count"] = len(related_users)
@@ -137,5 +136,29 @@ async def discord_Invite(invite: Invite) -> dict:
                 {"username": (await getCore().getUserData(UserId(i))).username}
                 for i in related_users
             ]
-    # TODO: add guild field
+
+    if channel.type == ChannelType.GROUP_DM:
+        data["channel"].update({"name": channel.name, "icon": channel.icon})
+    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
+        data["channel"]["name"] = channel.name
+
+    if invite.guild_id:
+        guild = await getCore().getGuild(invite.guild_id)
+        data["guild"] = {
+            "id": str(guild.id),
+            "banner": guild.banner,
+            "description": guild.description,
+            "features": guild.features,
+            "icon": guild.icon,
+            "name": guild.name,
+            "nsfw": guild.nsfw,
+            "nsfw_level": guild.nsfw_level,
+            "premium_subscription_count": 0,
+            "splash": guild.splash,
+            "vanity_url_code": guild.vanity_url_code,
+            "verification_level": guild.verification_level
+        }
+        data["max_uses"] = invite.max_uses
+        data["temporary"] = False
+
     return data

@@ -119,7 +119,7 @@ class Invite(Model):
     inviter: int
     created_at: int
     max_age: int
-    max_uses: Optional[int] = 0 # TODO: add to database
+    max_uses: Optional[int] = 0
     guild_id: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
     type: Optional[int] = field(default=1, validation=And(lambda i: i in (0, 1)))
 
