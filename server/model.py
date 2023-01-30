@@ -1,10 +1,10 @@
 from copy import deepcopy
 from dataclasses import dataclass, field as _field
-from typing import Optional, Any, get_type_hints
+from typing import Optional, Any, get_type_hints, Callable
 
-from schema import Schema, Use, Optional as sOptional
+from schema import Schema, Use, Optional as sOptional, Or
 
-from server.utils import result_to_json
+from server.utils import result_to_json, NoneType
 
 _DEFAULT_META = {"excluded": False, "nullable": False, "db_name": None, "default": None, "validation": None,
                  "id_field": False, "private": False, "discord_type": None}
@@ -78,8 +78,9 @@ class Model:
                     del json[field.name]
         return json
 
-    async def discordJSON(self) -> dict:
-        ... # TODO: generate json for discord
+    @property
+    async def json(self) -> dict:
+        raise NotImplemented(f"Converter method for {self.__class__.__name__} is not defined!")
 
     def set(self, **kwargs):
         for k, v in kwargs.items():

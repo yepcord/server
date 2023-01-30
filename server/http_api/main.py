@@ -1054,9 +1054,12 @@ async def api_channels_channel_invites_post(user, channel):
 @multipleDecorators(usingDB, getInvite)
 async def api_invites_invite_get(invite):
     data = request.args
-    with_counts = data.get("with_counts", "false").lower == "true"
-    inv = await invite.getJson(with_counts, without=["max_age", "created_at"])
-    return c_json(inv)
+    Ctx["with_counts"] = data.get("with_counts", "false").lower == "true"
+    invite = await invite.json
+    for excl in ["max_age", "created_at"]: # Remove excluded fields
+        if excl in invite:
+            del invite[excl]
+    return c_json(invite)
 
 
 @app.post("/api/v9/invites/<string:invite>")
@@ -1065,7 +1068,10 @@ async def api_invites_invite_post(user, invite):
     channel = await core.getChannel(invite.channel_id)
     if user.id not in channel.recipients and len(channel.recipients) >= 10:
         raise InvalidDataErr(404, mkError(10006))
-    inv = await invite.getJson(without=["max_age", "created_at"])
+    inv = await invite.json
+    for excl in ["max_age", "created_at"]:  # Remove excluded fields
+        if excl in inv:
+            del inv[excl]
     if channel.type == ChannelType.GROUP_DM:
         inv["new_member"] = user.id not in channel.recipients
         if inv["new_member"]:
@@ -1100,7 +1106,7 @@ async def api_guilds_guild_patch(user, guild):
     if "icon" in data:
         img = data["icon"]
         del data["icon"]
-        if (img := getImage(img)) or not validImage(img):
+        if (img := getImage(img)) and validImage(img):
             if h := await cdn.setGuildIconFromBytesIO(guild.id, img):
                 data["icon"] = h
     nguild = guild.copy()

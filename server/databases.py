@@ -227,6 +227,9 @@ class DBConnection(ABC):
     async def getRole(self, role_id: int) -> Role: ...
 
     @abstractmethod
+    async def getRoles(self, guild: Guild) -> List[Role]: ...
+
+    @abstractmethod
     async def getGuildMember(self, guild: Guild, user_id: int) -> GuildMember: ...
 
     @abstractmethod
@@ -668,6 +671,13 @@ class MySqlConnection:
         await self.cur.execute(f'SELECT * FROM `roles` WHERE `id`={role_id} LIMIT 1;')
         if r := await self.cur.fetchone():
             return Role.from_result(self.cur.description, r)
+
+    async def getRoles(self, guild: Guild) -> List[Role]:
+        roles = []
+        await self.cur.execute(f'SELECT * FROM `roles` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            roles.append(Role.from_result(self.cur.description, r))
+        return roles
 
     async def getGuildMember(self, guild: Guild, user_id: int) -> GuildMember:
         await self.cur.execute(f'SELECT * FROM `guild_members` WHERE `user_id`={user_id} AND `guild_id`={guild.id} LIMIT 1;')

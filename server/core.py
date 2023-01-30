@@ -806,6 +806,10 @@ class Core:
         async with self.db() as db:
             return await db.getRole(role_id)
 
+    async def getRoles(self, guild: Guild) -> List[Role]:
+        async with self.db() as db:
+            return await db.getRoles(guild)
+
     async def getGuildMember(self, guild: _Guild, user_id: int) -> Optional[GuildMember]:
         async with self.db() as db:
             return await db.getGuildMember(guild, user_id)

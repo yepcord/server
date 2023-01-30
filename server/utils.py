@@ -8,7 +8,7 @@ from magic import from_buffer
 from hmac import new as hnew
 from struct import pack as spack, unpack as sunpack
 from asyncio import get_event_loop, sleep as asleep
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 from aiomysql import escape_string
 from re import compile as rcompile
 
@@ -93,26 +93,28 @@ def mkError(code, errors=None, message=None):
     return err
 
 
-def getImage(image):
+def getImage(image: Union[str, bytes, BytesIO]) -> Optional[BytesIO]:
+    if isinstance(image, str) and len(image) == 32:
+        return # Image hash provided instead of actual image data
     if isinstance(image, bytes):
         image = BytesIO(image)
     elif isinstance(image, str) and (image.startswith("data:image/") or image.startswith("data:application/octet-stream")) and "base64" in image.split(",")[0]:
         image = BytesIO(_b64decode(image.split(",")[1].encode("utf8")))
         mime = from_buffer(image.read(1024), mime=True)
         if not mime.startswith("image/"):
-            return
+            return # Not image
     elif not isinstance(image, BytesIO):
-        return
+        return # Unknown type
     return image
 
 
-def imageType(image):
+def imageType(image: BytesIO) -> str:
     m = from_buffer(image.getvalue()[:1024], mime=True)
     if m.startswith("image/"):
         return m[6:]
 
 
-def validImage(image):
+def validImage(image: BytesIO) -> bool:
     return imageType(image) in ["png", "webp", "gif", "jpeg", "jpg"] and image.getbuffer().nbytes < 8*1024*1024*1024
 
 
@@ -241,7 +243,8 @@ def proto_get(protoObj, path, default=None):
 ALLOWED_AVATAR_SIZES = [16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128, 160, 240, 256, 300, 320, 480,
                         512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096]
 
-def byte_length(i):
+def int_length(i: int) -> int:
+    # Returns int size in bytes
     return (i.bit_length() + 7) // 8
 
 LOCALES = ["bg", "cs", "da", "de", "el", "en-GB", "es-ES", "fi", "fr", "hi", "hr", "hu", "it", "ja", "ko", "lt", "nl",
