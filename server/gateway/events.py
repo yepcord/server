@@ -50,14 +50,14 @@ class ReadyEvent(DispatchEvent):
                     "premium_since": Snowflake.toDatetime(self.user.id).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "verified": bool(self.user.verified),
                     "purchased_flags": 0,
-                    "nsfw_allowed": userdata.nsfw_allowed,  # TODO: check
+                    "nsfw_allowed": userdata.nsfw_allowed,
                     "mobile": True,  # TODO: check
                     "mfa_enabled": settings.mfa,
                     "id": str(self.user.id),
                     "flags": 0,
                 },
                 "users": await self.core.getRelatedUsers(self.user),
-                "guilds": [await guild.json for guild in await self.core.getUserGuilds(self.user)], # TODO
+                "guilds": [await guild.json for guild in await self.core.getUserGuilds(self.user)],
                 "session_id": self.client.sid,
                 "presences": [], # TODO
                 "relationships": await self.core.getRelationships(self.user),
