@@ -638,7 +638,7 @@ class MySqlConnection:
         await self.cur.execute(f'SELECT * FROM `messages` WHERE {where};')
         for r in await self.cur.fetchall():
             messages.append(Message.from_result(self.cur.description, r))
-        where = sub(r' LIMIT \d{1,},{0,1}\d{0,}', "", where)
+        where = sub(r' LIMIT \d+,?\d*', "", where)
         await self.cur.execute(f'SELECT COUNT(*) as c FROM `messages` WHERE {where};')
         total = (await self.cur.fetchone())[0]
         return messages, total

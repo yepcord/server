@@ -28,12 +28,15 @@ class _Config:
         return cls._instance
 
     def __call__(self, var, default=None):
-        if (v := environ.get(var)):
+        if v := environ.get(var):
             return v
         return getattr(self, f"def_{var}", default)
 
-    def __getitem__(self, var):
-        return self(var)
+    def __getitem__(self, item):
+        return self(item)
+
+    def __getattr__(self, item):
+        return self(item)
 
 
 Config = _Config()

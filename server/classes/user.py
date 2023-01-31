@@ -7,18 +7,16 @@ from typing import Optional
 
 from schema import And, Use, Or, Optional as sOptional, Regex
 
-from server.ctx import getCore
-from server.enums import RelationshipType, UserFlags as UserFlagsE
-from server.model import model, field, Model
-from server.proto import AppearanceSettings, Locale, TimezoneOffset, Theme, LocalizationSettings, ShowCurrentGame, \
+from ..ctx import getCore
+from ..enums import RelationshipType, UserFlags as UserFlagsE
+from ..model import model, field, Model
+from ..proto import AppearanceSettings, Locale, TimezoneOffset, Theme, LocalizationSettings, ShowCurrentGame, \
     Status, StatusSettings, PrivacySettings, FriendSourceFlags, ViewImageDescriptions, MessageDisplayCompact, \
     ExpressionSuggestionsEnabled, AnimateStickers, ConvertEmoticons, ViewNsfwGuilds, ExplicitContentFilter, \
     RenderReactions, RenderEmbeds, InlineEmbedMedia, InlineAttachmentMedia, RenderSpoilers, UseThreadSidebar, \
     UseRichChatInput, TextAndImagesSettings, StreamNotificationsEnabled, AfkTimeout, VoiceAndVideoSettings, \
     UserContentSettings, Version, PreloadedUserSettings
-from server.utils import b64encode, b64decode, proto_get
-from ..discord_converters.user import discord_UserSettings, discord_GuildMember, discord_UserData
-from ..utils import NoneType
+from ..utils import b64encode, b64decode, proto_get, sf_ts, NoneType
 
 
 class _User:
@@ -115,7 +113,11 @@ class UserSettings(Model):
     render_spoilers: Optional[str] = field(validation=And(Use(str), Use(str.upper), lambda s: s in ("ON_CLICK", "IF_MODERATOR", "ALWAYS")), default=None)
     dismissed_contents: Optional[str] = field(validation=And(Use(str), lambda s: len(s) % 2 == 0), excluded=True, default=None)
 
-    json = property(discord_UserSettings)
+    @property
+    async def json(self) -> dict:
+        data = self.toJSON()
+        data["mfa"] = bool(data["mfa"])
+        return data
 
     def to_proto(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
@@ -241,7 +243,7 @@ class UserSettings(Model):
 @model
 @dataclass
 class UserData(Model):
-    uid: int = field(id_field=True, discord_type=str)
+    uid: int = field(id_field=True)
     birth: Optional[str] = None
     username: Optional[str] = None
     discriminator: Optional[int] = None
@@ -256,7 +258,16 @@ class UserData(Model):
     banner: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     banner_color: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
 
-    json = property(discord_UserData)
+    @property
+    async def json(self) -> dict:
+        return {
+            "id": str(self.uid),
+            "username": self.username,
+            "avatar": self.avatar,
+            "avatar_decoration": self.avatar_decoration,
+            "discriminator": self.s_discriminator,
+            "public_flags": self.public_flags
+        }
 
     @property
     def s_discriminator(self) -> str:
@@ -268,25 +279,14 @@ class UserData(Model):
         dn = datetime.utcnow()
         return dn-db > timedelta(days=18*365+4)
 
-    @property
-    def author(self) -> dict:
-        j = self.toJSON(discord_types=True)
-        j = {
-            "id": j["uid"],
-            "username": j["username"],
-            "avatar": j["avatar"],
-            "avatar_decoration": j["avatar_decoration"],
-            "discriminator": self.s_discriminator,
-            "public_flags": j["public_flags"],
-        }
-        return j
-
 @model
 @dataclass
 class User(_User, Model):
     id: int = field(id_field=True)
-    email: Optional[str] = field(validation=And(Use(str), Use(str.lower),
-                               lambda s: Regex(r'^[a-z0-9_\.]{1,64}@[a-zA-Z-_\.]{2,250}?\.[a-zA-Z]{2,6}$').validate(s)), default=None)
+    email: Optional[str] = field(validation=And(
+        Use(str),
+        Use(str.lower), lambda s: Regex(r'^[a-z0-9_\.]{1,64}@[a-zA-Z-_\.]{2,250}?\.[a-zA-Z]{2,6}$').validate(s)),
+        default=None)
     password: Optional[str] = None
     key: Optional[str] = None
     verified: Optional[bool] = None
@@ -386,7 +386,23 @@ class GuildMember(_User, Model):
     mute: Optional[bool] = False
     deaf: Optional[bool] = False
 
-    json = property(discord_GuildMember)
+    @property
+    async def json(self) -> dict:
+        userdata = await getCore().getUserData(UserId(self.user_id))  # TODO: Replace with normal UserId
+        return {
+            "avatar": self.avatar,
+            "communication_disabled_until": self.communication_disabled_until,
+            "flags": self.flags,
+            "joined_at": datetime.utcfromtimestamp(self.joined_at).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+            "nick": self.nick,
+            "is_pending": False,  # TODO
+            "pending": False,  # TODO
+            "premium_since": datetime.utcfromtimestamp(int(sf_ts(self.user_id) / 1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "roles": self.roles,
+            "user": await userdata.json,
+            "mute": self.mute,
+            "deaf": self.deaf
+        }
 
     @property
     async def data(self) -> UserData:

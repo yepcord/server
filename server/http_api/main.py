@@ -18,7 +18,7 @@ from server.geoip import getLanguageCode
 from ..classes.channel import Channel
 from ..classes.guild import Emoji, GuildId
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
-from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags
+from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User
 from ..config import Config
 from ..core import Core, CDN
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
@@ -804,7 +804,7 @@ async def api_channels_channel_messages_post(user, channel):
 
 @app.delete("/api/v9/channels/<int:channel>/messages/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
-async def api_channels_channel_messages_message_delete(user, channel, message):
+async def api_channels_channel_messages_message_delete(user: User, channel: Channel, message: Message):
     if message.author != user.id:
         raise InvalidDataErr(403, mkError(50003))
     await core.deleteMessage(message)
@@ -813,7 +813,7 @@ async def api_channels_channel_messages_message_delete(user, channel, message):
 
 @app.patch("/api/v9/channels/<int:channel>/messages/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
-async def api_channels_channel_messages_message_patch(user, channel, message):
+async def api_channels_channel_messages_message_patch(user: User, channel: Channel, message: Message):
     data = await request.get_json()
     if message.author != user.id:
         raise InvalidDataErr(403, mkError(50005))

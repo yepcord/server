@@ -183,7 +183,7 @@ def result_to_json(desc: list, result: list) -> dict:
     return j
 
 
-ping_regex = rcompile(r'<@((?:!|&){0,1}\d{17,32})>')
+ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')
 
 
 def parseMultipartRequest(body, boundary):

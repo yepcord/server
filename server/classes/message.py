@@ -1,5 +1,6 @@
 # All 'Message' classes (Message, etc.)
 from dataclasses import dataclass
+from datetime import datetime
 from time import mktime
 from typing import Optional
 from uuid import UUID, uuid4
@@ -8,12 +9,14 @@ from dateutil.parser import parse as dparse
 from pymysql.converters import escape_string
 from schema import Or, And
 
-from server.ctx import getCore
-from server.errors import EmbedErr, InvalidDataErr
-from server.model import Model, field, model
-from server.utils import mkError
-from ..discord_converters.message import discord_Message
+from .user import UserId
+from ..config import Config
+from ..ctx import getCore, Ctx
+from ..enums import MessageType
+from ..errors import EmbedErr, InvalidDataErr
+from ..model import Model, field, model
 from ..utils import NoneType
+from ..utils import mkError, sf_ts, ping_regex
 
 
 class _Message:
@@ -25,8 +28,8 @@ class _Message:
 @model
 @dataclass
 class Message(_Message, Model):
-    id: int = field(id_field=True, discord_type=str)
-    channel_id: int = field(discord_type=str)
+    id: int = field(id_field=True)
+    channel_id: int = field()
     author: int = field()
     content: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     edit_timestamp: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
@@ -42,10 +45,61 @@ class Message(_Message, Model):
     components: Optional[list] = field(db_name="j_components", default=None)
     sticker_items: Optional[list] = field(db_name="j_sticker_items", default=None)
     extra_data: Optional[dict] = field(db_name="j_extra_data", default=None, private=True)
-    guild_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True, discord_type=str)
+    guild_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     nonce: Optional[str] = field(default=None, excluded=True)
     tts: Optional[str] = field(default=None, excluded=True)
     sticker_ids: Optional[str] = field(default=None, excluded=True)
+
+    @property
+    async def json(self) -> dict:
+        data = self.toJSON(for_db=False, with_private=False)
+        data["id"] = str(data["id"])
+        data["channel_id"] = str(data["channel_id"])
+        if data.get("guild_id"): data["guild_id"] = str(data["guild_id"])
+        data["author"] = await (await getCore().getUserData(UserId(self.author))).json
+        data["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None
+        data["tts"] = False
+        timestamp = datetime.utcfromtimestamp(int(sf_ts(self.id) / 1000))
+        data["timestamp"] = timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        if self.edit_timestamp:
+            edit_timestamp = datetime.utcfromtimestamp(int(sf_ts(self.edit_timestamp) / 1000))
+            data["edit_timestamp"] = edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        data["mentions"] = []
+        data["mention_roles"] = []
+        data["attachments"] = []
+        if self.content:
+            for ping in ping_regex.findall(self.content):
+                if ping.startswith("!"):
+                    ping = ping[1:]
+                if ping.startswith("&"):
+                    data["mention_roles"].append(ping[1:])
+                if member := await getCore().getUserByChannelId(self.channel_id, int(ping)):
+                    mdata = await member.data
+                    data["mentions"].append(await mdata.json)
+        if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
+            if user := self.extra_data.get("user"):
+                user = await getCore().getUserData(UserId(user))
+                data["mentions"].append(await user.json)
+        for att in self.attachments:
+            att = await getCore().getAttachment(att)
+            data["attachments"].append({
+                "filename": att.filename,
+                "id": str(att.id),
+                "size": att.size,
+                "url": f"https://{Config('CDN_HOST')}/attachments/{self.channel_id}/{att.id}/{att.filename}"
+            })
+            if att.get("content_type"):
+                data["attachments"][-1]["content_type"] = att.get("content_type")
+            if att.get("metadata"):
+                data["attachments"][-1].update(att.metadata)
+        if self.message_reference:
+            data["message_reference"] = {"message_id": str(self.message_reference), "channel_id": str(self.channel_id)}
+        if self.nonce is not None:
+            data["nonce"] = self.nonce
+        if not Ctx.get("search", False):
+            if reactions := await getCore().getMessageReactions(self.id, Ctx.get("user_id", 0)):
+                data["reactions"] = reactions
+        return data
 
     DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "pinned": False,
                 "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
@@ -69,7 +123,7 @@ class Message(_Message, Model):
         self._checkEmbeds()
         await self._checkAttachments()
 
-    def _checkEmbedImage(self, image, idx):
+    def _checkEmbedImage(self, image, idx): # TODO: move to different class
         if (url := image.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
             raise EmbedErr(self._formatEmbedError(24, {"embed_index": idx, "scheme": scheme}))
         if image.get("proxy_url"):  # Not supported
@@ -256,8 +310,6 @@ class Message(_Message, Model):
             att = await getCore().getAttachmentByUUID(uuid)
             self.attachments.append(att.id)
 
-    json = property(discord_Message)
-
 @model
 @dataclass
 class ReadState(Model):
@@ -270,10 +322,10 @@ class ReadState(Model):
 @dataclass
 class Attachment(Model):
     id: int = field(id_field=True)
-    channel_id: int
-    filename: str
-    size: int
-    metadata: dict
+    channel_id: int = field()
+    filename: str = field()
+    size: int = field()
+    metadata: dict = field()
     uuid: Optional[str] = field(default=None, nullable=True)
     content_type: Optional[str] = field(default=None, nullable=True)
     uploaded: bool = False
