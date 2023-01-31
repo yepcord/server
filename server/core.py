@@ -1,28 +1,31 @@
 from asyncio import get_event_loop
+from base64 import b64encode as _b64encode
 from contextvars import Context
 from datetime import datetime
-from hmac import new
 from hashlib import sha256, sha512
-from os import urandom, getpid
-from Crypto.Cipher import AES
-from base64 import b64encode as _b64encode
+from hmac import new
 from json import loads as jloads, dumps as jdumps
+from os import urandom
 from random import randint
-from typing import Optional, Union, List, Tuple
 from time import time
+from typing import Optional, Union, List, Tuple
 
-from .config import Config
-from .databases import MySQL
-from .errors import InvalidDataErr, MfaRequiredErr
-from .responses import channelInfoResponse
-from .utils import b64encode, b64decode, MFA, mksf, lsf, mkError, execute_after
+from Crypto.Cipher import AES
+
 from .classes.channel import Channel
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
-from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
 from .classes.other import EmailMsg, Singleton
+from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
+from .config import Config
+from .databases import MySQL
 from .enums import RelationshipType, ChannelType
+from .errors import InvalidDataErr, MfaRequiredErr
 from .pubsub_client import Broadcaster
+from .responses import channelInfoResponse
+from .snowflake import Snowflake
+from .utils import b64encode, b64decode, MFA, mkError, execute_after
+
 
 class CDN:
     def __init__(self, storage, core):
@@ -31,6 +34,7 @@ class CDN:
 
     def __getattr__(self, item):
         return getattr(self.storage, item)
+
 
 class Core(Singleton):
     def __init__(self, key=None, db=None, loop=None):
@@ -383,7 +387,7 @@ class Core(Singleton):
         return await self.getLastMessageIdForChannel(channel)
 
     async def getLastMessageIdForChannel(self, channel: Channel) -> Channel:
-        return channel.set(last_message_id=await self.getLastMessageId(channel, lsf(), 0))
+        return channel.set(last_message_id=await self.getLastMessageId(channel, Snowflake.makeId(False), 0))
 
     async def getLastMessageId(self, channel: Channel, before: int, after: int) -> int:
         async with self.db() as db:
@@ -394,7 +398,7 @@ class Core(Singleton):
             return await db.getChannelMessagesCount(channel, before, after)
 
     async def createDMChannel(self, recipients: List[int]) -> Channel:
-        cid = mksf()
+        cid = Snowflake.makeId()
         async with self.db() as db:
             channel = await db.createDMChannel(cid, recipients)
         return channel.set(last_message_id=None)
@@ -640,7 +644,7 @@ class Core(Singleton):
         if user.id not in recipients:
             recipients.append(user.id)
         async with self.db() as db:
-            return await db.createDMGroupChannel(mksf(), recipients, user.id)
+            return await db.createDMGroupChannel(Snowflake.makeId(), recipients, user.id)
 
     async def sendDMChannelCreateEvent(self, channel: Channel, *, users=None) -> None:
         if not users:
@@ -757,7 +761,7 @@ class Core(Singleton):
 
     async def createInvite(self, channel: Channel, inviter: User, **kwargs) -> Invite:
         guild_id = channel.guild_id
-        invite = Invite(mksf(), channel.id, inviter.id, int(time()), guild_id=guild_id, **kwargs)
+        invite = Invite(Snowflake.makeId(), channel.id, inviter.id, int(time()), guild_id=guild_id, **kwargs)
         async with self.db() as db:
             await db.putInvite(invite)
         return invite
@@ -767,16 +771,16 @@ class Core(Singleton):
             return await db.getInvite(invite_id)
 
     async def createGuild(self, user: User, name: str) -> Guild:
-        guild = Guild(mksf(), user.id, name, roles=[], system_channel_id=0)
+        guild = Guild(Snowflake.makeId(), user.id, name, roles=[], system_channel_id=0)
         roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
         channels = []
-        channels.append(Channel(mksf(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
+        channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
                                 permission_overwrites=[], flags=0, rate_limit=0))
-        channels.append(Channel(mksf(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Voice Channels", position=0,
+        channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Voice Channels", position=0,
                                 permission_overwrites=[], flags=0, rate_limit=0))
-        channels.append(Channel(mksf(), ChannelType.GUILD_TEXT, guild_id=guild.id, name="general", position=0,
+        channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_TEXT, guild_id=guild.id, name="general", position=0,
                                 parent_id=channels[0].id, permission_overwrites=[], flags=0, rate_limit=0))
-        channels.append(Channel(mksf(), ChannelType.GUILD_VOICE, guild_id=guild.id, name="General", position=0,
+        channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_VOICE, guild_id=guild.id, name="General", position=0,
                                 parent_id=channels[1].id, bitrate=64000, user_limit=0, permission_overwrites=[], flags=0, rate_limit=0))
         members = [GuildMember(user.id, guild.id, int(time()))]
 

@@ -1,17 +1,19 @@
 from abc import ABC, abstractmethod
+from json import dumps as jdumps
 from re import sub
 from time import time
 from typing import Optional, List, Tuple
-from json import dumps as jdumps
+
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId
 from .classes.guild import Emoji, Invite, Guild, Role, _Guild
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
-from .utils import json_to_sql, lsf
-from .enums import ChannelType
 from .ctx import Ctx
+from .enums import ChannelType
+from .snowflake import Snowflake
+from .utils import json_to_sql
 
 
 class Database:
@@ -491,7 +493,7 @@ class MySqlConnection:
         await self.cur.execute(f'UPDATE `read_states` set `count`={count}, `last_read_id`={last} WHERE `uid`={uid} and `channel_id`={channel_id};')
         if self.cur.rowcount == 0:
             if not last:
-                last = await self.getLastMessageId(ChannelId(channel_id), before=lsf(), after=0)
+                last = await self.getLastMessageId(ChannelId(channel_id), before=Snowflake.makeId(False), after=0)
             await self.cur.execute(f'INSERT INTO `read_states` (`uid`, `channel_id`, `last_read_id`, `count`) VALUES ({uid}, {channel_id}, {last}, {count});')
 
     async def delReadStateIfExists(self, uid: int, channel_id: int) -> bool:

@@ -1,6 +1,5 @@
 # All 'Message' classes (Message, etc.)
 from dataclasses import dataclass
-from datetime import datetime
 from time import mktime
 from typing import Optional
 from uuid import UUID, uuid4
@@ -11,12 +10,13 @@ from schema import Or, And
 
 from .user import UserId
 from ..config import Config
+from ..snowflake import Snowflake
 from ..ctx import getCore, Ctx
 from ..enums import MessageType
 from ..errors import EmbedErr, InvalidDataErr
 from ..model import Model, field, model
 from ..utils import NoneType
-from ..utils import mkError, sf_ts, ping_regex
+from ..utils import mkError, ping_regex
 
 
 class _Message:
@@ -59,11 +59,9 @@ class Message(_Message, Model):
         data["author"] = await (await getCore().getUserData(UserId(self.author))).json
         data["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None
         data["tts"] = False
-        timestamp = datetime.utcfromtimestamp(int(sf_ts(self.id) / 1000))
-        data["timestamp"] = timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        data["timestamp"] = Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         if self.edit_timestamp:
-            edit_timestamp = datetime.utcfromtimestamp(int(sf_ts(self.edit_timestamp) / 1000))
-            data["edit_timestamp"] = edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+            data["edit_timestamp"] = Snowflake.toDatetime(self.edit_timestamp).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         data["mentions"] = []
         data["mention_roles"] = []
         data["attachments"] = []

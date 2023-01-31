@@ -1,5 +1,4 @@
-from datetime import datetime
-from .utils import snowflake_timestamp
+from .snowflake import Snowflake
 from .enums import ChannelType
 
 
@@ -84,8 +83,7 @@ async def userConsentResponse(user):
 
 async def userProfileResponse(user):
     data = await user.data
-    s = snowflake_timestamp(user.id)
-    d = datetime.utcfromtimestamp(int(s/1000)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    premium_since = Snowflake.toDatetime(user.id).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "user": {
             "id": str(user.id),
@@ -101,8 +99,8 @@ async def userProfileResponse(user):
             "bio": data.bio
         },
         "connected_accounts": [],  # TODO
-        "premium_since": d,
-        "premium_guild_since": s,
+        "premium_since": premium_since,
+        "premium_guild_since": premium_since,
         "user_profile": {
             "bio": data.bio,
             "accent_color": data.accent_color

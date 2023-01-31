@@ -13,8 +13,8 @@ from magic import from_buffer
 from quart import Quart, request
 from quart.globals import request_ctx
 
-from server.ctx import Ctx
-from server.geoip import getLanguageCode
+from ..ctx import Ctx
+from ..geoip import getLanguageCode
 from ..classes.channel import Channel
 from ..classes.guild import Emoji, GuildId
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
@@ -27,7 +27,7 @@ from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, \
     channelInfoResponse
 from ..storage import FileStorage, S3Storage, FTPStorage
-from ..utils import b64decode, b64encode, mksf, c_json, getImage, validImage, MFA, execute_after, mkError, \
+from ..utils import b64decode, b64encode, c_json, getImage, validImage, MFA, execute_after, mkError, \
     parseMultipartRequest, LOCALES
 
 
@@ -228,7 +228,7 @@ getGuildWoM = getGuildWithoutMember
 async def api_auth_register():
     data = await request.get_json()
     loc = getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
-    sess = await core.register(mksf(), data["username"], data.get("email"), data["password"], data["date_of_birth"], loc)
+    sess = await core.register(Snowflake.makeId(), data["username"], data.get("email"), data["password"], data["date_of_birth"], loc)
     return c_json({"token": sess.token})
 
 
@@ -692,10 +692,10 @@ async def api_channels_channel_patch(user, channel):
         await core.sendChannelUpdateEvent(nChannel)
     diff = channel.getDiff(nChannel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
-        message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
+        message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
         await core.sendMessage(message)
     if "icon" in diff and channel.type == ChannelType.GROUP_DM:
-        message = Message(id=mksf(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_ICON_CHANGE, content="")
+        message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_ICON_CHANGE, content="")
         await core.sendMessage(message)
     channel.set(**data)
     return c_json(await channelInfoResponse(channel, user))
@@ -707,7 +707,7 @@ async def api_channels_channel_delete(user, channel):
     if channel.type == ChannelType.DM:
         return "", 204 # TODO
     elif channel.type == ChannelType.GROUP_DM:
-        msg = Message(id=mksf(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_REMOVE, extra_data={"user": user.id})
+        msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_REMOVE, extra_data={"user": user.id})
         await core.sendMessage(msg)
         await core.removeUserFromGroupDM(channel, user.id)
         await core.sendDMRepicientRemoveEvent(channel.recipients, channel.id, user.id)
@@ -772,7 +772,7 @@ async def api_channels_channel_messages_post(user, channel):
                     att = atts[idx]
                 name = att.get("filename") or file.get("filename") or "unknown"
                 data["attachments"].append({"uploaded_filename": f"{uuid}/{name}"})
-                att = Attachment(mksf(), channel.id, name, len(file["data"]), {}, uuid)
+                att = Attachment(Snowflake.makeId(), channel.id, name, len(file["data"]), {}, uuid)
                 if file.get("content_type"):
                     cot = file.get("content_type").strip()
                     att.set(content_type=cot)
@@ -794,7 +794,7 @@ async def api_channels_channel_messages_post(user, channel):
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
-    message = Message(id=mksf(), channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
+    message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
     await message.check()
     message = await core.sendMessage(message)
     if await core.delReadStateIfExists(user.id, channel.id):
@@ -875,7 +875,7 @@ async def api_channels_channel_attachments_post(user, channel):
             raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.file_size": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         if not (fid := file.get("id")):
             raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-        att = Attachment(mksf(), channel.id, filename, size, {})
+        att = Attachment(Snowflake.makeId(), channel.id, filename, size, {})
         await core.putAttachment(att)
         attachments.append({
             "id": int(fid),
@@ -897,7 +897,7 @@ async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
         await core.sendDMChannelCreateEvent(ch)
     elif channel.type == ChannelType.GROUP_DM:
         if nUser not in channel.recipients and len(channel.recipients) < 10:
-            msg = Message(id=mksf(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_ADD, extra_data={"user": nUser})
+            msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_ADD, extra_data={"user": nUser})
             await core.sendMessage(msg)
             await core.addUserToGroupDM(channel, nUser)
             await core.sendDMRepicientAddEvent(channel.recipients, channel.id, nUser)
@@ -913,7 +913,7 @@ async def api_channels_channel_repicients_recipient_delete(user, channel, nUser)
     if channel.owner_id != user.id:
         raise InvalidDataErr(403, mkError(50013))
     if nUser in channel.recipients:
-        msg = Message(id=mksf(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_REMOVE, extra_data={"user": nUser})
+        msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_REMOVE, extra_data={"user": nUser})
         await core.sendMessage(msg)
         await core.removeUserFromGroupDM(channel, nUser)
         await core.sendDMRepicientRemoveEvent(channel.recipients, channel.id, nUser)
@@ -927,7 +927,7 @@ async def api_channels_channel_pins_message_put(user, channel, message):
     if not message.pinned:
         await core.pinMessage(message)
         msg = Message(
-            mksf(),
+            Snowflake.makeId(),
             author=user.id,
             channel_id=channel.id,
             type=MessageType.CHANNEL_PINNED_MESSAGE,
@@ -1076,7 +1076,7 @@ async def api_invites_invite_post(user, invite):
                 del inv[excl]
         inv["new_member"] = user.id not in channel.recipients
         if inv["new_member"]:
-            msg = Message(id=mksf(), author=channel.owner_id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_ADD, extra_data={"user": user.id})
+            msg = Message(id=Snowflake.makeId(), author=channel.owner_id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_ADD, extra_data={"user": user.id})
             await core.addUserToGroupDM(channel, user.id)
             await core.sendDMRepicientAddEvent(channel.recipients, channel.id, user.id)
             await core.sendMessage(msg)
@@ -1153,7 +1153,7 @@ async def api_guilds_guild_emojis_post(user, guild):
         raise InvalidDataErr(400, mkError(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
     if not (img := getImage(data["image"])) or not validImage(img):
         raise InvalidDataErr(400, mkError(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
-    eid = mksf()
+    eid = Snowflake.makeId()
     if not (emd := await cdn.setEmojiFromBytesIO(eid, img)):
         raise InvalidDataErr(400, mkError(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
     emoji = Emoji(eid, data["name"], user.id, guild.id, animated=emd["animated"])
@@ -1207,7 +1207,7 @@ async def api_guilds_guild_channels_post(user, guild):
     if "id" in data: del data["id"]
     ctype = data.get("type", ChannelType.GUILD_TEXT)
     if "type" in data: del data["type"]
-    channel = Channel(mksf(), ctype, guild_id=guild.id, **data)
+    channel = Channel(Snowflake.makeId(), ctype, guild_id=guild.id, **data)
     channel = await core.createGuildChannel(channel)
     await core.sendChannelCreateEvent(channel)
     return await channelInfoResponse(channel)

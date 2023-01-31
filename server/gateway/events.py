@@ -1,13 +1,12 @@
 from base64 import b64encode
-from datetime import datetime
+from time import time
 from typing import List
 
 from ..classes.user import GuildMember
 from ..config import Config
+from ..snowflake import Snowflake
 from ..ctx import Ctx
-from ..utils import snowflake_timestamp
 from ..enums import GatewayOp, ChannelType
-from time import time
 
 
 class Event:
@@ -48,7 +47,7 @@ class ReadyEvent(DispatchEvent):
                     "banner_color": userdata.banner_color,
                     "premium": True,
                     "premium_type": 2,
-                    "premium_since": datetime.utcfromtimestamp(int(snowflake_timestamp(self.user.id)/1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "premium_since": Snowflake.toDatetime(self.user.id).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "verified": bool(self.user.verified),
                     "purchased_flags": 0,
                     "nsfw_allowed": userdata.nsfw_allowed,  # TODO: check

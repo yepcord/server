@@ -6,11 +6,12 @@ from typing import Optional
 from schema import Or, And, Use
 
 from ..classes.user import UserId
+from ..snowflake import Snowflake
 from ..ctx import getCore, Ctx
 from ..enums import ChannelType
 from ..model import model, Model, field
 from ..utils import NoneType
-from ..utils import b64encode, int_length, sf_ts
+from ..utils import b64encode, int_length
 
 
 class _Guild:
@@ -109,8 +110,7 @@ class Guild(_Guild, Model):
         }
         if uid := Ctx.get("user_id"):
             joined_at = (await getCore().getGuildMember(self, uid)).joined_at
-            timestamp = int(sf_ts(joined_at) / 1000)
-            data["joined_at"] = datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+            data["joined_at"] = Snowflake.toDatetime(joined_at).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         if Ctx.get("with_members"):
             data["members"] = [await member.json for member in await getCore().getGuildMembers(self)]
         if Ctx.get("with_channels"):
@@ -223,13 +223,13 @@ class Invite(Model):
     @property
     async def json(self) -> dict:
         userdata = await getCore().getUserData(UserId(self.inviter))
-        created_timestamp = int(sf_ts(self.id) / 1000)
+        expires_timestamp = Snowflake.toTimestamp(self.id) + self.max_age
         channel = await getCore().getChannel(self.channel_id)
         data = {
             "code": b64encode(self.id.to_bytes(int_length(self.id), 'big')),
             "inviter": await userdata.json,
-            "created_at": datetime.utcfromtimestamp(created_timestamp).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
-            "expires_at": datetime.utcfromtimestamp(created_timestamp + self.max_age).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "created_at": Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+            "expires_at": datetime.utcfromtimestamp(expires_timestamp).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
             "type": self.type,
             "channel": {
                 "id": str(channel.id),

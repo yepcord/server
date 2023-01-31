@@ -32,42 +32,6 @@ def b64encode(data: Union[str, bytes]) -> str:
         data = data.replace(search, replace)
     return data
 
-global _INCREMENT_ID
-_EPOCH = 1640995200_000
-_INCREMENT_ID = 0
-_MAX_TIMESTAMP = 1 << 42
-_WORKER_ID = randint(0, 32)
-_PROCESS_ID = getpid()
-
-
-def _mksnowflake(ms, wr, pi, ic):
-    sf = (ms % _MAX_TIMESTAMP) << 22
-    sf += (wr % 32) << 17
-    sf += (pi % 32) << 12
-    sf += ic % 4096
-    return sf
-
-
-def mkSnowflake():
-    global _INCREMENT_ID
-    sf = _mksnowflake(int(time()*1000) - _EPOCH, _WORKER_ID, _PROCESS_ID, _INCREMENT_ID)
-    _INCREMENT_ID += 1
-    return sf
-
-
-def lastSnowflake():
-    return _mksnowflake(int(time()*1000) - _EPOCH, _WORKER_ID, _PROCESS_ID, _INCREMENT_ID)
-
-
-mksf = mkSnowflake
-lsf = lastSnowflake
-
-
-def snowflake_timestamp(sf):
-    return (sf >> 22) + _EPOCH
-
-sf_ts = snowflake_timestamp
-
 
 def c_json(json, code=200, headers=None):
     if headers is None:

@@ -7,6 +7,7 @@ from typing import Optional
 
 from schema import And, Use, Or, Optional as sOptional, Regex
 
+from ..snowflake import Snowflake
 from ..ctx import getCore
 from ..enums import RelationshipType, UserFlags as UserFlagsE
 from ..model import model, field, Model
@@ -16,7 +17,7 @@ from ..proto import AppearanceSettings, Locale, TimezoneOffset, Theme, Localizat
     RenderReactions, RenderEmbeds, InlineEmbedMedia, InlineAttachmentMedia, RenderSpoilers, UseThreadSidebar, \
     UseRichChatInput, TextAndImagesSettings, StreamNotificationsEnabled, AfkTimeout, VoiceAndVideoSettings, \
     UserContentSettings, Version, PreloadedUserSettings
-from ..utils import b64encode, b64decode, proto_get, sf_ts, NoneType
+from ..utils import b64encode, b64decode, proto_get, NoneType
 
 
 class _User:
@@ -397,7 +398,7 @@ class GuildMember(_User, Model):
             "nick": self.nick,
             "is_pending": False,  # TODO
             "pending": False,  # TODO
-            "premium_since": datetime.utcfromtimestamp(int(sf_ts(self.user_id) / 1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "premium_since": Snowflake.toDatetime(userdata.id).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "roles": self.roles,
             "user": await userdata.json,
             "mute": self.mute,
