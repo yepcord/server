@@ -3,7 +3,7 @@ from contextvars import Context
 from datetime import datetime
 from hmac import new
 from hashlib import sha256, sha512
-from os import urandom
+from os import urandom, getpid
 from Crypto.Cipher import AES
 from base64 import b64encode as _b64encode
 from json import loads as jloads, dumps as jdumps
@@ -20,7 +20,7 @@ from .classes.channel import Channel
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
-from .classes.other import EmailMsg
+from .classes.other import EmailMsg, Singleton
 from .enums import RelationshipType, ChannelType
 from .pubsub_client import Broadcaster
 
@@ -32,9 +32,7 @@ class CDN:
     def __getattr__(self, item):
         return getattr(self.storage, item)
 
-class Core:
-    _instance = None
-
+class Core(Singleton):
     def __init__(self, key=None, db=None, loop=None):
         self.key = key if key and len(key) == 16 and type(key) == bytes else b''
         self.db = MySQL() if not db else db
@@ -42,15 +40,6 @@ class Core:
         self.loop = loop or get_event_loop()
         self.mcl = Broadcaster("http")
         self._cache = {}
-
-    def __new__(cls, *args, **kwargs):
-        if not isinstance(cls._instance, cls):
-            cls._instance = super(Core, cls).__new__(cls)
-        return cls._instance
-
-    @classmethod
-    def getInstance(cls):
-        return cls._instance
 
     async def initMCL(self):
         try:
@@ -831,7 +820,7 @@ class Core:
         async with self.db() as db:
             return await db.getGuildChannels(guild)
 
-    async def getUserGuilds(self, user: User) -> List[Guild]:
+    async def getUserGuilds(self, user: _User) -> List[Guild]:
         async with self.db() as db:
             return await db.getUserGuilds(user)
 

@@ -141,7 +141,7 @@ class Message(_Message, Model):
             except ValueError:
                 del image["height"]
 
-    def _formatEmbedError(self, code, path=None, replace=None):
+    def _formatEmbedError(self, code, path=None, replace=None): # TODO: move to different class
         if replace is None:
             replace = {}
 
