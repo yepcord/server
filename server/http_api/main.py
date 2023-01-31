@@ -13,6 +13,7 @@ from magic import from_buffer
 from quart import Quart, request
 from quart.globals import request_ctx
 
+from ..snowflake import Snowflake
 from ..ctx import Ctx
 from ..geoip import getLanguageCode
 from ..classes.channel import Channel

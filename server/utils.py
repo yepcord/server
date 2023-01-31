@@ -1,16 +1,15 @@
-from base64 import b64encode as _b64encode, b64decode as _b64decode, b32decode
-from time import time
-from random import randint
-from os import getpid
-from json import dumps as jdumps, loads as jloads
-from io import BytesIO
-from magic import from_buffer
-from hmac import new as hnew
-from struct import pack as spack, unpack as sunpack
 from asyncio import get_event_loop, sleep as asleep
-from typing import Union, Tuple, Optional
-from aiomysql import escape_string
+from base64 import b64encode as _b64encode, b64decode as _b64decode, b32decode
+from hmac import new as hnew
+from io import BytesIO
+from json import dumps as jdumps, loads as jloads
 from re import compile as rcompile
+from struct import pack as spack, unpack as sunpack
+from time import time
+from typing import Union, Tuple, Optional
+
+from aiomysql import escape_string
+from magic import from_buffer
 
 from server.errors import Errors
 
@@ -39,7 +38,7 @@ def c_json(json, code=200, headers=None):
     if not isinstance(json, str):
         json = jdumps(json)
     h = {'Content-Type': 'application/json'}
-    for k,v in headers.items():
+    for k, v in headers.items():
         h[k] = v
     return json, code, h
 
@@ -59,16 +58,18 @@ def mkError(code, errors=None, message=None):
 
 def getImage(image: Union[str, bytes, BytesIO]) -> Optional[BytesIO]:
     if isinstance(image, str) and len(image) == 32:
-        return # Image hash provided instead of actual image data
+        return  # Image hash provided instead of actual image data
     if isinstance(image, bytes):
         image = BytesIO(image)
-    elif isinstance(image, str) and (image.startswith("data:image/") or image.startswith("data:application/octet-stream")) and "base64" in image.split(",")[0]:
+    elif isinstance(image, str) and (
+            image.startswith("data:image/") or image.startswith("data:application/octet-stream")) and "base64" in \
+            image.split(",")[0]:
         image = BytesIO(_b64decode(image.split(",")[1].encode("utf8")))
         mime = from_buffer(image.read(1024), mime=True)
         if not mime.startswith("image/"):
-            return # Not image
+            return  # Not image
     elif not isinstance(image, BytesIO):
-        return # Unknown type
+        return  # Unknown type
     return image
 
 
@@ -79,7 +80,8 @@ def imageType(image: BytesIO) -> str:
 
 
 def validImage(image: BytesIO) -> bool:
-    return imageType(image) in ["png", "webp", "gif", "jpeg", "jpg"] and image.getbuffer().nbytes < 8*1024*1024*1024
+    return imageType(image) in ["png", "webp", "gif", "jpeg",
+                                "jpg"] and image.getbuffer().nbytes < 8 * 1024 * 1024 * 1024
 
 
 class MFA:
@@ -106,13 +108,15 @@ async def execute_after(coro, seconds):
     async def _wait_exec(coro, seconds):
         await asleep(seconds)
         await coro
+
     get_event_loop().create_task(_wait_exec(coro, seconds))
 
 
-def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False, for_insert=False) -> Union[str, list, Tuple[str, str]]:
+def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False, for_insert=False) -> Union[
+    str, list, Tuple[str, str]]:
     if not as_tuples: as_tuples = for_insert
     query = []
-    for k,v in json.items():
+    for k, v in json.items():
         if isinstance(v, str):
             v = f"\"{escape_string(v)}\""
         elif isinstance(v, bool):
@@ -125,7 +129,7 @@ def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False, for_i
         elif v is None:
             v = "IS NULL" if is_none else "NULL"
         if as_tuples:
-            query.append((k,v))
+            query.append((k, v))
         else:
             query.append(f"`{k}`={v}" if v != "IS NULL" else f"`{k}` {v}")
     if as_list or as_tuples:
@@ -191,6 +195,7 @@ def parseMultipartRequest(body, boundary):
             d["content_type"] = ct
     return res
 
+
 def proto_get(protoObj, path, default=None):
     path = path.split(".")
     try:
@@ -204,14 +209,17 @@ def proto_get(protoObj, path, default=None):
         return default
     return o
 
+
 ALLOWED_AVATAR_SIZES = [16, 20, 22, 24, 28, 32, 40, 44, 48, 56, 60, 64, 80, 96, 100, 128, 160, 240, 256, 300, 320, 480,
                         512, 600, 640, 1024, 1280, 1536, 2048, 3072, 4096]
+
 
 def int_length(i: int) -> int:
     # Returns int size in bytes
     return (i.bit_length() + 7) // 8
 
+
 LOCALES = ["bg", "cs", "da", "de", "el", "en-GB", "es-ES", "fi", "fr", "hi", "hr", "hu", "it", "ja", "ko", "lt", "nl",
-             "no", "pl", "pt-BR", "ro", "ru", "sv-SE", "th", "tr", "uk", "vi", "zh-CN", "zh-TW", "en-US"]
+           "no", "pl", "pt-BR", "ro", "ru", "sv-SE", "th", "tr", "uk", "vi", "zh-CN", "zh-TW", "en-US"]
 
 NoneType = type(None)
