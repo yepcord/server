@@ -554,3 +554,17 @@ class ChannelCreateEvent(ChannelUpdateEvent):
 
 class ChannelDeleteEvent(ChannelUpdateEvent):
     NAME = "CHANNEL_DELETE"
+
+class InviteDeleteEvent(DispatchEvent):
+    NAME = "INVITE_DELETE"
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.payload
+        }
+        return data

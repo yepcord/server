@@ -261,6 +261,12 @@ class DBConnection(ABC):
     @abstractmethod
     async def getRelationshipEx(self, u1: int, u2: int) -> Optional[Relationship]: ...
 
+    @abstractmethod
+    async def getGuildInvites(self, guild: Guild) -> List[Invite]: ...
+
+    @abstractmethod
+    async def deleteInvite(self, invite: Invite) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -752,3 +758,13 @@ class MySqlConnection:
 
     async def deleteEmoji(self, emoji: Emoji) -> None:
         await self.cur.execute(f'DELETE FROM `emojis` WHERE `id`={emoji.id} LIMIT 1;')
+
+    async def getGuildInvites(self, guild: Guild) -> List[Invite]:
+        invites = []
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            invites.append(Invite.from_result(self.cur.description, r))
+        return invites
+
+    async def deleteInvite(self, invite: Invite) -> None:
+        await self.cur.execute(f'DELETE FROM `invites` WHERE `id`={invite.id} LIMIT 1;')

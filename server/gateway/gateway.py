@@ -360,6 +360,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(ChannelDeleteEvent(channel_obj))
 
+    async def invite_delete(self, users, payload):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(InviteDeleteEvent(payload))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

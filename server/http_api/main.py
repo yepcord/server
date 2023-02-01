@@ -17,7 +17,7 @@ from ..snowflake import Snowflake
 from ..ctx import Ctx
 from ..geoip import getLanguageCode
 from ..classes.channel import Channel
-from ..classes.guild import Emoji, GuildId
+from ..classes.guild import Emoji, GuildId, Invite
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User
 from ..config import Config
@@ -1095,6 +1095,17 @@ async def api_invites_invite_post(user, invite):
     return c_json(inv)
 
 
+@app.delete("/api/v9/invites/<string:invite>")
+@multipleDecorators(usingDB, getUser, getInvite)
+async def api_invites_invite_delete(user: User, invite: Invite):
+    if invite.guild_id:
+        guild = await core.getGuild(invite.guild_id)
+        if guild.owner_id != user.id:  # TODO: check permissions
+            raise InvalidDataErr(403, mkError(50013))
+        await core.deleteInvite(invite)
+        await core.sendInviteDeleteEvent(invite)
+    return c_json(await invite.json)
+
 # Guilds
 
 
@@ -1213,6 +1224,14 @@ async def api_guilds_guild_channels_post(user, guild):
     await core.sendChannelCreateEvent(channel)
     return await channelInfoResponse(channel)
 
+@app.get("/api/v9/guilds/<int:guild>/invites")
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_invites_get(user, guild):
+    if guild.owner_id != user.id: # TODO: check permissions
+        raise InvalidDataErr(403, mkError(50013))
+    invites = await core.getGuildInvites(guild)
+    invites = [await invite.json for invite in invites]
+    return c_json(invites)
 
 # Stickers & gifs
 

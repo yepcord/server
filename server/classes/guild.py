@@ -223,13 +223,16 @@ class Invite(Model):
     @property
     async def json(self) -> dict:
         userdata = await getCore().getUserData(UserId(self.inviter))
-        expires_timestamp = Snowflake.toTimestamp(self.id) + self.max_age
+        expires_at = None
+        if self.max_age > 0:
+            expires_timestamp = int(Snowflake.toTimestamp(self.id) / 1000) + self.max_age
+            expires_at = datetime.utcfromtimestamp(expires_timestamp).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         channel = await getCore().getChannel(self.channel_id)
         data = {
-            "code": b64encode(self.id.to_bytes(int_length(self.id), 'big')),
+            "code": self.code,
             "inviter": await userdata.json,
             "created_at": Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
-            "expires_at": datetime.utcfromtimestamp(expires_timestamp).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "expires_at": expires_at,
             "type": self.type,
             "channel": {
                 "id": str(channel.id),
@@ -272,3 +275,7 @@ class Invite(Model):
             data["temporary"] = False
 
         return data
+
+    @property
+    def code(self) -> str:
+        return b64encode(self.id.to_bytes(int_length(self.id), 'big'))
