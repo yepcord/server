@@ -1224,6 +1224,7 @@ async def api_guilds_guild_channels_post(user, guild):
     await core.sendChannelCreateEvent(channel)
     return await channelInfoResponse(channel)
 
+
 @app.get("/api/v9/guilds/<int:guild>/invites")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_invites_get(user, guild):
@@ -1232,6 +1233,16 @@ async def api_guilds_guild_invites_get(user, guild):
     invites = await core.getGuildInvites(guild)
     invites = [await invite.json for invite in invites]
     return c_json(invites)
+
+
+@app.get("/api/v9/guilds/<int:guild>/premium/subscriptions")
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_premium_subscriptions_get(user, guild):
+    if guild.owner_id != user.id: # TODO: check permissions
+        raise InvalidDataErr(403, mkError(50013))
+    boosts = [{"ended": False, "user_id": str(guild.owner_id)}]*30
+    return c_json(boosts)
+
 
 # Stickers & gifs
 
