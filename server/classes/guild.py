@@ -174,7 +174,7 @@ class Emoji(Model):
     require_colons: Optional[bool] = False
     managed: Optional[bool] = False
     animated: Optional[bool] = False
-    available: Optional[bool] = False
+    available: Optional[bool] = True
 
     DEFAULTS = {"roles": [], "require_colons": True, "managed": False, "animated": False, "available": True} # TODO: remove or replace with more convenient solution
 
