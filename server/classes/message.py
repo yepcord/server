@@ -119,6 +119,8 @@ class Message(_Message, Model):
 
     async def check(self):
         self.embeds = Embeds(self.embeds).json
+        if self.embeds is None:
+            self.embeds = []
         await self._checkAttachments()
 
     async def _checkAttachments(self):
