@@ -1,17 +1,19 @@
 from abc import ABC, abstractmethod
+from json import dumps as jdumps
 from re import sub
 from time import time
 from typing import Optional, List, Tuple
-from json import dumps as jdumps
+
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId
 from .classes.guild import Emoji, Invite, Guild, Role, _Guild
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
-from .utils import json_to_sql, lsf
-from .enums import ChannelType
 from .ctx import Ctx
+from .enums import ChannelType
+from .snowflake import Snowflake
+from .utils import json_to_sql
 
 
 class Database:
@@ -259,6 +261,12 @@ class DBConnection(ABC):
     @abstractmethod
     async def getRelationshipEx(self, u1: int, u2: int) -> Optional[Relationship]: ...
 
+    @abstractmethod
+    async def getGuildInvites(self, guild: Guild) -> List[Invite]: ...
+
+    @abstractmethod
+    async def deleteInvite(self, invite: Invite) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -491,7 +499,7 @@ class MySqlConnection:
         await self.cur.execute(f'UPDATE `read_states` set `count`={count}, `last_read_id`={last} WHERE `uid`={uid} and `channel_id`={channel_id};')
         if self.cur.rowcount == 0:
             if not last:
-                last = await self.getLastMessageId(ChannelId(channel_id), before=lsf(), after=0)
+                last = await self.getLastMessageId(ChannelId(channel_id), before=Snowflake.makeId(False), after=0)
             await self.cur.execute(f'INSERT INTO `read_states` (`uid`, `channel_id`, `last_read_id`, `count`) VALUES ({uid}, {channel_id}, {last}, {count});')
 
     async def delReadStateIfExists(self, uid: int, channel_id: int) -> bool:
@@ -638,7 +646,7 @@ class MySqlConnection:
         await self.cur.execute(f'SELECT * FROM `messages` WHERE {where};')
         for r in await self.cur.fetchall():
             messages.append(Message.from_result(self.cur.description, r))
-        where = sub(r' LIMIT \d{1,},{0,1}\d{0,}', "", where)
+        where = sub(r' LIMIT \d+,?\d*', "", where)
         await self.cur.execute(f'SELECT COUNT(*) as c FROM `messages` WHERE {where};')
         total = (await self.cur.fetchone())[0]
         return messages, total
@@ -750,3 +758,13 @@ class MySqlConnection:
 
     async def deleteEmoji(self, emoji: Emoji) -> None:
         await self.cur.execute(f'DELETE FROM `emojis` WHERE `id`={emoji.id} LIMIT 1;')
+
+    async def getGuildInvites(self, guild: Guild) -> List[Invite]:
+        invites = []
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            invites.append(Invite.from_result(self.cur.description, r))
+        return invites
+
+    async def deleteInvite(self, invite: Invite) -> None:
+        await self.cur.execute(f'DELETE FROM `invites` WHERE `id`={invite.id} LIMIT 1;')

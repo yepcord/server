@@ -5,13 +5,13 @@ from typing import Optional
 
 from schema import Or, And, Use
 
-from server.classes.user import UserId
-from server.ctx import getCore, Ctx
-from server.enums import ChannelType
-from server.model import model, Model, field
-from server.utils import b64encode, int_length, sf_ts
-from ..discord_converters.guild import discord_Guild, discord_Role, discord_Emoji, discord_Invite
+from ..classes.user import UserId
+from ..snowflake import Snowflake
+from ..ctx import getCore, Ctx
+from ..enums import ChannelType
+from ..model import model, Model, field
 from ..utils import NoneType
+from ..utils import b64encode, int_length
 
 
 class _Guild:
@@ -28,8 +28,8 @@ class GuildId(_Guild):
 @dataclass
 class Guild(_Guild, Model):
     id: int = field(id_field=True)
-    owner_id: int
-    name: str
+    owner_id: int = field()
+    name: str = field()
     icon: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
     description: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
     splash: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
@@ -55,7 +55,67 @@ class Guild(_Guild, Model):
     nsfw: Optional[bool] = None
     nsfw_level: Optional[int] = None
 
-    json = property(discord_Guild)
+    @property
+    async def json(self) -> dict:
+        data = {
+            "id": str(self.id),
+            "name": self.name,
+            "icon": self.icon,
+            "description": self.description,
+            "splash": self.splash,
+            "discovery_splash": self.discovery_splash,
+            "features": self.features,
+            "emojis": [
+                await emoji.json for emoji in await getCore().getEmojis(self.id)  # Get json for every emoji in guild
+            ],
+            "stickers": self.stickers,
+            "banner": self.banner,
+            "owner_id": str(self.owner_id),
+            "application_id": None,  # TODO
+            "region": self.region,
+            "afk_channel_id": self.afk_channel_id,
+            "afk_timeout": self.afk_timeout,
+            "system_channel_id": str(self.system_channel_id),
+            "widget_enabled": False,  # TODO
+            "widget_channel_id": None,  # TODO
+            "verification_level": self.verification_level,
+            "roles": [
+                await role.json for role in await getCore().getRoles(self)  # Get json for every role in guild
+            ],
+            "default_message_notifications": self.default_message_notifications,
+            "mfa_level": self.mfa_level,
+            "explicit_content_filter": self.explicit_content_filter,
+            # "max_presences": None, # TODO
+            "max_members": self.max_members,
+            "max_stage_video_channel_users": 0,  # TODO
+            "max_video_channel_users": 0,  # TODO
+            "vanity_url_code": self.vanity_url_code,
+            "premium_tier": 3,  # TODO
+            "premium_subscription_count": 30,  # TODO
+            "system_channel_flags": self.system_channel_flags,
+            "preferred_locale": self.preferred_locale,
+            "rules_channel_id": None,  # TODO
+            "public_updates_channel_id": None,  # TODO
+            "hub_type": None,  # TODO
+            "premium_progress_bar_enabled": bool(self.premium_progress_bar_enabled),
+            "nsfw": bool(self.nsfw),
+            "nsfw_level": self.nsfw_level,
+            "threads": [],  # TODO
+            "guild_scheduled_events": [],  # TODO
+            "stage_instances": [],  # TODO
+            "application_command_counts": {},  # TODO
+            "large": False,  # TODO
+            "lazy": True,  # TODO
+            "member_count": await getCore().getGuildMemberCount(self),
+        }
+        if uid := Ctx.get("user_id"):
+            joined_at = (await getCore().getGuildMember(self, uid)).joined_at
+            data["joined_at"] = Snowflake.toDatetime(joined_at).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        if Ctx.get("with_members"):
+            data["members"] = [await member.json for member in await getCore().getGuildMembers(self)]
+        if Ctx.get("with_channels"):
+            data["channels"] = [await channel.json for channel in await getCore().getGuildChannels(self)]
+        return data
 
     DEFAULTS = {"icon": None, "description": None, "splash": None, "discovery_splash": None, "features": [],
                 "emojis": [], "stickers": [], "banner": None, "region": "deprecated", "afk_channel_id": None,
@@ -74,8 +134,8 @@ class Guild(_Guild, Model):
 @dataclass
 class Role(Model):
     id: int = field(id_field=True)
-    guild_id: int
-    name: str
+    guild_id: int = field()
+    name: str = field()
     permissions: Optional[int] = None
     position: Optional[int] = None
     color: Optional[int] = None
@@ -86,15 +146,30 @@ class Role(Model):
     unicode_emoji: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
     flags: Optional[int] = None
 
-    json = property(discord_Role)
+    @property
+    async def json(self) -> dict:
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "permissions": str(self.permissions),
+            "position": self.position,
+            "color": self.color,
+            "hoist": bool(self.hoist),
+            "managed": bool(self.managed),
+            "mentionable": bool(self.mentionable),
+            "icon": self.icon,
+            "unicode_emoji": self.unicode_emoji,
+            "flags": self.flags
+        }
+
 
 @model
 @dataclass
 class Emoji(Model):
     id: int = field(id_field=True)
-    name: str
-    user_id: int
-    guild_id: int
+    name: str = field()
+    user_id: int = field()
+    guild_id: int = field()
     roles: Optional[list] = field(default=None, db_name="j_roles")
     require_colons: Optional[bool] = False
     managed: Optional[bool] = False
@@ -109,18 +184,98 @@ class Emoji(Model):
                 setattr(self, k, v)
         return self
 
-    json = property(discord_Emoji)
+    @property
+    async def json(self) -> dict:
+        data = {
+            "name": self.name,
+            "roles": self.roles,
+            "id": str(self.id),
+            "require_colons": bool(self.require_colons),
+            "managed": bool(self.managed),
+            "animated": bool(self.animated),
+            "available": bool(self.available)
+        }
+        if Ctx.get("with_user"):
+            user = await getCore().getUserData(UserId(self.user_id))
+            data["user"] = {
+                "id": str(self.user_id),
+                "username": user.username,
+                "avatar": user.avatar,
+                "avatar_decoration": user.avatar_decoration,
+                "discriminator": user.s_discriminator,
+                "public_flags": user.public_flags
+            }
+        return data
+
 
 @model
 @dataclass
 class Invite(Model):
     id: int = field(id_field=True)
-    channel_id: int
-    inviter: int
-    created_at: int
-    max_age: int
+    channel_id: int = field()
+    inviter: int = field()
+    created_at: int = field()
+    max_age: int = field()
     max_uses: Optional[int] = 0
     guild_id: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
     type: Optional[int] = field(default=1, validation=And(lambda i: i in (0, 1)))
 
-    json = property(discord_Invite)
+    @property
+    async def json(self) -> dict:
+        userdata = await getCore().getUserData(UserId(self.inviter))
+        expires_at = None
+        if self.max_age > 0:
+            expires_timestamp = int(Snowflake.toTimestamp(self.id) / 1000) + self.max_age
+            expires_at = datetime.utcfromtimestamp(expires_timestamp).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        channel = await getCore().getChannel(self.channel_id)
+        data = {
+            "code": self.code,
+            "inviter": await userdata.json,
+            "created_at": Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+            "expires_at": expires_at,
+            "type": self.type,
+            "channel": {
+                "id": str(channel.id),
+                "type": channel.type
+            },
+            "max_age": self.max_age,
+        }
+
+        if Ctx.get("with_counts"):
+            related_users = await getCore().getRelatedUsersToChannel(self.channel_id)
+            data["approximate_member_count"] = len(related_users)
+            if channel.type == ChannelType.GROUP_DM:
+                data["channel"]["recipients"] = [
+                    {"username": (await getCore().getUserData(UserId(i))).username}
+                    for i in related_users
+                ]
+
+        if channel.type == ChannelType.GROUP_DM:
+            data["channel"].update({"name": channel.name, "icon": channel.icon})
+        elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
+            data["channel"]["name"] = channel.name
+
+        if self.guild_id:
+            guild = await getCore().getGuild(self.guild_id)
+            data["guild"] = {
+                "id": str(guild.id),
+                "banner": guild.banner,
+                "description": guild.description,
+                "features": guild.features,
+                "icon": guild.icon,
+                "name": guild.name,
+                "nsfw": guild.nsfw,
+                "nsfw_level": guild.nsfw_level,
+                "premium_subscription_count": 0,
+                "splash": guild.splash,
+                "vanity_url_code": guild.vanity_url_code,
+                "verification_level": guild.verification_level
+            }
+            data["max_uses"] = self.max_uses
+            data["temporary"] = False
+
+        return data
+
+    @property
+    def code(self) -> str:
+        return b64encode(self.id.to_bytes(int_length(self.id), 'big'))

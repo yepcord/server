@@ -9,7 +9,6 @@ STATIC_FOLDER = join(dirname(realpath(__file__)), "assets/")
 HTML_FILE = join(dirname(realpath(__file__)), "discord.html")
 HTML_FILE_VERIFY = join(dirname(realpath(__file__)), "discord_verify.html")
 
-_domain = Config("DOMAIN")
 CONFIG = {
     "CLIENT_HOST": Config("CLIENT_HOST"),
     "API_HOST": Config("API_HOST"),

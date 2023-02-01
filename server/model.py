@@ -1,32 +1,14 @@
 from copy import deepcopy
 from dataclasses import dataclass, field as _field
-from typing import Optional, Any, get_type_hints, Callable
+from typing import Optional, Any, get_type_hints
 
-from schema import Schema, Use, Optional as sOptional, Or
+from schema import Schema, Use, Optional as sOptional
 
-from server.utils import result_to_json, NoneType
+from server.utils import result_to_json
 
 _DEFAULT_META = {"excluded": False, "nullable": False, "db_name": None, "default": None, "validation": None,
-                 "id_field": False, "private": False, "discord_type": None}
+                 "id_field": False, "private": False}
 
-
-# class _Null:
-#    _instance = None
-#
-#    def __new__(cls, *args, **kwargs):
-#        if not isinstance(cls._instance, cls):
-#            cls._instance = super(_Null, cls).__new__(cls)
-#        return cls._instance
-#
-#    def __bool__(self):
-#        return False
-#
-#    def __repr__(self):
-#        return "<Null>"
-#
-# Null = _Null()
-
-_T = type
 
 @dataclass
 class Field:
@@ -36,13 +18,11 @@ class Field:
     nullable: bool = False
     db_name: Optional[str] = None
     default: Optional[Any] = None
-    discord_type: Optional[_T] = None
 
 
 class Model:
     __model_fields__ = {}
     __schema__ = None
-    __discord_schema__ = None
     __id_field__ = None
 
     # Default __post_init__, checks all fields, deletes field if it's None and not nullable
@@ -51,16 +31,12 @@ class Model:
             if getattr(self, field.name, 0) is None and not field.nullable:
                 delattr(self, field.name)
 
-    def toJSON(self, for_db=True, with_private=True, discord_types=False):
+    def toJSON(self, for_db=True, with_private=True):
         schema = self.__schema__
         json = deepcopy(self.__dict__)
         if self.__id_field__ and self.__id_field__.name not in json:
             schema = schema.schema.copy()
             del schema[self.__id_field__]
-            schema = Schema(schema)
-        if discord_types:
-            schema = schema.schema.copy()
-            schema.update(self.__discord_schema__)
             schema = Schema(schema)
         json = schema.validate(json)
         if not with_private:
@@ -119,6 +95,7 @@ def _fromResult(cls, desc, result):
             desc[idx] = (fields[field].name,)
     return cls(**result_to_json(desc, result))
 
+
 def model(cls):
     cls.toJSON = Model.toJSON
     cls.to_json = Model.toJSON  # for backward compatibility, will be removed
@@ -132,7 +109,6 @@ def model(cls):
     cls.__model_fields__ = {"all": [], "not_excluded": [], "excluded_names": [], "private_names": []}
     cls.__id_field__ = None
     schema = {}
-    discord_schema = {}
     type_hints = get_type_hints(cls)
     for name, field in cls.__dataclass_fields__.items():
         if field.name in cls.__model_fields__["all"]:
@@ -143,9 +119,7 @@ def model(cls):
         _type = _type.__args__[0] if opt else _type
         s_name = sOptional(field.name) if opt else field.name
         schema[s_name] = Use(_type) if meta["validation"] is None else meta["validation"]
-        if meta["discord_type"] is not None:
-            discord_schema[s_name] = Use(meta["discord_type"])
-        _field = Field(field.name, _type, meta["excluded"], meta["nullable"], meta["db_name"], meta["default"], meta["discord_type"])
+        _field = Field(field.name, _type, meta["excluded"], meta["nullable"], meta["db_name"], meta["default"])
         cls.__model_fields__["all"].append(_field)
         if not _field.excluded:
             cls.__model_fields__["not_excluded"].append(_field)
@@ -155,11 +129,10 @@ def model(cls):
             cls.__model_fields__["private_names"].append(_field.name)
         if meta["id_field"]: cls.__id_field__ = _field
     cls.__schema__ = Schema(schema)
-    cls.__discord_schema__ = discord_schema
     return cls
 
 
-def field(excluded=False, nullable=False, id_field=False, db_name=None, validation=None, private=False, discord_type=None, ddefault=None, *args, **kwargs) -> Any:
+def field(excluded=False, nullable=False, id_field=False, db_name=None, validation=None, private=False, *args, **kwargs) -> Any:
     default = kwargs["default"] if "default" in kwargs else None
     metadata = {
         "excluded": bool(excluded),
@@ -169,7 +142,5 @@ def field(excluded=False, nullable=False, id_field=False, db_name=None, validati
         "validation": validation,
         "id_field": bool(id_field),
         "private": bool(private),
-        "discord_type": discord_type,
-        "ddefault": ddefault
     }
     return _field(*args, metadata=metadata, **kwargs)

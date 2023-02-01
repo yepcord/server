@@ -1,13 +1,12 @@
 from base64 import b64encode
-from datetime import datetime
+from time import time
 from typing import List
 
 from ..classes.user import GuildMember
 from ..config import Config
+from ..snowflake import Snowflake
 from ..ctx import Ctx
-from ..utils import snowflake_timestamp
 from ..enums import GatewayOp, ChannelType
-from time import time
 
 
 class Event:
@@ -48,17 +47,17 @@ class ReadyEvent(DispatchEvent):
                     "banner_color": userdata.banner_color,
                     "premium": True,
                     "premium_type": 2,
-                    "premium_since": datetime.utcfromtimestamp(int(snowflake_timestamp(self.user.id)/1000)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "premium_since": Snowflake.toDatetime(self.user.id).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "verified": bool(self.user.verified),
                     "purchased_flags": 0,
-                    "nsfw_allowed": userdata.nsfw_allowed,  # TODO: check
+                    "nsfw_allowed": userdata.nsfw_allowed,
                     "mobile": True,  # TODO: check
                     "mfa_enabled": settings.mfa,
                     "id": str(self.user.id),
                     "flags": 0,
                 },
                 "users": await self.core.getRelatedUsers(self.user),
-                "guilds": [await guild.json for guild in await self.core.getUserGuilds(self.user)], # TODO
+                "guilds": [await guild.json for guild in await self.core.getUserGuilds(self.user)],
                 "session_id": self.client.sid,
                 "presences": [], # TODO
                 "relationships": await self.core.getRelationships(self.user),
@@ -555,3 +554,17 @@ class ChannelCreateEvent(ChannelUpdateEvent):
 
 class ChannelDeleteEvent(ChannelUpdateEvent):
     NAME = "CHANNEL_DELETE"
+
+class InviteDeleteEvent(DispatchEvent):
+    NAME = "INVITE_DELETE"
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.payload
+        }
+        return data
