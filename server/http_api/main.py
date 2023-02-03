@@ -127,7 +127,7 @@ def getUser(f):
     async def wrapped(*args, **kwargs):
         if not (session := Session.from_token(request.headers.get("Authorization", ""))):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
-        if not (user := await core.getUserFromSession(session)):
+        if not (user := await core.getUser(session.uid)):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         Ctx["user_id"] = user.id
         kwargs["user"] = user
@@ -238,7 +238,7 @@ async def api_auth_register():
 async def api_auth_login():
     data = await request.get_json()
     sess = await core.login(data["login"], data["password"])
-    user = await core.getUserFromSession(sess)
+    user = await core.getUser(sess.uid)
     sett = await user.settings
     return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
 
@@ -258,7 +258,7 @@ async def api_auth_mfa_totp(): # TODO: test
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
             raise InvalidDataErr(400, mkError(60008))
     sess = await core.createSessionWithoutKey(mfa.uid)
-    user = await core.getUserFromSession(sess)
+    user = await core.getUser(sess.uid)
     sett = await user.settings
     return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
 

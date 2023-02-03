@@ -77,7 +77,7 @@ class Core(Singleton):
             if not await self.getUserByUsername(login, d):
                 return d
 
-    async def register(self, uid: int, login: str, email: Optional[str], password: str, birth: str, locale: str, invite: Optional[str]=None) -> Session:
+    async def register(self, uid: int, login: str, email: Optional[str], password: str, birth: str, locale: str="en-US", invite: Optional[str]=None) -> Session:
         email = email.lower()
         async with self.db() as db:
             if await db.getUserByEmail(email):
@@ -120,29 +120,23 @@ class Core(Singleton):
             await db.insertSession(session)
         return session
 
-    async def createSessionWithoutKey(self, uid: int) -> Session:
-        user = await self.getUser(uid)
-        return await self.createSession(uid, user.key)
+    async def createSessionWithoutKey(self, uid: int) -> Optional[Session]:
+        if user := await self.getUser(uid):
+            return await self.createSession(uid, user.key)
 
     async def getUser(self, uid: int) -> Optional[User]:
         async with self.db() as db:
-            user = await db.getUser(uid)
-        return user
-
-    async def getUserFromSession(self, session: Session) -> Optional[User]:
-        if not await self.validSession(session):
-            return
-        return await self.getUser(session.id)
+            return await db.getUser(uid)
 
     async def validSession(self, session: Session) -> bool:
         async with self.db() as db:
             return await db.validSession(session)
 
-    async def getUserSettings(self, user: _User) -> UserSettings:
+    async def getUserSettings(self, user: _User) -> Optional[UserSettings]:
         async with self.db() as db:
             return await db.getUserSettings(user)
 
-    async def getUserData(self, user: _User) -> UserData:
+    async def getUserData(self, user: _User) -> Optional[UserData]:
         async with self.db() as db:
             return await db.getUserData(user)
 
@@ -158,13 +152,13 @@ class Core(Singleton):
         async with self.db() as db:
             await db.setUserData(userdata)
 
-    async def getUserProfile(self, uid: int, cUser: User) -> User:
+    async def getUserProfile(self, uid: int, cUser: _User) -> User:
         # TODO: check for relationship, mutual guilds or mutual friends
         if not (user := await self.getUser(uid)):
             raise InvalidDataErr(404, mkError(10013))
         return user
 
-    async def checkUserPassword(self, user: User, password: str) -> bool:
+    async def checkUserPassword(self, user: _User, password: str) -> bool:
         user = await self.getUser(user.id) if not user.get("key") else user
         password = self.encryptPassword(user.id, password)
         return user.password == password
@@ -174,7 +168,7 @@ class Core(Singleton):
         if await self.getUserByUsername(username, discriminator):
             return False
         data = await user.data
-        ndata = data.copy().set(discriminator=discriminator)
+        ndata = data.copy(discriminator=discriminator)
         async with self.db() as db:
             await db.setUserDataDiff(data, ndata)
         return True
@@ -186,22 +180,21 @@ class Core(Singleton):
             if discriminator is None:
                 raise InvalidDataErr(400, mkError(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This name is used by too many users. Please enter something else or try again."}}))
         data = await user.data
-        ndata = data.copy().set(discriminator=discriminator, username=username)
+        ndata = data.copy(discriminator=discriminator, username=username)
         async with self.db() as db:
             await db.setUserDataDiff(data, ndata)
 
     async def getUserByUsername(self, username: str, discriminator: int) -> Optional[User]:
         async with self.db() as db:
-            user = await db.getUserByUsername(username, discriminator)
-        return user
+            return await db.getUserByUsername(username, discriminator)
 
-    async def checkRelationShipAvailable(self, tUser: User, cUser: User) -> None:
+    async def checkRelationShipAvailable(self, tUser: _User, cUser: _User) -> None:
         async with self.db() as db:
             if not await db.relationShipAvailable(tUser, cUser):
                 raise InvalidDataErr(400, mkError(80007))
         return None # TODO: check for mutual guilds or mutual friends
 
-    async def reqRelationship(self, tUser: User, cUser: User) -> None:
+    async def reqRelationship(self, tUser: _User, cUser: _User) -> None:
         async with self.db() as db:
             await db.insertRelationShip(Relationship(cUser.id, tUser.id, RelationshipType.PENDING))
         await self.mcl.broadcast("user_events", {"e": "relationship_req", "data": {"target_user": tUser.id, "current_user": cUser.id}})
@@ -243,7 +236,7 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getRelationship(u1, u2)
 
-    async def getRelatedUsers(self, user: User, only_ids=False) -> list:
+    async def getRelatedUsers(self, user: _User, only_ids=False) -> list:
         users = []
         async with self.db() as db:
             for r in await db.getRelationships(user.id):
