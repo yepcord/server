@@ -52,7 +52,7 @@ jobs:
 
       - name: Reinstall database
         run: |
-          mysql -u root -p${{ secrets.DB_PASS }} -e "DROP DATABASE IF EXISTS yepcord_test;"
+          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} -e "DROP DATABASE IF EXISTS yepcord_test;"
           mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
 
       - name: Run test suite for http
