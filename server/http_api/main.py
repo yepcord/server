@@ -125,7 +125,8 @@ def usingDB(f):
 def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (session := Session.from_token(request.headers.get("Authorization", ""))):
+        if not (session := Session.from_token(request.headers.get("Authorization", ""))) \
+                or not await core.validSession(session):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
         if not (user := await core.getUser(session.uid)):
             raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
