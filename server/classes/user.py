@@ -252,7 +252,7 @@ class UserData(Model):
     flags: Optional[int] = None
     public_flags: Optional[int] = None
     phone: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
-    premium: Optional[str] = field(validation=Or(Use(bool), NoneType), default=None, nullable=True)
+    premium: Optional[bool] = field(validation=Or(Use(bool), NoneType), default=None, nullable=True)
     accent_color: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     avatar: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     avatar_decoration: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)

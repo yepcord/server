@@ -334,18 +334,18 @@ class MySqlConnection:
             return User.from_result(self.cur.description, r)
 
     async def validSession(self, session: Session) -> bool:
-        await self. cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{session.sig}";')
+        await self. cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{escape_string(session.sig)}";')
         return bool(await self.cur.fetchone())
 
-    async def getUserSettings(self, user: _User) -> UserSettings:
+    async def getUserSettings(self, user: _User) -> Optional[UserSettings]:
         await self.cur.execute(f'SELECT * FROM `settings` WHERE `uid`={user.id};')
-        r = await self.cur.fetchone()
-        return UserSettings.from_result(self.cur.description, r)
+        if r := await self.cur.fetchone():
+            return UserSettings.from_result(self.cur.description, r)
 
-    async def getUserData(self, user: _User) -> UserSettings:
+    async def getUserData(self, user: _User) -> Optional[UserData]:
         await self.cur.execute(f'SELECT * FROM `userdata` WHERE `uid`={user.id};')
-        r = await self.cur.fetchone()
-        return UserData.from_result(self.cur.description, r)
+        if r := await self.cur.fetchone():
+            return UserData.from_result(self.cur.description, r)
 
     async def setSettings(self, settings: UserSettings) -> None:
         if not (j := settings.toJSON(for_db=True)):
@@ -369,7 +369,7 @@ class MySqlConnection:
         if diff:
             await self.cur.execute(f'UPDATE `userdata` SET {diff} WHERE `uid`={before.uid};')
 
-    async def relationShipAvailable(self, tUser: User, cUser: User) -> bool:
+    async def relationShipAvailable(self, tUser: _User, cUser: _User) -> bool:
         await self.cur.execute(f'SELECT * FROM `relationships` WHERE (`u1`={tUser.id} AND `u2`={cUser.id}) OR (`u1`={cUser.id} AND `u2`={tUser.id});')
         return not bool(await self.cur.fetchone())
 

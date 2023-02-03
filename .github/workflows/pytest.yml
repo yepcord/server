@@ -24,9 +24,14 @@ jobs:
           mysql database: 'yepcord_test'
           mysql root password: ${{ secrets.DB_PASS }}
 
+      - name: Wait for MySQL
+        run: |
+          while ! mysqladmin ping --host=127.0.0.1 --password=${{ secrets.DB_PASS }} --silent; do
+            sleep 1
+          done
+
       - name: Setup database
         run: |
-          sleep 15
           mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
 
       - name: Install dependencies
@@ -35,7 +40,23 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pytest pytest-asyncio
 
-      - name: Run test suite
+      - name: Run test suite for core
+        run: |
+          pytest tests/test_core.py
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_NAME: yepcord_test
+          KEY: ${{ secrets.KEY }}
+
+      - name: Reinstall database
+        run: |
+          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} -e "DROP DATABASE IF EXISTS yepcord_test;"
+          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} -e "CREATE DATABASE yepcord_test;"
+          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
+
+      - name: Run test suite for http
         run: |
           pytest tests/test_http.py
         env:
