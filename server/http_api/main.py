@@ -258,7 +258,7 @@ async def api_auth_mfa_totp(): # TODO: test
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
             raise InvalidDataErr(400, mkError(60008))
-    sess = await core.createSessionWithoutKey(mfa.uid)
+    sess = await core.createSession(mfa.uid)
     user = await core.getUser(sess.uid)
     sett = await user.settings
     return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
@@ -305,7 +305,7 @@ async def api_auth_verify():
     user = await core.getUserByEmail(email)
     await core.verifyEmail(user, data["token"])
     await core.sendUserUpdateEvent(user.id)
-    return c_json({"token": (await core.createSession(user.id, user.key)).token, "user_id": str(user.id)})
+    return c_json({"token": (await core.createSession(user.id)).token, "user_id": str(user.id)})
 
 
 # Users (@me)
@@ -544,7 +544,7 @@ async def api_users_me_mfa_totp_enable(session):
     await execute_after(core.sendUserUpdateEvent(session.id), 3)
     codes = [{"user_id": str(session.id), "code": code, "consumed": False} for code in codes]
     await core.logoutUser(session)
-    session = await core.createSessionWithoutKey(session.id)
+    session = await core.createSession(session.id)
     return c_json({"token": session.token, "backup_codes": codes})
 
 
@@ -554,7 +554,8 @@ async def api_users_me_mfa_totp_disable(session):
     data = await request.get_json()
     if not (code := data.get("code")):
         raise InvalidDataErr(400, mkError(60008))
-    if not (mfa := await core.getMfa(session)):
+    user = await core.getUser(session.id)
+    if not (mfa := await core.getMfa(user)):
         raise InvalidDataErr(400, mkError(50018))
     code = code.replace("-", "").replace(" ", "")
     if mfa.getCode() != code:
@@ -564,7 +565,7 @@ async def api_users_me_mfa_totp_disable(session):
     await core.clearBackupCodes(session)
     await core.sendUserUpdateEvent(session.id)
     await core.logoutUser(session)
-    session = await core.createSessionWithoutKey(session.id)
+    session = await core.createSession(session.id)
     return c_json({"token": session.token})
 
 

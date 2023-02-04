@@ -412,7 +412,7 @@ class MySqlConnection:
     async def clearBackupCodes(self, user: _User) -> None:
         await self.cur.execute(f'DELETE FROM `mfa_codes` WHERE `uid`={user.id} LIMIT 10;')
 
-    async def getBackupCodes(self, user: _User) -> list:
+    async def getBackupCodes(self, user: _User) -> List[Tuple[str, bool]]:
         await self.cur.execute(f'SELECT `code`, `used` FROM `mfa_codes` WHERE `uid`={user.id} LIMIT 10;')
         return await self.cur.fetchall()
 
