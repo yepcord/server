@@ -8,11 +8,11 @@ from json import loads as jloads, dumps as jdumps
 from os import urandom
 from random import randint
 from time import time
-from typing import Optional, Union, List, Tuple
+from typing import Optional, Union, List, Tuple, Dict
 from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel
-from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
@@ -464,10 +464,15 @@ class Core(Singleton):
         await self.mcl.broadcast("message_events", {"e": "message_update", "data": {"users": users, "message_obj": m}})
         return after
 
+    async def sendMessageDeleteEvent(self, message: Message) -> None:
+        await self.mcl.broadcast("message_events", {"e": "message_delete",
+                                                    "data": {"message": message.id, "channel": message.channel_id,
+                                                             "guild": message.guild_id}})
+
     async def deleteMessage(self, message: Message) -> None:
         async with self.db() as db:
             await db.deleteMessage(message)
-        await self.mcl.broadcast("message_events", {"e": "message_delete", "data": {"message": message.id, "channel": message.channel_id}})
+        await self.sendMessageDeleteEvent(message)
 
     async def getRelatedUsersToChannel(self, channel_id: int) -> List[int]:
         channel = await self.getChannel(channel_id)
@@ -944,6 +949,35 @@ class Core(Singleton):
         await self.mcl.broadcast("guild_events",
                                  {"e": "guild_member_remove", "data": {"users": [user.id], "guild_id": guild.id,
                                                                        "user_obj": user_obj}})
+
+    async def banGuildMember(self, member: GuildMember, reason: str=None) -> None:
+        async with self.db() as db:
+            await db.banGuildMember(member, reason)
+
+    async def sendGuildBanAddEvent(self, guild: Guild, user: User) -> None:
+        user_obj = await (await user.userdata).json
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_ban_add", "data": {"users": [guild.owner_id], "guild_id": guild.id,
+                                                                       "user_obj": user_obj}})
+
+    async def getGuildBan(self, guild: Guild, user_id: int) -> Optional[GuildBan]:
+        async with self.db() as db:
+            return await db.getGuildBan(guild, user_id)
+
+    async def getGuildBans(self, guild: Guild) -> List[GuildBan]:
+        async with self.db() as db:
+            return await db.getGuildBans(guild)
+
+    async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> Dict[int, List[int]]:
+        async with self.db() as db:
+            return await db.bulkDeleteGuildMessagesFromBanned(guild, user_id, after_id)
+
+    async def sendMessageBulkDeleteEvent(self, guild_id: int, channel_id: int, messages_ids: List[int]) -> None:
+        users = await self.getRelatedUsersToChannel(channel_id)
+        await self.mcl.broadcast("message_events", {"e": "message_delete_bulk", "data": {"users": users,
+                                                                                         "guild_id": guild_id,
+                                                                                         "channel_id": channel_id,
+                                                                                         "messages": messages_ids}})
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

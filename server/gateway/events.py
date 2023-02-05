@@ -294,12 +294,13 @@ class MessageUpdateEvent(MessageCreateEvent):
 class MessageDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE"
 
-    def __init__(self, message, channel):
+    def __init__(self, message, channel, guild):
         self.message = message
         self.channel = channel
+        self.guild = guild
 
     async def json(self) -> dict:
-        return {
+        data = {
             "t": self.NAME,
             "op": self.OP,
             "d": {
@@ -307,6 +308,9 @@ class MessageDeleteEvent(DispatchEvent):
                 "channel_id": str(self.channel)
             }
         }
+        if self.guild is not None:
+            data["d"]["guild_id"] = str(self.guild)
+        return data
 
 class MessageAckEvent(DispatchEvent):
     NAME = "MESSAGE_ACK"
@@ -583,6 +587,44 @@ class GuildMemberRemoveEvent(DispatchEvent):
             "d": {
                 "user": self.user_obj,
                 "guild_id": str(self.guild_id)
+            }
+        }
+        return data
+
+class GuildBanAddEvent(DispatchEvent):
+    NAME = "GUILD_BAN_ADD"
+
+    def __init__(self, guild_id, user_obj):
+        self.guild_id = guild_id
+        self.user_obj = user_obj
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user": self.user_obj,
+                "guild_id": str(self.guild_id)
+            }
+        }
+        return data
+
+class MessageBulkDeleteEvent(DispatchEvent):
+    NAME = "MESSAGE_DELETE_BULK"
+
+    def __init__(self, guild_id, channel_id, messages):
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.messages = messages
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "ids": [str(message_id) for message_id in self.messages],
+                "guild_id": str(self.guild_id),
+                "channel_id": str(self.channel_id)
             }
         }
         return data

@@ -1248,11 +1248,44 @@ async def api_guilds_guild_premium_subscriptions_get(user: User, guild: Guild, m
 async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member: GuildMember, uid: int):
     await member.checkPermissions(GuildPermissions.KICK_MEMBERS)
     if target_member := await core.getGuildMember(guild, uid):
-        await member.checkCanKick(target_member)
+        await member.checkCanKickOrBan(target_member)
         await core.deleteGuildMember(target_member)
         await core.sendGuildMemberRemoveEvent(guild, await target_member.user)
         await core.sendGuildDeleteEvent(guild, target_member)
     return "", 204
+
+
+@app.put("/api/v9/guilds/<int:guild>/bans/<int:uid>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: GuildMember, uid: int):
+    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    if target_member := await core.getGuildMember(guild, uid):
+        await member.checkCanKickOrBan(target_member)
+        await core.deleteGuildMember(target_member)
+        await core.banGuildMember(target_member, request.headers.get("x-audit-log-reason"))
+        target_user = await target_member.user
+        await core.sendGuildMemberRemoveEvent(guild, target_user)
+        await core.sendGuildDeleteEvent(guild, target_member)
+        await core.sendGuildBanAddEvent(guild, target_user)
+        data = await request.get_json()
+        if (delete_message_seconds := data.get("delete_message_seconds", 0)) > 0:
+            after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
+            deleted_messages = await core.bulkDeleteGuildMessagesFromBanned(guild, uid, after)
+            for channel, messages in deleted_messages.items():
+                if len(messages) > 1:
+                    await core.sendMessageBulkDeleteEvent(guild.id, channel, messages)
+                elif len(messages) == 1:
+                    await core.sendMessageDeleteEvent(Message(messages[0], channel, uid))
+    return "", 204
+
+
+@app.get("/api/v9/guilds/<int:guild>/bans")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_bans_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    bans = [await ban.json for ban in await core.getGuildBans(guild)]
+    return c_json(bans)
+
 
 # Stickers & gifs
 

@@ -240,6 +240,7 @@ class UserSettings(Model):
             self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": False})
         if (p := proto_get(proto, "user_content.dismissed_contents")) is not None:
             self.set(dismissed_contents=p[:64].hex())
+        self.__post_init__()
         return self
 
 @model
@@ -375,7 +376,7 @@ class UserFlags:
         return self
 
 @model
-@dataclass()
+@dataclass
 class GuildMember(_User, Model):
     user_id: int
     guild_id: int
@@ -425,7 +426,7 @@ class GuildMember(_User, Model):
         raise InvalidDataErr(403, mkError(50013))
         # TODO: Check permissions
 
-    async def checkCanKick(self, target_member: GuildMember) -> None:
+    async def checkCanKickOrBan(self, target_member: GuildMember) -> None:
         if self.user_id == target_member.user_id:
             raise InvalidDataErr(403, mkError(50013))
         guild = await getCore().getGuild(self.guild_id)

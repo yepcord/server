@@ -2,12 +2,12 @@ from abc import ABC, abstractmethod
 from json import dumps as jdumps
 from re import sub
 from time import time
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId
-from .classes.guild import Emoji, Invite, Guild, Role, _Guild
+from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
@@ -269,6 +269,18 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def deleteGuildMember(self, member: GuildMember): ...
+
+    @abstractmethod
+    async def banGuildMember(self, member: GuildMember, reason: str) -> None: ...
+
+    @abstractmethod
+    async def getGuildBan(self, guild: Guild, user_id: int) -> Optional[GuildBan]: ...
+
+    @abstractmethod
+    async def getGuildBans(self, guild: Guild) -> List[GuildBan]: ...
+
+    @abstractmethod
+    async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> Dict[str, List[str]]: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -774,3 +786,33 @@ class MySqlConnection:
 
     async def deleteGuildMember(self, member: GuildMember):
         await self.cur.execute(f'DELETE FROM `guild_members` WHERE `user_id`={member.user_id} AND `guild_id`={member.guild_id} LIMIT 1;')
+
+    async def banGuildMember(self, member: GuildMember, reason: str) -> None:
+        reason = f'"{escape_string(reason)}"' if reason is not None else "NULL"
+        await self.cur.execute(f'INSERT INTO `guild_bans` (`user_id`, `guild_id`, `reason`) '
+                               f'VALUES ({member.user_id}, {member.guild_id}, {reason})')
+
+    async def getGuildBan(self, guild: Guild, user_id: int) -> Optional[GuildBan]:
+        await self.cur.execute(f'SELECT * FROM `guild_bans` WHERE `guild_id`={guild.id} AND `user_id`={user_id};')
+        if r := await self.cur.fetchone():
+            return GuildBan.from_result(self.cur.description, r)
+
+    async def getGuildBans(self, guild: Guild) -> List[GuildBan]:
+        bans = []
+        await self.cur.execute(f'SELECT * FROM `guild_bans` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            bans.append(GuildBan.from_result(self.cur.description, r))
+        return bans
+
+    async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> Dict[int, List[int]]:
+        await self.cur.execute(f'SELECT `id`, `channel_id` FROM `messages` WHERE `guild_id`={guild.id} '
+                                f'AND `author`={user_id} AND `id`>{after_id};')
+        messages = await self.cur.fetchall()
+        ids = [(message[0],) for message in messages]
+        await self.cur.executemany(f'DELETE FROM `messages` WHERE `id`=%s;', ids)
+        result = {}
+        for message in messages:
+            if message[1] not in result:
+                result[message[1]] = []
+            result[message[1]].append(message[0])
+        return result
