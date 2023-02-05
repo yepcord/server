@@ -568,3 +568,21 @@ class InviteDeleteEvent(DispatchEvent):
             "d": self.payload
         }
         return data
+
+class GuildMemberRemoveEvent(DispatchEvent):
+    NAME = "GUILD_MEMBER_REMOVE"
+
+    def __init__(self, guild_id, user_obj):
+        self.guild_id = guild_id
+        self.user_obj = user_obj
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user": self.user_obj,
+                "guild_id": str(self.guild_id)
+            }
+        }
+        return data

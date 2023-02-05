@@ -5,7 +5,7 @@ from typing import Optional
 
 from schema import Or, And, Use
 
-from ..classes.user import UserId
+from .user import UserId
 from ..snowflake import Snowflake
 from ..ctx import getCore, Ctx
 from ..enums import ChannelType

@@ -931,6 +931,20 @@ class Core(Singleton):
                                          "channel_id": str(invite.channel_id)
                                      }}})
 
+    async def deleteGuildMember(self, member: GuildMember):
+        async with self.db() as db:
+            await db.deleteGuildMember(member)
+
+    async def sendGuildDeleteEvent(self, guild: Guild, user: _User) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_delete", "data": {"users": [user.id], "guild_id": guild.id}})
+
+    async def sendGuildMemberRemoveEvent(self, guild: Guild, user: User) -> None:
+        user_obj = await (await user.userdata).json
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_member_remove", "data": {"users": [user.id], "guild_id": guild.id,
+                                                                       "user_obj": user_obj}})
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
 from server.ctx import Ctx

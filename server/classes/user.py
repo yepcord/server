@@ -7,6 +7,7 @@ from typing import Optional
 
 from schema import And, Use, Or, Optional as sOptional, Regex
 
+from ..errors import InvalidDataErr
 from ..snowflake import Snowflake
 from ..ctx import getCore
 from ..enums import RelationshipType, UserFlags as UserFlagsE
@@ -17,7 +18,7 @@ from ..proto import AppearanceSettings, Locale, TimezoneOffset, Theme, Localizat
     RenderReactions, RenderEmbeds, InlineEmbedMedia, InlineAttachmentMedia, RenderSpoilers, UseThreadSidebar, \
     UseRichChatInput, TextAndImagesSettings, StreamNotificationsEnabled, AfkTimeout, VoiceAndVideoSettings, \
     UserContentSettings, Version, PreloadedUserSettings
-from ..utils import b64encode, b64decode, proto_get, NoneType
+from ..utils import b64encode, b64decode, proto_get, NoneType, mkError
 
 
 class _User:
@@ -412,3 +413,26 @@ class GuildMember(_User, Model):
         if self.avatar:
             d.avatar = self.avatar
         return d
+
+    @property
+    def id(self) -> int:
+        return self.user_id
+
+    async def checkPermissions(self, permission: int) -> None:
+        guild = await getCore().getGuild(self.guild_id)
+        if guild.owner_id == self.user_id:
+            return
+        raise InvalidDataErr(403, mkError(50013))
+        # TODO: Check permissions
+
+    async def checkCanKick(self, target_member: GuildMember) -> None:
+        if self.user_id == target_member.user_id:
+            raise InvalidDataErr(403, mkError(50013))
+        guild = await getCore().getGuild(self.guild_id)
+        if target_member.user_id == guild.owner_id:
+            raise InvalidDataErr(403, mkError(50013))
+        # TODO: Check roles
+
+    @property
+    async def user(self) -> User:
+        return await getCore().getUser(self.user_id)

@@ -366,6 +366,18 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(InviteDeleteEvent(payload))
 
+    async def guild_delete(self, users, guild_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildDeleteEvent(guild_id))
+
+    async def guild_member_remove(self, users, guild_id, user_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildMemberRemoveEvent(guild_id, user_obj))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

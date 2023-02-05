@@ -267,6 +267,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def deleteInvite(self, invite: Invite) -> None: ...
 
+    @abstractmethod
+    async def deleteGuildMember(self, member: GuildMember): ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -768,3 +771,6 @@ class MySqlConnection:
 
     async def deleteInvite(self, invite: Invite) -> None:
         await self.cur.execute(f'DELETE FROM `invites` WHERE `id`={invite.id} LIMIT 1;')
+
+    async def deleteGuildMember(self, member: GuildMember):
+        await self.cur.execute(f'DELETE FROM `guild_members` WHERE `user_id`={member.user_id} AND `guild_id`={member.guild_id} LIMIT 1;')
