@@ -30,6 +30,8 @@ class _Errors:
 
     err_30003 = "Maximum number of pins reached (50)"
 
+    err_40007 = "The user is banned from this guild."
+
     err_50001 = "Missing Access"
     err_50003 = "Cannot execute action on a DM channel"
     err_50005 = "Cannot edit a message authored by another user"

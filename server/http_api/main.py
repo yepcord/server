@@ -1091,6 +1091,8 @@ async def api_invites_invite_post(user, invite):
                 del inv[excl]
         if not await core.getGuildMember(GuildId(invite.guild_id), user.id):
             guild = await core.getGuild(invite.guild_id)
+            if await core.getGuildBan(guild, user.id) is not None:
+                raise InvalidDataErr(403, mkError(40007))
             inv["new_member"] = True
             await core.createGuildMember(guild, user)
             await core.sendGuildCreateEvent(guild, [user.id])
@@ -1111,6 +1113,7 @@ async def api_invites_invite_delete(user: User, invite: Invite):
         await core.deleteInvite(invite)
         await core.sendInviteDeleteEvent(invite)
     return c_json(await invite.json)
+
 
 # Guilds
 
@@ -1261,21 +1264,23 @@ async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: Guild
     await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
     if target_member := await core.getGuildMember(guild, uid):
         await member.checkCanKickOrBan(target_member)
-        await core.deleteGuildMember(target_member)
-        await core.banGuildMember(target_member, request.headers.get("x-audit-log-reason"))
-        target_user = await target_member.user
-        await core.sendGuildMemberRemoveEvent(guild, target_user)
-        await core.sendGuildDeleteEvent(guild, target_member)
-        await core.sendGuildBanAddEvent(guild, target_user)
-        data = await request.get_json()
-        if (delete_message_seconds := data.get("delete_message_seconds", 0)) > 0:
-            after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
-            deleted_messages = await core.bulkDeleteGuildMessagesFromBanned(guild, uid, after)
-            for channel, messages in deleted_messages.items():
-                if len(messages) > 1:
-                    await core.sendMessageBulkDeleteEvent(guild.id, channel, messages)
-                elif len(messages) == 1:
-                    await core.sendMessageDeleteEvent(Message(messages[0], channel, uid))
+        if await core.getGuildBan(guild, uid) is None:
+            await core.deleteGuildMember(target_member)
+            await core.banGuildMember(target_member, request.headers.get("x-audit-log-reason"))
+            target_user = await target_member.user
+            await core.sendGuildMemberRemoveEvent(guild, target_user)
+            await core.sendGuildDeleteEvent(guild, target_member)
+            await core.sendGuildBanAddEvent(guild, target_user)
+            data = await request.get_json()
+            if (delete_message_seconds := data.get("delete_message_seconds", 0)) > 0:
+                if delete_message_seconds > 604800: delete_message_seconds = 604800 # 7 days
+                after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
+                deleted_messages = await core.bulkDeleteGuildMessagesFromBanned(guild, uid, after)
+                for channel, messages in deleted_messages.items():
+                    if len(messages) > 1:
+                        await core.sendMessageBulkDeleteEvent(guild.id, channel, messages)
+                    elif len(messages) == 1:
+                        await core.sendMessageDeleteEvent(Message(messages[0], channel, uid))
     return "", 204
 
 
