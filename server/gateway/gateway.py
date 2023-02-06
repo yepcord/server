@@ -192,11 +192,11 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(TypingEvent(user, channel))
 
-    async def message_delete(self, message, channel):
+    async def message_delete(self, message, channel, guild):
         users = await self.core.getRelatedUsersToChannel(channel)
         clients = [c for c in self.clients if c.id in users and c.connected]
         for cl in clients:
-            await cl.esend(MessageDeleteEvent(message, channel))
+            await cl.esend(MessageDeleteEvent(message, channel, guild))
 
     async def message_update(self, users, message_obj):
         clients = [c for c in self.clients if c.id in users and c.connected]
@@ -365,6 +365,30 @@ class GatewayEvents:
             return
         for cl in clients:
             await cl.esend(InviteDeleteEvent(payload))
+
+    async def guild_delete(self, users, guild_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildDeleteEvent(guild_id))
+
+    async def guild_member_remove(self, users, guild_id, user_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildMemberRemoveEvent(guild_id, user_obj))
+
+    async def guild_ban_add(self, users, guild_id, user_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildBanAddEvent(guild_id, user_obj))
+
+    async def message_delete_bulk(self, users, guild_id, channel_id, messages):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(MessageBulkDeleteEvent(guild_id, channel_id, messages))
 
 class Gateway:
     def __init__(self, core: Core):

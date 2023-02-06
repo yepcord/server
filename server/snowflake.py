@@ -34,6 +34,22 @@ class Snowflake(Singleton):
         return snowflake
 
     @classmethod
+    def fromTimestamp(cls, timestamp: int) -> int:
+        """
+        Creates id from timestamp
+        :param timestamp: Timestamp in seconds
+        :return:
+        """
+        timestamp = int(timestamp * 1000) - cls.EPOCH
+
+        snowflake = (timestamp % cls.MAX_TIMESTAMP) << 22
+        snowflake += (cls._WORKER % 32) << 17
+        snowflake += (cls._PROCESS % 32) << 12
+        snowflake += cls._INCREMENT % 4096
+
+        return snowflake
+
+    @classmethod
     def toTimestamp(cls, snowflake: int) -> int:
         return (snowflake >> 22) + cls.EPOCH
 

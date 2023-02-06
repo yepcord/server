@@ -29,7 +29,7 @@ class Model:
     def __post_init__(self) -> None:
         for field in self.__model_fields__["all"]:
             if getattr(self, field.name, 0) is None and not field.nullable:
-                delattr(self, field.name)
+                if field.name in self.__dict__: delattr(self, field.name)
 
     def toJSON(self, for_db=True, with_private=True):
         schema = self.__schema__

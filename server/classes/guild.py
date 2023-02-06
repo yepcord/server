@@ -5,7 +5,7 @@ from typing import Optional
 
 from schema import Or, And, Use
 
-from ..classes.user import UserId
+from .user import UserId
 from ..snowflake import Snowflake
 from ..ctx import getCore, Ctx
 from ..enums import ChannelType
@@ -279,3 +279,20 @@ class Invite(Model):
     @property
     def code(self) -> str:
         return b64encode(self.id.to_bytes(int_length(self.id), 'big'))
+
+
+@model
+@dataclass
+class GuildBan(Model):
+    user_id: int
+    guild_id: int
+    reason: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
+
+    @property
+    async def json(self) -> dict:
+        userdata = await getCore().getUserData(UserId(self.user_id))
+        data = {
+            "user": await userdata.json,
+            "reason": self.reason
+        }
+        return data

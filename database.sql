@@ -306,3 +306,10 @@ CREATE TABLE `emojis` (
   `available` bool NOT NULL DEFAULT true,
   UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `guild_bans`;
+CREATE TABLE `guild_bans` (
+  `user_id` bigint NOT NULL,
+  `guild_id` bigint NOT NULL,
+  `reason` text DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;

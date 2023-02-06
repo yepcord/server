@@ -1,3 +1,4 @@
+from .ctx import getCore
 from .snowflake import Snowflake
 from .enums import ChannelType
 
@@ -116,7 +117,8 @@ async def channelInfoResponse(channel, user=None, ids=True) -> dict:
         if not ids:
             recipients = []
             for u in _recipients:
-                u = await channel._core.getUser(u)
+
+                u = await getCore().getUser(u)
                 data = await u.data
                 recipients.append({
                     "id": str(u.id),

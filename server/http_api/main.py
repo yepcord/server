@@ -17,12 +17,12 @@ from ..snowflake import Snowflake
 from ..ctx import Ctx
 from ..geoip import getLanguageCode
 from ..classes.channel import Channel
-from ..classes.guild import Emoji, GuildId, Invite
+from ..classes.guild import Emoji, GuildId, Invite, Guild
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
-from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User
+from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember
 from ..config import Config
 from ..core import Core, CDN
-from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType
+from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, \
@@ -258,7 +258,7 @@ async def api_auth_mfa_totp(): # TODO: test
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
             raise InvalidDataErr(400, mkError(60008))
-    sess = await core.createSessionWithoutKey(mfa.uid)
+    sess = await core.createSession(mfa.uid)
     user = await core.getUser(sess.uid)
     sett = await user.settings
     return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
@@ -305,7 +305,7 @@ async def api_auth_verify():
     user = await core.getUserByEmail(email)
     await core.verifyEmail(user, data["token"])
     await core.sendUserUpdateEvent(user.id)
-    return c_json({"token": (await core.createSession(user.id, user.key)).token, "user_id": str(user.id)})
+    return c_json({"token": (await core.createSession(user.id)).token, "user_id": str(user.id)})
 
 
 # Users (@me)
@@ -544,7 +544,7 @@ async def api_users_me_mfa_totp_enable(session):
     await execute_after(core.sendUserUpdateEvent(session.id), 3)
     codes = [{"user_id": str(session.id), "code": code, "consumed": False} for code in codes]
     await core.logoutUser(session)
-    session = await core.createSessionWithoutKey(session.id)
+    session = await core.createSession(session.id)
     return c_json({"token": session.token, "backup_codes": codes})
 
 
@@ -554,7 +554,8 @@ async def api_users_me_mfa_totp_disable(session):
     data = await request.get_json()
     if not (code := data.get("code")):
         raise InvalidDataErr(400, mkError(60008))
-    if not (mfa := await core.getMfa(session)):
+    user = await core.getUser(session.id)
+    if not (mfa := await core.getMfa(user)):
         raise InvalidDataErr(400, mkError(50018))
     code = code.replace("-", "").replace(" ", "")
     if mfa.getCode() != code:
@@ -564,7 +565,7 @@ async def api_users_me_mfa_totp_disable(session):
     await core.clearBackupCodes(session)
     await core.sendUserUpdateEvent(session.id)
     await core.logoutUser(session)
-    session = await core.createSessionWithoutKey(session.id)
+    session = await core.createSession(session.id)
     return c_json({"token": session.token})
 
 
@@ -1090,9 +1091,15 @@ async def api_invites_invite_post(user, invite):
                 del inv[excl]
         if not await core.getGuildMember(GuildId(invite.guild_id), user.id):
             guild = await core.getGuild(invite.guild_id)
+            if await core.getGuildBan(guild, user.id) is not None:
+                raise InvalidDataErr(403, mkError(40007))
             inv["new_member"] = True
             await core.createGuildMember(guild, user)
             await core.sendGuildCreateEvent(guild, [user.id])
+            if guild.system_channel_id:
+                msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=channel.id, content="",
+                              type=MessageType.USER_JOIN, guild_id=guild.id)
+                await core.sendMessage(msg)
     return c_json(inv)
 
 
@@ -1107,6 +1114,7 @@ async def api_invites_invite_delete(user: User, invite: Invite):
         await core.sendInviteDeleteEvent(invite)
     return c_json(await invite.json)
 
+
 # Guilds
 
 
@@ -1120,10 +1128,9 @@ async def api_guilds_post(user):
 
 
 @app.patch("/api/v9/guilds/<int:guild>")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_patch(user, guild):
-    if guild.owner_id != user.id: # TODO: check permissions
-        raise InvalidDataErr(403, mkError(50013))
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_GUILD)
     data = await request.get_json()
     for j in ("id", "owner_id", "features", "emojis", "stickers", "roles", "max_members"):
         if j in data: del data[j]
@@ -1155,10 +1162,9 @@ async def api_guilds_guild_emojis_get(user, guild):
 
 
 @app.post("/api/v9/guilds/<int:guild>/emojis")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_emojis_post(user, guild):
-    if guild.owner_id != user.id: # TODO: check permissions
-        raise InvalidDataErr(403, mkError(50013))
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_emojis_post(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     data = await request.get_json()
     if not data.get("image"):
         raise InvalidDataErr(400, mkError(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
@@ -1176,10 +1182,9 @@ async def api_guilds_guild_emojis_post(user, guild):
 
 
 @app.delete("/api/v9/guilds/<int:guild>/emojis/<int:emoji>")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_emojis_emoji_delete(user, guild, emoji):
-    if guild.owner_id != user.id: # TODO: check permissions
-        raise InvalidDataErr(403, mkError(50013))
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_emojis_emoji_delete(user: User, guild: Guild, member: GuildMember, emoji):
+    await member.checkPermissions(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     emoji = await core.getEmoji(emoji)
     if not emoji:
         return "", 204
@@ -1190,10 +1195,9 @@ async def api_guilds_guild_emojis_emoji_delete(user, guild, emoji):
 
 
 @app.patch("/api/v9/guilds/<int:guild>/channels")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_channels_patch(user, guild):
-    if guild.owner_id != user.id: # TODO: check permissions
-        raise InvalidDataErr(403, mkError(50013))
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_channels_patch(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_CHANNELS)
     if not (data := await request.get_json()):
         return "", 204
     for change in data:
@@ -1210,10 +1214,9 @@ async def api_guilds_guild_channels_patch(user, guild):
 
 
 @app.post("/api/v9/guilds/<int:guild>/channels")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_channels_post(user, guild):
-    if guild.owner_id != user.id: # TODO: check permissions
-        raise InvalidDataErr(403, mkError(50013))
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_channels_post(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_CHANNELS)
     data = await request.get_json()
     if not data.get("name"):
         raise InvalidDataErr(400, mkError(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
@@ -1227,22 +1230,66 @@ async def api_guilds_guild_channels_post(user, guild):
 
 
 @app.get("/api/v9/guilds/<int:guild>/invites")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_invites_get(user, guild):
-    if guild.owner_id != user.id: # TODO: check permissions
-        raise InvalidDataErr(403, mkError(50013))
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_invites_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_GUILD)
     invites = await core.getGuildInvites(guild)
     invites = [await invite.json for invite in invites]
     return c_json(invites)
 
 
 @app.get("/api/v9/guilds/<int:guild>/premium/subscriptions")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_premium_subscriptions_get(user, guild):
-    if guild.owner_id != user.id: # TODO: check permissions
-        raise InvalidDataErr(403, mkError(50013))
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_premium_subscriptions_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_GUILD)
     boosts = [{"ended": False, "user_id": str(guild.owner_id)}]*30
     return c_json(boosts)
+
+
+@app.delete("/api/v9/guilds/<int:guild>/members/<int:uid>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member: GuildMember, uid: int):
+    await member.checkPermissions(GuildPermissions.KICK_MEMBERS)
+    if target_member := await core.getGuildMember(guild, uid):
+        await member.checkCanKickOrBan(target_member)
+        await core.deleteGuildMember(target_member)
+        await core.sendGuildMemberRemoveEvent(guild, await target_member.user)
+        await core.sendGuildDeleteEvent(guild, target_member)
+    return "", 204
+
+
+@app.put("/api/v9/guilds/<int:guild>/bans/<int:uid>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: GuildMember, uid: int):
+    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    if target_member := await core.getGuildMember(guild, uid):
+        await member.checkCanKickOrBan(target_member)
+        if await core.getGuildBan(guild, uid) is None:
+            await core.deleteGuildMember(target_member)
+            await core.banGuildMember(target_member, request.headers.get("x-audit-log-reason"))
+            target_user = await target_member.user
+            await core.sendGuildMemberRemoveEvent(guild, target_user)
+            await core.sendGuildDeleteEvent(guild, target_member)
+            await core.sendGuildBanAddEvent(guild, target_user)
+            data = await request.get_json()
+            if (delete_message_seconds := data.get("delete_message_seconds", 0)) > 0:
+                if delete_message_seconds > 604800: delete_message_seconds = 604800 # 7 days
+                after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
+                deleted_messages = await core.bulkDeleteGuildMessagesFromBanned(guild, uid, after)
+                for channel, messages in deleted_messages.items():
+                    if len(messages) > 1:
+                        await core.sendMessageBulkDeleteEvent(guild.id, channel, messages)
+                    elif len(messages) == 1:
+                        await core.sendMessageDeleteEvent(Message(messages[0], channel, uid))
+    return "", 204
+
+
+@app.get("/api/v9/guilds/<int:guild>/bans")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_bans_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    bans = [await ban.json for ban in await core.getGuildBans(guild)]
+    return c_json(bans)
 
 
 # Stickers & gifs

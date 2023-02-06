@@ -1,5 +1,5 @@
 from asyncio import get_event_loop
-from random import randint
+from random import randint, choice
 from typing import Coroutine, Any
 
 import pytest as pt
@@ -7,7 +7,7 @@ import pytest as pt
 from server.classes.user import Session, UserId, UserSettings, UserData
 from server.config import Config
 from server.core import Core
-from server.enums import UserFlags as UserFlagsE
+from server.enums import UserFlags as UserFlagsE, RelationshipType
 from server.errors import InvalidDataErr
 from server.snowflake import Snowflake
 from server.utils import b64decode
@@ -76,34 +76,6 @@ async def test_login_fail(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_createSessionWithoutKey_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.createSessionWithoutKey(VARS["user_id"])
-    assert session is not None, "Session not created: ???"
-
-
-@pt.mark.asyncio
-async def test_createSessionWithoutKey_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.createSessionWithoutKey(VARS["user_id"] + 1)
-    assert session is None, f"User with id {VARS['user_id'] + 1} doesn't exists: must return None!"
-
-
-@pt.mark.asyncio
-async def test_createSessionWithoutKey_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.createSessionWithoutKey(VARS["user_id"])
-    assert session is not None, "Session not created: ???"
-
-
-@pt.mark.asyncio
-async def test_createSessionWithoutKey_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.createSessionWithoutKey(VARS["user_id"] + 1)
-    assert session is None, f"User with id {VARS['user_id'] + 1} doesn't exists: must return None!"
-
-
-@pt.mark.asyncio
 async def test_getUser_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     user = await testCore.getUser(VARS["user_id"])
@@ -120,7 +92,7 @@ async def test_getUser_fail(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_validSession_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    session = await testCore.createSessionWithoutKey(VARS["user_id"])
+    session = await testCore.createSession(VARS["user_id"])
     assert await testCore.validSession(session)
 
 
@@ -277,13 +249,15 @@ async def test_getUserProfile_fail(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_checkUserPassword_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    assert await testCore.checkUserPassword(UserId(VARS["user_id"]), "test_passw0rd")
+    user = await testCore.getUser(VARS["user_id"])
+    assert await testCore.checkUserPassword(user, "test_passw0rd")
 
 
 @pt.mark.asyncio
 async def test_checkUserPassword_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    assert not await testCore.checkUserPassword(UserId(VARS["user_id"]), "wrong_password")
+    user = await testCore.getUser(VARS["user_id"])
+    assert not await testCore.checkUserPassword(user, "wrong_password")
 
 
 @pt.mark.asyncio
@@ -372,7 +346,7 @@ async def test_checkRelationShipAvailable_fail(testCore: Coroutine[Any, Any, Cor
         await testCore.checkRelationShipAvailable(UserId(VARS["user_id"] + 100000), UserId(VARS["user_id"] + 200000))
         assert False
     except InvalidDataErr:
-        pass # Ok
+        pass  # Ok
 
 
 @pt.mark.asyncio
@@ -417,92 +391,74 @@ async def test_getRelatedUsers_success(testCore: Coroutine[Any, Any, Core]):
 
 @pt.mark.asyncio
 async def test_accRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_accRelationship_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    await testCore.accRelationship(UserId(VARS["user_id"] + 100000), VARS["user_id"] + 200000)
+    rel = await testCore.getRelationship(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
+    assert rel is not None
+    assert rel.type == RelationshipType.FRIEND
 
 
 @pt.mark.asyncio
 async def test_delRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_delRelationship_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    await testCore.delRelationship(UserId(VARS["user_id"] + 100000), VARS["user_id"] + 200000)
+    rel = await testCore.getRelationship(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
+    assert rel is None
 
 
 @pt.mark.asyncio
 async def test_changeUserPassword_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_changeUserPassword_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    user = await testCore.getUser(VARS["user_id"])
+    await testCore.changeUserPassword(user, "test_password123")
+    user = await testCore.getUser(VARS["user_id"])
+    assert await testCore.checkUserPassword(user, "test_password123")
 
 
 @pt.mark.asyncio
 async def test_logoutUser_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_logoutUser_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test__sessionToUser_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test__sessionToUser_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    session = await testCore.createSession(VARS["user_id"])
+    assert await testCore.validSession(session)
+    await testCore.logoutUser(session)
+    assert not await testCore.validSession(session)
 
 
 @pt.mark.asyncio
 async def test_getMfa_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getMfa_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    user = await testCore.getUser(VARS["user_id"])
+    if not (await user.settings).mfa:
+        assert await testCore.getMfa(user) is None
 
 
 @pt.mark.asyncio
 async def test_setBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_setBackupCodes_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
+    await testCore.setBackupCodes(UserId(VARS["user_id"]), codes)
+    db_codes = [code[0] for code in await testCore.getBackupCodes(UserId(VARS["user_id"]))]
+    assert len(db_codes) == 10
+    assert set(codes) == set(db_codes)
 
 
 @pt.mark.asyncio
 async def test_clearBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_clearBackupCodes_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    await testCore.clearBackupCodes(UserId(VARS["user_id"]))
+    codes = await testCore.getBackupCodes(UserId(VARS["user_id"]))
+    assert len(codes) == 0
 
 
 @pt.mark.asyncio
 async def test_getBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getBackupCodes_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    assert len(await testCore.getBackupCodes(UserId(VARS["user_id"]))) == 0
+    codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
+    await testCore.setBackupCodes(UserId(VARS["user_id"]), codes)
+    assert len(db_codes := await testCore.getBackupCodes(UserId(VARS["user_id"]))) == 10
+    db_codes = [code[0] for code in db_codes]
+    assert set(codes) == set(db_codes)
 
 
 @pt.mark.asyncio
@@ -527,12 +483,19 @@ async def test_generateUserMfaNonce_fail(testCore: Coroutine[Any, Any, Core]):
 
 @pt.mark.asyncio
 async def test_useMfaCode_success(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    codes = list(await testCore.getBackupCodes(UserId(VARS["user_id"])))
+    assert await testCore.useMfaCode(VARS["user_id"], codes[0][0])
+    codes[0] = (codes[0][0], True)
+    db_codes = await testCore.getBackupCodes(UserId(VARS["user_id"]))
+    assert len(db_codes) == 10
+    assert set(codes) == set(db_codes)
 
 
 @pt.mark.asyncio
 async def test_useMfaCode_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    assert not await testCore.useMfaCode(VARS["user_id"], "invalid_code")
 
 
 @pt.mark.asyncio

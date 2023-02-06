@@ -2,18 +2,17 @@ from asyncio import get_event_loop
 from base64 import b64encode as _b64encode
 from contextvars import Context
 from datetime import datetime
-from hashlib import sha256, sha512
+from hashlib import sha256
 from hmac import new
 from json import loads as jloads, dumps as jdumps
 from os import urandom
 from random import randint
 from time import time
-from typing import Optional, Union, List, Tuple
-
-from Crypto.Cipher import AES
+from typing import Optional, Union, List, Tuple, Dict
+from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel
-from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
@@ -24,7 +23,7 @@ from .errors import InvalidDataErr, MfaRequiredErr
 from .pubsub_client import Broadcaster
 from .responses import channelInfoResponse
 from .snowflake import Snowflake
-from .utils import b64encode, b64decode, MFA, mkError, execute_after
+from .utils import b64encode, b64decode, MFA, mkError, execute_after, int_length
 
 
 class CDN:
@@ -61,15 +60,26 @@ class Core(Singleton):
         await self.db.init(*db_args, **db_kwargs)
         return self
 
-    def encryptPassword(self, uid: int, password: str) -> str:
-        key = new(self.key, int.to_bytes(uid, 16, "big"), sha256).digest()
-        return new(key, password.encode('utf-8'), sha512).hexdigest()
+    def prepPassword(self, password: str, uid: int) -> bytes:
+        """
+        Prepares user password for hashing
+        :param password:
+        :param uid:
+        :return:
+        """
+        password = password.encode("utf8")
+        password += uid.to_bytes(int_length(uid), "big")
+        return password.replace(b"\x00", b'')
 
-    def generateKey(self, password_key: bytes) -> str:
-        return b64encode(AES.new(self.key, AES.MODE_CBC, urandom(16)).encrypt(password_key))
+    def hashPassword(self, uid: int, password: str) -> str:
+        password = self.prepPassword(password, uid)
+        return hashpw(password, gensalt()).decode("utf8")
 
-    def generateSessionSignature(self, uid: int, sid: int, key: bytes) -> str:
-        return b64encode(new(key, f"{uid}.{sid}".encode('utf-8'), sha256).digest())
+    def generateSessionSignature(self) -> str:
+        return b64encode(urandom(32))
+
+    def generateKey(self) -> str:
+        return b64encode(urandom(16))
 
     async def getRandomDiscriminator(self, login: str) -> Optional[int]:
         for _ in range(5):
@@ -82,10 +92,10 @@ class Core(Singleton):
         async with self.db() as db:
             if await db.getUserByEmail(email):
                 raise InvalidDataErr(400, mkError(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
-        password = self.encryptPassword(uid, password)
-        key = self.generateKey(bytes.fromhex(password))
+        password = self.hashPassword(uid, password)
+        key = self.generateKey()
         session = int.from_bytes(urandom(6), "big")
-        signature = self.generateSessionSignature(uid, session, b64decode(key))
+        signature = self.generateSessionSignature()
 
         discriminator = await self.getRandomDiscriminator(login)
         if discriminator is None:
@@ -103,26 +113,23 @@ class Core(Singleton):
         email = email.strip().lower()
         async with self.db() as db:
             user = await db.getUserByEmail(email)
-        if not user or self.encryptPassword(user.id, password) != user.password:
+        if not user or not checkpw(self.prepPassword(password, user.id), user.password.encode("utf8")):
             raise InvalidDataErr(400, mkError(50035, {"login": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}, "password": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}}))
         settings = await user.settings
         if settings.mfa:
             _sid = bytes.fromhex(user.password[:12])
             sid = int.from_bytes(_sid, "big")
-            raise MfaRequiredErr(user.id, b64encode(_sid), self.generateSessionSignature(user.id, sid, b64decode(user.key)))
-        return await self.createSession(user.id, user.key)
+            raise MfaRequiredErr(user.id, b64encode(_sid), self.generateMfaTicketSignature(user.id, sid, b64decode(user.key)))
+        return await self.createSession(user.id)
 
-    async def createSession(self, uid: int, key: str) -> Session:
-        sid = int.from_bytes(urandom(6), "big")
-        sig = self.generateSessionSignature(uid, sid, b64decode(key))
-        session = Session(uid, sid, sig)
-        async with self.db() as db:
-            await db.insertSession(session)
-        return session
-
-    async def createSessionWithoutKey(self, uid: int) -> Optional[Session]:
-        if user := await self.getUser(uid):
-            return await self.createSession(uid, user.key)
+    async def createSession(self, uid: int) -> Optional[Session]:
+        if await self.getUser(uid):
+            sid = int.from_bytes(urandom(6), "big")
+            sig = self.generateSessionSignature()
+            session = Session(uid, sid, sig)
+            async with self.db() as db:
+                await db.insertSession(session)
+            return session
 
     async def getUser(self, uid: int) -> Optional[User]:
         async with self.db() as db:
@@ -158,10 +165,8 @@ class Core(Singleton):
             raise InvalidDataErr(404, mkError(10013))
         return user
 
-    async def checkUserPassword(self, user: _User, password: str) -> bool:
-        user = await self.getUser(user.id) if not user.get("key") else user
-        password = self.encryptPassword(user.id, password)
-        return user.password == password
+    async def checkUserPassword(self, user: User, password: str) -> bool:
+        return checkpw(self.prepPassword(password, user.id), user.password.encode("utf8"))
 
     async def changeUserDiscriminator(self, user: User, discriminator: int) -> bool:
         username = (await user.data).username
@@ -274,13 +279,13 @@ class Core(Singleton):
                     })
         return users
 
-    async def accRelationship(self, user: User, uid: int) -> None:
+    async def accRelationship(self, user: _User, uid: int) -> None:
         async with self.db() as db:
             await db.updateRelationship(user.id, uid, RelationshipType.FRIEND, RelationshipType.PENDING)
         channel = await self.getDMChannelOrCreate(user.id, uid)
         await self.mcl.broadcast("user_events", {"e": "relationship_acc", "data": {"target_user": uid, "current_user": user.id, "channel_id": channel.id}})
 
-    async def delRelationship(self, user: User, uid: int) -> None:
+    async def delRelationship(self, user: _User, uid: int) -> None:
         async with self.db() as db:
             if not (rel := await db.getRelationship(user.id, uid)):
                 return
@@ -298,8 +303,8 @@ class Core(Singleton):
         await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": user.id, "target_user": uid, "type": t1}})
         await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": t2}})
 
-    async def changeUserPassword(self, user: User, new_password: str) -> None:
-        new_password = self.encryptPassword(user.id, new_password)
+    async def changeUserPassword(self, user: _User, new_password: str) -> None:
+        new_password = self.hashPassword(user.id, new_password)
         async with self.db() as db:
             await db.changeUserPassword(user, new_password)
 
@@ -307,12 +312,7 @@ class Core(Singleton):
         async with self.db() as db:
             await db.logoutUser(sess)
 
-    def _sessionToUser(self, session: Session) -> User:
-        return User(session.id)
-
-    async def getMfa(self, user: Union[User, Session]) -> Optional[MFA]:
-        if type(user) == Session:
-            user = self._sessionToUser(user)
+    async def getMfa(self, user: User) -> Optional[MFA]:
         settings = await user.settings
         mfa = MFA(settings.get("mfa"), user.id)
         if mfa.valid:
@@ -327,9 +327,12 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.clearBackupCodes(user)
 
-    async def getBackupCodes(self, user: _User) -> list:
+    async def getBackupCodes(self, user: _User) -> List[Tuple[str, bool]]:
         async with self.db() as db:
             return await db.getBackupCodes(user)
+
+    def generateMfaTicketSignature(self, uid: int, sid: int, key: bytes) -> str:
+        return b64encode(new(key, f"{uid}.{sid}".encode('utf-8'), sha256).digest())
 
     async def getMfaFromTicket(self, ticket: str) -> Optional[MFA]:
         try:
@@ -342,7 +345,7 @@ class Core(Singleton):
             return
         if sid != bytes.fromhex(user.password[:12]):
             return
-        if sig != self.generateSessionSignature(uid, int.from_bytes(sid, "big"), b64decode(user.key)):
+        if sig != self.generateMfaTicketSignature(uid, int.from_bytes(sid, "big"), b64decode(user.key)):
             return
         settings = await user.settings
         return MFA(settings.mfa, uid)
@@ -461,10 +464,15 @@ class Core(Singleton):
         await self.mcl.broadcast("message_events", {"e": "message_update", "data": {"users": users, "message_obj": m}})
         return after
 
+    async def sendMessageDeleteEvent(self, message: Message) -> None:
+        await self.mcl.broadcast("message_events", {"e": "message_delete",
+                                                    "data": {"message": message.id, "channel": message.channel_id,
+                                                             "guild": message.guild_id}})
+
     async def deleteMessage(self, message: Message) -> None:
         async with self.db() as db:
             await db.deleteMessage(message)
-        await self.mcl.broadcast("message_events", {"e": "message_delete", "data": {"message": message.id, "channel": message.channel_id}})
+        await self.sendMessageDeleteEvent(message)
 
     async def getRelatedUsersToChannel(self, channel_id: int) -> List[int]:
         channel = await self.getChannel(channel_id)
@@ -927,6 +935,49 @@ class Core(Singleton):
                                          "code": invite.code,
                                          "channel_id": str(invite.channel_id)
                                      }}})
+
+    async def deleteGuildMember(self, member: GuildMember):
+        async with self.db() as db:
+            await db.deleteGuildMember(member)
+
+    async def sendGuildDeleteEvent(self, guild: Guild, user: _User) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_delete", "data": {"users": [user.id], "guild_id": guild.id}})
+
+    async def sendGuildMemberRemoveEvent(self, guild: Guild, user: User) -> None:
+        user_obj = await (await user.userdata).json
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_member_remove", "data": {"users": [user.id], "guild_id": guild.id,
+                                                                       "user_obj": user_obj}})
+
+    async def banGuildMember(self, member: GuildMember, reason: str=None) -> None:
+        async with self.db() as db:
+            await db.banGuildMember(member, reason)
+
+    async def sendGuildBanAddEvent(self, guild: Guild, user: User) -> None:
+        user_obj = await (await user.userdata).json
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_ban_add", "data": {"users": [guild.owner_id], "guild_id": guild.id,
+                                                                       "user_obj": user_obj}})
+
+    async def getGuildBan(self, guild: Guild, user_id: int) -> Optional[GuildBan]:
+        async with self.db() as db:
+            return await db.getGuildBan(guild, user_id)
+
+    async def getGuildBans(self, guild: Guild) -> List[GuildBan]:
+        async with self.db() as db:
+            return await db.getGuildBans(guild)
+
+    async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> Dict[int, List[int]]:
+        async with self.db() as db:
+            return await db.bulkDeleteGuildMessagesFromBanned(guild, user_id, after_id)
+
+    async def sendMessageBulkDeleteEvent(self, guild_id: int, channel_id: int, messages_ids: List[int]) -> None:
+        users = await self.getRelatedUsersToChannel(channel_id)
+        await self.mcl.broadcast("message_events", {"e": "message_delete_bulk", "data": {"users": users,
+                                                                                         "guild_id": guild_id,
+                                                                                         "channel_id": channel_id,
+                                                                                         "messages": messages_ids}})
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
