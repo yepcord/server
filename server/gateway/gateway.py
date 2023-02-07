@@ -408,6 +408,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(GuildRoleDeleteEvent(guild_id, role_id))
 
+    async def member_update(self, users, guild_id, member_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildMemberUpdateEvent(guild_id, member_obj))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

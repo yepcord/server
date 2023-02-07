@@ -667,3 +667,19 @@ class GuildRoleDeleteEvent(DispatchEvent):
             }
         }
         return data
+
+class GuildMemberUpdateEvent(DispatchEvent):
+    NAME = "GUILD_MEMBER_UPDATE"
+
+    def __init__(self, guild_id, member_obj):
+        self.guild_id = guild_id
+        self.member_obj = member_obj
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.member_obj
+        }
+        data["d"]["guild_id"] = str(self.guild_id)
+        return data

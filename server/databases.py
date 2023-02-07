@@ -294,6 +294,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def getRolesMemberCounts(self, guild: Guild) -> Dict[int, int]: ...
 
+    @abstractmethod
+    async def updateMemberDiff(self, before: GuildMember, after: GuildMember) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -850,3 +853,10 @@ class MySqlConnection:
             counts[r[0]] = r[1]
 
         return counts
+
+    async def updateMemberDiff(self, before: GuildMember, after: GuildMember) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `guild_members` SET {diff} WHERE '
+                                   f'`guild_id`={before.guild_id} AND `user_id`={before.id};')

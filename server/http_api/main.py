@@ -1381,6 +1381,21 @@ async def api_guilds_guild_roles_membercounts(user: User, guild: Guild, member: 
     return c_json(counts)
 
 
+@app.patch("/api/v9/guilds/<int:guild>/members/<int:uid>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_members_member_parth(user: User, guild: Guild, member: GuildMember, uid: int):
+    data = await request.get_json()
+    target_member = await core.getGuildMember(guild, uid)
+    new_member = target_member.copy()
+    if "roles" in data:
+        await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+        roles = [int(role) for role in data["roles"]]
+        new_member = target_member.copy(roles=roles)
+        await core.updateMemberDiff(target_member, new_member)
+        await core.sendGuildMemberUpdateEvent(new_member)
+    return c_json(await new_member.json)
+
+
 # Stickers & gifs
 
 
@@ -1574,8 +1589,6 @@ async def other_api_endpoints(path):
         print(f"  Data: {await request.get_json()}")
     print("----------------")
     return "Not Implemented!", 501
-
-# TODO: /api/v9/guilds/<int:guild>/roles/member-counts -> {role_id: count (???) }
 
 
 if __name__ == "__main__":

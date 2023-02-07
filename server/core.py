@@ -1014,6 +1014,17 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getRolesMemberCounts(guild)
 
+    async def updateMemberDiff(self, before: GuildMember, after: GuildMember) -> None:
+        async with self.db() as db:
+            await db.updateMemberDiff(before, after)
+
+    async def sendGuildMemberUpdateEvent(self, member: GuildMember) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "member_update",
+                                                  "data": {
+                                                      "users": await self.getGuildMembersIds(GuildId(member.guild_id)),
+                                                      "guild_id": member.guild_id,
+                                                      "member_obj": await member.json}})
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
 from server.ctx import Ctx
