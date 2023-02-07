@@ -17,7 +17,7 @@ from ..snowflake import Snowflake
 from ..ctx import Ctx
 from ..geoip import getLanguageCode
 from ..classes.channel import Channel
-from ..classes.guild import Emoji, GuildId, Invite, Guild
+from ..classes.guild import Emoji, GuildId, Invite, Guild, Role
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember
 from ..config import Config
@@ -216,6 +216,19 @@ def getGuild(with_member):
             return await f(*args, **kwargs)
         return wrapped
     return _getGuild
+
+def getRole(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (role := kwargs.get("role")) or not (guild := kwargs.get("guild")):
+            raise InvalidDataErr(404, mkError(10011))
+        if not (role := await core.getRole(role)):
+            raise InvalidDataErr(404, mkError(10011))
+        if role.guild_id != guild.id:
+            raise InvalidDataErr(404, mkError(10011))
+        kwargs["role"] = role
+        return await f(*args, **kwargs)
+    return wrapped
 
 getGuildWithMember = getGuild(with_member=True)
 getGuildWithoutMember = getGuild(with_member=False)
@@ -1292,6 +1305,82 @@ async def api_guilds_guild_bans_get(user: User, guild: Guild, member: GuildMembe
     return c_json(bans)
 
 
+@app.get("/api/v9/guilds/<int:guild>/integrations")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_integrations_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    return c_json([])
+
+
+@app.post("/api/v9/guilds/<int:guild>/roles")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_roles_post(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    data = await request.get_json()
+    if "id" in data: del data["id"]
+    if "guild_id" in data: del data["guild_id"]
+    role = Role(Snowflake.makeId(), guild.id, **data)
+    await core.createGuildRole(role)
+    await core.sendGuildRoleCreateEvent(role)
+    return c_json(await role.json)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/roles/<int:role>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
+async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: GuildMember, role: Role):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    data = await request.get_json()
+    if "id" in data: del data["id"]
+    if "guild_id" in data: del data["guild_id"]
+    new_role = role.copy(**data)
+    await core.updateRoleDiff(role, new_role)
+    await core.sendGuildRoleUpdateEvent(new_role)
+    return c_json(await new_role.json)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/roles")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    roles_data = await request.get_json()
+    for data in roles_data:
+        role = await core.getRole(int(data["id"]))
+        if "id" in data: del data["id"]
+        if "guild_id" in data: del data["guild_id"]
+        new_role = role.copy(**data)
+        await core.updateRoleDiff(role, new_role)
+        await core.sendGuildRoleUpdateEvent(new_role)
+    roles = await core.getRoles(guild)
+    roles = [await role.json for role in roles]
+    return c_json(roles)
+
+
+@app.delete("/api/v9/guilds/<int:guild>/roles/<int:role>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
+async def api_guilds_guild_roles_role_delete(user: User, guild: Guild, member: GuildMember, role: Role):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    if role.id == role.guild_id:
+        raise InvalidDataErr(400, mkError(50028))
+    await core.deleteRole(role)
+    await core.sendGuildRoleDeleteEvent(role)
+    return "", 204
+
+
+@app.get("/api/v9/guilds/<int:guild>/roles/<int:role>/connections/configuration")
+@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
+async def api_guilds_guild_roles_role_connections_configuration(user: User, guild: Guild, member: GuildMember, role: Role):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    return c_json([]) # TODO
+
+
+@app.get("/api/v9/guilds/<int:guild>/roles/member-counts")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_roles_membercounts(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    counts = await core.getRolesMemberCounts(guild)
+    return c_json(counts)
+
+
 # Stickers & gifs
 
 
@@ -1484,7 +1573,7 @@ async def other_api_endpoints(path):
     if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
         print(f"  Data: {await request.get_json()}")
     print("----------------")
-    return "Not Implemented!", 502
+    return "Not Implemented!", 501
 
 # TODO: /api/v9/guilds/<int:guild>/roles/member-counts -> {role_id: count (???) }
 

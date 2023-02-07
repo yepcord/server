@@ -25,6 +25,7 @@ class _Errors:
     err_10004 = "Unknown Guild"
     err_10006 = "Unknown Invite"
     err_10008 = "Unknown Message"
+    err_10011 = "Unknown Role"
     err_10013 = "Unknown User"
     err_10014 = "Unknown Emoji"
 
@@ -39,6 +40,7 @@ class _Errors:
     err_50007 = "Cannot send messages to this user"
     err_50013 = "Missing Permissions"
     err_50018 = "Password does not match"
+    err_50028 = "Invalid Role"
     err_50035 = "Invalid Form Body"
     err_50104 = "Malformed user settings payload"
 

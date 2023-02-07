@@ -401,7 +401,7 @@ class GuildMember(_User, Model):
             "is_pending": False,  # TODO
             "pending": False,  # TODO
             "premium_since": Snowflake.toDatetime(userdata.uid).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "roles": self.roles,
+            "roles": [str(role) for role in self.roles],
             "user": await userdata.json,
             "mute": self.mute,
             "deaf": self.deaf

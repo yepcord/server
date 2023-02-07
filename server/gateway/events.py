@@ -628,3 +628,42 @@ class MessageBulkDeleteEvent(DispatchEvent):
             }
         }
         return data
+
+class GuildRoleCreateEvent(DispatchEvent):
+    NAME = "GUILD_ROLE_CREATE"
+
+    def __init__(self, guild_id, role_obj):
+        self.guild_id = guild_id
+        self.role_obj = role_obj
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "role": self.role_obj,
+                "guild_id": str(self.guild_id)
+            }
+        }
+        return data
+
+class GuildRoleUpdateEvent(GuildRoleCreateEvent):
+    NAME = "GUILD_ROLE_UPDATE"
+
+class GuildRoleDeleteEvent(DispatchEvent):
+    NAME = "GUILD_ROLE_DELETE"
+
+    def __init__(self, guild_id, role_id):
+        self.guild_id = guild_id
+        self.role_id = role_id
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "guild_id": str(self.guild_id),
+                "role_id": str(self.role_id)
+            }
+        }
+        return data

@@ -772,7 +772,7 @@ class Core(Singleton):
             return await db.getInvite(invite_id)
 
     async def createGuild(self, user: User, name: str) -> Guild:
-        guild = Guild(Snowflake.makeId(), user.id, name, roles=[], system_channel_id=0)
+        guild = Guild(Snowflake.makeId(), user.id, name, system_channel_id=0)
         roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
         channels = []
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
@@ -785,8 +785,7 @@ class Core(Singleton):
                                 parent_id=channels[1].id, bitrate=64000, user_limit=0, permission_overwrites=[], flags=0, rate_limit=0))
         members = [GuildMember(user.id, guild.id, int(time()))]
 
-        guild.system_channel_id = channels[1].id
-        guild.roles.append(roles[0].id)
+        guild.system_channel_id = channels[2].id
         async with self.db() as db:
             await db.createGuild(guild, roles, channels, members)
         guild.fill_defaults()
@@ -978,6 +977,42 @@ class Core(Singleton):
                                                                                          "guild_id": guild_id,
                                                                                          "channel_id": channel_id,
                                                                                          "messages": messages_ids}})
+
+    async def createGuildRole(self, role: Role) -> None:
+        async with self.db() as db:
+            return await db.createGuildRole(role)
+
+    async def sendGuildRoleCreateEvent(self, role: Role) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "role_create",
+                                                  "data": {
+                                                      "users": await self.getGuildMembersIds(GuildId(role.guild_id)),
+                                                      "guild_id": role.guild_id,
+                                                      "role_obj": await role.json}})
+
+    async def updateRoleDiff(self, before: Role, after: Role) -> None:
+        async with self.db() as db:
+            await db.updateRoleDiff(before, after)
+
+    async def sendGuildRoleUpdateEvent(self, role: Role) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "role_update",
+                                                  "data": {
+                                                      "users": await self.getGuildMembersIds(GuildId(role.guild_id)),
+                                                      "guild_id": role.guild_id,
+                                                      "role_obj": await role.json}})
+
+    async def deleteRole(self, role: Role) -> None:
+        async with self.db() as db:
+            return await db.deleteRole(role)
+
+    async def sendGuildRoleDeleteEvent(self, role: Role) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "role_delete",
+                                                  "data": {
+                                                      "users": await self.getGuildMembersIds(GuildId(role.guild_id)),
+                                                      "guild_id": role.guild_id, "role_id": role.id}})
+
+    async def getRolesMemberCounts(self, guild: Guild) -> Dict[int, int]:
+        async with self.db() as db:
+            return await db.getRolesMemberCounts(guild)
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

@@ -390,6 +390,24 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(MessageBulkDeleteEvent(guild_id, channel_id, messages))
 
+    async def role_create(self, users, guild_id, role_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildRoleCreateEvent(guild_id, role_obj))
+
+    async def role_update(self, users, guild_id, role_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildRoleUpdateEvent(guild_id, role_obj))
+
+    async def role_delete(self, users, guild_id, role_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildRoleDeleteEvent(guild_id, role_id))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core
