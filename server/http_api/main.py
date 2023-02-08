@@ -504,6 +504,7 @@ async def api_users_me_connections(user): # TODO
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_post(user):
     udata = await request.get_json()
+    udata["discriminator"] = int(udata["discriminator"])
     if not (rUser := await core.getUserByUsername(**udata)):
         raise InvalidDataErr(400, mkError(80004))
     if rUser == user:
@@ -661,11 +662,16 @@ async def api_users_me_harvest(user):
 # Users
 
 
-@app.get("/api/v9/users/<int:t_user_id>/profile")
+@app.get("/api/v9/users/<string:target_user>/profile")
 @multipleDecorators(usingDB, getUser)
-async def api_users_user_profile(user, t_user_id):
-    user = await core.getUserProfile(t_user_id, user)
-    return c_json(await userProfileResponse(user))
+async def api_users_user_profile(user: User, target_user: str):
+    if target_user == "@me":
+        target_user = user.id
+    target_user = await core.getUserProfile(target_user, user)
+    with_mutual_guilds = request.args.get("with_mutual_guilds", "false").lower() == "true"
+    mutual_friends_count = request.args.get("mutual_friends_count", "false").lower() == "true"
+    guild_id = int(request.args.get("guild_id", 0))
+    return c_json(await userProfileResponse(target_user, user, with_mutual_guilds, mutual_friends_count, guild_id))
 
 
 # Channels
@@ -1381,18 +1387,44 @@ async def api_guilds_guild_roles_membercounts(user: User, guild: Guild, member: 
     return c_json(counts)
 
 
-@app.patch("/api/v9/guilds/<int:guild>/members/<int:uid>")
+@app.patch("/api/v9/guilds/<int:guild>/members/<string:target_user>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
-async def api_guilds_guild_members_member_parth(user: User, guild: Guild, member: GuildMember, uid: int):
+async def api_guilds_guild_members_member_parth(user: User, guild: Guild, member: GuildMember, target_user: str):
+    if target_user == "@me":
+        target_user = user.id
+    target_user = int(target_user)
     data = await request.get_json()
-    target_member = await core.getGuildMember(guild, uid)
+    target_member = await core.getGuildMember(guild, target_user)
     new_member = target_member.copy()
     if "roles" in data:
         await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data["roles"]]
         new_member = target_member.copy(roles=roles)
         await core.updateMemberDiff(target_member, new_member)
-        await core.sendGuildMemberUpdateEvent(new_member)
+    target_member = new_member.copy()
+    if "nick" in data:
+        await member.checkPermissions(
+            GuildPermissions.CHANGE_NICKNAME
+            if target_member.user_id == member.user_id else
+            GuildPermissions.MANAGE_NICKNAMES
+        )
+        nick = data["nick"]
+        if not nick.strip(): nick = None
+        new_member = target_member.copy(nick=nick)
+        await core.updateMemberDiff(target_member, new_member)
+    target_member = new_member.copy()
+    if "avatar" in data and target_member.user_id == member.user_id:
+        avatar = data["avatar"]
+        if (img := getImage(avatar)) and validImage(img):
+            if av := await cdn.setGuildAvatarFromBytesIO(user.id, guild.id, img):
+                avatar = av
+        elif avatar is None:
+            pass
+        else:
+            avatar = member.avatar
+        new_member = target_member.copy(avatar=avatar)
+        await core.updateMemberDiff(target_member, new_member)
+    await core.sendGuildMemberUpdateEvent(new_member)
     return c_json(await new_member.json)
 
 

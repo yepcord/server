@@ -177,6 +177,21 @@ async def upload_attachment_uuid_filename(uuid, filename):
     await cdn.uploadAttachment(data, attachment)
     await core.updateAttachment(attachment, attachment.copy().set(uploaded=True, metadata=meta, content_type=ct))
 
+@app.get("/guilds/<int:guild>/users/<int:member>/avatars/<string:name>")
+async def guilds_guild_users_user_avatars_name_get(guild: int, member: int, name: str):
+    ahash = name.split(".")[0]
+    fmt = name.split(".")[1]
+    size = int(request.args.get("size", 1024))
+    if fmt not in ["webp", "png", "jpg", "gif"]:
+        return b'', 400
+    if size not in ALLOWED_AVATAR_SIZES:
+        return b'', 400
+    if size > 1024: size = 1024
+    avatar = await cdn.getGuildAvatar(member, guild, ahash, size, fmt)
+    if not avatar:
+        return b'', 404
+    return avatar, 200, {"Content-Type": f"image/{fmt}"}
+
 if __name__ == "__main__":
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8003, reload=True, use_colors=False)

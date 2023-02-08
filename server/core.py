@@ -1025,6 +1025,17 @@ class Core(Singleton):
                                                       "guild_id": member.guild_id,
                                                       "member_obj": await member.json}})
 
+    async def getMutualGuilds(self, user: User, currentUser: User) -> List[dict]:
+        user_guilds_ids = [guild.id for guild in await self.getUserGuilds(user)]
+        current_user_guilds_ids = [guild.id for guild in await self.getUserGuilds(currentUser)]
+        mutual_guilds_ids = set(user_guilds_ids) & set(current_user_guilds_ids)
+        mutual_guilds = []
+        for guild_id in mutual_guilds_ids:
+            member = await self.getGuildMember(GuildId(guild_id), user.id)
+            mutual_guilds.append({"id": str(guild_id), "nick": member.nick})
+
+        return mutual_guilds
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
 from server.ctx import Ctx
