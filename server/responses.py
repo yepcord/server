@@ -1,3 +1,5 @@
+from .classes.guild import GuildId
+from .classes.user import User
 from .ctx import getCore
 from .snowflake import Snowflake
 from .enums import ChannelType
@@ -82,10 +84,11 @@ async def userConsentResponse(user):
     }
 
 
-async def userProfileResponse(user):
+async def userProfileResponse(user: User, currentUser: User, with_mutual_guilds: bool=False,
+                              mutual_friends_count: bool=False, guild_id: int=None):
     data = await user.data
     premium_since = Snowflake.toDatetime(user.id).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {
+    data = {
         "user": {
             "id": str(user.id),
             "username": data.username,
@@ -107,6 +110,16 @@ async def userProfileResponse(user):
             "accent_color": data.accent_color
         }
     }
+    if guild_id:
+        if member := await getCore().getGuildMember(GuildId(guild_id), user.id):
+            data["guild_member_profile"] = {"guild_id": str(guild_id)}
+            data["guild_member"] = await member.json
+    if mutual_friends_count:
+        data["mutual_friends_count"] = 0 # TODO
+    if with_mutual_guilds:
+        data["mutual_guilds"] = await getCore().getMutualGuilds(user, currentUser)
+
+    return data
 
 
 async def channelInfoResponse(channel, user=None, ids=True) -> dict:

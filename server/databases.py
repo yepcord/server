@@ -226,6 +226,9 @@ class DBConnection(ABC):
     async def createGuildMember(self, member: GuildMember) -> None: ...
 
     @abstractmethod
+    async def createGuildRole(self, role: Role) -> None: ...
+
+    @abstractmethod
     async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel]) -> None: ...
 
     @abstractmethod
@@ -281,6 +284,18 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> Dict[str, List[str]]: ...
+
+    @abstractmethod
+    async def updateRoleDiff(self, before: Role, after: Role) -> None: ...
+
+    @abstractmethod
+    async def deleteRole(self, role: Role) -> None: ...
+
+    @abstractmethod
+    async def getRolesMemberCounts(self, guild: Guild) -> Dict[int, int]: ...
+
+    @abstractmethod
+    async def updateMemberDiff(self, before: GuildMember, after: GuildMember) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -685,12 +700,15 @@ class MySqlConnection:
         fields, values = json_to_sql(member.toJSON(for_db=True), for_insert=True)
         await self.cur.execute(f'INSERT INTO `guild_members` ({fields}) VALUES ({values})')
 
+    async def createGuildRole(self, role: Role) -> None:
+        fields, values = json_to_sql(role.toJSON(for_db=True), for_insert=True)
+        await self.cur.execute(f'INSERT INTO `roles` ({fields}) VALUES ({values})')
+
     async def createGuild(self, guild: Guild, roles: List[Role], channels: List[Channel], members: List[GuildMember]) -> None:
         fields, values = json_to_sql(guild.toJSON(for_db=True), for_insert=True)
         await self.cur.execute(f'INSERT INTO `guilds` ({fields}) VALUES ({values})')
         for role in roles:
-            fields, values = json_to_sql(role.toJSON(for_db=True), for_insert=True)
-            await self.cur.execute(f'INSERT INTO `roles` ({fields}) VALUES ({values})')
+            await self.createGuildRole(role)
         for channel in channels:
             await self.createGuildChannel(channel)
         for member in members:
@@ -816,3 +834,29 @@ class MySqlConnection:
                 result[message[1]] = []
             result[message[1]].append(message[0])
         return result
+
+    async def updateRoleDiff(self, before: Role, after: Role) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `roles` SET {diff} WHERE `id`={before.id};')
+
+    async def deleteRole(self, role: Role) -> None:
+        await self.cur.execute(f'DELETE FROM `roles` WHERE `id`={role.id} LIMIT 1;')
+
+    async def getRolesMemberCounts(self, guild: Guild) -> Dict[int, int]:
+        counts = {}
+        await self.cur.execute(f'SELECT `id`, (select COUNT(*) from `guild_members` where '
+                               f'JSON_CONTAINS(`j_roles`, id, "$")) as member_count from `roles` where '
+                               f'`guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            counts[r[0]] = r[1]
+
+        return counts
+
+    async def updateMemberDiff(self, before: GuildMember, after: GuildMember) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `guild_members` SET {diff} WHERE '
+                                   f'`guild_id`={before.guild_id} AND `user_id`={before.id};')

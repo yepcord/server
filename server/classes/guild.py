@@ -35,15 +35,12 @@ class Guild(_Guild, Model):
     splash: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
     discovery_splash: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
     features: Optional[list] = field(db_name="j_features", default=None)
-    emojis: Optional[list] = field(db_name="j_emojis", default=None) # TODO: Deprecated, use `emoji.guild_id`
-    stickers: Optional[list] = field(db_name="j_stickers", default=None)
     banner: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
     region: Optional[str] = None
     afk_channel_id: Optional[int] = field(default=None, nullable=True, validation=Or(Use(int), NoneType))
     afk_timeout: Optional[int] = None
     system_channel_id: Optional[int] = None
     verification_level: Optional[int] = None
-    roles: Optional[list] = field(db_name="j_roles", default=None)
     default_message_notifications: Optional[int] = None
     mfa_level: Optional[int] = None
     explicit_content_filter: Optional[int] = None
@@ -68,7 +65,7 @@ class Guild(_Guild, Model):
             "emojis": [
                 await emoji.json for emoji in await getCore().getEmojis(self.id)  # Get json for every emoji in guild
             ],
-            "stickers": self.stickers,
+            "stickers": [], # TODO
             "banner": self.banner,
             "owner_id": str(self.owner_id),
             "application_id": None,  # TODO
@@ -136,7 +133,7 @@ class Role(Model):
     id: int = field(id_field=True)
     guild_id: int = field()
     name: str = field()
-    permissions: Optional[int] = None
+    permissions: Optional[int] = field(default=0, validation=Or(Use(int), NoneType))
     position: Optional[int] = None
     color: Optional[int] = None
     hoist: Optional[bool] = None

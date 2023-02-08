@@ -17,7 +17,7 @@ from ..snowflake import Snowflake
 from ..ctx import Ctx
 from ..geoip import getLanguageCode
 from ..classes.channel import Channel
-from ..classes.guild import Emoji, GuildId, Invite, Guild
+from ..classes.guild import Emoji, GuildId, Invite, Guild, Role
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember
 from ..config import Config
@@ -216,6 +216,19 @@ def getGuild(with_member):
             return await f(*args, **kwargs)
         return wrapped
     return _getGuild
+
+def getRole(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (role := kwargs.get("role")) or not (guild := kwargs.get("guild")):
+            raise InvalidDataErr(404, mkError(10011))
+        if not (role := await core.getRole(role)):
+            raise InvalidDataErr(404, mkError(10011))
+        if role.guild_id != guild.id:
+            raise InvalidDataErr(404, mkError(10011))
+        kwargs["role"] = role
+        return await f(*args, **kwargs)
+    return wrapped
 
 getGuildWithMember = getGuild(with_member=True)
 getGuildWithoutMember = getGuild(with_member=False)
@@ -491,6 +504,7 @@ async def api_users_me_connections(user): # TODO
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_relationships_post(user):
     udata = await request.get_json()
+    udata["discriminator"] = int(udata["discriminator"])
     if not (rUser := await core.getUserByUsername(**udata)):
         raise InvalidDataErr(400, mkError(80004))
     if rUser == user:
@@ -648,11 +662,16 @@ async def api_users_me_harvest(user):
 # Users
 
 
-@app.get("/api/v9/users/<int:t_user_id>/profile")
+@app.get("/api/v9/users/<string:target_user>/profile")
 @multipleDecorators(usingDB, getUser)
-async def api_users_user_profile(user, t_user_id):
-    user = await core.getUserProfile(t_user_id, user)
-    return c_json(await userProfileResponse(user))
+async def api_users_user_profile(user: User, target_user: str):
+    if target_user == "@me":
+        target_user = user.id
+    target_user = await core.getUserProfile(target_user, user)
+    with_mutual_guilds = request.args.get("with_mutual_guilds", "false").lower() == "true"
+    mutual_friends_count = request.args.get("mutual_friends_count", "false").lower() == "true"
+    guild_id = int(request.args.get("guild_id", 0))
+    return c_json(await userProfileResponse(target_user, user, with_mutual_guilds, mutual_friends_count, guild_id))
 
 
 # Channels
@@ -1292,6 +1311,125 @@ async def api_guilds_guild_bans_get(user: User, guild: Guild, member: GuildMembe
     return c_json(bans)
 
 
+@app.get("/api/v9/guilds/<int:guild>/integrations")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_integrations_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    return c_json([])
+
+
+@app.post("/api/v9/guilds/<int:guild>/roles")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_roles_post(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    data = await request.get_json()
+    if "id" in data: del data["id"]
+    if "guild_id" in data: del data["guild_id"]
+    role = Role(Snowflake.makeId(), guild.id, **data)
+    await core.createGuildRole(role)
+    await core.sendGuildRoleCreateEvent(role)
+    return c_json(await role.json)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/roles/<int:role>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
+async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: GuildMember, role: Role):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    data = await request.get_json()
+    if "id" in data: del data["id"]
+    if "guild_id" in data: del data["guild_id"]
+    new_role = role.copy(**data)
+    await core.updateRoleDiff(role, new_role)
+    await core.sendGuildRoleUpdateEvent(new_role)
+    return c_json(await new_role.json)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/roles")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    roles_data = await request.get_json()
+    for data in roles_data:
+        role = await core.getRole(int(data["id"]))
+        if "id" in data: del data["id"]
+        if "guild_id" in data: del data["guild_id"]
+        new_role = role.copy(**data)
+        await core.updateRoleDiff(role, new_role)
+        await core.sendGuildRoleUpdateEvent(new_role)
+    roles = await core.getRoles(guild)
+    roles = [await role.json for role in roles]
+    return c_json(roles)
+
+
+@app.delete("/api/v9/guilds/<int:guild>/roles/<int:role>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
+async def api_guilds_guild_roles_role_delete(user: User, guild: Guild, member: GuildMember, role: Role):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    if role.id == role.guild_id:
+        raise InvalidDataErr(400, mkError(50028))
+    await core.deleteRole(role)
+    await core.sendGuildRoleDeleteEvent(role)
+    return "", 204
+
+
+@app.get("/api/v9/guilds/<int:guild>/roles/<int:role>/connections/configuration")
+@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
+async def api_guilds_guild_roles_role_connections_configuration(user: User, guild: Guild, member: GuildMember, role: Role):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    return c_json([]) # TODO
+
+
+@app.get("/api/v9/guilds/<int:guild>/roles/member-counts")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_roles_membercounts(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    counts = await core.getRolesMemberCounts(guild)
+    return c_json(counts)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/members/<string:target_user>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member: GuildMember, target_user: str):
+    if target_user == "@me":
+        target_user = user.id
+    target_user = int(target_user)
+    data = await request.get_json()
+    target_member = await core.getGuildMember(guild, target_user)
+    new_member = target_member.copy()
+    if "roles" in data:
+        await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+        roles = [int(role) for role in data["roles"]]
+        new_member = target_member.copy(roles=roles)
+        await core.updateMemberDiff(target_member, new_member)
+    target_member = new_member.copy()
+    if "nick" in data:
+        await member.checkPermissions(
+            GuildPermissions.CHANGE_NICKNAME
+            if target_member.user_id == member.user_id else
+            GuildPermissions.MANAGE_NICKNAMES
+        )
+        nick = data["nick"]
+        if not nick.strip(): nick = None
+        new_member = target_member.copy(nick=nick)
+        await core.updateMemberDiff(target_member, new_member)
+    target_member = new_member.copy()
+    if "avatar" in data and target_member.user_id == member.user_id:
+        avatar = data["avatar"]
+        if (img := getImage(avatar)) and validImage(img):
+            if av := await cdn.setGuildAvatarFromBytesIO(user.id, guild.id, img):
+                avatar = av
+            else:
+                avatar = member.avatar
+        elif avatar is None:
+            pass
+        else:
+            avatar = member.avatar
+        new_member = target_member.copy(avatar=avatar)
+        await core.updateMemberDiff(target_member, new_member)
+    await core.sendGuildMemberUpdateEvent(new_member)
+    return c_json(await new_member.json)
+
+
 # Stickers & gifs
 
 
@@ -1484,9 +1622,7 @@ async def other_api_endpoints(path):
     if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
         print(f"  Data: {await request.get_json()}")
     print("----------------")
-    return "Not Implemented!", 502
-
-# TODO: /api/v9/guilds/<int:guild>/roles/member-counts -> {role_id: count (???) }
+    return "Not Implemented!", 501
 
 
 if __name__ == "__main__":

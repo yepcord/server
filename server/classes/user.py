@@ -391,7 +391,7 @@ class GuildMember(_User, Model):
 
     @property
     async def json(self) -> dict:
-        userdata = await getCore().getUserData(UserId(self.user_id))  # TODO: Replace with normal UserId
+        userdata = await getCore().getUserData(UserId(self.user_id))
         return {
             "avatar": self.avatar,
             "communication_disabled_until": self.communication_disabled_until,
@@ -401,7 +401,7 @@ class GuildMember(_User, Model):
             "is_pending": False,  # TODO
             "pending": False,  # TODO
             "premium_since": Snowflake.toDatetime(userdata.uid).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "roles": self.roles,
+            "roles": [str(role) for role in self.roles],
             "user": await userdata.json,
             "mute": self.mute,
             "deaf": self.deaf

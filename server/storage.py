@@ -102,6 +102,11 @@ class _Storage:
         def_size = 256 if anim else 1024
         return await self._getImage("icon", gid, icon_hash, size, fmt, def_size, lambda s: s)
 
+    async def getGuildAvatar(self, uid: int, gid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        anim = avatar_hash.startswith("a_")
+        def_size = 256 if anim else 1024
+        return await self._getImage(f"guild/{gid}/avatar", uid, avatar_hash, size, fmt, def_size, lambda s: s)
+
     async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
         raise NotImplementedError
 
@@ -129,6 +134,11 @@ class _Storage:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("icon", gid, size, lambda s: s, image)
+
+    async def setGuildAvatarFromBytesIO(self, uid: int, gid: int, image: BytesIO) -> str:
+        a = imageFrames(Image.open(image)) > 1
+        size = 256 if a else 1024
+        return await self._setImage(f"guild/{gid}/avatar", uid, size, lambda s: s, image)
 
     async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
         raise NotImplementedError

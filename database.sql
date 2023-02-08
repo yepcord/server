@@ -178,21 +178,21 @@ CREATE TABLE `attachments` (
   UNIQUE KEY `id` (`id`) USING HASH
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
-DROP TABLE IF EXISTS `connections`;
-CREATE TABLE `connections` (
-  `uid` bigint NOT NULL,
-  `type` text NOT NULL,
-  `state` text DEFAULT NULL,
-  `username` text DEFAULT NULL,
-  `service_uid` bigint DEFAULT NULL,
-  `friend_sync` bool NOT NULL DEFAULT false,
-  `j_integrations` JSON NOT NULL DEFAULT "[]",
-  `visible` bool NOT NULL DEFAULT true,
-  `verified` bool NOT NULL DEFAULT true,
-  `revoked` bool NOT NULL DEFAULT false,
-  `show_activity` bool NOT NULL DEFAULT true,
-  `two_way_link` bool NOT NULL DEFAULT false
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+#DROP TABLE IF EXISTS `connections`;
+#CREATE TABLE `connections` (
+#  `uid` bigint NOT NULL,
+#  `type` text NOT NULL,
+#  `state` text DEFAULT NULL,
+#  `username` text DEFAULT NULL,
+#  `service_uid` bigint DEFAULT NULL,
+#  `friend_sync` bool NOT NULL DEFAULT false,
+#  `j_integrations` JSON NOT NULL DEFAULT "[]",
+#  `visible` bool NOT NULL DEFAULT true,
+#  `verified` bool NOT NULL DEFAULT true,
+#  `revoked` bool NOT NULL DEFAULT false,
+#  `show_activity` bool NOT NULL DEFAULT true,
+#  `two_way_link` bool NOT NULL DEFAULT false
+#) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `frecency_settings`;
 CREATE TABLE `frecency_settings` (
@@ -240,15 +240,12 @@ CREATE TABLE `guilds` (
   `splash` text DEFAULT NULL,
   `discovery_splash` text DEFAULT NULL,
   `j_features` JSON NOT NULL DEFAULT "[]",
-  `j_emojis` JSON NOT NULL DEFAULT "[]",
-  `j_stickers` JSON NOT NULL DEFAULT "[]",
   `banner` text DEFAULT NULL,
   `region` text NOT NULL DEFAULT "deprecated",
   `afk_channel_id` bigint DEFAULT NULL,
   `afk_timeout` int DEFAULT 300,
   `system_channel_id` bigint NOT NULL,
   `verification_level` int NOT NULL DEFAULT 0,
-  `j_roles` JSON NOT NULL DEFAULT "[]",
   `default_message_notifications` int NOT NULL DEFAULT 0,
   `mfa_level` int NOT NULL DEFAULT 0,
   `explicit_content_filter` int NOT NULL DEFAULT 0,
@@ -266,7 +263,7 @@ DROP TABLE IF EXISTS `roles`;
 CREATE TABLE `roles` (
   `id` bigint NOT NULL,
   `guild_id` bigint NOT NULL,
-  `name` longtext NOT NULL,
+  `name` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `permissions` bigint NOT NULL DEFAULT 1071698660929,
   `position` int NOT NULL DEFAULT 0,
   `color` int NOT NULL DEFAULT 0,
