@@ -1389,7 +1389,7 @@ async def api_guilds_guild_roles_membercounts(user: User, guild: Guild, member: 
 
 @app.patch("/api/v9/guilds/<int:guild>/members/<string:target_user>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
-async def api_guilds_guild_members_member_parth(user: User, guild: Guild, member: GuildMember, target_user: str):
+async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member: GuildMember, target_user: str):
     if target_user == "@me":
         target_user = user.id
     target_user = int(target_user)
@@ -1418,6 +1418,8 @@ async def api_guilds_guild_members_member_parth(user: User, guild: Guild, member
         if (img := getImage(avatar)) and validImage(img):
             if av := await cdn.setGuildAvatarFromBytesIO(user.id, guild.id, img):
                 avatar = av
+            else:
+                avatar = member.avatar
         elif avatar is None:
             pass
         else:

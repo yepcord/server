@@ -391,7 +391,7 @@ class GuildMember(_User, Model):
 
     @property
     async def json(self) -> dict:
-        userdata = await getCore().getUserData(UserId(self.user_id))  # TODO: Replace with normal UserId
+        userdata = await getCore().getUserData(UserId(self.user_id))
         return {
             "avatar": self.avatar,
             "communication_disabled_until": self.communication_disabled_until,
