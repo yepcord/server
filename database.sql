@@ -134,7 +134,6 @@ CREATE TABLE `messages` (
   `channel_id` bigint NOT NULL,
   `author` bigint NOT NULL,
   `edit_timestamp` bigint DEFAULT NULL,
-  `j_attachments` JSON NOT NULL DEFAULT "[]",
   `j_embeds` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "[]" CHECK(json_valid(`j_embeds`)),
   `pinned` bool NOT NULL DEFAULT false,
   `webhook_id` bigint DEFAULT NULL,
@@ -169,6 +168,7 @@ DROP TABLE IF EXISTS `attachments`;
 CREATE TABLE `attachments` (
   `id` bigint NOT NULL,
   `channel_id` bigint NOT NULL,
+  `message_id` bigint NOT NULL,
   `filename` text NOT NULL,
   `size` bigint NOT NULL,
   `uuid` text NOT NULL,
@@ -288,6 +288,12 @@ CREATE TABLE `guild_members` (
   `j_roles` JSON NOT NULL DEFAULT "[]",
   `mute` bool NOT NULL DEFAULT false,
   `deaf` bool NOT NULL DEFAULT false
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `guild_members_roles`;
+CREATE TABLE `guild_members_roles` (
+  `user_id` bigint NOT NULL,
+  `role_id` bigint NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `emojis`;

@@ -1,7 +1,7 @@
 # All 'Message' classes (Message, etc.)
 from dataclasses import dataclass
 from time import mktime
-from typing import Optional, List
+from typing import Optional
 from uuid import UUID, uuid4
 
 from dateutil.parser import parse as dparse
@@ -10,11 +10,11 @@ from schema import Or, And
 
 from .user import UserId
 from ..config import Config
-from ..snowflake import Snowflake
 from ..ctx import getCore, Ctx
 from ..enums import MessageType
 from ..errors import EmbedErr, InvalidDataErr
 from ..model import Model, field, model
+from ..snowflake import Snowflake
 from ..utils import NoneType
 from ..utils import mkError, ping_regex
 
@@ -25,6 +25,7 @@ class _Message:
     def __eq__(self, other):
         return isinstance(other, _Message) and self.id == other.id
 
+
 @model
 @dataclass
 class Message(_Message, Model):
@@ -33,7 +34,6 @@ class Message(_Message, Model):
     author: int = field()
     content: Optional[str] = field(validation=Or(str, NoneType), default=None, nullable=True)
     edit_timestamp: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
-    attachments: Optional[list] = field(db_name="j_attachments", default=None)
     embeds: Optional[list] = field(db_name="j_embeds", default=None)
     pinned: Optional[bool] = False
     webhook_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
@@ -61,7 +61,8 @@ class Message(_Message, Model):
         data["tts"] = False
         data["timestamp"] = Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         if self.edit_timestamp:
-            data["edit_timestamp"] = Snowflake.toDatetime(self.edit_timestamp).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+            data["edit_timestamp"] = Snowflake.toDatetime(self.edit_timestamp).strftime(
+                "%Y-%m-%dT%H:%M:%S.000000+00:00")
         data["mentions"] = []
         data["mention_roles"] = []
         data["attachments"] = []
@@ -78,8 +79,8 @@ class Message(_Message, Model):
             if user := self.extra_data.get("user"):
                 user = await getCore().getUserData(UserId(user))
                 data["mentions"].append(await user.json)
-        for att in self.attachments:
-            att = await getCore().getAttachment(att)
+        for att in await getCore().getAttachments(self):
+            # att = await getCore().getAttachment(att)
             data["attachments"].append({
                 "filename": att.filename,
                 "id": str(att.id),
@@ -99,19 +100,19 @@ class Message(_Message, Model):
                 data["reactions"] = reactions
         return data
 
-    DEFAULTS = {"content": None, "edit_timestamp": None, "attachments": [], "embeds": [], "pinned": False,
+    DEFAULTS = {"content": None, "edit_timestamp": None, "embeds": [], "pinned": False,
                 "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
-                "thread": None, "components": [], "sticker_items": [], "extra_data": {}, "guild_id": None} # TODO: remove or replace with mode convenient solution
+                "thread": None, "components": [], "sticker_items": [], "extra_data": {},
+                "guild_id": None}  # TODO: remove or replace with mode convenient solution
 
     def __post_init__(self) -> None:
-        if self.attachments is None: self.attachments = []
         if self.embeds is None: self.embeds = []
         if self.components is None: self.components = []
         if self.sticker_items is None: self.sticker_items = []
         if self.extra_data is None: self.extra_data = {}
         super().__post_init__()
 
-    def fill_defaults(self): # TODO: remove or replace with mode convenient solution
+    def fill_defaults(self):  # TODO: remove or replace with mode convenient solution
         for k, v in self.DEFAULTS.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -121,25 +122,7 @@ class Message(_Message, Model):
         self.embeds = Embeds(self.embeds).json
         if self.embeds is None:
             self.embeds = []
-        await self._checkAttachments()
 
-    async def _checkAttachments(self):
-        if not hasattr(self, "attachments"):
-            return
-        attachments = self.attachments.copy()
-        self.attachments = []
-        for idx, attachment in enumerate(attachments):
-            if not attachment.get("uploaded_filename"):
-                raise InvalidDataErr(400, mkError(50013, {
-                    f"attachments.{idx}.uploaded_filename": {"code": "BASE_TYPE_REQUIRED",
-                                                             "message": "Required field"}}))
-            uuid = attachment["uploaded_filename"].split("/")[0]
-            try:
-                uuid = str(UUID(uuid))
-            except ValueError:
-                continue
-            att = await getCore().getAttachmentByUUID(uuid)
-            self.attachments.append(att.id)
 
 @model
 @dataclass
@@ -149,11 +132,13 @@ class ReadState(Model):
     count: int
     last_read_id: int
 
+
 @model
 @dataclass
 class Attachment(Model):
     id: int = field(id_field=True)
     channel_id: int = field()
+    message_id: int = field()
     filename: str = field()
     size: int = field()
     metadata: dict = field()
@@ -164,6 +149,7 @@ class Attachment(Model):
     def __post_init__(self) -> None:
         if not self.uuid: self.uuid = str(uuid4())
 
+
 @model
 @dataclass
 class Reaction(Model):
@@ -172,6 +158,7 @@ class Reaction(Model):
     emoji_id: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
     emoji_name: Optional[str] = field(default=None, nullable=True)
 
+
 @model
 @dataclass
 class SearchFilter(Model):
@@ -179,7 +166,8 @@ class SearchFilter(Model):
     sort_by: Optional[str] = field(default=None, validation=And(lambda s: s in ("id",)))
     sort_order: Optional[str] = field(default=None, validation=And(lambda s: s in ("asc", "desc")))
     mentions: Optional[int] = None
-    has: Optional[str] = field(default=None, validation=And(lambda s: s in ("link", "video", "file", "embed", "image", "sound", "sticker")))
+    has: Optional[str] = field(default=None, validation=And(
+        lambda s: s in ("link", "video", "file", "embed", "image", "sound", "sticker")))
     min_id: Optional[int] = None
     max_id: Optional[int] = None
     pinned: Optional[str] = field(default=None, validation=And(lambda s: s in ("true", "false")))
@@ -193,7 +181,7 @@ class SearchFilter(Model):
         "file": "JSON_LENGTH(`j_attachments`) > 0",
         "embed": "JSON_LENGTH(`j_embeds`) > 0",
         "sound": "true in (select content_type LIKE '%audio/%' from attachments where JSON_CONTAINS(messages.j_attachments, attachments.id, '$'))",
-        #"sticker": "" # TODO
+        # "sticker": "" # TODO
     }
 
     def __post_init__(self):
@@ -247,6 +235,7 @@ class Embeds:
     def makeError(code, path=None, replaces=None):
         if replaces is None: replaces = {}
         base_error = {"code": 50035, "errors": {"embeds": {}}, "message": "Invalid Form Body"}
+
         def insertError(error):
             errors = base_error["errors"]["embeds"]
             if path is None:
@@ -256,6 +245,7 @@ class Embeds:
                 errors[el] = {}
                 errors = errors[el]
             errors["_errors"] = error
+
         if code == 23:
             insertError([{"code": "BASE_TYPE_REQUIRED", "message": "This field is required"}])
             return base_error
@@ -290,7 +280,8 @@ class Embeds:
         :param index:
         :return:
         """
-        fields = ["description", "url", "timestamp", "color", "footer", "image", "thumbnail", "video", "provider", "author"]
+        fields = ["description", "url", "timestamp", "color", "footer", "image", "thumbnail", "video", "provider",
+                  "author"]
         data = self.data[index]
         for field in fields:
             if (v := data.get(field)) and not bool(v):
@@ -343,18 +334,22 @@ class Embeds:
                     raise EmbedErr(self.makeError(27, f"{idx}.footer.text", {"length": "2048"}))
                 if (url := footer.get("icon_url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
                     raise EmbedErr(self.makeError(24, f"{idx}.footer.icon_url", {"scheme": scheme}))
-                if footer.get("proxy_icon_url"): del footer["proxy_icon_url"] # Not supported
+                if footer.get("proxy_icon_url"): del footer["proxy_icon_url"]  # Not supported
 
     def validateImageField(self, image: dict, idx: int):
         if (url := image.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
             raise EmbedErr(self.makeError(24, f"{idx}.image.url", {"embed_index": idx, "scheme": scheme}))
-        if image.get("proxy_url"): del image["proxy_url"] # Not supported
+        if image.get("proxy_url"): del image["proxy_url"]  # Not supported
         if width := image.get("width"):
-            try: image["width"] = int(width)
-            except ValueError: del image["width"]
+            try:
+                image["width"] = int(width)
+            except ValueError:
+                del image["width"]
         if height := image.get("height"):
-            try: image["height"] = int(height)
-            except ValueError: del image["height"]
+            try:
+                image["height"] = int(height)
+            except ValueError:
+                del image["height"]
 
     def validateImage(self, idx: int, embed: dict) -> None:
         if image := embed.get("image"):
@@ -378,7 +373,7 @@ class Embeds:
                 self.validateImageField(video, idx)
 
     def validateProvider(self, idx: int, embed: dict) -> None:
-        if embed.get("provider"): del embed["provider"] # Not supported
+        if embed.get("provider"): del embed["provider"]  # Not supported
 
     def validateAuthor(self, idx: int, embed: dict) -> None:
         if author := embed.get("author"):
@@ -391,7 +386,7 @@ class Embeds:
                     raise EmbedErr(self.makeError(24, f"{idx}.author.url", {"scheme": scheme}))
                 if (url := author.get("icon_url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
                     raise EmbedErr(self.makeError(24, f"{idx}.author.icon_url", {"scheme": scheme}))
-                if author.get("proxy_icon_url"): del author["proxy_icon_url"] # Not supported
+                if author.get("proxy_icon_url"): del author["proxy_icon_url"]  # Not supported
 
     def validateFields(self, idx: int, embed: dict) -> None:
         if fields := embed.get("fields"):
@@ -423,7 +418,7 @@ class Embeds:
                 return
             if not embed.get("title"):
                 raise EmbedErr(self.makeError(23, f"{idx}"))
-            embed["type"] = "rich" # Single supported embed type now
+            embed["type"] = "rich"  # Single supported embed type now
             embed["title"] = str(embed["title"])
             self.delOptionalFields(idx)
             self.validateTitle(idx, embed)

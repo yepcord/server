@@ -1036,6 +1036,10 @@ class Core(Singleton):
 
         return mutual_guilds
 
+    async def getAttachments(self, message: Message) -> List[Attachment]:
+        async with self.db() as db:
+            return await db.getAttachments(message)
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
 from server.ctx import Ctx

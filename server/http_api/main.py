@@ -770,6 +770,7 @@ async def api_channels_channel_messages_post(user, channel):
             ... # TODO: Check
         if rel and rel.type == RelationshipType.BLOCK:
             raise InvalidDataErr(403, mkError(50007))
+    message_id = Snowflake.makeId()
     data = await request.get_json()
     if data is None and (ct := request.headers.get("Content-Type", "")).startswith("multipart/form-data;"):
         data = {}
@@ -786,37 +787,32 @@ async def api_channels_channel_messages_post(user, channel):
             if len(files) > 10:
                 raise InvalidDataErr(400, mkError(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
             atts = data["attachments"]
-            data["attachments"] = []
             for idx, file in enumerate(files):
                 uuid = str(uuid4())
                 att = {"filename": None}
                 if idx+1 <= len(atts):
                     att = atts[idx]
                 name = att.get("filename") or file.get("filename") or "unknown"
-                data["attachments"].append({"uploaded_filename": f"{uuid}/{name}"})
-                att = Attachment(Snowflake.makeId(), channel.id, name, len(file["data"]), {}, uuid)
+                att = Attachment(Snowflake.makeId(), channel.id, message_id, name, len(file["data"]), {}, uuid)
                 if file.get("content_type"):
                     cot = file.get("content_type").strip()
-                    att.set(content_type=cot)
-                    if cot.startswith("image/"):
-                        img = Image.open(BytesIO(file["data"]))
-                        att.set(metadata={"height": img.height, "width": img.width})
-                        img.close()
                 else:
                     cot = from_buffer(file["data"][:1024], mime=True)
-                    att.set(content_type=cot)
-                    if cot.startswith("image/"):
-                        img = Image.open(BytesIO(file["data"]))
-                        att.set(metadata={"height": img.height, "width": img.width})
-                        img.close()
-                await core.putAttachment(att)
+                att.set(content_type=cot)
+                if cot.startswith("image/"):
+                    img = Image.open(BytesIO(file["data"]))
+                    att.set(metadata={"height": img.height, "width": img.width})
+                    img.close()
                 await cdn.uploadAttachment(file["data"], att)
+                att.uploaded = True
+                await core.putAttachment(att)
     if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
         raise InvalidDataErr(400, mkError(50006))
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
-    message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
+    if "attachments" in data: del data["attachments"]
+    message = Message(id=message_id, channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
     await message.check()
     message = await core.sendMessage(message)
     if await core.delReadStateIfExists(user.id, channel.id):
@@ -876,7 +872,7 @@ async def api_channels_channel_messages_typing(user, channel):
     await core.sendTypingEvent(user, channel)
     return "", 204
 
-
+"""
 @app.post("/api/v9/channels/<int:channel>/attachments")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_attachments_post(user, channel):
@@ -905,6 +901,7 @@ async def api_channels_channel_attachments_post(user, channel):
             "upload_url": f"https://{Config('CDN_HOST')}/upload/attachment/{att.uuid}/{att.filename}",
         })
     return {"attachments": attachments}
+"""
 
 @app.put("/api/v9/channels/<int:channel>/recipients/<int:nUser>")
 @multipleDecorators(usingDB, getUser, getChannel)

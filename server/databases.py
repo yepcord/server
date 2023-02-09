@@ -297,6 +297,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def updateMemberDiff(self, before: GuildMember, after: GuildMember) -> None: ...
 
+    @abstractmethod
+    async def getAttachments(self, message: Message) -> List[Attachment]: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -860,3 +863,10 @@ class MySqlConnection:
         if diff:
             await self.cur.execute(f'UPDATE `guild_members` SET {diff} WHERE '
                                    f'`guild_id`={before.guild_id} AND `user_id`={before.id};')
+
+    async def getAttachments(self, message: Message) -> List[Attachment]:
+        attachments = []
+        await self.cur.execute(f'SELECT * FROM `attachments` WHERE `message_id`={message.id};')
+        for r in await self.cur.fetchall():
+            attachments.append(Attachment.from_result(self.cur.description, r))
+        return attachments
