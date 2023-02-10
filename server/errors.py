@@ -65,5 +65,17 @@ class _Errors:
     def __getitem__(self, code):
         return self(code)
 
+    def make(self, code: int, errors: dict = None, message: str = None) -> dict:
+        if errors is None:
+            return {"code": code, "message": self(code) or message}
+        err = {"code": code, "errors": {}, "message": self(code) or message}
+        for path, error in errors.items():
+            e = err["errors"]
+            for p in path.split("."):
+                e[p] = {}
+                e = e[p]
+            e["_errors"] = [error]
+        return err
+
 
 Errors = _Errors()

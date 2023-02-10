@@ -16,7 +16,7 @@ from ..errors import EmbedErr, InvalidDataErr
 from ..model import Model, field, model
 from ..snowflake import Snowflake
 from ..utils import NoneType
-from ..utils import mkError, ping_regex
+from ..utils import ping_regex
 
 
 class _Message:

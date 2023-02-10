@@ -11,8 +11,6 @@ from typing import Union, Tuple, Optional
 from aiomysql import escape_string
 from magic import from_buffer
 
-from server.errors import Errors
-
 
 def b64decode(data: Union[str, bytes]) -> bytes:
     if isinstance(data, str):
@@ -41,19 +39,6 @@ def c_json(json, code=200, headers=None):
     for k, v in headers.items():
         h[k] = v
     return json, code, h
-
-
-def mkError(code, errors=None, message=None):
-    if errors is None:
-        return {"code": code, "message": Errors(code) or message}
-    err = {"code": code, "errors": {}, "message": Errors(code) or message}
-    for path, error in errors.items():
-        e = err["errors"]
-        for p in path.split("."):
-            e[p] = {}
-            e = e[p]
-        e["_errors"] = [error]
-    return err
 
 
 def getImage(image: Union[str, bytes, BytesIO]) -> Optional[BytesIO]:

@@ -7,7 +7,7 @@ from typing import Optional
 
 from schema import And, Use, Or, Optional as sOptional, Regex
 
-from ..errors import InvalidDataErr
+from ..errors import InvalidDataErr, Errors
 from ..snowflake import Snowflake
 from ..ctx import getCore
 from ..enums import RelationshipType, UserFlags as UserFlagsE
@@ -18,7 +18,7 @@ from ..proto import AppearanceSettings, Locale, TimezoneOffset, Theme, Localizat
     RenderReactions, RenderEmbeds, InlineEmbedMedia, InlineAttachmentMedia, RenderSpoilers, UseThreadSidebar, \
     UseRichChatInput, TextAndImagesSettings, StreamNotificationsEnabled, AfkTimeout, VoiceAndVideoSettings, \
     UserContentSettings, Version, PreloadedUserSettings
-from ..utils import b64encode, b64decode, proto_get, NoneType, mkError
+from ..utils import b64encode, b64decode, proto_get, NoneType
 
 
 class _User:
@@ -69,7 +69,7 @@ class Session(_User, Model):
 @dataclass
 class UserSettings(Model):
     uid: int = field(id_field=True)
-    mfa: Optional[str] = field(default=None, nullable=True)
+    mfa: Optional[str] = field(default=None, nullable=True, validation=Or(NoneType, str))
     inline_attachment_media: Optional[bool] = None
     show_current_game: Optional[bool] = None
     view_nsfw_guilds: Optional[bool] = None
@@ -423,15 +423,15 @@ class GuildMember(_User, Model):
         guild = await getCore().getGuild(self.guild_id)
         if guild.owner_id == self.user_id:
             return
-        raise InvalidDataErr(403, mkError(50013))
+        raise InvalidDataErr(403, Errors.make(50013))
         # TODO: Check permissions
 
     async def checkCanKickOrBan(self, target_member: GuildMember) -> None:
         if self.user_id == target_member.user_id:
-            raise InvalidDataErr(403, mkError(50013))
+            raise InvalidDataErr(403, Errors.make(50013))
         guild = await getCore().getGuild(self.guild_id)
         if target_member.user_id == guild.owner_id:
-            raise InvalidDataErr(403, mkError(50013))
+            raise InvalidDataErr(403, Errors.make(50013))
         # TODO: Check roles
 
     @property

@@ -14,16 +14,16 @@ from bcrypt import hashpw, gensalt, checkpw
 from .classes.channel import Channel
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
-from .classes.other import EmailMsg, Singleton
+from .classes.other import EmailMsg, Singleton, JWT
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
 from .config import Config
 from .databases import MySQL
 from .enums import RelationshipType, ChannelType
-from .errors import InvalidDataErr, MfaRequiredErr
+from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .pubsub_client import Broadcaster
 from .responses import channelInfoResponse
 from .snowflake import Snowflake
-from .utils import b64encode, b64decode, MFA, mkError, execute_after, int_length
+from .utils import b64encode, b64decode, MFA, execute_after, int_length
 
 
 class CDN:
@@ -91,7 +91,7 @@ class Core(Singleton):
         email = email.lower()
         async with self.db() as db:
             if await db.getUserByEmail(email):
-                raise InvalidDataErr(400, mkError(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
+                raise InvalidDataErr(400, Errors.make(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
         password = self.hashPassword(uid, password)
         key = self.generateKey()
         session = int.from_bytes(urandom(6), "big")
@@ -99,7 +99,7 @@ class Core(Singleton):
 
         discriminator = await self.getRandomDiscriminator(login)
         if discriminator is None:
-            raise InvalidDataErr(400, mkError(50035, {"login": {"code": "USERNAME_TOO_MANY_USERS", "message": "Too many users have this username, please try another."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "USERNAME_TOO_MANY_USERS", "message": "Too many users have this username, please try another."}}))
 
         user = User(uid, email, password, key)
         session = Session(uid, session, signature)
@@ -114,12 +114,12 @@ class Core(Singleton):
         async with self.db() as db:
             user = await db.getUserByEmail(email)
         if not user or not checkpw(self.prepPassword(password, user.id), user.password.encode("utf8")):
-            raise InvalidDataErr(400, mkError(50035, {"login": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}, "password": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}, "password": {"code": "INVALID_LOGIN", "message": "Invalid login or password."}}))
         settings = await user.settings
         if settings.mfa:
-            _sid = bytes.fromhex(user.password[:12])
+            _sid = urandom(12)
             sid = int.from_bytes(_sid, "big")
-            raise MfaRequiredErr(user.id, b64encode(_sid), self.generateMfaTicketSignature(user.id, sid, b64decode(user.key)))
+            raise MfaRequiredErr(user.id, b64encode(_sid), self.generateMfaTicketSignature(user, sid))
         return await self.createSession(user.id)
 
     async def createSession(self, uid: int) -> Optional[Session]:
@@ -162,7 +162,7 @@ class Core(Singleton):
     async def getUserProfile(self, uid: int, cUser: _User) -> User:
         # TODO: check for relationship, mutual guilds or mutual friends
         if not (user := await self.getUser(uid)):
-            raise InvalidDataErr(404, mkError(10013))
+            raise InvalidDataErr(404, Errors.make(10013))
         return user
 
     async def checkUserPassword(self, user: User, password: str) -> bool:
@@ -183,7 +183,7 @@ class Core(Singleton):
         if await self.getUserByUsername(username, discriminator):
             discriminator = await self.getRandomDiscriminator(username)
             if discriminator is None:
-                raise InvalidDataErr(400, mkError(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This name is used by too many users. Please enter something else or try again."}}))
+                raise InvalidDataErr(400, Errors.make(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This name is used by too many users. Please enter something else or try again."}}))
         data = await user.data
         ndata = data.copy(discriminator=discriminator, username=username)
         async with self.db() as db:
@@ -196,7 +196,7 @@ class Core(Singleton):
     async def checkRelationShipAvailable(self, tUser: _User, cUser: _User) -> None:
         async with self.db() as db:
             if not await db.relationShipAvailable(tUser, cUser):
-                raise InvalidDataErr(400, mkError(80007))
+                raise InvalidDataErr(400, Errors.make(80007))
         return None # TODO: check for mutual guilds or mutual friends
 
     async def reqRelationship(self, tUser: _User, cUser: _User) -> None:
@@ -331,31 +331,50 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getBackupCodes(user)
 
-    def generateMfaTicketSignature(self, uid: int, sid: int, key: bytes) -> str:
-        return b64encode(new(key, f"{uid}.{sid}".encode('utf-8'), sha256).digest())
+    def generateMfaTicketSignature(self, user: User, sid: int) -> str:
+        payload = {
+            "user_id": user.id,
+            "session_id": sid
+        }
+        token = JWT.encode(payload, self.key+b64decode(user.key), time()+300)
+        return b64encode(token)
+
+    def verifyMfaTicketSignature(self, user: User, sid: int, token: str) -> bool:
+        if not (payload := JWT.decode(token, self.key+b64decode(user.key))):
+            return False
+        if payload["user_id"] != user.id: return False
+        if payload["session_id"] != sid: return False
 
     async def getMfaFromTicket(self, ticket: str) -> Optional[MFA]:
         try:
             uid, sid, sig = ticket.split(".")
             uid = jloads(b64decode(uid).decode("utf8"))[0]
-            sid = b64decode(sid)
+            sid = int.from_bytes(b64decode(sid), "big")
+            sig = b64decode(sig).decode("utf8")
         except (ValueError, IndexError):
             return
         if not (user := await self.getUser(uid)):
             return
-        if sid != bytes.fromhex(user.password[:12]):
-            return
-        if sig != self.generateMfaTicketSignature(uid, int.from_bytes(sid, "big"), b64decode(user.key)):
+        if not self.verifyMfaTicketSignature(user, sid, sig):
             return
         settings = await user.settings
         return MFA(settings.mfa, uid)
 
     async def generateUserMfaNonce(self, user: User) -> Tuple[str, str]:
         mfa = await self.getMfa(user)
-        _nonce = f"{mfa.key}.{int(time() // 600)}"
-        nonce = b64encode(b'\x00'+new(self.key, _nonce.encode('utf-8'), sha256).digest())
-        rnonce = b64encode(b'\x01'+new(self.key, _nonce.encode('utf-8'), sha256).digest()[::-1])
+        exp = time() + 600
+        code = b64encode(urandom(16))
+        nonce = JWT.encode({"type": "normal", "code": code}, self.key + b64decode(mfa.key), exp)
+        rnonce = JWT.encode({"type": "regenerate", "code": code}, self.key + b64decode(mfa.key), exp)
         return nonce, rnonce
+
+    async def verifyUserMfaNonce(self, user: User, nonce: str, regenerate: bool) -> None:
+        mfa = await self.getMfa(user)
+        if not (payload := JWT.decode(nonce, self.key + b64decode(mfa.key))):
+            raise InvalidDataErr(400, Errors.make(60011))
+        nonce_type = "normal" if not regenerate else "regenerate"
+        if nonce_type != payload["type"]:
+            raise InvalidDataErr(400, Errors.make(60011))
 
     async def useMfaCode(self, uid: int, code: str) -> bool:
         codes = dict(await self.getBackupCodes(UserId(uid)))
@@ -606,7 +625,7 @@ class Core(Singleton):
             if sig != vsig:
                 raise Exception
         except:
-            raise InvalidDataErr(400, mkError(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
         async with self.db() as db:
             await db.verifyEmail(user.id)
 
@@ -620,26 +639,24 @@ class Core(Singleton):
             return
         async with self.db() as db:
             if await db.getUserByEmail(email):
-                raise InvalidDataErr(400, mkError(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
+                raise InvalidDataErr(400, Errors.make(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED", "message": "Email address already registered."}}))
             await db.changeUserEmail(user.id, email)
             user.email = email
 
     async def sendMfaChallengeEmail(self, user: User, nonce: str) -> None:
-        code = self.mfaNonceToCode(nonce)
+        code = await self.mfaNonceToCode(user, nonce)
         await EmailMsg(user.email, f"Your one-time verification key is {code}",
                         f"It looks like you're trying to view your account's backup codes.\n"+
-                        f"This verification key expires in 30 minutes. This key is extremely sensitive, treat it like a password and do not share it with anyone.\n"+
+                        f"This verification key expires in 10 minutes. This key is extremely sensitive, treat it like a password and do not share it with anyone.\n"+
                         f"Enter it in the app to unlock your backup codes:\n{code}").send()
 
-    def mfaNonceToCode(self, nonce: str) -> str:
-        nonce = b64decode(nonce)
-        b = nonce[0]
-        nonce = nonce[1:]
-        if b == 1:
-            nonce = nonce[::-1]
-        elif b != 0:
-            return ""
-        return b64encode(new(self.key, nonce, sha256).digest()).replace("-", "").replace("_", "")[:8].upper()
+    async def mfaNonceToCode(self, user: User, nonce: str) -> Optional[str]:
+        mfa = await self.getMfa(user)
+        if not (payload := JWT.decode(nonce, self.key + b64decode(mfa.key))):
+            return
+        token = JWT.encode({"code": payload["code"]}, self.key)
+        signature = token.split(".")[2]
+        return signature.replace("-", "").replace("_", "")[:8].upper()
 
     async def createDMGroupChannel(self, user: User, recipients: list) -> Channel:
         if user.id not in recipients:
@@ -699,7 +716,7 @@ class Core(Singleton):
     async def pinMessage(self, message: Message) -> None:
         async with self.db() as db:
             if len(await db.getPinnedMessages(message.channel_id)) >= 50:
-                raise InvalidDataErr(400, mkError(30003))
+                raise InvalidDataErr(400, Errors.make(30003))
             await db.pinMessage(message)
         users = await self.getRelatedUsersToChannel(message.channel_id)
         await self.mcl.broadcast("channel_events", {"e": "channel_pins_update", "data": {"users": users, "channel_id": message.channel_id}})
