@@ -344,6 +344,7 @@ class Core(Singleton):
             return False
         if payload["user_id"] != user.id: return False
         if payload["session_id"] != sid: return False
+        return True
 
     async def getMfaFromTicket(self, ticket: str) -> Optional[MFA]:
         try:
