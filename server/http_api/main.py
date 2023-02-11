@@ -13,22 +13,22 @@ from magic import from_buffer
 from quart import Quart, request
 from quart.globals import request_ctx
 
-from ..snowflake import Snowflake
-from ..ctx import Ctx
-from ..geoip import getLanguageCode
 from ..classes.channel import Channel
 from ..classes.guild import Emoji, GuildId, Invite, Guild, Role
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember
 from ..config import Config
 from ..core import Core, CDN
+from ..ctx import Ctx
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
+from ..geoip import getLanguageCode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, \
     channelInfoResponse
+from ..snowflake import Snowflake
 from ..storage import FileStorage, S3Storage, FTPStorage
-from ..utils import b64decode, b64encode, c_json, getImage, validImage, MFA, execute_after, parseMultipartRequest, LOCALES
+from ..utils import b64decode, b64encode, c_json, getImage, validImage, MFA, execute_after, LOCALES
 
 
 class YEPcord(Quart):
@@ -71,7 +71,6 @@ elif storage.lower() == "ftp":
 cdn = CDN(storage, core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
-
 
 @app.before_serving
 async def before_serving():
@@ -769,38 +768,29 @@ async def api_channels_channel_messages_post(user, channel):
             raise InvalidDataErr(403, Errors.make(50007))
     message_id = Snowflake.makeId()
     data = await request.get_json()
-    if data is None and (ct := request.headers.get("Content-Type", "")).startswith("multipart/form-data;"):
-        data = {}
+    if data is None: # Multipart request
         if request.content_length > 1024*1024*100:
             raise InvalidDataErr(400, Errors.make(50006)) # TODO: replace with correct error
-        async with timeout(100):
-            boundary = ct.split(";")[1].strip().split("=")[1].split("WebKitFormBoundary")[1]
-            body = await request.body
-            if len(body) > 1024*1024*100:
-                raise InvalidDataErr(400, Errors.make(50006)) # TODO: replace with correct error
-            data = parseMultipartRequest(body, boundary)
-            files = data["files"]
-            data = jloads(data["payload_json"]["data"].decode("utf8"))
+        async with timeout(app.config["BODY_TIMEOUT"]):
+            files = list((await request.files).values())
+            data = await request.form
+            data = jloads(data["payload_json"])
             if len(files) > 10:
                 raise InvalidDataErr(400, Errors.make(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
-            atts = data["attachments"]
             for idx, file in enumerate(files):
-                uuid = str(uuid4())
                 att = {"filename": None}
-                if idx+1 <= len(atts):
-                    att = atts[idx]
-                name = att.get("filename") or file.get("filename") or "unknown"
-                att = Attachment(Snowflake.makeId(), channel.id, message_id, name, len(file["data"]), {}, uuid)
-                if file.get("content_type"):
-                    cot = file.get("content_type").strip()
-                else:
-                    cot = from_buffer(file["data"][:1024], mime=True)
+                if idx+1 <= len(data["attachments"]):
+                    att = data["attachments"][idx]
+                name = att.get("filename") or file.filename or "unknown"
+                content = file.getvalue()
+                att = Attachment(Snowflake.makeId(), channel.id, message_id, name, len(content), {})
+                cot = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
                 att.set(content_type=cot)
                 if cot.startswith("image/"):
-                    img = Image.open(BytesIO(file["data"]))
+                    img = Image.open(file)
                     att.set(metadata={"height": img.height, "width": img.width})
                     img.close()
-                await cdn.uploadAttachment(file["data"], att)
+                await cdn.uploadAttachment(content, att)
                 att.uploaded = True
                 await core.putAttachment(att)
     if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
