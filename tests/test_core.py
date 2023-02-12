@@ -300,6 +300,8 @@ async def test_changeUserName_fail(testCore: Coroutine[Any, Any, Core]):
     for d in range(1, 10000):
         userdatas.append((VARS["user_id"] + 100000 + d, d))
     async with testCore.db() as db:
+        await db.cur.executemany(f'INSERT INTO `users`(`id`, `email`, `password`, `key`) VALUES '
+                                 f'(%s, "", %s, "");', userdatas)
         await db.cur.executemany(f'INSERT INTO `userdata`(`uid`, `birth`, `username`, `discriminator`) VALUES '
                                  f'(%s, "2000-01-01", "NoDiscriminatorsLeft", %s);', userdatas)
 

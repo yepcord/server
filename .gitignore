@@ -6,3 +6,4 @@ endpoints.*
 .local
 /rp
 *.db
+.coverage

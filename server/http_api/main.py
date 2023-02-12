@@ -1,10 +1,8 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from functools import wraps
-from io import BytesIO
 from json import dumps as jdumps, loads as jloads
 from random import choice
 from time import time
-from uuid import uuid4
 
 from PIL import Image
 from async_timeout import timeout
@@ -13,23 +11,22 @@ from magic import from_buffer
 from quart import Quart, request
 from quart.globals import request_ctx
 
-from ..snowflake import Snowflake
-from ..ctx import Ctx
-from ..geoip import getLanguageCode
 from ..classes.channel import Channel
 from ..classes.guild import Emoji, GuildId, Invite, Guild, Role
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember
 from ..config import Config
 from ..core import Core, CDN
+from ..ctx import Ctx
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions
-from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
+from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
+from ..geoip import getLanguageCode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
 from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, \
     channelInfoResponse
+from ..snowflake import Snowflake
 from ..storage import FileStorage, S3Storage, FTPStorage
-from ..utils import b64decode, b64encode, c_json, getImage, validImage, MFA, execute_after, mkError, \
-    parseMultipartRequest, LOCALES
+from ..utils import b64decode, b64encode, c_json, getImage, validImage, MFA, execute_after, LOCALES
 
 
 class YEPcord(Quart):
@@ -72,7 +69,6 @@ elif storage.lower() == "ftp":
 cdn = CDN(storage, core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
-
 
 @app.before_serving
 async def before_serving():
@@ -127,9 +123,9 @@ def getUser(f):
     async def wrapped(*args, **kwargs):
         if not (session := Session.from_token(request.headers.get("Authorization", ""))) \
                 or not await core.validSession(session):
-            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         if not (user := await core.getUser(session.uid)):
-            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
@@ -139,9 +135,9 @@ def getSession(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (session := Session.from_token(request.headers.get("Authorization", ""))):
-            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         if not await core.validSession(session):
-            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         Ctx["user_id"] = session.id
         kwargs["session"] = session
         return await f(*args, **kwargs)
@@ -151,26 +147,26 @@ def getChannel(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (channel := kwargs.get("channel")):
-            raise InvalidDataErr(404, mkError(10003))
+            raise InvalidDataErr(404, Errors.make(10003))
         if not (user := kwargs.get("user")):
-            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         if not (channel := await core.getChannel(channel)):
-            raise InvalidDataErr(404, mkError(10003))
+            raise InvalidDataErr(404, Errors.make(10003))
         if not await core.getUserByChannel(channel, user.id):
-            raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         kwargs["channel"] = channel
         return await f(*args, **kwargs)
     return wrapped
 
 async def _getMessage(user, channel, message_id):
     if not channel:
-        raise InvalidDataErr(404, mkError(10003))
+        raise InvalidDataErr(404, Errors.make(10003))
     if not user:
-        raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
     if not message_id:
-        raise InvalidDataErr(404, mkError(10008))
+        raise InvalidDataErr(404, Errors.make(10008))
     if not (message := await core.getMessage(channel, message_id)):
-        raise InvalidDataErr(404, mkError(10008))
+        raise InvalidDataErr(404, Errors.make(10008))
     return message
 
 def getMessage(f):
@@ -186,14 +182,14 @@ def getInvite(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (invite := kwargs.get("invite")):
-            raise InvalidDataErr(404, mkError(10006))
+            raise InvalidDataErr(404, Errors.make(10006))
         try:
             invite = b64decode(invite)
         except:
-            raise InvalidDataErr(404, mkError(10006))
+            raise InvalidDataErr(404, Errors.make(10006))
         invite = int.from_bytes(invite, "big")
         if not (invite := await core.getInvite(invite)):
-            raise InvalidDataErr(404, mkError(10006))
+            raise InvalidDataErr(404, Errors.make(10006))
         kwargs["invite"] = invite
         return await f(*args, **kwargs)
     return wrapped
@@ -203,13 +199,13 @@ def getGuild(with_member):
         @wraps(f)
         async def wrapped(*args, **kwargs):
             if not (guild := int(kwargs.get("guild"))):
-                raise InvalidDataErr(404, mkError(10004))
+                raise InvalidDataErr(404, Errors.make(10004))
             if not (user := kwargs.get("user")):
-                raise InvalidDataErr(401, mkError(0, message="401: Unauthorized"))
+                raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
             if not (guild := await core.getGuild(guild)):
-                raise InvalidDataErr(404, mkError(10004))
+                raise InvalidDataErr(404, Errors.make(10004))
             if not (member := await core.getGuildMember(guild, user.id)):
-                raise InvalidDataErr(403, mkError(50001))
+                raise InvalidDataErr(403, Errors.make(50001))
             kwargs["guild"] = guild
             if with_member:
                 kwargs["member"] = member
@@ -221,11 +217,11 @@ def getRole(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (role := kwargs.get("role")) or not (guild := kwargs.get("guild")):
-            raise InvalidDataErr(404, mkError(10011))
+            raise InvalidDataErr(404, Errors.make(10011))
         if not (role := await core.getRole(role)):
-            raise InvalidDataErr(404, mkError(10011))
+            raise InvalidDataErr(404, Errors.make(10011))
         if role.guild_id != guild.id:
-            raise InvalidDataErr(404, mkError(10011))
+            raise InvalidDataErr(404, Errors.make(10011))
         kwargs["role"] = role
         return await f(*args, **kwargs)
     return wrapped
@@ -262,15 +258,15 @@ async def api_auth_login():
 async def api_auth_mfa_totp(): # TODO: test
     data = await request.get_json()
     if not (ticket := data.get("ticket")):
-        raise InvalidDataErr(400, mkError(60006))
+        raise InvalidDataErr(400, Errors.make(60006))
     if not (code := data.get("code")):
-        raise InvalidDataErr(400, mkError(60008))
+        raise InvalidDataErr(400, Errors.make(60008))
     if not (mfa := await core.getMfaFromTicket(ticket)):
-        raise InvalidDataErr(400, mkError(60006))
+        raise InvalidDataErr(400, Errors.make(60006))
     code = code.replace("-", "").replace(" ", "")
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
-            raise InvalidDataErr(400, mkError(60008))
+            raise InvalidDataErr(400, Errors.make(60008))
     sess = await core.createSession(mfa.uid)
     user = await core.getUser(sess.uid)
     sett = await user.settings
@@ -289,9 +285,9 @@ async def api_auth_logout(session):
 async def api_auth_verify_viewbackupcodeschallenge(user):
     data = await request.get_json()
     if not (password := data.get("password")):
-        raise InvalidDataErr(400, mkError(50018))
+        raise InvalidDataErr(400, Errors.make(50018))
     if not await core.checkUserPassword(user, password):
-        raise InvalidDataErr(400, mkError(50018))
+        raise InvalidDataErr(400, Errors.make(50018))
     nonce = await core.generateUserMfaNonce(user)
     await core.sendMfaChallengeEmail(user, nonce[0])
     return c_json({"nonce": nonce[0], "regenerate_nonce": nonce[1]})
@@ -310,11 +306,11 @@ async def api_auth_verify_resend(user):
 async def api_auth_verify():
     data = await request.get_json()
     if not data.get("token"):
-        raise InvalidDataErr(400, mkError(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
     try:
         email = jloads(b64decode(data["token"].split(".")[0]).decode("utf8"))["email"]
     except:
-        raise InvalidDataErr(400, mkError(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
     user = await core.getUserByEmail(email)
     await core.verifyEmail(user, data["token"])
     await core.sendUserUpdateEvent(user.id)
@@ -338,7 +334,7 @@ async def api_users_me_patch(user):
     u = "username" in _settings and _settings.get("username") != data.username
     if d or u:
         if "password" not in _settings or not await core.checkUserPassword(user, _settings["password"]):
-            raise InvalidDataErr(400, mkError(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
         if u:
             await core.changeUserName(user, str(_settings["username"]))
             del _settings["username"]
@@ -346,16 +342,16 @@ async def api_users_me_patch(user):
             if not await core.changeUserDiscriminator(user, int(_settings["discriminator"])):
                 if u:
                     return c_json(await userdataResponse(user))
-                raise InvalidDataErr(400, mkError(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This discriminator already used by someone. Please enter something else."}}))
+                raise InvalidDataErr(400, Errors.make(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This discriminator already used by someone. Please enter something else."}}))
             del _settings["discriminator"]
     if "new_password" in _settings:
         if "password" not in _settings or not await core.checkUserPassword(user, _settings["password"]):
-            raise InvalidDataErr(400, mkError(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
         await core.changeUserPassword(user, _settings["new_password"])
         del _settings["new_password"]
     if "email" in _settings:
         if "password" not in _settings or not await core.checkUserPassword(user, _settings["password"]):
-            raise InvalidDataErr(400, mkError(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
         await core.changeUserEmail(user, _settings["email"])
         await core.sendVerificationEmail(user)
         del _settings["email"]
@@ -449,12 +445,12 @@ async def api_users_me_settingsproto_1_get(user):
 async def api_users_me_settingsproto_1_patch(user): # TODO
     data = await request.get_json()
     if not data.get("settings"):
-        raise InvalidDataErr(400, mkError(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
+        raise InvalidDataErr(400, Errors.make(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
     try:
         proto = PreloadedUserSettings()
         proto.ParseFromString(_b64decode(data.get("settings").encode("utf8")))
     except ValueError:
-        raise InvalidDataErr(400, mkError(50104))
+        raise InvalidDataErr(400, Errors.make(50104))
     settings_old = await user.settings
     settings = UserSettings(user.id)
     settings.from_proto(proto)
@@ -478,12 +474,12 @@ async def api_users_me_settingsproto_2_get(user):
 async def api_users_me_settingsproto_2_patch(user):
     data = await request.get_json()
     if not data.get("settings"):
-        raise InvalidDataErr(400, mkError(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
+        raise InvalidDataErr(400, Errors.make(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
     try:
         proto_new = FrecencyUserSettings()
         proto_new.ParseFromString(_b64decode(data.get("settings").encode("utf8")))
     except ValueError:
-        raise InvalidDataErr(400, mkError(50104))
+        raise InvalidDataErr(400, Errors.make(50104))
     proto = FrecencyUserSettings()
     proto.ParseFromString(await user.frecency_settings_proto)
     proto.MergeFrom(proto_new)
@@ -506,9 +502,9 @@ async def api_users_me_relationships_post(user):
     udata = await request.get_json()
     udata["discriminator"] = int(udata["discriminator"])
     if not (rUser := await core.getUserByUsername(**udata)):
-        raise InvalidDataErr(400, mkError(80004))
+        raise InvalidDataErr(400, Errors.make(80004))
     if rUser == user:
-        raise InvalidDataErr(400, mkError(80007))
+        raise InvalidDataErr(400, Errors.make(80007))
     await core.checkRelationShipAvailable(rUser, user)
     await core.reqRelationship(rUser, user)
     return "", 204
@@ -524,7 +520,7 @@ async def api_users_me_relationships_get(user):
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_notes_get(user, target_uid):
     if not (note := await core.getUserNote(user.id, target_uid)):
-        raise InvalidDataErr(404, mkError(10013))
+        raise InvalidDataErr(404, Errors.make(10013))
     return c_json(note.toJSON())
 
 
@@ -539,19 +535,20 @@ async def api_users_me_notes_put(user, target_uid):
 
 @app.post("/api/v9/users/@me/mfa/totp/enable")
 @multipleDecorators(usingDB, getSession)
-async def api_users_me_mfa_totp_enable(session):
+async def api_users_me_mfa_totp_enable(session: Session):
     data = await request.get_json()
-    if not (password := data.get("password")) or not await core.checkUserPassword(session, password):
-        raise InvalidDataErr(400, mkError(50018))
+    user = await core.getUser(session.uid)
+    if not (password := data.get("password")) or not await core.checkUserPassword(user, password):
+        raise InvalidDataErr(400, Errors.make(50018))
     if not (secret := data.get("secret")):
-        raise InvalidDataErr(400, mkError(60005))
+        raise InvalidDataErr(400, Errors.make(60005))
     mfa = MFA(secret, session.id)
     if not mfa.valid:
-        raise InvalidDataErr(400, mkError(60005))
+        raise InvalidDataErr(400, Errors.make(60005))
     if not (code := data.get("code")):
-        raise InvalidDataErr(400, mkError(60008))
+        raise InvalidDataErr(400, Errors.make(60008))
     if mfa.getCode() != code:
-        raise InvalidDataErr(400, mkError(60008))
+        raise InvalidDataErr(400, Errors.make(60008))
     await core.setSettings(UserSettings(session.id, mfa=secret))
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
     await core.setBackupCodes(session, codes)
@@ -567,14 +564,14 @@ async def api_users_me_mfa_totp_enable(session):
 async def api_users_me_mfa_totp_disable(session):
     data = await request.get_json()
     if not (code := data.get("code")):
-        raise InvalidDataErr(400, mkError(60008))
+        raise InvalidDataErr(400, Errors.make(60008))
     user = await core.getUser(session.id)
     if not (mfa := await core.getMfa(user)):
-        raise InvalidDataErr(400, mkError(50018))
+        raise InvalidDataErr(400, Errors.make(50018))
     code = code.replace("-", "").replace(" ", "")
     if mfa.getCode() != code:
         if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
-            raise InvalidDataErr(400, mkError(60008))
+            raise InvalidDataErr(400, Errors.make(60008))
     await core.setSettings(UserSettings(session.id, mfa=None))
     await core.clearBackupCodes(session)
     await core.sendUserUpdateEvent(session.id)
@@ -587,17 +584,14 @@ async def api_users_me_mfa_totp_disable(session):
 @multipleDecorators(usingDB, getUser)
 async def api_users_me_mfa_codesverification(user):
     data = await request.get_json()
-    if not (unonce := data.get("nonce")):
-        raise InvalidDataErr(400, mkError(60011))
+    if not (nonce := data.get("nonce")):
+        raise InvalidDataErr(400, Errors.make(60011))
     if not (key := data.get("key")):
-        raise InvalidDataErr(400, mkError(50035, {"key": {"code": "BASE_TYPE_REQUIRED", "message": "This field is required"}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"key": {"code": "BASE_TYPE_REQUIRED", "message": "This field is required"}}))
     reg = data.get("regenerate", False)
-    nonce = await core.generateUserMfaNonce(user)
-    nonce = nonce[1] if reg else nonce[0]
-    if nonce != unonce:
-        raise InvalidDataErr(400, mkError(60011))
-    if core.mfaNonceToCode(nonce) != key:
-        raise InvalidDataErr(400, mkError(60011))
+    await core.verifyUserMfaNonce(user, nonce, reg)
+    if await core.mfaNonceToCode(user, nonce) != key:
+        raise InvalidDataErr(400, Errors.make(60011))
     if reg:
         codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
         await core.setBackupCodes(user, codes)
@@ -697,7 +691,7 @@ async def api_channels_channel_patch(user, channel):
                 data["icon"] = v
     if "owner" in data:
         if channel.owner_id != user.id:
-            raise InvalidDataErr(403, mkError(50013))
+            raise InvalidDataErr(403, Errors.make(50013))
         data["owner_id"] = int(data["owner"])
         del data["owner"]
     if "id" in data: del data["id"]
@@ -769,54 +763,41 @@ async def api_channels_channel_messages_post(user, channel):
         if not rel:
             ... # TODO: Check
         if rel and rel.type == RelationshipType.BLOCK:
-            raise InvalidDataErr(403, mkError(50007))
+            raise InvalidDataErr(403, Errors.make(50007))
+    message_id = Snowflake.makeId()
     data = await request.get_json()
-    if data is None and (ct := request.headers.get("Content-Type", "")).startswith("multipart/form-data;"):
-        data = {}
+    if data is None: # Multipart request
         if request.content_length > 1024*1024*100:
-            raise InvalidDataErr(400, mkError(50006)) # TODO: replace with correct error
-        async with timeout(100):
-            boundary = ct.split(";")[1].strip().split("=")[1].split("WebKitFormBoundary")[1]
-            body = await request.body
-            if len(body) > 1024*1024*100:
-                raise InvalidDataErr(400, mkError(50006)) # TODO: replace with correct error
-            data = parseMultipartRequest(body, boundary)
-            files = data["files"]
-            data = jloads(data["payload_json"]["data"].decode("utf8"))
+            raise InvalidDataErr(400, Errors.make(50006)) # TODO: replace with correct error
+        async with timeout(app.config["BODY_TIMEOUT"]):
+            files = list((await request.files).values())
+            data = await request.form
+            data = jloads(data["payload_json"])
             if len(files) > 10:
-                raise InvalidDataErr(400, mkError(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
-            atts = data["attachments"]
-            data["attachments"] = []
+                raise InvalidDataErr(400, Errors.make(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
             for idx, file in enumerate(files):
-                uuid = str(uuid4())
                 att = {"filename": None}
-                if idx+1 <= len(atts):
-                    att = atts[idx]
-                name = att.get("filename") or file.get("filename") or "unknown"
-                data["attachments"].append({"uploaded_filename": f"{uuid}/{name}"})
-                att = Attachment(Snowflake.makeId(), channel.id, name, len(file["data"]), {}, uuid)
-                if file.get("content_type"):
-                    cot = file.get("content_type").strip()
-                    att.set(content_type=cot)
-                    if cot.startswith("image/"):
-                        img = Image.open(BytesIO(file["data"]))
-                        att.set(metadata={"height": img.height, "width": img.width})
-                        img.close()
-                else:
-                    cot = from_buffer(file["data"][:1024], mime=True)
-                    att.set(content_type=cot)
-                    if cot.startswith("image/"):
-                        img = Image.open(BytesIO(file["data"]))
-                        att.set(metadata={"height": img.height, "width": img.width})
-                        img.close()
+                if idx+1 <= len(data["attachments"]):
+                    att = data["attachments"][idx]
+                name = att.get("filename") or file.filename or "unknown"
+                content = file.getvalue()
+                att = Attachment(Snowflake.makeId(), channel.id, message_id, name, len(content), {})
+                cot = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
+                att.set(content_type=cot)
+                if cot.startswith("image/"):
+                    img = Image.open(file)
+                    att.set(metadata={"height": img.height, "width": img.width})
+                    img.close()
+                await cdn.uploadAttachment(content, att)
+                att.uploaded = True
                 await core.putAttachment(att)
-                await cdn.uploadAttachment(file["data"], att)
     if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
-        raise InvalidDataErr(400, mkError(50006))
+        raise InvalidDataErr(400, Errors.make(50006))
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
     if "author" in data: del data["author"]
-    message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
+    if "attachments" in data: del data["attachments"]
+    message = Message(id=message_id, channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
     await message.check()
     message = await core.sendMessage(message)
     if await core.delReadStateIfExists(user.id, channel.id):
@@ -828,7 +809,7 @@ async def api_channels_channel_messages_post(user, channel):
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_delete(user: User, channel: Channel, message: Message):
     if message.author != user.id:
-        raise InvalidDataErr(403, mkError(50003))
+        raise InvalidDataErr(403, Errors.make(50003))
     await core.deleteMessage(message)
     return "", 204
 
@@ -838,7 +819,7 @@ async def api_channels_channel_messages_message_delete(user: User, channel: Chan
 async def api_channels_channel_messages_message_patch(user: User, channel: Channel, message: Message):
     data = await request.get_json()
     if message.author != user.id:
-        raise InvalidDataErr(403, mkError(50005))
+        raise InvalidDataErr(403, Errors.make(50005))
     before = message
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
@@ -876,27 +857,27 @@ async def api_channels_channel_messages_typing(user, channel):
     await core.sendTypingEvent(user, channel)
     return "", 204
 
-
+"""
 @app.post("/api/v9/channels/<int:channel>/attachments")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_attachments_post(user, channel):
     data = await request.get_json()
     if not (files := data.get("files")):
-        raise InvalidDataErr(400, mkError(50013, {"files": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+        raise InvalidDataErr(400, Errors.make(50013, {"files": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
     if len(files) > 10:
-        raise InvalidDataErr(400, mkError(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
+        raise InvalidDataErr(400, Errors.make(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
     attachments = []
     for idx, file in enumerate(files):
         if not (filename := file.get("filename")) or not (filename := filename.replace("\\", "/").split("/")[-1]):
-            raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.filename": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+            raise InvalidDataErr(400, Errors.make(50013, {f"files.{idx}.filename": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         if not (size := file.get("file_size")):
             try:
                 size = int(size)
             except ValueError:
-                raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.file_size": {"code": "NUMBER_TYPE_COERCE", "message": f"The value '{size}' is not an int."}}))
-            raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.file_size": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+                raise InvalidDataErr(400, Errors.make(50013, {f"files.{idx}.file_size": {"code": "NUMBER_TYPE_COERCE", "message": f"The value '{size}' is not an int."}}))
+            raise InvalidDataErr(400, Errors.make(50013, {f"files.{idx}.file_size": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         if not (fid := file.get("id")):
-            raise InvalidDataErr(400, mkError(50013, {f"files.{idx}.id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+            raise InvalidDataErr(400, Errors.make(50013, {f"files.{idx}.id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         att = Attachment(Snowflake.makeId(), channel.id, filename, size, {})
         await core.putAttachment(att)
         attachments.append({
@@ -905,12 +886,13 @@ async def api_channels_channel_attachments_post(user, channel):
             "upload_url": f"https://{Config('CDN_HOST')}/upload/attachment/{att.uuid}/{att.filename}",
         })
     return {"attachments": attachments}
+"""
 
 @app.put("/api/v9/channels/<int:channel>/recipients/<int:nUser>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
-        raise InvalidDataErr(403, mkError(50013))
+        raise InvalidDataErr(403, Errors.make(50013))
     if channel.type == ChannelType.DM:
         rep = channel.recipients
         rep.remove(user.id)
@@ -931,9 +913,9 @@ async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_repicients_recipient_delete(user, channel, nUser):
     if channel.type not in (ChannelType.GROUP_DM,):
-        raise InvalidDataErr(403, mkError(50013))
+        raise InvalidDataErr(403, Errors.make(50013))
     if channel.owner_id != user.id:
-        raise InvalidDataErr(403, mkError(50013))
+        raise InvalidDataErr(403, Errors.make(50013))
     if nUser in channel.recipients:
         msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_REMOVE, extra_data={"user": nUser})
         await core.sendMessage(msg)
@@ -981,7 +963,7 @@ async def api_channels_channel_pins_get(user, channel):
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, mkError(10014))
+        raise InvalidDataErr(400, Errors.make(10014))
     r = {
         "emoji_id": None if isinstance(reaction, str) else reaction.id,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
@@ -994,7 +976,7 @@ async def api_channels_channel_messages_message_reactions_put(user, channel, mes
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, mkError(10014))
+        raise InvalidDataErr(400, Errors.make(10014))
     r = {
         "emoji_id": None if isinstance(reaction, str) else reaction.id,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
@@ -1007,7 +989,7 @@ async def api_channels_channel_messages_message_reactions_delete(user, channel, 
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_reaction_get(user, channel, message, reaction):
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, mkError(10014))
+        raise InvalidDataErr(400, Errors.make(10014))
     r = {
         "emoji_id": None if isinstance(reaction, str) else reaction.id,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
@@ -1043,7 +1025,7 @@ async def api_users_me_channels_post(user):
     rep = [int(r) for r in rep]
     if len(rep) == 1:
         if int(rep[0]) == user.id:
-            raise InvalidDataErr(400, mkError(50007))
+            raise InvalidDataErr(400, Errors.make(50007))
         ch = await core.getDMChannelOrCreate(user.id, rep[0])
     elif len(rep) == 0:
         ch = await core.createDMGroupChannel(user, [])
@@ -1051,7 +1033,7 @@ async def api_users_me_channels_post(user):
         if user.id in rep:
             rep.remove(user.id)
         if len(rep) == 0:
-            raise InvalidDataErr(400, mkError(50007))
+            raise InvalidDataErr(400, Errors.make(50007))
         elif len(rep) == 1:
             ch = await core.getDMChannelOrCreate(user.id, rep[0])
         else:
@@ -1091,7 +1073,7 @@ async def api_invites_invite_post(user, invite):
     channel = await core.getChannel(invite.channel_id)
     if channel.type == ChannelType.GROUP_DM:
         if user.id not in channel.recipients and len(channel.recipients) >= 10:
-            raise InvalidDataErr(404, mkError(10006))
+            raise InvalidDataErr(404, Errors.make(10006))
         inv = await invite.json
         for excl in ["max_age", "created_at"]:  # Remove excluded fields
             if excl in inv:
@@ -1111,7 +1093,7 @@ async def api_invites_invite_post(user, invite):
         if not await core.getGuildMember(GuildId(invite.guild_id), user.id):
             guild = await core.getGuild(invite.guild_id)
             if await core.getGuildBan(guild, user.id) is not None:
-                raise InvalidDataErr(403, mkError(40007))
+                raise InvalidDataErr(403, Errors.make(40007))
             inv["new_member"] = True
             await core.createGuildMember(guild, user)
             await core.sendGuildCreateEvent(guild, [user.id])
@@ -1128,7 +1110,7 @@ async def api_invites_invite_delete(user: User, invite: Invite):
     if invite.guild_id:
         guild = await core.getGuild(invite.guild_id)
         if guild.owner_id != user.id:  # TODO: check permissions
-            raise InvalidDataErr(403, mkError(50013))
+            raise InvalidDataErr(403, Errors.make(50013))
         await core.deleteInvite(invite)
         await core.sendInviteDeleteEvent(invite)
     return c_json(await invite.json)
@@ -1186,14 +1168,14 @@ async def api_guilds_guild_emojis_post(user: User, guild: Guild, member: GuildMe
     await member.checkPermissions(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     data = await request.get_json()
     if not data.get("image"):
-        raise InvalidDataErr(400, mkError(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
     if not data.get("name"):
-        raise InvalidDataErr(400, mkError(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
     if not (img := getImage(data["image"])) or not validImage(img):
-        raise InvalidDataErr(400, mkError(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
     eid = Snowflake.makeId()
     if not (emd := await cdn.setEmojiFromBytesIO(eid, img)):
-        raise InvalidDataErr(400, mkError(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
     emoji = Emoji(eid, data["name"], user.id, guild.id, animated=emd["animated"])
     await core.addEmoji(emoji, guild)
     emoji.fill_defaults()
@@ -1238,7 +1220,7 @@ async def api_guilds_guild_channels_post(user: User, guild: Guild, member: Guild
     await member.checkPermissions(GuildPermissions.MANAGE_CHANNELS)
     data = await request.get_json()
     if not data.get("name"):
-        raise InvalidDataErr(400, mkError(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
     if "id" in data: del data["id"]
     ctype = data.get("type", ChannelType.GUILD_TEXT)
     if "type" in data: del data["type"]
@@ -1366,7 +1348,7 @@ async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMe
 async def api_guilds_guild_roles_role_delete(user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
     if role.id == role.guild_id:
-        raise InvalidDataErr(400, mkError(50028))
+        raise InvalidDataErr(400, Errors.make(50028))
     await core.deleteRole(role)
     await core.sendGuildRoleDeleteEvent(role)
     return "", 204
@@ -1399,8 +1381,7 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     if "roles" in data:
         await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data["roles"]]
-        new_member = target_member.copy(roles=roles)
-        await core.updateMemberDiff(target_member, new_member)
+        await core.setMemberRolesFromList(target_member, roles)
     target_member = new_member.copy()
     if "nick" in data:
         await member.checkPermissions(
@@ -1451,9 +1432,9 @@ async def api_gifs_trending_get():
 async def api_hypesquad_online(user):
     data = await request.get_json()
     if not (house_id := data.get("house_id")):
-        raise InvalidDataErr(400, mkError(50035, {"house_id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"house_id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
     if house_id not in (1, 2, 3):
-        raise InvalidDataErr(400, mkError(50035, {"house_id": {"code": "BASE_TYPE_CHOICES", "message": "The following values are allowed: (1, 2, 3)."}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"house_id": {"code": "BASE_TYPE_CHOICES", "message": "The following values are allowed: (1, 2, 3)."}}))
     data = await user.data
     flags = UserFlags(data.public_flags)
     for f in (UserFlagsE.HYPESQUAD_ONLINE_HOUSE_1, UserFlagsE.HYPESQUAD_ONLINE_HOUSE_2, UserFlagsE.HYPESQUAD_ONLINE_HOUSE_3):
@@ -1592,7 +1573,7 @@ async def api_users_me_settingsproto_3():
 
 @app.route("/api/v9/users/@me/settings-proto/<int:t>", methods=["GET", "PATCH"])
 async def api_users_me_settingsproto_type(t):
-    raise InvalidDataErr(400, mkError(50013, {"type": {"code": "BASE_TYPE_CHOICES", "message": "Value must be one of (<UserSettingsTypes.PRELOADED_USER_SETTINGS: 1>, <UserSettingsTypes.FRECENCY_AND_FAVORITES_SETTINGS: 2>, <UserSettingsTypes.TEST_SETTINGS: 3>)."}}))
+    raise InvalidDataErr(400, Errors.make(50013, {"type": {"code": "BASE_TYPE_CHOICES", "message": "Value must be one of (<UserSettingsTypes.PRELOADED_USER_SETTINGS: 1>, <UserSettingsTypes.FRECENCY_AND_FAVORITES_SETTINGS: 2>, <UserSettingsTypes.TEST_SETTINGS: 3>)."}}))
 
 
 @app.get("/api/v9/gateway")

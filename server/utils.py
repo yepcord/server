@@ -1,5 +1,6 @@
-from asyncio import get_event_loop, sleep as asleep
+from asyncio import get_event_loop, sleep as asleep, gather
 from base64 import b64encode as _b64encode, b64decode as _b64decode, b32decode
+from concurrent.futures import ThreadPoolExecutor
 from hmac import new as hnew
 from io import BytesIO
 from json import dumps as jdumps, loads as jloads
@@ -10,8 +11,7 @@ from typing import Union, Tuple, Optional
 
 from aiomysql import escape_string
 from magic import from_buffer
-
-from server.errors import Errors
+from quart.datastructures import FileStorage
 
 
 def b64decode(data: Union[str, bytes]) -> bytes:
@@ -41,19 +41,6 @@ def c_json(json, code=200, headers=None):
     for k, v in headers.items():
         h[k] = v
     return json, code, h
-
-
-def mkError(code, errors=None, message=None):
-    if errors is None:
-        return {"code": code, "message": Errors(code) or message}
-    err = {"code": code, "errors": {}, "message": Errors(code) or message}
-    for path, error in errors.items():
-        e = err["errors"]
-        for p in path.split("."):
-            e[p] = {}
-            e = e[p]
-        e["_errors"] = [error]
-    return err
 
 
 def getImage(image: Union[str, bytes, BytesIO]) -> Optional[BytesIO]:
@@ -152,48 +139,6 @@ def result_to_json(desc: list, result: list) -> dict:
 
 
 ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')
-
-
-def parseMultipartRequest(body, boundary):
-    res = {}
-    parts = body.split(f"------WebKitFormBoundary{boundary}".encode("utf8"))
-    parts.pop(0)
-    parts.pop(-1)
-    for part in parts:
-        name = None
-        ct = None
-        idx = None
-        p = part.split(b"\r\n")[1:-1]
-        for _ in range(10):
-            data = p.pop(0)
-            if data == b'':
-                break
-            k, v = data.decode("utf8").split(":")
-            if k == "Content-Type":
-                ct = v
-            if k == "Content-Disposition":
-                v = ";".join(v.split(";")[1:])
-                args = dict([a.strip().split("=") for a in v.strip().split(";")])
-                name = args["name"][1:-1]
-                del args["name"]
-                if "[" in name and "]" in name:
-                    name, idx = name.split("[")
-                    idx = int(idx.replace("]", ""))
-                    if name not in res:
-                        res[name] = []
-                    res[name].insert(idx, {"data": ""})
-                    res[name][idx].update(args)
-                else:
-                    res[name] = {"data": ""}
-                    res[name].update(args)
-        if isinstance(res[name], list):
-            d = res[name][idx]
-        else:
-            d = res[name]
-        d["data"] = b"\r\n".join(p)
-        if ct:
-            d["content_type"] = ct
-    return res
 
 
 def proto_get(protoObj, path, default=None):
