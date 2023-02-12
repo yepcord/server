@@ -385,14 +385,14 @@ class GuildMember(_User, Model):
     communication_disabled_until: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
     flags: Optional[int] = None
     nick: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
-    roles: Optional[list] = field(default=None, db_name="j_roles", validation=[Use(int)])
     mute: Optional[bool] = False
     deaf: Optional[bool] = False
 
     @property
     async def json(self) -> dict:
+        print(await getCore().getMemberRolesIds(self))
         userdata = await getCore().getUserData(UserId(self.user_id))
-        return {
+        data = {
             "avatar": self.avatar,
             "communication_disabled_until": self.communication_disabled_until,
             "flags": self.flags,
@@ -401,11 +401,12 @@ class GuildMember(_User, Model):
             "is_pending": False,  # TODO
             "pending": False,  # TODO
             "premium_since": Snowflake.toDatetime(userdata.uid).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "roles": [str(role) for role in self.roles],
+            "roles": [str(role) for role in await getCore().getMemberRolesIds(self)],
             "user": await userdata.json,
             "mute": self.mute,
             "deaf": self.deaf
         }
+        return data
 
     @property
     async def data(self) -> UserData:

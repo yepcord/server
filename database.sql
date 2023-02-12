@@ -168,7 +168,6 @@ CREATE TABLE `guild_members` (
   `communication_disabled_until` int DEFAULT NULL,
   `flags` int NOT NULL DEFAULT 0,
   `nick` text DEFAULT NULL,
-  `j_roles` JSON NOT NULL DEFAULT "[]",
   `mute` bool NOT NULL DEFAULT false,
   `deaf` bool NOT NULL DEFAULT false,
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE

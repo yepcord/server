@@ -1,10 +1,8 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from functools import wraps
-from io import BytesIO
 from json import dumps as jdumps, loads as jloads
 from random import choice
 from time import time
-from uuid import uuid4
 
 from PIL import Image
 from async_timeout import timeout
@@ -1383,8 +1381,7 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     if "roles" in data:
         await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data["roles"]]
-        new_member = target_member.copy(roles=roles)
-        await core.updateMemberDiff(target_member, new_member)
+        await core.setMemberRolesFromList(target_member, roles)
     target_member = new_member.copy()
     if "nick" in data:
         await member.checkPermissions(

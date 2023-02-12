@@ -1058,6 +1058,15 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getAttachments(message)
 
+    async def getMemberRolesIds(self, member: GuildMember) -> List[int]:
+        async with self.db() as db:
+            return await db.getMemberRolesIds(member)
+
+    async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None:
+        print(roles)
+        async with self.db() as db:
+            return await db.setMemberRolesFromList(member, roles)
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
 from server.ctx import Ctx

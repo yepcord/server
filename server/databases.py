@@ -300,6 +300,12 @@ class DBConnection(ABC):
     @abstractmethod
     async def getAttachments(self, message: Message) -> List[Attachment]: ...
 
+    @abstractmethod
+    async def getMemberRolesIds(self, member: GuildMember) -> List[int]: ...
+
+    @abstractmethod
+    async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -849,9 +855,8 @@ class MySqlConnection:
 
     async def getRolesMemberCounts(self, guild: Guild) -> Dict[int, int]:
         counts = {}
-        await self.cur.execute(f'SELECT `id`, (select COUNT(*) from `guild_members` where '
-                               f'JSON_CONTAINS(`j_roles`, id, "$")) as member_count from `roles` where '
-                               f'`guild_id`={guild.id};')
+        await self.cur.execute(f'SELECT `id`, (SELECT count(*) FROM `guild_members_roles` WHERE `role_id`=`id`) '
+                               f'AS member_count FROM `roles` WHERE `guild_id`={guild.id};')
         for r in await self.cur.fetchall():
             counts[r[0]] = r[1]
 
@@ -870,3 +875,23 @@ class MySqlConnection:
         for r in await self.cur.fetchall():
             attachments.append(Attachment.from_result(self.cur.description, r))
         return attachments
+
+    async def getMemberRolesIds(self, member: GuildMember) -> List[int]:
+        await self.cur.execute(f'SELECT `role_id` FROM `guild_members_roles` WHERE `user_id`={member.user_id}')
+        return [r[0] for r in await self.cur.fetchall()]
+
+    async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None:
+        delete = []
+        create = []
+        current_roles = await self.getMemberRolesIds(member)
+        for role in roles:
+            if role not in current_roles:
+                create.append(role)
+        for role in current_roles:
+            if role not in roles:
+                delete.append(role)
+        if create:
+            await self.cur.executemany(f'INSERT INTO `guild_members_roles` VALUES ({member.id}, %s);', create)
+        if delete:
+            await self.cur.executemany(f'DELETE FROM `guild_members_roles` WHERE `user_id`={member.id} AND '
+                                       f'`role_id`=%s;', delete)
