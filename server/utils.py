@@ -1,6 +1,5 @@
-from asyncio import get_event_loop, sleep as asleep, gather
+from asyncio import get_event_loop, sleep as asleep
 from base64 import b64encode as _b64encode, b64decode as _b64decode, b32decode
-from concurrent.futures import ThreadPoolExecutor
 from hmac import new as hnew
 from io import BytesIO
 from json import dumps as jdumps, loads as jloads
@@ -11,7 +10,6 @@ from typing import Union, Tuple, Optional
 
 from aiomysql import escape_string
 from magic import from_buffer
-from quart.datastructures import FileStorage
 
 
 def b64decode(data: Union[str, bytes]) -> bytes:

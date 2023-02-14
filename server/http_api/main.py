@@ -1320,6 +1320,8 @@ async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: Gu
     data = await request.get_json()
     if "id" in data: del data["id"]
     if "guild_id" in data: del data["guild_id"]
+    if role.id == guild.id:
+        data = {"permissions": data["permissions"]} if "permissions" in data else {} # Only allow permissions editing for @everyone role
     new_role = role.copy(**data)
     await core.updateRoleDiff(role, new_role)
     await core.sendGuildRoleUpdateEvent(new_role)
@@ -1331,12 +1333,22 @@ async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: Gu
 async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMember):
     await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
     roles_data = await request.get_json()
+    roles_data.sort(key=lambda r: r["position"])
+    roles = await core.getRoles(guild)
+    roles.remove([role for role in roles if role.id == guild.id][0])
+    changes = []
     for data in roles_data:
-        role = await core.getRole(int(data["id"]))
-        if "id" in data: del data["id"]
-        if "guild_id" in data: del data["guild_id"]
-        new_role = role.copy(**data)
-        await core.updateRoleDiff(role, new_role)
+        if not (role := [role for role in roles if role.id == int(data["id"])]): continue # Don't add non-existing roles
+        role = role[0]
+        if (pos := data["position"]) < 1: pos = 1
+        new_role = role.copy(position=pos)
+        changes.append(new_role)
+    changes.sort(key=lambda r: (r.position, r.permissions))
+    for idx, new_role in enumerate(changes):
+        new_role.position = idx + 1 # Set new position
+        if (old_role := [role for role in roles if role.id == new_role.id][0]).getDiff(new_role) == {}:
+            continue
+        await core.updateRoleDiff(old_role, new_role)
         await core.sendGuildRoleUpdateEvent(new_role)
     roles = await core.getRoles(guild)
     roles = [await role.json for role in roles]

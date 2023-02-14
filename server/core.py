@@ -1063,9 +1063,14 @@ class Core(Singleton):
             return await db.getMemberRolesIds(member)
 
     async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None:
-        print(roles)
         async with self.db() as db:
             return await db.setMemberRolesFromList(member, roles)
+
+    async def getMemberRoles(self, member: GuildMember) -> List[Role]:
+        async with self.db() as db:
+            roles = await db.getMemberRoles(member)
+            roles.sort(key=lambda r: r.position)
+            return roles
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

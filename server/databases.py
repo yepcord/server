@@ -306,6 +306,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None: ...
 
+    @abstractmethod
+    async def getMemberRoles(self, member: GuildMember) -> List[Role]: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -895,3 +898,11 @@ class MySqlConnection:
         if delete:
             await self.cur.executemany(f'DELETE FROM `guild_members_roles` WHERE `user_id`={member.id} AND '
                                        f'`role_id`=%s;', delete)
+
+    async def getMemberRoles(self, member: GuildMember) -> List[Role]:
+        roles = []
+        await self.cur.execute(f'SELECT * FROM `roles` WHERE `id` IN (SELECT `role_id` FROM `guild_members_roles` WHERE '
+                               f'`user_id`={member.id});')
+        for r in await self.cur.fetchall():
+            roles.append(Role.from_result(self.cur.description, r))
+        return roles

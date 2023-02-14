@@ -390,7 +390,6 @@ class GuildMember(_User, Model):
 
     @property
     async def json(self) -> dict:
-        print(await getCore().getMemberRolesIds(self))
         userdata = await getCore().getUserData(UserId(self.user_id))
         data = {
             "avatar": self.avatar,
