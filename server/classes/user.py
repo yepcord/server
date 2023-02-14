@@ -432,7 +432,10 @@ class GuildMember(_User, Model):
         guild = await getCore().getGuild(self.guild_id)
         if target_member.user_id == guild.owner_id:
             raise InvalidDataErr(403, Errors.make(50013))
-        # TODO: Check roles
+        self_roles = await getCore().getMemberRoles(self, True)
+        target_roles = await getCore().getMemberRoles(target_member, True)
+        if self_roles[-1].position <= target_roles[-1].position:
+            raise InvalidDataErr(403, Errors.make(50013))
 
     @property
     async def user(self) -> User:

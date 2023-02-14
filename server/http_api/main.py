@@ -1331,7 +1331,7 @@ async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: Gu
 @app.patch("/api/v9/guilds/<int:guild>/roles")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    await member.checkPermissions(GuildPermissions.MANAGE_ROLES) # TODO: Check if user can change roles positions (check user top role)
     roles_data = await request.get_json()
     roles_data.sort(key=lambda r: r["position"])
     roles = await core.getRoles(guild)
