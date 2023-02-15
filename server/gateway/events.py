@@ -609,6 +609,9 @@ class GuildBanAddEvent(DispatchEvent):
         }
         return data
 
+class GuildBanRemoveEvent(GuildBanAddEvent):
+    NAME = "GUILD_BAN_REMOVE"
+
 class MessageBulkDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE_BULK"
 

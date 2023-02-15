@@ -309,6 +309,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def getMemberRoles(self, member: GuildMember) -> List[Role]: ...
 
+    @abstractmethod
+    async def removeGuildBan(self, guild: Guild, user_id: int) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -906,3 +909,6 @@ class MySqlConnection:
         for r in await self.cur.fetchall():
             roles.append(Role.from_result(self.cur.description, r))
         return roles
+
+    async def removeGuildBan(self, guild: Guild, user_id: int) -> None:
+        await self.cur.execute(f'DELETE FROM `guild_bans` WHERE `guild_id`={guild.id} AND `user_id`={user_id};')
