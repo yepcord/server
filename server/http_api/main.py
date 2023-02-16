@@ -705,6 +705,8 @@ async def api_channels_channel_patch(user, channel):
     if channel.type == ChannelType.GROUP_DM:
         await core.sendDMChannelUpdateEvent(nChannel)
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
         await core.sendChannelUpdateEvent(nChannel)
     diff = channel.getDiff(nChannel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
@@ -746,6 +748,9 @@ async def api_channels_channel_delete(user, channel):
 @app.get("/api/v9/channels/<int:channel>/messages")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_get(user, channel):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.VIEW_CHANNEL)
     args = request.args
     messages = await channel.messages(args.get("limit", 50), int(args.get("before", 0)), int(args.get("after", 0)))
     messages = [await m.json for m in messages]
@@ -764,6 +769,9 @@ async def api_channels_channel_messages_post(user, channel):
             ... # TODO: Check
         if rel and rel.type == RelationshipType.BLOCK:
             raise InvalidDataErr(403, Errors.make(50007))
+    elif channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.SEND_MESSAGES)
     message_id = Snowflake.makeId()
     data = await request.get_json()
     if data is None: # Multipart request
@@ -1048,6 +1056,9 @@ async def api_users_me_channels_post(user):
 @app.post("/api/v9/channels/<int:channel>/invites")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_invites_post(user, channel):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.CREATE_INSTANT_INVITE)
     data = await request.get_json()
     max_age = data.get("max_age", 86400)
     max_uses = data.get("max_uses", 0)
@@ -1108,6 +1119,8 @@ async def api_invites_invite_post(user, invite):
 @multipleDecorators(usingDB, getUser, getInvite)
 async def api_invites_invite_delete(user: User, invite: Invite):
     if invite.guild_id:
+        member = await core.getGuildMember(GuildId(invite.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         guild = await core.getGuild(invite.guild_id)
         if guild.owner_id != user.id:  # TODO: check permissions
             raise InvalidDataErr(403, Errors.make(50013))
@@ -1131,7 +1144,7 @@ async def api_guilds_post(user):
 @app.patch("/api/v9/guilds/<int:guild>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_GUILD)
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     data = await request.get_json()
     for j in ("id", "owner_id", "features", "emojis", "stickers", "roles", "max_members"):
         if j in data: del data[j]
@@ -1165,7 +1178,7 @@ async def api_guilds_guild_emojis_get(user, guild):
 @app.post("/api/v9/guilds/<int:guild>/emojis")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_emojis_post(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     data = await request.get_json()
     if not data.get("image"):
         raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
@@ -1185,7 +1198,7 @@ async def api_guilds_guild_emojis_post(user: User, guild: Guild, member: GuildMe
 @app.delete("/api/v9/guilds/<int:guild>/emojis/<int:emoji>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_emojis_emoji_delete(user: User, guild: Guild, member: GuildMember, emoji):
-    await member.checkPermissions(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     emoji = await core.getEmoji(emoji)
     if not emoji:
         return "", 204
@@ -1198,7 +1211,7 @@ async def api_guilds_guild_emojis_emoji_delete(user: User, guild: Guild, member:
 @app.patch("/api/v9/guilds/<int:guild>/channels")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_channels_patch(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_CHANNELS)
+    await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
     if not (data := await request.get_json()):
         return "", 204
     for change in data:
@@ -1217,7 +1230,7 @@ async def api_guilds_guild_channels_patch(user: User, guild: Guild, member: Guil
 @app.post("/api/v9/guilds/<int:guild>/channels")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_channels_post(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_CHANNELS)
+    await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
     data = await request.get_json()
     if not data.get("name"):
         raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
@@ -1233,7 +1246,7 @@ async def api_guilds_guild_channels_post(user: User, guild: Guild, member: Guild
 @app.get("/api/v9/guilds/<int:guild>/invites")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_invites_get(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_GUILD)
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     invites = await core.getGuildInvites(guild)
     invites = [await invite.json for invite in invites]
     return c_json(invites)
@@ -1242,7 +1255,7 @@ async def api_guilds_guild_invites_get(user: User, guild: Guild, member: GuildMe
 @app.get("/api/v9/guilds/<int:guild>/premium/subscriptions")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_premium_subscriptions_get(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_GUILD)
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     boosts = [{"ended": False, "user_id": str(guild.owner_id)}]*30
     return c_json(boosts)
 
@@ -1250,9 +1263,9 @@ async def api_guilds_guild_premium_subscriptions_get(user: User, guild: Guild, m
 @app.delete("/api/v9/guilds/<int:guild>/members/<int:uid>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member: GuildMember, uid: int):
-    await member.checkPermissions(GuildPermissions.KICK_MEMBERS)
+    await member.checkPermission(GuildPermissions.KICK_MEMBERS)
     if target_member := await core.getGuildMember(guild, uid):
-        await member.checkCanKickOrBan(target_member)
+        await member.perm_checker.canKickOrBan(target_member)
         await core.deleteGuildMember(target_member)
         await core.sendGuildMemberRemoveEvent(guild, await target_member.user)
         await core.sendGuildDeleteEvent(guild, target_member)
@@ -1262,9 +1275,9 @@ async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member:
 @app.put("/api/v9/guilds/<int:guild>/bans/<int:uid>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: GuildMember, uid: int):
-    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     if target_member := await core.getGuildMember(guild, uid):
-        await member.checkCanKickOrBan(target_member)
+        await member.perm_checker.canKickOrBan(target_member)
         if await core.getGuildBan(guild, uid) is None:
             await core.deleteGuildMember(target_member)
             await core.banGuildMember(target_member, request.headers.get("x-audit-log-reason"))
@@ -1288,22 +1301,31 @@ async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: Guild
 @app.get("/api/v9/guilds/<int:guild>/bans")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_bans_get(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     bans = [await ban.json for ban in await core.getGuildBans(guild)]
     return c_json(bans)
+
+
+@app.delete("/api/v9/guilds/<int:guild>/bans/<int:user_id>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_bans_user_delete(user: User, guild: Guild, member: GuildMember, user_id: int):
+    await member.checkPermission(GuildPermissions.BAN_MEMBERS)
+    await core.removeGuildBan(guild, user_id)
+    await core.sendGuildBanRemoveEvent(guild, user_id)
+    return "", 204
 
 
 @app.get("/api/v9/guilds/<int:guild>/integrations")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_integrations_get(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.BAN_MEMBERS)
+    await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     return c_json([])
 
 
 @app.post("/api/v9/guilds/<int:guild>/roles")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_roles_post(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     data = await request.get_json()
     if "id" in data: del data["id"]
     if "guild_id" in data: del data["guild_id"]
@@ -1316,10 +1338,12 @@ async def api_guilds_guild_roles_post(user: User, guild: Guild, member: GuildMem
 @app.patch("/api/v9/guilds/<int:guild>/roles/<int:role>")
 @multipleDecorators(usingDB, getUser, getGuildWM, getRole)
 async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: GuildMember, role: Role):
-    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     data = await request.get_json()
     if "id" in data: del data["id"]
     if "guild_id" in data: del data["guild_id"]
+    if role.id == guild.id:
+        data = {"permissions": data["permissions"]} if "permissions" in data else {} # Only allow permissions editing for @everyone role
     new_role = role.copy(**data)
     await core.updateRoleDiff(role, new_role)
     await core.sendGuildRoleUpdateEvent(new_role)
@@ -1329,14 +1353,27 @@ async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: Gu
 @app.patch("/api/v9/guilds/<int:guild>/roles")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     roles_data = await request.get_json()
+    roles = await core.getRoles(guild)
+    roles.remove([role for role in roles if role.id == guild.id][0])
+
+    if not await member.perm_checker.canChangeRolesPositions(roles_data, roles):
+        raise InvalidDataErr(403, Errors.make(50013))
+
+    changes = []
     for data in roles_data:
-        role = await core.getRole(int(data["id"]))
-        if "id" in data: del data["id"]
-        if "guild_id" in data: del data["guild_id"]
-        new_role = role.copy(**data)
-        await core.updateRoleDiff(role, new_role)
+        if not (role := [role for role in roles if role.id == int(data["id"])]): continue # Don't add non-existing roles
+        role = role[0]
+        if (pos := data["position"]) < 1: pos = 1
+        new_role = role.copy(position=pos)
+        changes.append(new_role)
+    changes.sort(key=lambda r: (r.position, r.permissions))
+    for idx, new_role in enumerate(changes):
+        new_role.position = idx + 1 # Set new position
+        if (old_role := [role for role in roles if role.id == new_role.id][0]).getDiff(new_role) == {}:
+            continue
+        await core.updateRoleDiff(old_role, new_role)
         await core.sendGuildRoleUpdateEvent(new_role)
     roles = await core.getRoles(guild)
     roles = [await role.json for role in roles]
@@ -1346,7 +1383,7 @@ async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMe
 @app.delete("/api/v9/guilds/<int:guild>/roles/<int:role>")
 @multipleDecorators(usingDB, getUser, getGuildWM, getRole)
 async def api_guilds_guild_roles_role_delete(user: User, guild: Guild, member: GuildMember, role: Role):
-    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     if role.id == role.guild_id:
         raise InvalidDataErr(400, Errors.make(50028))
     await core.deleteRole(role)
@@ -1357,14 +1394,14 @@ async def api_guilds_guild_roles_role_delete(user: User, guild: Guild, member: G
 @app.get("/api/v9/guilds/<int:guild>/roles/<int:role>/connections/configuration")
 @multipleDecorators(usingDB, getUser, getGuildWM, getRole)
 async def api_guilds_guild_roles_role_connections_configuration(user: User, guild: Guild, member: GuildMember, role: Role):
-    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     return c_json([]) # TODO
 
 
 @app.get("/api/v9/guilds/<int:guild>/roles/member-counts")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_roles_membercounts(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     counts = await core.getRolesMemberCounts(guild)
     return c_json(counts)
 
@@ -1379,12 +1416,12 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     target_member = await core.getGuildMember(guild, target_user)
     new_member = target_member.copy()
     if "roles" in data:
-        await member.checkPermissions(GuildPermissions.MANAGE_ROLES)
+        await member.checkPermission(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data["roles"]]
         await core.setMemberRolesFromList(target_member, roles)
     target_member = new_member.copy()
     if "nick" in data:
-        await member.checkPermissions(
+        await member.checkPermission(
             GuildPermissions.CHANGE_NICKNAME
             if target_member.user_id == member.user_id else
             GuildPermissions.MANAGE_NICKNAMES

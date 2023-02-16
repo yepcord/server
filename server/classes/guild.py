@@ -115,7 +115,7 @@ class Guild(_Guild, Model):
         return data
 
     DEFAULTS = {"icon": None, "description": None, "splash": None, "discovery_splash": None, "features": [],
-                "emojis": [], "stickers": [], "banner": None, "region": "deprecated", "afk_channel_id": None,
+                "banner": None, "region": "deprecated", "afk_channel_id": None,
                 "afk_timeout": 300, "verification_level": 0, "default_message_notifications": 0, "mfa_level": 0,
                 "explicit_content_filter": 0, "max_members": 100, "vanity_url_code": None, "system_channel_flags": 0,
                 "preferred_locale": "en-US", "premium_progress_bar_enabled": False, "nsfw": False, "nsfw_level": 0} # TODO: remove or replace with more convenient solution
@@ -263,7 +263,7 @@ class Invite(Model):
                 "name": guild.name,
                 "nsfw": guild.nsfw,
                 "nsfw_level": guild.nsfw_level,
-                "premium_subscription_count": 0,
+                "premium_subscription_count": 30,
                 "splash": guild.splash,
                 "vanity_url_code": guild.vanity_url_code,
                 "verification_level": guild.verification_level

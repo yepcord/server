@@ -1063,9 +1063,26 @@ class Core(Singleton):
             return await db.getMemberRolesIds(member)
 
     async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None:
-        print(roles)
         async with self.db() as db:
             return await db.setMemberRolesFromList(member, roles)
+
+    async def getMemberRoles(self, member: GuildMember, include_default: bool=False) -> List[Role]:
+        async with self.db() as db:
+            roles = await db.getMemberRoles(member)
+            if include_default:
+                roles.append(await db.getRole(member.guild_id))
+            roles.sort(key=lambda r: r.position)
+            return roles
+
+    async def removeGuildBan(self, guild: Guild, user_id: int) -> None:
+        async with self.db() as db:
+            await db.removeGuildBan(guild, user_id)
+
+    async def sendGuildBanRemoveEvent(self, guild: Guild, user_id: int) -> None:
+        user_obj = await (await self.getUserData(UserId(user_id))).json
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_ban_remove", "data": {"users": [guild.owner_id], "guild_id": guild.id,
+                                                                       "user_obj": user_obj}})
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

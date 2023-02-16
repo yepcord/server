@@ -3,14 +3,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .guild import Role
 
 from schema import And, Use, Or, Optional as sOptional, Regex
 
 from ..errors import InvalidDataErr, Errors
 from ..snowflake import Snowflake
 from ..ctx import getCore
-from ..enums import RelationshipType, UserFlags as UserFlagsE
+from ..enums import RelationshipType, UserFlags as UserFlagsE, GuildPermissions
 from ..model import model, field, Model
 from ..proto import AppearanceSettings, Locale, TimezoneOffset, Theme, LocalizationSettings, ShowCurrentGame, \
     Status, StatusSettings, PrivacySettings, FriendSourceFlags, ViewImageDescriptions, MessageDisplayCompact, \
@@ -375,6 +378,49 @@ class UserFlags:
             self.parsedFlags.remove(val)
         return self
 
+class PermissionsChecker:
+    def __init__(self, member: GuildMember):
+        self.member = member
+
+    async def check(self, permission: int) -> None:
+        def _check(perms: int, perm: int) -> bool:
+            return (perms & perm) == perm
+        guild = await getCore().getGuild(self.member.guild_id)
+        if guild.owner_id == self.member.user_id:
+            return
+        permissions = await self.member.permissions
+        if _check(permissions, GuildPermissions.ADMINISTRATOR):
+            return
+        if not _check(permissions, permission):
+            raise InvalidDataErr(403, Errors.make(50013))
+
+    async def canKickOrBan(self, target_member: GuildMember) -> bool:
+        if self.member.user_id == target_member.user_id:
+            return False
+        guild = await getCore().getGuild(self.member.guild_id)
+        if target_member.user_id == guild.owner_id:
+            return False
+        if self.member.user_id == guild.owner_id:
+            return True
+        self_top_role = await self.member.top_role
+        target_top_role = await target_member.top_role
+        if self_top_role.position <= target_top_role.position:
+            return False
+        return True
+
+    async def canChangeRolesPositions(self, roles_changes: dict, current_roles: Optional[List[Role]]=None) -> bool:
+        guild = await getCore().getGuild(self.member.guild_id)
+        if self.member.user_id == guild.owner_id:
+            return True
+        roles_ids = {role.id: role for role in current_roles}
+        top_role = await self.member.top_role
+        for role_change in roles_changes:
+            role_id = int(role_change["id"])
+            position = role_change["position"]
+            if roles_ids[role_id].position >= top_role.position or position >= top_role.position:
+                return False
+        return True
+
 @model
 @dataclass
 class GuildMember(_User, Model):
@@ -390,7 +436,6 @@ class GuildMember(_User, Model):
 
     @property
     async def json(self) -> dict:
-        print(await getCore().getMemberRolesIds(self))
         userdata = await getCore().getUserData(UserId(self.user_id))
         data = {
             "avatar": self.avatar,
@@ -420,21 +465,34 @@ class GuildMember(_User, Model):
     def id(self) -> int:
         return self.user_id
 
-    async def checkPermissions(self, permission: int) -> None:
-        guild = await getCore().getGuild(self.guild_id)
-        if guild.owner_id == self.user_id:
-            return
-        raise InvalidDataErr(403, Errors.make(50013))
-        # TODO: Check permissions
-
-    async def checkCanKickOrBan(self, target_member: GuildMember) -> None:
-        if self.user_id == target_member.user_id:
-            raise InvalidDataErr(403, Errors.make(50013))
-        guild = await getCore().getGuild(self.guild_id)
-        if target_member.user_id == guild.owner_id:
-            raise InvalidDataErr(403, Errors.make(50013))
-        # TODO: Check roles
+    @property
+    def perm_checker(self) -> PermissionsChecker:
+        return PermissionsChecker(self)
 
     @property
     async def user(self) -> User:
         return await getCore().getUser(self.user_id)
+
+    @property
+    async def roles(self) -> List[Role]:
+        return await getCore().getMemberRoles(self)
+
+    @property
+    async def roles_w_default(self) -> List[Role]:
+        return await getCore().getMemberRoles(self, True)
+
+    @property
+    async def top_role(self) -> Role:
+        if not (roles := await self.roles):
+            return await getCore().getRole(self.guild_id)
+        return roles[-1]
+
+    async def checkPermission(self, permission: int) -> None:
+        return await self.perm_checker.check(permission)
+
+    @property
+    async def permissions(self) -> int:
+        permissions = 0
+        for role in await self.roles_w_default:
+            permissions |= role.permissions
+        return permissions
