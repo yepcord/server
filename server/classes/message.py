@@ -72,7 +72,7 @@ class Message(_Message, Model):
                     ping = ping[1:]
                 if ping.startswith("&"):
                     data["mention_roles"].append(ping[1:])
-                if member := await getCore().getUserByChannelId(self.channel_id, int(ping)):
+                if not ping.startswith("&") and (member := await getCore().getUserByChannelId(self.channel_id, int(ping))):
                     mdata = await member.data
                     data["mentions"].append(await mdata.json)
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):

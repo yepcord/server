@@ -313,10 +313,16 @@ class DBConnection(ABC):
     async def removeGuildBan(self, guild: Guild, user_id: int) -> None: ...
 
     @abstractmethod
-    async def getRolesMemberIds(self, role_id: int) -> List[int]: ...
+    async def getRolesMemberIds(self, role: Role) -> List[int]: ...
 
     @abstractmethod
     async def getGuildMembersGw(self, guild: _Guild, query: str, limit: int) -> List[GuildMember]: ...
+
+    @abstractmethod
+    async def memberHasRole(self, member: GuildMember, role: Role) -> bool: ...
+
+    @abstractmethod
+    async def addMemberRole(self, member: GuildMember, role: Role) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -921,8 +927,8 @@ class MySqlConnection:
     async def removeGuildBan(self, guild: Guild, user_id: int) -> None:
         await self.cur.execute(f'DELETE FROM `guild_bans` WHERE `guild_id`={guild.id} AND `user_id`={user_id};')
 
-    async def getRolesMemberIds(self, role_id: int) -> List[int]:
-        await self.cur.execute(f'SELECT `user_id` FROM `guild_members_roles` WHERE `role_id`={role_id}')
+    async def getRolesMemberIds(self, role: Role) -> List[int]:
+        await self.cur.execute(f'SELECT `user_id` FROM `guild_members_roles` WHERE `role_id`={role.id};')
         return [r[0] for r in await self.cur.fetchall()]
 
     async def getGuildMembersGw(self, guild: _Guild, query: str, limit: int) -> List[GuildMember]:
@@ -934,3 +940,10 @@ class MySqlConnection:
         for r in await self.cur.fetchall():
             members.append(GuildMember.from_result(self.cur.description, r))
         return members
+
+    async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
+        await self.cur.execute(f'SELECT * FROM `guild_members_roles` WHERE `user_id`={member.id} AND `role_id`={role.id};')
+        return bool(await self.cur.fetchone())
+
+    async def addMemberRole(self, member: GuildMember, role: Role) -> None:
+        await self.cur.execute(f'INSERT INTO `guild_members_roles` VALUES ({member.guild_id}, {member.id}, {role.id});')

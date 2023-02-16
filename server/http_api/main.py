@@ -1265,7 +1265,8 @@ async def api_guilds_guild_premium_subscriptions_get(user: User, guild: Guild, m
 async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member: GuildMember, uid: int):
     await member.checkPermission(GuildPermissions.KICK_MEMBERS)
     if target_member := await core.getGuildMember(guild, uid):
-        await member.perm_checker.canKickOrBan(target_member)
+        if not await member.perm_checker.canKickOrBan(target_member):
+            raise InvalidDataErr(403, Errors.make(50013))
         await core.deleteGuildMember(target_member)
         await core.sendGuildMemberRemoveEvent(guild, await target_member.user)
         await core.sendGuildDeleteEvent(guild, target_member)
@@ -1277,7 +1278,8 @@ async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member:
 async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: GuildMember, uid: int):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     if target_member := await core.getGuildMember(guild, uid):
-        await member.perm_checker.canKickOrBan(target_member)
+        if not await member.perm_checker.canKickOrBan(target_member):
+            raise InvalidDataErr(403, Errors.make(50013))
         if await core.getGuildBan(guild, uid) is None:
             await core.deleteGuildMember(target_member)
             await core.banGuildMember(target_member, request.headers.get("x-audit-log-reason"))
@@ -1318,8 +1320,8 @@ async def api_guilds_guild_bans_user_delete(user: User, guild: Guild, member: Gu
 @app.get("/api/v9/guilds/<int:guild>/integrations")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_integrations_get(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermission(GuildPermissions.BAN_MEMBERS)
-    return c_json([])
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    return c_json([]) # TODO
 
 
 @app.post("/api/v9/guilds/<int:guild>/roles")
@@ -1406,6 +1408,31 @@ async def api_guilds_guild_roles_membercounts(user: User, guild: Guild, member: 
     return c_json(counts)
 
 
+@app.get("/api/v9/guilds/<int:guild>/roles/<int:role>/member-ids")
+@multipleDecorators(usingDB, getUser, getGuildWoM, getRole)
+async def api_guilds_guild_roles_role_memberids(user: User, guild: Guild, role: Role):
+    members = [str(member_id) for member_id in await core.getRolesMemberIds(role)]
+    return c_json(members)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/roles/<int:role>/members")
+@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
+async def api_guilds_guild_roles_role_members(user: User, guild: Guild, member: GuildMember, role: Role):
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
+    if (role.id == guild.id or role.position >= (await member.top_role).position) and member.id != guild.owner_id:
+        raise InvalidDataErr(403, Errors.make(50013))
+    members = {}
+    member_ids = (await request.get_json()).get("member_ids", [])
+    member_ids = [int(member_id) for member_id in member_ids]
+    for member_id in member_ids:
+        target_member = await core.getGuildMember(guild, member_id)
+        if not await core.memberHasRole(target_member, role):
+            await core.addMemberRole(target_member, role)
+            await core.sendGuildMemberUpdateEvent(target_member)
+            members[str(target_member.id)] = await target_member.json
+    return c_json(members)
+
+
 @app.patch("/api/v9/guilds/<int:guild>/members/<string:target_user>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member: GuildMember, target_user: str):
@@ -1418,6 +1445,12 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     if "roles" in data:
         await member.checkPermission(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data["roles"]]
+        guild_roles = {role.id: role for role in await core.getRoles(guild)}
+        roles = [role_id for role_id in roles if role_id in guild_roles]
+        user_top_role = await member.top_role
+        for role_id in roles:
+            if guild_roles[role_id].position >= user_top_role.position:
+                raise InvalidDataErr(403, Errors.make(50013))
         await core.setMemberRolesFromList(target_member, roles)
     target_member = new_member.copy()
     if "nick" in data:
@@ -1447,12 +1480,6 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     await core.sendGuildMemberUpdateEvent(new_member)
     return c_json(await new_member.json)
 
-
-@app.get("/api/v9/guilds/<int:guild>/roles/<int:role_id>/member-ids")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_roles_role_memberids(user: User, guild: Guild, role_id: int):
-    roles = [str(role) for role in await core.getRolesMemberIds(role_id)]
-    return c_json(roles)
 
 # Stickers & gifs
 
