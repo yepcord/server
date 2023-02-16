@@ -686,3 +686,25 @@ class GuildMemberUpdateEvent(DispatchEvent):
         }
         data["d"]["guild_id"] = str(self.guild_id)
         return data
+
+class GuildMembersChunkEvent(DispatchEvent):
+    NAME = "GUILD_MEMBERS_CHUNK"
+
+    def __init__(self, members: List[GuildMember], presences: List, guild_id: int):
+        self.members = members
+        self.presences = presences
+        self.guild_id = guild_id
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "members": [await member.json for member in self.members],
+                "presences": self.presences,
+                "chunk_index": 0,
+                "chunk_count": 1,
+                "guild_id": str(self.guild_id)
+            }
+        }
+        return data

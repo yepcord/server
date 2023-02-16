@@ -1084,6 +1084,14 @@ class Core(Singleton):
                                  {"e": "guild_ban_remove", "data": {"users": [guild.owner_id], "guild_id": guild.id,
                                                                        "user_obj": user_obj}})
 
+    async def getRolesMemberIds(self, role_id: int) -> List[int]:
+        async with self.db() as db:
+            return await db.getRolesMemberIds(role_id)
+
+    async def getGuildMembersGw(self, guild: _Guild, query: str, limit: int) -> List[GuildMember]:
+        async with self.db() as db:
+            return await db.getGuildMembersGw(guild, query, limit)
+
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()
 from server.ctx import Ctx

@@ -1448,6 +1448,12 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     return c_json(await new_member.json)
 
 
+@app.get("/api/v9/guilds/<int:guild>/roles/<int:role_id>/member-ids")
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_roles_role_memberids(user: User, guild: Guild, role_id: int):
+    roles = [str(role) for role in await core.getRolesMemberIds(role_id)]
+    return c_json(roles)
+
 # Stickers & gifs
 
 
