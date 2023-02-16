@@ -175,6 +175,7 @@ CREATE TABLE `guild_members` (
 
 DROP TABLE IF EXISTS `guild_members_roles`;
 CREATE TABLE `guild_members_roles` (
+  `guild_id` bigint NOT NULL,
   `user_id` bigint NOT NULL,
   `role_id` bigint NOT NULL,
   FOREIGN KEY (`role_id`) REFERENCES `roles`(`id`) ON DELETE CASCADE

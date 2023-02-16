@@ -521,6 +521,17 @@ class Gateway:
                     statuses,
                     guild_id
                 ))
+        elif op == GatewayOp.GUILD_MEMBERS:
+            d = data["d"]
+            if not (guild_id := int(d.get("guild_id")[0])): return
+            if not (cl := await self.getClientFromSocket(ws)): return
+            query = d.get("query", "")
+            limit = d.get("limit", 100)
+            if limit > 100 or limit < 1:
+                limit = 100
+            members = await self.core.getGuildMembersGw(GuildId(guild_id), query, limit)
+            presences = []  # TODO: add presences
+            await cl.esend(GuildMembersChunkEvent(members, presences, guild_id))
         else:
             print("-"*16)
             print(f"  Unknown op code: {op}")

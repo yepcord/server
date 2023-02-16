@@ -312,6 +312,12 @@ class DBConnection(ABC):
     @abstractmethod
     async def removeGuildBan(self, guild: Guild, user_id: int) -> None: ...
 
+    @abstractmethod
+    async def getRolesMemberIds(self, role_id: int) -> List[int]: ...
+
+    @abstractmethod
+    async def getGuildMembersGw(self, guild: _Guild, query: str, limit: int) -> List[GuildMember]: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -819,6 +825,7 @@ class MySqlConnection:
 
     async def deleteGuildMember(self, member: GuildMember):
         await self.cur.execute(f'DELETE FROM `guild_members` WHERE `user_id`={member.user_id} AND `guild_id`={member.guild_id} LIMIT 1;')
+        await self.cur.execute(f'DELETE FROM `guild_members_roles` WHERE `user_id`={member.user_id} AND `guild_id`={member.guild_id};')
 
     async def banGuildMember(self, member: GuildMember, reason: str) -> None:
         reason = f'"{escape_string(reason)}"' if reason is not None else "NULL"
@@ -883,7 +890,8 @@ class MySqlConnection:
         return attachments
 
     async def getMemberRolesIds(self, member: GuildMember) -> List[int]:
-        await self.cur.execute(f'SELECT `role_id` FROM `guild_members_roles` WHERE `user_id`={member.user_id}')
+        await self.cur.execute(f'SELECT `role_id` FROM `guild_members_roles` WHERE `user_id`={member.user_id} AND '
+                               f'`guild_id`={member.guild_id}')
         return [r[0] for r in await self.cur.fetchall()]
 
     async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None:
@@ -897,18 +905,32 @@ class MySqlConnection:
             if role not in roles:
                 delete.append(role)
         if create:
-            await self.cur.executemany(f'INSERT INTO `guild_members_roles` VALUES ({member.id}, %s);', create)
+            await self.cur.executemany(f'INSERT INTO `guild_members_roles` VALUES ({member.guild_id}, {member.id}, %s);', create)
         if delete:
             await self.cur.executemany(f'DELETE FROM `guild_members_roles` WHERE `user_id`={member.id} AND '
-                                       f'`role_id`=%s;', delete)
+                                       f'`role_id`=%s AND `guild_id`={member.guild_id};', delete)
 
     async def getMemberRoles(self, member: GuildMember) -> List[Role]:
         roles = []
         await self.cur.execute(f'SELECT * FROM `roles` WHERE `id` IN (SELECT `role_id` FROM `guild_members_roles` WHERE '
-                               f'`user_id`={member.id});')
+                               f'`user_id`={member.id} AND `guild_id`={member.guild_id});')
         for r in await self.cur.fetchall():
             roles.append(Role.from_result(self.cur.description, r))
         return roles
 
     async def removeGuildBan(self, guild: Guild, user_id: int) -> None:
         await self.cur.execute(f'DELETE FROM `guild_bans` WHERE `guild_id`={guild.id} AND `user_id`={user_id};')
+
+    async def getRolesMemberIds(self, role_id: int) -> List[int]:
+        await self.cur.execute(f'SELECT `user_id` FROM `guild_members_roles` WHERE `role_id`={role_id}')
+        return [r[0] for r in await self.cur.fetchall()]
+
+    async def getGuildMembersGw(self, guild: _Guild, query: str, limit: int) -> List[GuildMember]:
+        query = f"{escape_string(query)}%"
+        members = []
+        await self.cur.execute(f'SELECT * FROM `guild_members` WHERE `guild_id`={guild.id} AND '
+                               f'(`nick` LIKE "{query}" or (select 1 from `userdata` where `uid`=user_id and '
+                               f'`username` like "{query}")) LIMIT {limit};')
+        for r in await self.cur.fetchall():
+            members.append(GuildMember.from_result(self.cur.description, r))
+        return members
