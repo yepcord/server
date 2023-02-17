@@ -11,7 +11,7 @@ from time import time
 from typing import Optional, Union, List, Tuple, Dict
 from bcrypt import hashpw, gensalt, checkpw
 
-from .classes.channel import Channel
+from .classes.channel import Channel, PermissionOverwrite, _Channel
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT
@@ -1099,6 +1099,23 @@ class Core(Singleton):
     async def addMemberRole(self, member: GuildMember, role: Role) -> None:
         async with self.db() as db:
             return await db.addMemberRole(member, role)
+
+    async def getPermissionOverwrite(self, channel: _Channel, target_id: int) -> Optional[PermissionOverwrite]:
+        async with self.db() as db:
+            return await db.getPermissionOverwrite(channel, target_id)
+
+    async def getPermissionOverwrites(self, channel: Channel) -> List[PermissionOverwrite]:
+        async with self.db() as db:
+            return await db.getPermissionOverwrites(channel)
+
+    async def putPermissionOverwrite(self, overwrite: PermissionOverwrite) -> None:
+        async with self.db() as db:
+            await db.putPermissionOverwrite(overwrite)
+
+    async def deletePermissionOverwrite(self, channel: Channel, target_id: int) -> None:
+        async with self.db() as db:
+            await db.deletePermissionOverwrite(channel, target_id)
+
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

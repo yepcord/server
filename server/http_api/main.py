@@ -11,7 +11,7 @@ from magic import from_buffer
 from quart import Quart, request
 from quart.globals import request_ctx
 
-from ..classes.channel import Channel
+from ..classes.channel import Channel, PermissionOverwrite
 from ..classes.guild import Emoji, GuildId, Invite, Guild, Role
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember
@@ -1479,6 +1479,42 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
         await core.updateMemberDiff(target_member, new_member)
     await core.sendGuildMemberUpdateEvent(new_member)
     return c_json(await new_member.json)
+
+
+@app.put("/api/v9/channels/<int:channel>/permissions/<int:target_id>")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_permissions_target_put(user: User, channel: Channel, target_id: int):
+    if not channel.guild_id:
+        raise InvalidDataErr(403, Errors.make(50003))
+    if not (guild := await core.getGuild(channel.guild_id)):
+        raise InvalidDataErr(404, Errors.make(10004))
+    if not (member := await core.getGuildMember(guild, user.id)):
+        raise InvalidDataErr(403, Errors.make(50001))
+    await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
+    data = await request.get_json()
+    del data["id"]
+    overwrite = PermissionOverwrite(**data, channel_id=channel.id, target_id=target_id)
+    await core.putPermissionOverwrite(overwrite)
+    await core.sendChannelUpdateEvent(channel)
+    return "", 204
+
+
+@app.delete("/api/v9/channels/<int:channel>/permissions/<int:target_id>")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_permissions_target_delete(user: User, channel: Channel, target_id: int):
+    if not channel.guild_id:
+        raise InvalidDataErr(403, Errors.make(50003))
+    if not (guild := await core.getGuild(channel.guild_id)):
+        raise InvalidDataErr(404, Errors.make(10004))
+    if not (member := await core.getGuildMember(guild, user.id)):
+        raise InvalidDataErr(403, Errors.make(50001))
+    await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
+    await core.deletePermissionOverwrite(channel, target_id)
+    await core.sendChannelUpdateEvent(channel)
+    return "", 204
+
 
 
 # Stickers & gifs

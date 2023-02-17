@@ -546,6 +546,7 @@ class ChannelUpdateEvent(DispatchEvent):
         self.channel = channel
 
     async def json(self) -> dict:
+        print(self.channel)
         j = {
             "t": self.NAME,
             "op": self.OP,

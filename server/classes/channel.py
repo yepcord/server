@@ -27,7 +27,6 @@ class Channel(_Channel, Model):
     type: int = field()
     guild_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     position: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
-    permission_overwrites: Optional[list] = field(validation=Or(list, NoneType), default=None, nullable=True, db_name="j_permission_overwrites")
     name: Optional[str] = None
     topic: Optional[str] = None
     nsfw: Optional[bool] = None
@@ -58,10 +57,14 @@ class Channel(_Channel, Model):
             return {
                 "type": self.type,
                 "position": self.position,
-                "permission_overwrites": self.permission_overwrites,
+                "permission_overwrites": [
+                    await overwrite.json for overwrite in await getCore().getPermissionOverwrites(self)
+                ],
+                "parent_id": str(self.parent_id) if self.parent_id is not None else self.parent_id,
                 "name": self.name,
                 "id": str(self.id),
-                "flags": self.flags
+                "flags": self.flags,
+                "guild_id": str(self.guild_id)
             }
         elif self.type == ChannelType.GUILD_TEXT:
             return {
@@ -69,12 +72,16 @@ class Channel(_Channel, Model):
                 "topic": self.topic,
                 "rate_limit_per_user": self.rate_limit,
                 "position": self.position,
-                "permission_overwrites": self.permission_overwrites,
-                "parent_id": str(self.parent_id),
+                "permission_overwrites": [
+                    await overwrite.json for overwrite in await getCore().getPermissionOverwrites(self)
+                ],
+                "parent_id": str(self.parent_id) if self.parent_id is not None else self.parent_id,
                 "name": self.name,
-                "last_message_id": self.last_message_id,
+                "last_message_id": str(self.last_message_id) if self.last_message_id is not None else self.last_message_id,
                 "id": str(self.id),
-                "flags": self.flags
+                "flags": self.flags,
+                "guild_id": str(self.guild_id),
+                "nsfw": self.nsfw
             }
         elif self.type == ChannelType.GUILD_VOICE:
             return {
@@ -83,11 +90,33 @@ class Channel(_Channel, Model):
                 "rtc_region": self.rtc_region,
                 "rate_limit_per_user": self.rate_limit,
                 "position": self.position,
-                "permission_overwrites": self.permission_overwrites,
-                "parent_id": str(self.parent_id),
+                "permission_overwrites": [
+                    await overwrite.json for overwrite in await getCore().getPermissionOverwrites(self)
+                ],
+                "parent_id": str(self.parent_id) if self.parent_id is not None else self.parent_id,
                 "name": self.name,
-                "last_message_id": self.last_message_id,
+                "last_message_id": str(self.last_message_id) if self.last_message_id is not None else self.last_message_id,
                 "id": str(self.id),
                 "flags": self.flags,
-                "bitrate": self.bitrate
+                "bitrate": self.bitrate,
+                "guild_id": str(self.guild_id)
             }
+
+@model
+@dataclass
+class PermissionOverwrite(Model):
+    channel_id: int
+    target_id: int
+    type: int
+    allow: int
+    deny: int
+
+    @property
+    async def json(self) -> dict:
+        data = {
+            "type": self.type,
+            "id": str(self.target_id),
+            "deny": str(self.deny),
+            "allow": str(self.allow)
+        }
+        return data

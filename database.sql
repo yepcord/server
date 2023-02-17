@@ -209,7 +209,6 @@ CREATE TABLE `channels` (
   `type` int NOT NULL,
   `guild_id` bigint DEFAULT NULL,
   `position` int DEFAULT NULL,
-  `j_permission_overwrites` JSON DEFAULT NULL,
   `name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `topic` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
   `nsfw` bool DEFAULT NULL,
@@ -227,6 +226,16 @@ CREATE TABLE `channels` (
   `default_auto_archive` int DEFAULT NULL,
   `flags` int DEFAULT NULL,
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `permission_overwrites`;
+CREATE TABLE `permission_overwrites` (
+  `channel_id` bigint NOT NULL,
+  `target_id` bigint NOT NULL,
+  `type` int NOT NULL,
+  `allow` bigint NOT NULL,
+  `deny` bigint NOT NULL,
+  FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `messages`;

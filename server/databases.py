@@ -6,7 +6,7 @@ from typing import Optional, List, Tuple, Dict
 
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
-from .classes.channel import Channel, _Channel, ChannelId
+from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite
 from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
@@ -323,6 +323,18 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def addMemberRole(self, member: GuildMember, role: Role) -> None: ...
+
+    @abstractmethod
+    async def getPermissionOverwrite(self, channel: Channel, target_id: int) -> Optional[PermissionOverwrite]: ...
+
+    @abstractmethod
+    async def getPermissionOverwrites(self, channel: Channel) -> List[PermissionOverwrite]: ...
+
+    @abstractmethod
+    async def putPermissionOverwrite(self, overwrite: PermissionOverwrite) -> None: ...
+
+    @abstractmethod
+    async def deletePermissionOverwrite(self, channel: Channel, target_id: int) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -947,3 +959,30 @@ class MySqlConnection:
 
     async def addMemberRole(self, member: GuildMember, role: Role) -> None:
         await self.cur.execute(f'INSERT INTO `guild_members_roles` VALUES ({member.guild_id}, {member.id}, {role.id});')
+
+    async def getPermissionOverwrite(self, channel: _Channel, target_id: int) -> Optional[PermissionOverwrite]:
+        await self.cur.execute(f'SELECT * FROM `permission_overwrites` WHERE `channel_id`={channel.id} AND '
+                               f'target_id={target_id};')
+        if r := await self.cur.fetchone():
+            return PermissionOverwrite.from_result(self.cur.description, r)
+
+    async def getPermissionOverwrites(self, channel: Channel) -> List[PermissionOverwrite]:
+        overwrites = []
+        await self.cur.execute(f'SELECT * FROM `permission_overwrites` WHERE `channel_id`={channel.id};')
+        for r in await self.cur.fetchall():
+            overwrites.append(PermissionOverwrite.from_result(self.cur.description, r))
+        return overwrites
+
+    async def putPermissionOverwrite(self, overwrite: PermissionOverwrite) -> None:
+        if await self.getPermissionOverwrite(ChannelId(overwrite.channel_id), overwrite.target_id) is not None:
+            await self.cur.execute(f'UPDATE `permission_overwrites` SET `allow`={overwrite.allow}, `deny`={overwrite.deny} '
+                                   f'WHERE `channel_id`={overwrite.channel_id} AND target_id={overwrite.target_id};')
+        else:
+            q = json_to_sql(overwrite.toJSON(for_db=True), as_tuples=True)
+            fields = ", ".join([f"`{f}`" for f, v in q])
+            values = ", ".join([f"{v}" for f, v in q])
+            await self.cur.execute(f'INSERT INTO `permission_overwrites` ({fields}) VALUES ({values});')
+
+    async def deletePermissionOverwrite(self, channel: Channel, target_id: int) -> None:
+        await self.cur.execute(f'DELETE FROM `permission_overwrites` WHERE `channel_id`={channel.id} AND '
+                               f'`target_id`={target_id} LIMIT 1;')
