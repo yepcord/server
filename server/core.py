@@ -1058,9 +1058,12 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getAttachments(message)
 
-    async def getMemberRolesIds(self, member: GuildMember) -> List[int]:
+    async def getMemberRolesIds(self, member: GuildMember, include_default: bool=False) -> List[int]:
         async with self.db() as db:
-            return await db.getMemberRolesIds(member)
+            role_ids = await db.getMemberRolesIds(member)
+            if include_default:
+                role_ids.append(member.guild_id)
+            return role_ids
 
     async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None:
         async with self.db() as db:
@@ -1115,6 +1118,18 @@ class Core(Singleton):
     async def deletePermissionOverwrite(self, channel: Channel, target_id: int) -> None:
         async with self.db() as db:
             await db.deletePermissionOverwrite(channel, target_id)
+
+    async def getOverwritesForMember(self, channel: Channel, member: GuildMember) -> List[PermissionOverwrite]:
+        roles = await self.getMemberRoles(member, True)
+        roles.sort(key=lambda r: r.position)
+        roles = {role.id: role for role in roles}
+        overwrites = await self.getPermissionOverwrites(channel)
+        overwrites.sort(key=lambda r: r.type)
+        result = []
+        for overwrite in overwrites:
+            if overwrite.target_id in roles or overwrite.target_id == member.user_id:
+                result.append(overwrite)
+        return result
 
 
 import server.ctx as c

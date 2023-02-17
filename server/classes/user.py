@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING, Tuple
 
 if TYPE_CHECKING:
     from .guild import Role
+    from .channel import Channel
 
 from schema import And, Use, Or, Optional as sOptional, Regex
 
@@ -382,7 +383,7 @@ class PermissionsChecker:
     def __init__(self, member: GuildMember):
         self.member = member
 
-    async def check(self, permission: int) -> None:
+    async def check(self, *check_permissions, channel: Optional[Channel]=None) -> None:
         def _check(perms: int, perm: int) -> bool:
             return (perms & perm) == perm
         guild = await getCore().getGuild(self.member.guild_id)
@@ -391,8 +392,15 @@ class PermissionsChecker:
         permissions = await self.member.permissions
         if _check(permissions, GuildPermissions.ADMINISTRATOR):
             return
-        if not _check(permissions, permission):
-            raise InvalidDataErr(403, Errors.make(50013))
+        if channel:
+            overwrites = await getCore().getOverwritesForMember(channel, self.member)
+            for overwrite in overwrites:
+                permissions &= ~overwrite.deny
+                permissions |= overwrite.allow
+
+        for permission in check_permissions:
+            if not _check(permissions, permission):
+                raise InvalidDataErr(403, Errors.make(50013))
 
     async def canKickOrBan(self, target_member: GuildMember) -> bool:
         if self.member.user_id == target_member.user_id:
@@ -487,8 +495,8 @@ class GuildMember(_User, Model):
             return await getCore().getRole(self.guild_id)
         return roles[-1]
 
-    async def checkPermission(self, permission: int) -> None:
-        return await self.perm_checker.check(permission)
+    async def checkPermission(self, *check_permissions, channel: Optional[Channel]=None) -> None:
+        return await self.perm_checker.check(*check_permissions, channel=channel)
 
     @property
     async def permissions(self) -> int:
