@@ -61,8 +61,7 @@ class Message(_Message, Model):
         data["tts"] = False
         data["timestamp"] = Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         if self.edit_timestamp:
-            data["edit_timestamp"] = Snowflake.toDatetime(self.edit_timestamp).strftime(
-                "%Y-%m-%dT%H:%M:%S.000000+00:00")
+            data["edit_timestamp"] = Snowflake.toDatetime(self.edit_timestamp).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         data["mentions"] = []
         data["mention_roles"] = []
         data["attachments"] = []
@@ -72,6 +71,7 @@ class Message(_Message, Model):
                     ping = ping[1:]
                 if ping.startswith("&"):
                     data["mention_roles"].append(ping[1:])
+                    continue
                 if member := await getCore().getUserByChannelId(self.channel_id, int(ping)):
                     mdata = await member.data
                     data["mentions"].append(await mdata.json)
@@ -79,18 +79,7 @@ class Message(_Message, Model):
             if user := self.extra_data.get("user"):
                 user = await getCore().getUserData(UserId(user))
                 data["mentions"].append(await user.json)
-        for att in await getCore().getAttachments(self):
-            # att = await getCore().getAttachment(att)
-            data["attachments"].append({
-                "filename": att.filename,
-                "id": str(att.id),
-                "size": att.size,
-                "url": f"https://{Config('CDN_HOST')}/attachments/{self.channel_id}/{att.id}/{att.filename}"
-            })
-            if att.get("content_type"):
-                data["attachments"][-1]["content_type"] = att.get("content_type")
-            if att.get("metadata"):
-                data["attachments"][-1].update(att.metadata)
+        data["attachments"] = [await attachment.json for attachment in await getCore().getAttachments(self)]
         if self.message_reference:
             data["message_reference"] = {"message_id": str(self.message_reference), "channel_id": str(self.channel_id)}
         if self.nonce is not None:
@@ -148,6 +137,20 @@ class Attachment(Model):
 
     def __post_init__(self) -> None:
         if not self.uuid: self.uuid = str(uuid4())
+
+    @property
+    async def json(self) -> dict:
+        data = {
+            "filename": self.filename,
+            "id": str(self.id),
+            "size": self.size,
+            "url": f"https://{Config('CDN_HOST')}/attachments/{self.channel_id}/{self.id}/{self.filename}"
+        }
+        if self.content_type:
+            data["content_type"] = self.content_type
+        if self.metadata:
+            data.update(self.metadata)
+        return data
 
 
 @model

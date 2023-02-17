@@ -158,47 +158,6 @@ async def channelInfoResponse(channel, user=None, ids=True) -> dict:
                 "name": channel.name,
                 "icon": channel.icon
             }
-    elif channel.type == ChannelType.GUILD_TEXT:
-        j = {
-            "id": str(channel.id),
-            "last_message_id": str(channel.last_message_id) if channel.last_message_id is not None else channel.last_message_id,
-            "type": channel.type,
-            "name": channel.name,
-            "position": channel.position,
-            "flags": channel.flags,
-            "parent_id": str(channel.parent_id) if channel.parent_id is not None else channel.parent_id,
-            "topic": channel.topic,
-            "guild_id": str(channel.guild_id),
-            "permission_overwrites": [],
-            "rate_limit_per_user": 0,
-            "nsfw": channel.nsfw
-        }
-    elif channel.type == ChannelType.GUILD_VOICE:
-        j = {
-            "user_limit": channel.user_limit,
-            "type": channel.type,
-            "rtc_region": channel.rtc_region,
-            "rate_limit_per_user": channel.rate_limit,
-            "position": channel.position,
-            "permission_overwrites": channel.permission_overwrites,
-            "parent_id": str(channel.parent_id) if channel.parent_id is not None else channel.parent_id,
-            "nsfw": channel.nsfw,
-            "name": channel.name,
-            "last_message_id": str(channel.last_message_id) if channel.last_message_id is not None else channel.last_message_id,
-            "id": str(channel.id),
-            "guild_id": str(channel.guild_id),
-            "flags": channel.flags,
-            "bitrate": channel.bitrate
-        }
-    elif channel.type == ChannelType.GUILD_CATEGORY:
-        j = {
-            "type": channel.type,
-            "position": channel.position,
-            "permission_overwrites": channel.permission_overwrites,
-            "parent_id": str(channel.parent_id) if channel.parent_id is not None else channel.parent_id,
-            "name": channel.name,
-            "id": str(channel.id),
-            "guild_id": str(channel.guild_id),
-            "flags": 0
-        }
+    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+        j = await channel.json
     return j

@@ -11,7 +11,7 @@ from time import time
 from typing import Optional, Union, List, Tuple, Dict
 from bcrypt import hashpw, gensalt, checkpw
 
-from .classes.channel import Channel
+from .classes.channel import Channel, PermissionOverwrite, _Channel
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT
@@ -1058,9 +1058,12 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getAttachments(message)
 
-    async def getMemberRolesIds(self, member: GuildMember) -> List[int]:
+    async def getMemberRolesIds(self, member: GuildMember, include_default: bool=False) -> List[int]:
         async with self.db() as db:
-            return await db.getMemberRolesIds(member)
+            role_ids = await db.getMemberRolesIds(member)
+            if include_default:
+                role_ids.append(member.guild_id)
+            return role_ids
 
     async def setMemberRolesFromList(self, member: GuildMember, roles: List[int]) -> None:
         async with self.db() as db:
@@ -1084,13 +1087,50 @@ class Core(Singleton):
                                  {"e": "guild_ban_remove", "data": {"users": [guild.owner_id], "guild_id": guild.id,
                                                                        "user_obj": user_obj}})
 
-    async def getRolesMemberIds(self, role_id: int) -> List[int]:
+    async def getRolesMemberIds(self, role: Role) -> List[int]:
         async with self.db() as db:
-            return await db.getRolesMemberIds(role_id)
+            return await db.getRolesMemberIds(role)
 
     async def getGuildMembersGw(self, guild: _Guild, query: str, limit: int) -> List[GuildMember]:
         async with self.db() as db:
             return await db.getGuildMembersGw(guild, query, limit)
+
+    async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
+        async with self.db() as db:
+            return await db.memberHasRole(member, role)
+
+    async def addMemberRole(self, member: GuildMember, role: Role) -> None:
+        async with self.db() as db:
+            return await db.addMemberRole(member, role)
+
+    async def getPermissionOverwrite(self, channel: _Channel, target_id: int) -> Optional[PermissionOverwrite]:
+        async with self.db() as db:
+            return await db.getPermissionOverwrite(channel, target_id)
+
+    async def getPermissionOverwrites(self, channel: Channel) -> List[PermissionOverwrite]:
+        async with self.db() as db:
+            return await db.getPermissionOverwrites(channel)
+
+    async def putPermissionOverwrite(self, overwrite: PermissionOverwrite) -> None:
+        async with self.db() as db:
+            await db.putPermissionOverwrite(overwrite)
+
+    async def deletePermissionOverwrite(self, channel: Channel, target_id: int) -> None:
+        async with self.db() as db:
+            await db.deletePermissionOverwrite(channel, target_id)
+
+    async def getOverwritesForMember(self, channel: Channel, member: GuildMember) -> List[PermissionOverwrite]:
+        roles = await self.getMemberRoles(member, True)
+        roles.sort(key=lambda r: r.position)
+        roles = {role.id: role for role in roles}
+        overwrites = await self.getPermissionOverwrites(channel)
+        overwrites.sort(key=lambda r: r.type)
+        result = []
+        for overwrite in overwrites:
+            if overwrite.target_id in roles or overwrite.target_id == member.user_id:
+                result.append(overwrite)
+        return result
+
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

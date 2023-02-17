@@ -11,7 +11,7 @@ from magic import from_buffer
 from quart import Quart, request
 from quart.globals import request_ctx
 
-from ..classes.channel import Channel
+from ..classes.channel import Channel, PermissionOverwrite
 from ..classes.guild import Emoji, GuildId, Invite, Guild, Role
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember
@@ -706,7 +706,7 @@ async def api_channels_channel_patch(user, channel):
         await core.sendDMChannelUpdateEvent(nChannel)
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
-        await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
+        await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
         await core.sendChannelUpdateEvent(nChannel)
     diff = channel.getDiff(nChannel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
@@ -739,6 +739,8 @@ async def api_channels_channel_delete(user, channel):
             await core.updateChannelDiff(channel, nChannel)
             await core.sendDMChannelUpdateEvent(channel)
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
         await core.deleteChannel(channel)
         await core.sendGuildChannelDeleteEvent(channel)
         return await channelInfoResponse(channel)
@@ -750,7 +752,7 @@ async def api_channels_channel_delete(user, channel):
 async def api_channels_channel_messages_get(user, channel):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
-        await member.checkPermission(GuildPermissions.VIEW_CHANNEL)
+        await member.checkPermission(GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     args = request.args
     messages = await channel.messages(args.get("limit", 50), int(args.get("before", 0)), int(args.get("after", 0)))
     messages = [await m.json for m in messages]
@@ -771,7 +773,8 @@ async def api_channels_channel_messages_post(user, channel):
             raise InvalidDataErr(403, Errors.make(50007))
     elif channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
-        await member.checkPermission(GuildPermissions.SEND_MESSAGES)
+        await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
+                                     GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     message_id = Snowflake.makeId()
     data = await request.get_json()
     if data is None: # Multipart request
@@ -817,7 +820,12 @@ async def api_channels_channel_messages_post(user, channel):
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_delete(user: User, channel: Channel, message: Message):
     if message.author != user.id:
-        raise InvalidDataErr(403, Errors.make(50003))
+        if channel.get("guild_id"):
+            member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+            await member.checkPermission(GuildPermissions.MANAGE_MESSAGES, GuildPermissions.VIEW_CHANNEL,
+                                         GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
+        else:
+            raise InvalidDataErr(403, Errors.make(50003))
     await core.deleteMessage(message)
     return "", 204
 
@@ -828,6 +836,10 @@ async def api_channels_channel_messages_message_patch(user: User, channel: Chann
     data = await request.get_json()
     if message.author != user.id:
         raise InvalidDataErr(403, Errors.make(50005))
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
+                                     GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     before = message
     if "id" in data: del data["id"]
     if "channel_id" in data: del data["channel_id"]
@@ -862,6 +874,9 @@ async def api_channels_channel_messages_ack_delete(user, channel):
 @app.post("/api/v9/channels/<int:channel>/typing")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_typing(user, channel):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
     await core.sendTypingEvent(user, channel)
     return "", 204
 
@@ -936,6 +951,9 @@ async def api_channels_channel_repicients_recipient_delete(user, channel, nUser)
 @app.put("/api/v9/channels/<int:channel>/pins/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_pins_message_put(user, channel, message):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not message.pinned:
         await core.pinMessage(message)
         msg = Message(
@@ -954,6 +972,9 @@ async def api_channels_channel_pins_message_put(user, channel, message):
 @app.delete("/api/v9/channels/<int:channel>/pins/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_pins_message_delete(user, channel, message):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
     if message.pinned:
         await core.unpinMessage(message)
     return "", 204
@@ -962,6 +983,9 @@ async def api_channels_channel_pins_message_delete(user, channel, message):
 @app.get("/api/v9/channels/<int:channel>/pins")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_pins_get(user, channel):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     messages = await core.getPinnedMessages(channel.id)
     messages = [await message.json for message in messages]
     return messages
@@ -970,6 +994,10 @@ async def api_channels_channel_pins_get(user, channel):
 @app.put("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
+                                     GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
         raise InvalidDataErr(400, Errors.make(10014))
     r = {
@@ -983,6 +1011,10 @@ async def api_channels_channel_messages_message_reactions_put(user, channel, mes
 @app.delete("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
+                                     GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
         raise InvalidDataErr(400, Errors.make(10014))
     r = {
@@ -996,6 +1028,10 @@ async def api_channels_channel_messages_message_reactions_delete(user, channel, 
 @app.get("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def api_channels_channel_messages_message_reactions_reaction_get(user, channel, message, reaction):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
+                                     GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not is_emoji(reaction) and not (reaction := await core.getEmojiByReaction(reaction)):
         raise InvalidDataErr(400, Errors.make(10014))
     r = {
@@ -1011,6 +1047,9 @@ async def api_channels_channel_messages_message_reactions_reaction_get(user, cha
 @app.get("/api/v9/channels/<int:channel>/messages/search")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def api_channels_channel_messages_search(user, channel):
+    if channel.get("guild_id"):
+        member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
+        await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL, channel=channel)
     messages, total = await core.searchMessages(SearchFilter(**request.args))
     Ctx["search"] = True
     messages = [[await message.json] for message in messages]
@@ -1265,7 +1304,8 @@ async def api_guilds_guild_premium_subscriptions_get(user: User, guild: Guild, m
 async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member: GuildMember, uid: int):
     await member.checkPermission(GuildPermissions.KICK_MEMBERS)
     if target_member := await core.getGuildMember(guild, uid):
-        await member.perm_checker.canKickOrBan(target_member)
+        if not await member.perm_checker.canKickOrBan(target_member):
+            raise InvalidDataErr(403, Errors.make(50013))
         await core.deleteGuildMember(target_member)
         await core.sendGuildMemberRemoveEvent(guild, await target_member.user)
         await core.sendGuildDeleteEvent(guild, target_member)
@@ -1277,7 +1317,8 @@ async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member:
 async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: GuildMember, uid: int):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     if target_member := await core.getGuildMember(guild, uid):
-        await member.perm_checker.canKickOrBan(target_member)
+        if not await member.perm_checker.canKickOrBan(target_member):
+            raise InvalidDataErr(403, Errors.make(50013))
         if await core.getGuildBan(guild, uid) is None:
             await core.deleteGuildMember(target_member)
             await core.banGuildMember(target_member, request.headers.get("x-audit-log-reason"))
@@ -1318,8 +1359,8 @@ async def api_guilds_guild_bans_user_delete(user: User, guild: Guild, member: Gu
 @app.get("/api/v9/guilds/<int:guild>/integrations")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_integrations_get(user: User, guild: Guild, member: GuildMember):
-    await member.checkPermission(GuildPermissions.BAN_MEMBERS)
-    return c_json([])
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    return c_json([]) # TODO
 
 
 @app.post("/api/v9/guilds/<int:guild>/roles")
@@ -1406,6 +1447,31 @@ async def api_guilds_guild_roles_membercounts(user: User, guild: Guild, member: 
     return c_json(counts)
 
 
+@app.get("/api/v9/guilds/<int:guild>/roles/<int:role>/member-ids")
+@multipleDecorators(usingDB, getUser, getGuildWoM, getRole)
+async def api_guilds_guild_roles_role_memberids(user: User, guild: Guild, role: Role):
+    members = [str(member_id) for member_id in await core.getRolesMemberIds(role)]
+    return c_json(members)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/roles/<int:role>/members")
+@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
+async def api_guilds_guild_roles_role_members(user: User, guild: Guild, member: GuildMember, role: Role):
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
+    if (role.id == guild.id or role.position >= (await member.top_role).position) and member.id != guild.owner_id:
+        raise InvalidDataErr(403, Errors.make(50013))
+    members = {}
+    member_ids = (await request.get_json()).get("member_ids", [])
+    member_ids = [int(member_id) for member_id in member_ids]
+    for member_id in member_ids:
+        target_member = await core.getGuildMember(guild, member_id)
+        if not await core.memberHasRole(target_member, role):
+            await core.addMemberRole(target_member, role)
+            await core.sendGuildMemberUpdateEvent(target_member)
+            members[str(target_member.id)] = await target_member.json
+    return c_json(members)
+
+
 @app.patch("/api/v9/guilds/<int:guild>/members/<string:target_user>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member: GuildMember, target_user: str):
@@ -1418,6 +1484,12 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     if "roles" in data:
         await member.checkPermission(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data["roles"]]
+        guild_roles = {role.id: role for role in await core.getRoles(guild)}
+        roles = [role_id for role_id in roles if role_id in guild_roles]
+        user_top_role = await member.top_role
+        for role_id in roles:
+            if guild_roles[role_id].position >= user_top_role.position:
+                raise InvalidDataErr(403, Errors.make(50013))
         await core.setMemberRolesFromList(target_member, roles)
     target_member = new_member.copy()
     if "nick" in data:
@@ -1448,11 +1520,39 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     return c_json(await new_member.json)
 
 
-@app.get("/api/v9/guilds/<int:guild>/roles/<int:role_id>/member-ids")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_roles_role_memberids(user: User, guild: Guild, role_id: int):
-    roles = [str(role) for role in await core.getRolesMemberIds(role_id)]
-    return c_json(roles)
+@app.put("/api/v9/channels/<int:channel>/permissions/<int:target_id>")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_permissions_target_put(user: User, channel: Channel, target_id: int):
+    if not channel.guild_id:
+        raise InvalidDataErr(403, Errors.make(50003))
+    if not (guild := await core.getGuild(channel.guild_id)):
+        raise InvalidDataErr(404, Errors.make(10004))
+    if not (member := await core.getGuildMember(guild, user.id)):
+        raise InvalidDataErr(403, Errors.make(50001))
+    await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
+    data = await request.get_json()
+    del data["id"]
+    overwrite = PermissionOverwrite(**data, channel_id=channel.id, target_id=target_id)
+    await core.putPermissionOverwrite(overwrite)
+    await core.sendChannelUpdateEvent(channel)
+    return "", 204
+
+
+@app.delete("/api/v9/channels/<int:channel>/permissions/<int:target_id>")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_permissions_target_delete(user: User, channel: Channel, target_id: int):
+    if not channel.guild_id:
+        raise InvalidDataErr(403, Errors.make(50003))
+    if not (guild := await core.getGuild(channel.guild_id)):
+        raise InvalidDataErr(404, Errors.make(10004))
+    if not (member := await core.getGuildMember(guild, user.id)):
+        raise InvalidDataErr(403, Errors.make(50001))
+    await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
+    await core.deletePermissionOverwrite(channel, target_id)
+    await core.sendChannelUpdateEvent(channel)
+    return "", 204
+
+
 
 # Stickers & gifs
 
