@@ -778,11 +778,14 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.searchMessages(filter)
 
+    async def putInvite(self, invite: Invite) -> None:
+        async with self.db() as db:
+            await db.putInvite(invite)
+
     async def createInvite(self, channel: Channel, inviter: User, **kwargs) -> Invite:
         guild_id = channel.guild_id
         invite = Invite(Snowflake.makeId(), channel.id, inviter.id, int(time()), guild_id=guild_id, **kwargs)
-        async with self.db() as db:
-            await db.putInvite(invite)
+        await self.putInvite(invite)
         return invite
 
     async def getInvite(self, invite_id: int) -> Optional[Invite]:
@@ -860,7 +863,6 @@ class Core(Singleton):
     async def updateGuildDiff(self, before: Guild, after: Guild) -> None:
         async with self.db() as db:
             await db.updateGuildDiff(before, after)
-        await self.mcl.broadcast("guild_events", {"e": "guild_update", "data": {"users": await self.getGuildMembersIds(before), "guild_obj": await after.json}})
 
     async def blockUser(self, user: User, uid: int) -> None:
         rel = await self.getRelationship(user.id, uid)
@@ -1134,6 +1136,22 @@ class Core(Singleton):
     async def getChannelInvites(self, channel: Channel) -> List[Invite]:
         async with self.db() as db:
             return await db.getChannelInvites(channel)
+
+    async def getVanityCodeInvite(self, code: str) -> Optional[Invite]:
+        async with self.db() as db:
+            return await db.getVanityCodeInvite(code)
+
+    async def sendGuildUpdateEvent(self, guild: Guild) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "guild_update", "data": {"users": await self.getGuildMembersIds(guild),
+                                                                "guild_obj": await guild.json}})
+
+    async def useInvite(self, invite: Invite) -> None:
+        async with self.db() as db:
+            if 0 < invite.max_uses <= invite.uses+1:
+                await db.deleteInvite(invite)
+            else:
+                await db.useInvite(invite)
 
 
 import server.ctx as c

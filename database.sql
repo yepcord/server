@@ -291,6 +291,8 @@ CREATE TABLE `invites` (
   `created_at` bigint NOT NULL,
   `max_age` bigint NOT NULL,
   `max_uses` bigint NOT NULL DEFAULT 0,
+  `uses` bigint NOT NULL DEFAULT 0,
+  `vanity_code` text DEFAULT NULL,
   `guild_id` bigint DEFAULT NULL,
   `type` int NOT NULL DEFAULT 1,
   FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE

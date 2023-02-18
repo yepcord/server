@@ -184,12 +184,13 @@ def getInvite(f):
         if not (invite := kwargs.get("invite")):
             raise InvalidDataErr(404, Errors.make(10006))
         try:
-            invite = b64decode(invite)
-        except:
-            raise InvalidDataErr(404, Errors.make(10006))
-        invite = int.from_bytes(invite, "big")
-        if not (invite := await core.getInvite(invite)):
-            raise InvalidDataErr(404, Errors.make(10006))
+            invite_id = int.from_bytes(b64decode(invite), "big")
+            if not (inv := await core.getInvite(invite_id)):
+                raise ValueError
+            invite = inv
+        except ValueError:
+            if not (invite := await core.getVanityCodeInvite(invite)):
+                raise InvalidDataErr(404, Errors.make(10006))
         kwargs["invite"] = invite
         return await f(*args, **kwargs)
     return wrapped
@@ -1094,7 +1095,7 @@ async def api_users_me_channels_post(user):
 
 @app.post("/api/v9/channels/<int:channel>/invites")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_invites_post(user, channel):
+async def api_channels_channel_invites_post(user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.CREATE_INSTANT_INVITE)
@@ -1107,7 +1108,7 @@ async def api_channels_channel_invites_post(user, channel):
 
 @app.get("/api/v9/invites/<string:invite>")
 @multipleDecorators(usingDB, getInvite)
-async def api_invites_invite_get(invite):
+async def api_invites_invite_get(invite: Invite):
     data = request.args
     Ctx["with_counts"] = data.get("with_counts", "false").lower == "true"
     invite = await invite.json
@@ -1119,7 +1120,7 @@ async def api_invites_invite_get(invite):
 
 @app.post("/api/v9/invites/<string:invite>")
 @multipleDecorators(usingDB, getUser, getInvite)
-async def api_invites_invite_post(user, invite):
+async def api_invites_invite_post(user: User, invite: Invite):
     channel = await core.getChannel(invite.channel_id)
     if channel.type == ChannelType.GROUP_DM:
         if user.id not in channel.recipients and len(channel.recipients) >= 10:
@@ -1135,6 +1136,7 @@ async def api_invites_invite_post(user, invite):
             await core.sendDMRepicientAddEvent(channel.recipients, channel.id, user.id)
             await core.sendMessage(msg)
         await core.sendDMChannelCreateEvent(channel, users=[user.id])
+        await core.useInvite(invite)
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
         inv = await invite.json
         for excl in ["max_age", "max_uses", "created_at"]:  # Remove excluded fields
@@ -1148,9 +1150,10 @@ async def api_invites_invite_post(user, invite):
             await core.createGuildMember(guild, user)
             await core.sendGuildCreateEvent(guild, [user.id])
             if guild.system_channel_id:
-                msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=channel.id, content="",
+                msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=guild.system_channel_id, content="",
                               type=MessageType.USER_JOIN, guild_id=guild.id)
                 await core.sendMessage(msg)
+            await core.useInvite(invite)
     return c_json(inv)
 
 
@@ -1160,9 +1163,6 @@ async def api_invites_invite_delete(user: User, invite: Invite):
     if invite.guild_id:
         member = await core.getGuildMember(GuildId(invite.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-        guild = await core.getGuild(invite.guild_id)
-        if guild.owner_id != user.id:  # TODO: check permissions
-            raise InvalidDataErr(403, Errors.make(50013))
         await core.deleteInvite(invite)
         await core.sendInviteDeleteEvent(invite)
     return c_json(await invite.json)
@@ -1193,10 +1193,10 @@ async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
         if (img := getImage(img)) and validImage(img):
             if h := await cdn.setGuildIconFromBytesIO(guild.id, img):
                 data["icon"] = h
-    nguild = guild.copy()
-    nguild.set(**data)
-    await core.updateGuildDiff(guild, nguild)
-    return c_json(await nguild.json)
+    new_guild = guild.copy(**data)
+    await core.updateGuildDiff(guild, new_guild)
+    await core.sendGuildUpdateEvent(new_guild)
+    return c_json(await new_guild.json)
 
 
 @app.get("/api/v9/guilds/<int:guild>/templates")
@@ -1566,6 +1566,47 @@ async def api_channels_channel_invites_get(user: User, channel: Channel):
     invites = await core.getChannelInvites(channel)
     invites = [await invite.json for invite in invites]
     return c_json(invites)
+
+
+@app.get("/api/v9/guilds/<int:guild>/vanity-url")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_vanityurl_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    code = {
+        "code": guild.vanity_url_code
+    }
+    if guild.vanity_url_code:
+        if invite := await core.getVanityCodeInvite(guild.vanity_url_code):
+            code["uses"]: invite.uses
+    return c_json(code)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/vanity-url")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_vanityurl_patch(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    data = await request.get_json()
+    if "code" not in data:
+        return c_json({"code": guild.vanity_url_code})
+    code = data.get("code")
+    if code == guild.vanity_url_code:
+        return c_json({"code": guild.vanity_url_code})
+    if not code:
+        new_guild = guild.copy(vanity_url_code=None)
+        await core.updateGuildDiff(guild, new_guild)
+        if invite := await core.getVanityCodeInvite(guild.vanity_url_code):
+            await core.deleteInvite(invite)
+    else:
+        if guild.vanity_url_code and (invite := await core.getVanityCodeInvite(guild.vanity_url_code)):
+            await core.deleteInvite(invite)
+        new_guild = guild.copy(vanity_url_code=code)
+        await core.updateGuildDiff(guild, new_guild)
+        invite = Invite(Snowflake.makeId(), guild.system_channel_id, guild.owner_id, int(time()), 0, vanity_code=code,
+                        guild_id=guild.id)
+        await core.putInvite(invite)
+    await core.sendGuildUpdateEvent(new_guild)
+    return c_json({"code": new_guild.vanity_url_code})
+
 
 # Stickers & gifs
 

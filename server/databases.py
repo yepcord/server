@@ -339,6 +339,12 @@ class DBConnection(ABC):
     @abstractmethod
     async def getChannelInvites(self, channel: Channel) -> List[Invite]: ...
 
+    @abstractmethod
+    async def getVanityCodeInvite(self, code: str) -> Optional[Invite]: ...
+
+    @abstractmethod
+    async def useInvite(self, invite: Invite) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -732,7 +738,7 @@ class MySqlConnection:
     async def getInvite(self, invite_id: int) -> Optional[Invite]:
         await self.cur.execute(f'DELETE FROM `invites` WHERE `id`={invite_id} AND `max_age`>0 AND '
                                f'`max_age`+`created_at`<{int(time())};')
-        await self.cur.execute(f'SELECT * FROM `invites` WHERE `id`={invite_id}')
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `id`={invite_id} AND `vanity_code` IS NULL')
         if r := await self.cur.fetchone():
             return Invite.from_result(self.cur.description, r)
 
@@ -840,7 +846,7 @@ class MySqlConnection:
         invites = []
         await self.cur.execute(f'DELETE FROM `invites` WHERE `guild_id`={guild.id} AND `max_age`>0 AND '
                                f'`max_age`+`created_at`<{int(time())};')
-        await self.cur.execute(f'SELECT * FROM `invites` WHERE `guild_id`={guild.id};')
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `guild_id`={guild.id} AND `vanity_code` IS NULL;')
         for r in await self.cur.fetchall():
             invites.append(Invite.from_result(self.cur.description, r))
         return invites
@@ -998,7 +1004,15 @@ class MySqlConnection:
         invites = []
         await self.cur.execute(f'DELETE FROM `invites` WHERE `channel_id`={channel.id} AND `max_age`>0 AND '
                                f'`max_age`+`created_at`<{int(time())};')
-        await self.cur.execute(f'SELECT * FROM `invites` WHERE `channel_id`={channel.id};')
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `channel_id`={channel.id} AND `vanity_code` IS NULL;')
         for r in await self.cur.fetchall():
             invites.append(Invite.from_result(self.cur.description, r))
         return invites
+
+    async def getVanityCodeInvite(self, code: str) -> Optional[Invite]:
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `vanity_code`="{escape_string(code)}"')
+        if r := await self.cur.fetchone():
+            return Invite.from_result(self.cur.description, r)
+
+    async def useInvite(self, invite: Invite) -> None:
+        await self.cur.execute(f'UPDATE `invites` SET `uses`=`uses`+1 WHERE `id`={invite.id};')

@@ -223,6 +223,8 @@ class Invite(Model):
     created_at: int = field()
     max_age: int = field()
     max_uses: Optional[int] = 0
+    uses: Optional[int] = 0
+    vanity_code: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
     guild_id: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
     type: Optional[int] = field(default=1, validation=And(lambda i: i in (0, 1)))
 
@@ -286,7 +288,10 @@ class Invite(Model):
                 "verification_level": guild.verification_level
             }
             data["max_uses"] = self.max_uses
+            data["uses"] = self.uses
             data["temporary"] = False
+            if self.vanity_code:
+                data["code"] = self.vanity_code
 
         return data
 
