@@ -1131,6 +1131,10 @@ class Core(Singleton):
                 result.append(overwrite)
         return result
 
+    async def getChannelInvites(self, channel: Channel) -> List[Invite]:
+        async with self.db() as db:
+            return await db.getChannelInvites(channel)
+
 
 import server.ctx as c
 c._getCore = lambda: Core.getInstance()

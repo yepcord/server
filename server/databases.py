@@ -336,6 +336,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def deletePermissionOverwrite(self, channel: Channel, target_id: int) -> None: ...
 
+    @abstractmethod
+    async def getChannelInvites(self, channel: Channel) -> List[Invite]: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -727,6 +730,8 @@ class MySqlConnection:
         await self.cur.execute(f'INSERT INTO `invites` ({fields}) VALUES ({isql});')
 
     async def getInvite(self, invite_id: int) -> Optional[Invite]:
+        await self.cur.execute(f'DELETE FROM `invites` WHERE `id`={invite_id} AND `max_age`>0 AND '
+                               f'`max_age`+`created_at`<{int(time())};')
         await self.cur.execute(f'SELECT * FROM `invites` WHERE `id`={invite_id}')
         if r := await self.cur.fetchone():
             return Invite.from_result(self.cur.description, r)
@@ -833,6 +838,8 @@ class MySqlConnection:
 
     async def getGuildInvites(self, guild: Guild) -> List[Invite]:
         invites = []
+        await self.cur.execute(f'DELETE FROM `invites` WHERE `guild_id`={guild.id} AND `max_age`>0 AND '
+                               f'`max_age`+`created_at`<{int(time())};')
         await self.cur.execute(f'SELECT * FROM `invites` WHERE `guild_id`={guild.id};')
         for r in await self.cur.fetchall():
             invites.append(Invite.from_result(self.cur.description, r))
@@ -986,3 +993,12 @@ class MySqlConnection:
     async def deletePermissionOverwrite(self, channel: Channel, target_id: int) -> None:
         await self.cur.execute(f'DELETE FROM `permission_overwrites` WHERE `channel_id`={channel.id} AND '
                                f'`target_id`={target_id} LIMIT 1;')
+
+    async def getChannelInvites(self, channel: Channel) -> List[Invite]:
+        invites = []
+        await self.cur.execute(f'DELETE FROM `invites` WHERE `channel_id`={channel.id} AND `max_age`>0 AND '
+                               f'`max_age`+`created_at`<{int(time())};')
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `channel_id`={channel.id};')
+        for r in await self.cur.fetchall():
+            invites.append(Invite.from_result(self.cur.description, r))
+        return invites
