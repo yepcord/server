@@ -1553,6 +1553,19 @@ async def api_channels_channel_permissions_target_delete(user: User, channel: Ch
     return "", 204
 
 
+@app.get("/api/v9/channels/<int:channel>/invites")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_invites_get(user: User, channel: Channel):
+    if not channel.guild_id:
+        raise InvalidDataErr(403, Errors.make(50003))
+    if not (guild := await core.getGuild(channel.guild_id)):
+        raise InvalidDataErr(404, Errors.make(10004))
+    if not (member := await core.getGuildMember(guild, user.id)):
+        raise InvalidDataErr(403, Errors.make(50001))
+    await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
+    invites = await core.getChannelInvites(channel)
+    invites = [await invite.json for invite in invites]
+    return c_json(invites)
 
 # Stickers & gifs
 
