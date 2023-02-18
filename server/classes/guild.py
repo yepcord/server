@@ -61,7 +61,15 @@ class Guild(_Guild, Model):
             "description": self.description,
             "splash": self.splash,
             "discovery_splash": self.discovery_splash,
-            "features": self.features,
+            "features": [
+                "ANIMATED_ICON",
+                "BANNER",
+                "INVITE_SPLASH",
+                "VANITY_URL",
+                "PREMIUM_TIER_3_OVERRIDE",
+                "ROLE_ICONS",
+                *self.features
+            ],
             "emojis": [
                 await emoji.json for emoji in await getCore().getEmojis(self.id)  # Get json for every emoji in guild
             ],
@@ -114,7 +122,8 @@ class Guild(_Guild, Model):
             data["channels"] = [await channel.json for channel in await getCore().getGuildChannels(self)]
         return data
 
-    DEFAULTS = {"icon": None, "description": None, "splash": None, "discovery_splash": None, "features": [],
+    DEFAULTS = {"icon": None, "description": None, "splash": None, "discovery_splash": None, "features": [
+        "ANIMATED_ICON", "BANNER", "INVITE_SPLASH", "VANITY_URL", "PREMIUM_TIER_3_OVERRIDE", "ROLE_ICONS"],
                 "banner": None, "region": "deprecated", "afk_channel_id": None,
                 "afk_timeout": 300, "verification_level": 0, "default_message_notifications": 0, "mfa_level": 0,
                 "explicit_content_filter": 0, "max_members": 100, "vanity_url_code": None, "system_channel_flags": 0,
@@ -258,7 +267,15 @@ class Invite(Model):
                 "id": str(guild.id),
                 "banner": guild.banner,
                 "description": guild.description,
-                "features": guild.features,
+                "features": [
+                    "ANIMATED_ICON",
+                    "BANNER",
+                    "INVITE_SPLASH",
+                    "VANITY_URL",
+                    "PREMIUM_TIER_3_OVERRIDE",
+                    "ROLE_ICONS",
+                    *guild.features
+                ],
                 "icon": guild.icon,
                 "name": guild.name,
                 "nsfw": guild.nsfw,
