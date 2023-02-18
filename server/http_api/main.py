@@ -276,14 +276,14 @@ async def api_auth_mfa_totp(): # TODO: test
 
 @app.post("/api/v9/auth/logout")
 @multipleDecorators(usingDB, getSession)
-async def api_auth_logout(session):
+async def api_auth_logout(session: Session):
     await core.logoutUser(session)
     return "", 204
 
 
 @app.post("/api/v9/auth/verify/view-backup-codes-challenge")
 @multipleDecorators(usingDB, getUser)
-async def api_auth_verify_viewbackupcodeschallenge(user):
+async def api_auth_verify_viewbackupcodeschallenge(user: User):
     data = await request.get_json()
     if not (password := data.get("password")):
         raise InvalidDataErr(400, Errors.make(50018))
@@ -296,7 +296,7 @@ async def api_auth_verify_viewbackupcodeschallenge(user):
 
 @app.post("/api/v9/auth/verify/resend")
 @multipleDecorators(usingDB, getUser)
-async def api_auth_verify_resend(user):
+async def api_auth_verify_resend(user: User):
     if not user.verified:
         await core.sendVerificationEmail(user)
     return "", 204
@@ -323,12 +323,12 @@ async def api_auth_verify():
 
 @app.get("/api/v9/users/@me")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_get(user):
+async def api_users_me_get(user: User):
     return c_json(await userdataResponse(user))
 
 @app.patch("/api/v9/users/@me")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_patch(user):
+async def api_users_me_patch(user: User):
     data = await user.data
     _settings = await request.get_json()
     d = "discriminator" in _settings and _settings.get("discriminator") != data.discriminator
@@ -380,7 +380,7 @@ async def api_users_me_patch(user):
 
 @app.patch("/api/v9/users/@me/profile")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_profile_patch(user):
+async def api_users_me_profile_patch(user: User):
     _settings = await request.get_json()
     settings = {}
     for k, v in _settings.items():
@@ -398,12 +398,12 @@ async def api_users_me_profile_patch(user):
 
 @app.get("/api/v9/users/@me/consent")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_consent_get(user):
+async def api_users_me_consent_get(user: User):
     return c_json(await userConsentResponse(user))
 
 @app.post("/api/v9/users/@me/consent")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_consent_set(user):
+async def api_users_me_consent_set(user: User):
     data = await request.get_json()
     if data["grant"] or data["revoke"]:
         settings = {}
@@ -419,13 +419,13 @@ async def api_users_me_consent_set(user):
 
 @app.get("/api/v9/users/@me/settings")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_settings_get(user):
+async def api_users_me_settings_get(user: User):
     return c_json(await userSettingsResponse(user))
 
 
 @app.patch("/api/v9/users/@me/settings")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_settings_patch(user):
+async def api_users_me_settings_patch(user: User):
     settings = await request.get_json()
     if "uid" in settings: del settings["uid"]
     s = UserSettings(user.id, **settings)
@@ -436,14 +436,14 @@ async def api_users_me_settings_patch(user):
 
 @app.get("/api/v9/users/@me/settings-proto/1")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_settingsproto_1_get(user):
+async def api_users_me_settingsproto_1_get(user: User):
     proto = await user.settings_proto
     return c_json({"settings": _b64encode(proto.SerializeToString()).decode("utf8")})
 
 
 @app.patch("/api/v9/users/@me/settings-proto/1")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_settingsproto_1_patch(user): # TODO
+async def api_users_me_settingsproto_1_patch(user: User): # TODO
     data = await request.get_json()
     if not data.get("settings"):
         raise InvalidDataErr(400, Errors.make(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
@@ -465,14 +465,14 @@ async def api_users_me_settingsproto_1_patch(user): # TODO
 
 @app.get("/api/v9/users/@me/settings-proto/2")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_settingsproto_2_get(user):
+async def api_users_me_settingsproto_2_get(user: User):
     proto = await user.frecency_settings_proto
     return c_json({"settings": _b64encode(proto).decode("utf8")})
 
 
 @app.patch("/api/v9/users/@me/settings-proto/2")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_settingsproto_2_patch(user):
+async def api_users_me_settingsproto_2_patch(user: User):
     data = await request.get_json()
     if not data.get("settings"):
         raise InvalidDataErr(400, Errors.make(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
@@ -493,13 +493,13 @@ async def api_users_me_settingsproto_2_patch(user):
 
 @app.get("/api/v9/users/@me/connections")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_connections(user): # TODO
+async def api_users_me_connections(user: User): # TODO
     return c_json("[]") # friend_sync: bool, id: str(int), integrations: list, name: str, revoked: bool, show_activity: bool, two_way_link: bool, type: str, verified: bool, visibility: int
 
 
 @app.post("/api/v9/users/@me/relationships")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_relationships_post(user):
+async def api_users_me_relationships_post(user: User):
     udata = await request.get_json()
     udata["discriminator"] = int(udata["discriminator"])
     if not (rUser := await core.getUserByUsername(**udata)):
@@ -513,13 +513,13 @@ async def api_users_me_relationships_post(user):
 
 @app.get("/api/v9/users/@me/relationships")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_relationships_get(user):
+async def api_users_me_relationships_get(user: User):
     return c_json(await core.getRelationships(user, with_data=True))
 
 
 @app.get("/api/v9/users/@me/notes/<int:target_uid>")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_notes_get(user, target_uid):
+async def api_users_me_notes_get(user: User, target_uid: int):
     if not (note := await core.getUserNote(user.id, target_uid)):
         raise InvalidDataErr(404, Errors.make(10013))
     return c_json(note.toJSON())
@@ -527,7 +527,7 @@ async def api_users_me_notes_get(user, target_uid):
 
 @app.put("/api/v9/users/@me/notes/<int:target_uid>")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_notes_put(user, target_uid):
+async def api_users_me_notes_put(user: User, target_uid: int):
     data = await request.get_json()
     if note := data.get("note"):
         await core.putUserNote(UserNote(user.id, target_uid, note))
@@ -562,7 +562,7 @@ async def api_users_me_mfa_totp_enable(session: Session):
 
 @app.post("/api/v9/users/@me/mfa/totp/disable")
 @multipleDecorators(usingDB, getSession)
-async def api_users_me_mfa_totp_disable(session):
+async def api_users_me_mfa_totp_disable(session: Session):
     data = await request.get_json()
     if not (code := data.get("code")):
         raise InvalidDataErr(400, Errors.make(60008))
@@ -583,7 +583,7 @@ async def api_users_me_mfa_totp_disable(session):
 
 @app.post("/api/v9/users/@me/mfa/codes-verification")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_mfa_codesverification(user):
+async def api_users_me_mfa_codesverification(user: User):
     data = await request.get_json()
     if not (nonce := data.get("nonce")):
         raise InvalidDataErr(400, Errors.make(60011))
@@ -607,7 +607,7 @@ async def api_users_me_mfa_codesverification(user):
 
 @app.put("/api/v9/users/@me/relationships/<int:uid>")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_relationships_put(uid, user):
+async def api_users_me_relationships_put(uid: int, user: User):
     data = await request.get_json()
     if not data or "type" not in data:
         await core.accRelationship(user, uid)
@@ -618,14 +618,26 @@ async def api_users_me_relationships_put(uid, user):
 
 @app.delete("/api/v9/users/@me/relationships/<int:uid>")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_relationships_delete(uid, user):
+async def api_users_me_relationships_delete(uid: int, user: User):
     await core.delRelationship(user, uid)
     return "", 204
 
 
 @app.get("/api/v9/users/@me/harvest")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_harvest(user):
+async def api_users_me_harvest(user: User):
+    return "", 204
+
+
+
+@app.delete("/api/v9/users/@me/guilds/<int:guild>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_users_me_guilds_guild_delete(user: User, guild: Guild, member: GuildMember):
+    if member.id == guild.owner_id:
+        raise InvalidDataErr(400, Errors.make(50055))
+    await core.deleteGuildMember(member)
+    await core.sendGuildMemberRemoveEvent(guild, await member.user)
+    await core.sendGuildDeleteEvent(guild, member)
     return "", 204
 
 
@@ -674,13 +686,13 @@ async def api_users_user_profile(user: User, target_user: str):
 
 @app.get("/api/v9/channels/<channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel(user, channel):
+async def api_channels_channel(user: User, channel: Channel):
     return c_json(await channelInfoResponse(channel, user))
 
 
 @app.patch("/api/v9/channels/<int:channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_patch(user, channel):
+async def api_channels_channel_patch(user: User, channel: Channel):
     data = dict(await request.get_json())
     if "icon" in data:
         if not (img := getImage(data["icon"])) or not validImage(img):
@@ -722,7 +734,7 @@ async def api_channels_channel_patch(user, channel):
 
 @app.delete("/api/v9/channels/<int:channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_delete(user, channel):
+async def api_channels_channel_delete(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
         return "", 204 # TODO
     elif channel.type == ChannelType.GROUP_DM:
@@ -750,7 +762,7 @@ async def api_channels_channel_delete(user, channel):
 
 @app.get("/api/v9/channels/<int:channel>/messages")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_messages_get(user, channel):
+async def api_channels_channel_messages_get(user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
@@ -762,7 +774,7 @@ async def api_channels_channel_messages_get(user, channel):
 
 @app.post("/api/v9/channels/<int:channel>/messages")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_messages_post(user, channel):
+async def api_channels_channel_messages_post(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
         oth = channel.recipients.copy()
         oth.remove(user.id)
@@ -852,7 +864,7 @@ async def api_channels_channel_messages_message_patch(user: User, channel: Chann
 
 @app.post("/api/v9/channels/<int:channel>/messages/<int:message>/ack")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_messages_message_ack(user, channel, message):
+async def api_channels_channel_messages_message_ack(user: User, channel: Channel, message: Message):
     data = await request.get_json()
     if data.get("manual") and (ct := int(data.get("mention_count"))):
         if isinstance((message := await _getMessage(user, channel, message)), tuple):
@@ -861,20 +873,20 @@ async def api_channels_channel_messages_message_ack(user, channel, message):
         await core.sendMessageAck(user.id, channel.id, message.id, ct, True)
     else:
         await core.delReadStateIfExists(user.id, channel.id)
-        await core.sendMessageAck(user.id, channel.id, message)
+        await core.sendMessageAck(user.id, channel.id, message.id)
     return c_json({"token": None})
 
 
 @app.delete("/api/v9/channels/<int:channel>/messages/ack")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_messages_ack_delete(user, channel):
+async def api_channels_channel_messages_ack_delete(user: User, channel: Channel):
     await core.deleteMessagesAck(channel, user)
     return "", 204
 
 
 @app.post("/api/v9/channels/<int:channel>/typing")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_messages_typing(user, channel):
+async def api_channels_channel_messages_typing(user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
@@ -914,7 +926,7 @@ async def api_channels_channel_attachments_post(user, channel):
 
 @app.put("/api/v9/channels/<int:channel>/recipients/<int:nUser>")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
+async def api_channels_channel_repicients_recipient_put(user: User, channel: Channel, nUser: int):
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
         raise InvalidDataErr(403, Errors.make(50013))
     if channel.type == ChannelType.DM:
@@ -935,7 +947,7 @@ async def api_channels_channel_repicients_recipient_put(user, channel, nUser):
 
 @app.delete("/api/v9/channels/<int:channel>/recipients/<int:nUser>")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_repicients_recipient_delete(user, channel, nUser):
+async def api_channels_channel_repicients_recipient_delete(user: User, channel: Channel, nUser: int):
     if channel.type not in (ChannelType.GROUP_DM,):
         raise InvalidDataErr(403, Errors.make(50013))
     if channel.owner_id != user.id:
@@ -951,7 +963,7 @@ async def api_channels_channel_repicients_recipient_delete(user, channel, nUser)
 
 @app.put("/api/v9/channels/<int:channel>/pins/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
-async def api_channels_channel_pins_message_put(user, channel, message):
+async def api_channels_channel_pins_message_put(user: User, channel: Channel, message: Message):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
@@ -972,7 +984,7 @@ async def api_channels_channel_pins_message_put(user, channel, message):
 
 @app.delete("/api/v9/channels/<int:channel>/pins/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
-async def api_channels_channel_pins_message_delete(user, channel, message):
+async def api_channels_channel_pins_message_delete(user: User, channel: Channel, message: Message):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
@@ -983,7 +995,7 @@ async def api_channels_channel_pins_message_delete(user, channel, message):
 
 @app.get("/api/v9/channels/<int:channel>/pins")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_pins_get(user, channel):
+async def api_channels_channel_pins_get(user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
@@ -994,7 +1006,7 @@ async def api_channels_channel_pins_get(user, channel):
 
 @app.put("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
-async def api_channels_channel_messages_message_reactions_put(user, channel, message, reaction):
+async def api_channels_channel_messages_message_reactions_put(user: User, channel: Channel, message: Message, reaction: str):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
@@ -1011,7 +1023,7 @@ async def api_channels_channel_messages_message_reactions_put(user, channel, mes
 
 @app.delete("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
-async def api_channels_channel_messages_message_reactions_delete(user, channel, message, reaction):
+async def api_channels_channel_messages_message_reactions_delete(user: User, channel: Channel, message: Message, reaction: str):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
@@ -1028,7 +1040,7 @@ async def api_channels_channel_messages_message_reactions_delete(user, channel, 
 
 @app.get("/api/v9/channels/<int:channel>/messages/<int:message>/reactions/<string:reaction>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
-async def api_channels_channel_messages_message_reactions_reaction_get(user, channel, message, reaction):
+async def api_channels_channel_messages_message_reactions_reaction_get(user: User, channel: Channel, message: Message, reaction: str):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
@@ -1047,7 +1059,7 @@ async def api_channels_channel_messages_message_reactions_reaction_get(user, cha
 
 @app.get("/api/v9/channels/<int:channel>/messages/search")
 @multipleDecorators(usingDB, getUser, getChannel)
-async def api_channels_channel_messages_search(user, channel):
+async def api_channels_channel_messages_search(user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL, channel=channel)
@@ -1061,13 +1073,13 @@ async def api_channels_channel_messages_search(user, channel):
 
 @app.get("/api/v9/users/@me/channels")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_channels_get(user):
+async def api_users_me_channels_get(user: User):
     return c_json(await core.getPrivateChannels(user))
 
 
 @app.post("/api/v9/users/@me/channels")
 @multipleDecorators(usingDB, getUser)
-async def api_users_me_channels_post(user):
+async def api_users_me_channels_post(user: User):
     data = await request.get_json()
     rep = data.get("recipients", [])
     rep = [int(r) for r in rep]
@@ -1173,7 +1185,7 @@ async def api_invites_invite_delete(user: User, invite: Invite):
 
 @app.post("/api/v9/guilds")
 @multipleDecorators(usingDB, getUser)
-async def api_guilds_post(user):
+async def api_guilds_post(user: User):
     data = await request.get_json()
     guild = await core.createGuild(user, data["name"])
     Ctx["with_channels"] = True
@@ -1201,13 +1213,13 @@ async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
 
 @app.get("/api/v9/guilds/<int:guild>/templates")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_templates_get(user, guild):
+async def api_guilds_guild_templates_get(user: User, guild: Guild):
     return c_json([])
 
 
 @app.get("/api/v9/guilds/<int:guild>/emojis")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
-async def api_guilds_guild_emojis_get(user, guild):
+async def api_guilds_guild_emojis_get(user: User, guild: Guild):
     emojis = await core.getEmojis(guild.id)
     Ctx["with_user"] = True
     emojis = [await emoji.json for emoji in emojis]
@@ -1626,7 +1638,7 @@ async def api_gifs_trending_get():
 
 @app.post("/api/v9/hypesquad/online")
 @multipleDecorators(usingDB, getUser)
-async def api_hypesquad_online(user):
+async def api_hypesquad_online(user: User):
     data = await request.get_json()
     if not (house_id := data.get("house_id")):
         raise InvalidDataErr(400, Errors.make(50035, {"house_id": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
