@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple, Dict
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite
-from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan
+from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
@@ -338,6 +338,18 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def getChannelInvites(self, channel: Channel) -> List[Invite]: ...
+
+    @abstractmethod
+    async def getVanityCodeInvite(self, code: str) -> Optional[Invite]: ...
+
+    @abstractmethod
+    async def useInvite(self, invite: Invite) -> None: ...
+
+    @abstractmethod
+    async def putAuditLogEntry(self, entry: AuditLogEntry) -> None: ...
+
+    @abstractmethod
+    async def getAuditLogEntries(self, guild: Guild, limit: int, before: Optional[int]=None) -> List[AuditLogEntry]: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -732,7 +744,7 @@ class MySqlConnection:
     async def getInvite(self, invite_id: int) -> Optional[Invite]:
         await self.cur.execute(f'DELETE FROM `invites` WHERE `id`={invite_id} AND `max_age`>0 AND '
                                f'`max_age`+`created_at`<{int(time())};')
-        await self.cur.execute(f'SELECT * FROM `invites` WHERE `id`={invite_id}')
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `id`={invite_id} AND `vanity_code` IS NULL')
         if r := await self.cur.fetchone():
             return Invite.from_result(self.cur.description, r)
 
@@ -840,7 +852,7 @@ class MySqlConnection:
         invites = []
         await self.cur.execute(f'DELETE FROM `invites` WHERE `guild_id`={guild.id} AND `max_age`>0 AND '
                                f'`max_age`+`created_at`<{int(time())};')
-        await self.cur.execute(f'SELECT * FROM `invites` WHERE `guild_id`={guild.id};')
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `guild_id`={guild.id} AND `vanity_code` IS NULL;')
         for r in await self.cur.fetchall():
             invites.append(Invite.from_result(self.cur.description, r))
         return invites
@@ -998,7 +1010,29 @@ class MySqlConnection:
         invites = []
         await self.cur.execute(f'DELETE FROM `invites` WHERE `channel_id`={channel.id} AND `max_age`>0 AND '
                                f'`max_age`+`created_at`<{int(time())};')
-        await self.cur.execute(f'SELECT * FROM `invites` WHERE `channel_id`={channel.id};')
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `channel_id`={channel.id} AND `vanity_code` IS NULL;')
         for r in await self.cur.fetchall():
             invites.append(Invite.from_result(self.cur.description, r))
         return invites
+
+    async def getVanityCodeInvite(self, code: str) -> Optional[Invite]:
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `vanity_code`="{escape_string(code)}"')
+        if r := await self.cur.fetchone():
+            return Invite.from_result(self.cur.description, r)
+
+    async def useInvite(self, invite: Invite) -> None:
+        await self.cur.execute(f'UPDATE `invites` SET `uses`=`uses`+1 WHERE `id`={invite.id};')
+
+    async def putAuditLogEntry(self, entry: AuditLogEntry) -> None:
+        q = json_to_sql(entry.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `guild_audit_log_entries` ({fields}) VALUES ({values});')
+
+    async def getAuditLogEntries(self, guild: Guild, limit: int, before: Optional[int]=None) -> List[AuditLogEntry]:
+        entries = []
+        bef = f" AND `id`<{before}" if before is not None else ""
+        await self.cur.execute(f'SELECT * FROM `guild_audit_log_entries` WHERE `guild_id`={guild.id}{bef} LIMIT {limit};')
+        for r in await self.cur.fetchall():
+            entries.append(AuditLogEntry.from_result(self.cur.description, r))
+        return entries

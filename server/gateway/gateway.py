@@ -420,6 +420,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(GuildBanRemoveEvent(guild_id, user_obj))
 
+    async def audit_log_entry_create(self, users, entry_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildAuditLogEntryCreateEvent(entry_obj))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

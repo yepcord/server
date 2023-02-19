@@ -6,10 +6,10 @@ from typing import Optional
 from schema import Or, And, Use
 
 from .user import UserId
-from ..snowflake import Snowflake
 from ..ctx import getCore, Ctx
-from ..enums import ChannelType
+from ..enums import ChannelType, AuditLogEntryType
 from ..model import model, Model, field
+from ..snowflake import Snowflake
 from ..utils import NoneType
 from ..utils import b64encode, int_length
 
@@ -61,7 +61,15 @@ class Guild(_Guild, Model):
             "description": self.description,
             "splash": self.splash,
             "discovery_splash": self.discovery_splash,
-            "features": self.features,
+            "features": [
+                "ANIMATED_ICON",
+                "BANNER",
+                "INVITE_SPLASH",
+                "VANITY_URL",
+                "PREMIUM_TIER_3_OVERRIDE",
+                "ROLE_ICONS",
+                *self.features
+            ],
             "emojis": [
                 await emoji.json for emoji in await getCore().getEmojis(self.id)  # Get json for every emoji in guild
             ],
@@ -114,7 +122,8 @@ class Guild(_Guild, Model):
             data["channels"] = [await channel.json for channel in await getCore().getGuildChannels(self)]
         return data
 
-    DEFAULTS = {"icon": None, "description": None, "splash": None, "discovery_splash": None, "features": [],
+    DEFAULTS = {"icon": None, "description": None, "splash": None, "discovery_splash": None, "features": [
+        "ANIMATED_ICON", "BANNER", "INVITE_SPLASH", "VANITY_URL", "PREMIUM_TIER_3_OVERRIDE", "ROLE_ICONS"],
                 "banner": None, "region": "deprecated", "afk_channel_id": None,
                 "afk_timeout": 300, "verification_level": 0, "default_message_notifications": 0, "mfa_level": 0,
                 "explicit_content_filter": 0, "max_members": 100, "vanity_url_code": None, "system_channel_flags": 0,
@@ -214,6 +223,8 @@ class Invite(Model):
     created_at: int = field()
     max_age: int = field()
     max_uses: Optional[int] = 0
+    uses: Optional[int] = 0
+    vanity_code: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
     guild_id: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
     type: Optional[int] = field(default=1, validation=And(lambda i: i in (0, 1)))
 
@@ -258,7 +269,15 @@ class Invite(Model):
                 "id": str(guild.id),
                 "banner": guild.banner,
                 "description": guild.description,
-                "features": guild.features,
+                "features": [
+                    "ANIMATED_ICON",
+                    "BANNER",
+                    "INVITE_SPLASH",
+                    "VANITY_URL",
+                    "PREMIUM_TIER_3_OVERRIDE",
+                    "ROLE_ICONS",
+                    *guild.features
+                ],
                 "icon": guild.icon,
                 "name": guild.name,
                 "nsfw": guild.nsfw,
@@ -269,7 +288,10 @@ class Invite(Model):
                 "verification_level": guild.verification_level
             }
             data["max_uses"] = self.max_uses
+            data["uses"] = self.uses
             data["temporary"] = False
+            if self.vanity_code:
+                data["code"] = self.vanity_code
 
         return data
 
@@ -293,3 +315,38 @@ class GuildBan(Model):
             "reason": self.reason
         }
         return data
+
+
+@model
+@dataclass
+class AuditLogEntry(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    user_id: int = field()
+    target_id: Optional[int] = None
+    action_type: int = 0
+    reason: Optional[str] = None
+    changes: list = field(db_name="j_changes", default_factory=list)
+    options: dict = field(db_name="j_options", default_factory=dict)
+
+    @property
+    async def json(self) -> dict:
+        data = {
+            "user_id": str(self.user_id),
+            "target_id": str(self.target_id),
+            "id": str(self.id),
+            "action_type": self.action_type,
+            "guild_id": str(self.guild_id)
+        }
+        if self.changes: data["changes"] = self.changes
+        if self.options: data["options"] = self.options
+        if self.reason: data["reason"] = self.reason
+        return data
+
+    @property
+    def target_user_id(self) -> Optional[int]:
+        if self.action_type in (AuditLogEntryType.MEMBER_UPDATE, AuditLogEntryType.MEMBER_BAN_ADD,
+                                AuditLogEntryType.MEMBER_BAN_REMOVE, AuditLogEntryType.MEMBER_KICK,
+                                AuditLogEntryType.MEMBER_ROLE_UPDATE, AuditLogEntryType.MEMBER_DISCONNECT,
+                                AuditLogEntryType.MEMBER_MOVE):
+            return self.target_id

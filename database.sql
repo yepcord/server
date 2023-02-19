@@ -291,9 +291,24 @@ CREATE TABLE `invites` (
   `created_at` bigint NOT NULL,
   `max_age` bigint NOT NULL,
   `max_uses` bigint NOT NULL DEFAULT 0,
+  `uses` bigint NOT NULL DEFAULT 0,
+  `vanity_code` text DEFAULT NULL,
   `guild_id` bigint DEFAULT NULL,
   `type` int NOT NULL DEFAULT 1,
   FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `guild_audit_log_entries`;
+CREATE TABLE `guild_audit_log_entries` (
+  `id` bigint NOT NULL PRIMARY KEY,
+  `guild_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
+  `target_id` bigint DEFAULT NULL,
+  `action_type` bigint NOT NULL,
+  `reason` text DEFAULT NULL,
+  `j_changes` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "[]" CHECK(json_valid(`j_changes`)),
+  `j_options` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "{}" CHECK(json_valid(`j_options`)),
+  FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `read_states`;
