@@ -12,13 +12,14 @@ from quart import Quart, request
 from quart.globals import request_ctx
 
 from ..classes.channel import Channel, PermissionOverwrite
-from ..classes.guild import Emoji, GuildId, Invite, Guild, Role
+from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
-from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember
+from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember, UserId
 from ..config import Config
 from ..core import Core, CDN
 from ..ctx import Ctx
-from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions
+from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions, \
+    AuditLogEntryType
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..geoip import getLanguageCode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
@@ -721,6 +722,14 @@ async def api_channels_channel_patch(user: User, channel: Channel):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
         await core.sendChannelUpdateEvent(nChannel)
+
+        changes = []
+        for k, v in channel.getDiff(nChannel).items():
+            changes.append({"key": k, "old_value": channel.get(k), "new_value": nChannel.get(k)})
+        entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id, AuditLogEntryType.CHANNEL_UPDATE,
+                              changes=changes)
+        await core.putAuditLogEntry(entry)
+        await core.sendAuditLogEntryCreateEvent(entry)
     diff = channel.getDiff(nChannel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
         message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
@@ -754,6 +763,20 @@ async def api_channels_channel_delete(user: User, channel: Channel):
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
+
+        changes = [
+            {"old_value": channel.name, "key": "name"},
+            {"old_value": channel.type, "key": "type"},
+            {"old_value": [await overwrite.json for overwrite in await core.getPermissionOverwrites(channel)], "key": "permission_overwrites"},
+            {"old_value": channel.nsfw, "key": "nsfw"},
+            {"old_value": channel.rate_limit, "key": "rate_limit_per_user"},
+            {"old_value": channel.flags, "key": "flags"}
+        ]
+        entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id, AuditLogEntryType.CHANNEL_DELETE,
+                              changes=changes)
+        await core.putAuditLogEntry(entry)
+        await core.sendAuditLogEntryCreateEvent(entry)
+
         await core.deleteChannel(channel)
         await core.sendGuildChannelDeleteEvent(channel)
         return await channelInfoResponse(channel)
@@ -1115,6 +1138,20 @@ async def api_channels_channel_invites_post(user: User, channel: Channel):
     max_age = data.get("max_age", 86400)
     max_uses = data.get("max_uses", 0)
     invite = await core.createInvite(channel, user, max_age=max_age, max_uses=max_uses)
+    if channel.get("guild_id"):
+        changes = [
+            {"new_value": invite.code, "key": "code"},
+            {"new_value": invite.channel_id, "key": "channel_id"},
+            {"new_value": invite.inviter_id, "key": "inviter_id"},
+            {"new_value": invite.uses, "key": "uses"},
+            {"new_value": invite.max_uses, "key": "max_uses"},
+            {"new_value": invite.max_age, "key": "max_age"},
+            {"new_value": invite.temporary, "key": "temporary"}
+        ]
+        entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_CREATE,
+                              changes=changes)
+        await core.putAuditLogEntry(entry)
+        await core.sendAuditLogEntryCreateEvent(entry)
     return c_json(await invite.json)
 
 
@@ -1177,6 +1214,20 @@ async def api_invites_invite_delete(user: User, invite: Invite):
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         await core.deleteInvite(invite)
         await core.sendInviteDeleteEvent(invite)
+
+        changes = [
+            {"old_value": invite.code, "key": "code"},
+            {"old_value": invite.channel_id, "key": "channel_id"},
+            {"old_value": invite.inviter_id, "key": "inviter_id"},
+            {"old_value": invite.uses, "key": "uses"},
+            {"old_value": invite.max_uses, "key": "max_uses"},
+            {"old_value": invite.max_age, "key": "max_age"},
+            {"old_value": invite.temporary, "key": "temporary"}
+        ]
+        entry = AuditLogEntry(Snowflake.makeId(), invite.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_DELETE,
+                              changes=changes)
+        await core.putAuditLogEntry(entry)
+        await core.sendAuditLogEntryCreateEvent(entry)
     return c_json(await invite.json)
 
 
@@ -1197,7 +1248,7 @@ async def api_guilds_post(user: User):
 async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     data = await request.get_json()
-    for j in ("id", "owner_id", "features", "emojis", "stickers", "roles", "max_members"):
+    for j in ("id", "owner_id", "features", "max_members"):
         if j in data: del data[j]
     if "icon" in data:
         img = data["icon"]
@@ -1208,6 +1259,15 @@ async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
     new_guild = guild.copy(**data)
     await core.updateGuildDiff(guild, new_guild)
     await core.sendGuildUpdateEvent(new_guild)
+
+    changes = []
+    for k, v in guild.getDiff(new_guild).items():
+        changes.append({"key": k, "old_value": guild.get(k), "new_value": new_guild.get(k)})
+    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, guild.id, AuditLogEntryType.GUILD_UPDATE,
+                          changes=changes)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return c_json(await new_guild.json)
 
 
@@ -1243,12 +1303,21 @@ async def api_guilds_guild_emojis_post(user: User, guild: Guild, member: GuildMe
     emoji = Emoji(eid, data["name"], user.id, guild.id, animated=emd["animated"])
     await core.addEmoji(emoji, guild)
     emoji.fill_defaults()
+
+    changes = [
+        {"new_value": emoji.name, "key": "name"},
+    ]
+    entry = AuditLogEntry(Snowflake.makeId(), emoji.guild_id, user.id, emoji.id, AuditLogEntryType.EMOJI_CREATE,
+                          changes=changes)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return c_json(await emoji.json)
 
 
 @app.delete("/api/v9/guilds/<int:guild>/emojis/<int:emoji>")
 @multipleDecorators(usingDB, getUser, getGuildWM)
-async def api_guilds_guild_emojis_emoji_delete(user: User, guild: Guild, member: GuildMember, emoji):
+async def api_guilds_guild_emojis_emoji_delete(user: User, guild: Guild, member: GuildMember, emoji: int):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     emoji = await core.getEmoji(emoji)
     if not emoji:
@@ -1256,6 +1325,15 @@ async def api_guilds_guild_emojis_emoji_delete(user: User, guild: Guild, member:
     if emoji.guild_id != guild.id:
         return "", 204
     await core.deleteEmoji(emoji, guild)
+
+    changes = [
+        {"old_value": emoji.name, "key": "name"},
+    ]
+    entry = AuditLogEntry(Snowflake.makeId(), emoji.guild_id, user.id, emoji.id, AuditLogEntryType.EMOJI_DELETE,
+                          changes=changes)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return "", 204
 
 
@@ -1291,6 +1369,20 @@ async def api_guilds_guild_channels_post(user: User, guild: Guild, member: Guild
     channel = Channel(Snowflake.makeId(), ctype, guild_id=guild.id, **data)
     channel = await core.createGuildChannel(channel)
     await core.sendChannelCreateEvent(channel)
+
+    changes = [
+        {"new_value": channel.name, "key": "name"},
+        {"new_value": channel.type, "key": "type"},
+        {"new_value": [], "key": "permission_overwrites"},
+        {"new_value": channel.nsfw, "key": "nsfw"},
+        {"new_value": channel.rate_limit, "key": "rate_limit_per_user"},
+        {"new_value": channel.flags, "key": "flags"}
+    ]
+    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, channel.id, AuditLogEntryType.CHANNEL_CREATE,
+                          changes=changes)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return await channelInfoResponse(channel)
 
 
@@ -1321,6 +1413,9 @@ async def api_guilds_guild_members_user_delete(user: User, guild: Guild, member:
         await core.deleteGuildMember(target_member)
         await core.sendGuildMemberRemoveEvent(guild, await target_member.user)
         await core.sendGuildDeleteEvent(guild, target_member)
+        entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, target_member.id, AuditLogEntryType.MEMBER_KICK)
+        await core.putAuditLogEntry(entry)
+        await core.sendAuditLogEntryCreateEvent(entry)
     return "", 204
 
 
@@ -1332,8 +1427,9 @@ async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: Guild
         if not await member.perm_checker.canKickOrBan(target_member):
             raise InvalidDataErr(403, Errors.make(50013))
         if await core.getGuildBan(guild, uid) is None:
+            reason = request.headers.get("x-audit-log-reason")
             await core.deleteGuildMember(target_member)
-            await core.banGuildMember(target_member, request.headers.get("x-audit-log-reason"))
+            await core.banGuildMember(target_member, reason)
             target_user = await target_member.user
             await core.sendGuildMemberRemoveEvent(guild, target_user)
             await core.sendGuildDeleteEvent(guild, target_member)
@@ -1348,6 +1444,11 @@ async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: Guild
                         await core.sendMessageBulkDeleteEvent(guild.id, channel, messages)
                     elif len(messages) == 1:
                         await core.sendMessageDeleteEvent(Message(messages[0], channel, uid))
+
+            entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, target_member.id,
+                                  AuditLogEntryType.MEMBER_BAN_ADD, reason)
+            await core.putAuditLogEntry(entry)
+            await core.sendAuditLogEntryCreateEvent(entry)
     return "", 204
 
 
@@ -1365,6 +1466,10 @@ async def api_guilds_guild_bans_user_delete(user: User, guild: Guild, member: Gu
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     await core.removeGuildBan(guild, user_id)
     await core.sendGuildBanRemoveEvent(guild, user_id)
+
+    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, user_id, AuditLogEntryType.MEMBER_BAN_REMOVE)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
     return "", 204
 
 
@@ -1385,6 +1490,18 @@ async def api_guilds_guild_roles_post(user: User, guild: Guild, member: GuildMem
     role = Role(Snowflake.makeId(), guild.id, **data)
     await core.createGuildRole(role)
     await core.sendGuildRoleCreateEvent(role)
+
+    changes = [
+        {"new_value": role.name, "key": "name"},
+        {"new_value": role.permissions, "key": "permissions"},
+        {"new_value": role.color, "key": "color"},
+        {"new_value": role.hoist, "key": "hoist"},
+        {"new_value": role.mentionable, "key": "mentionable"}
+    ]
+    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, role.id, AuditLogEntryType.ROLE_CREATE, changes=changes)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return c_json(await role.json)
 
 
@@ -1400,6 +1517,15 @@ async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: Gu
     new_role = role.copy(**data)
     await core.updateRoleDiff(role, new_role)
     await core.sendGuildRoleUpdateEvent(new_role)
+
+    changes = []
+    for k, v in guild.getDiff(role).items():
+        changes.append({"key": k, "old_value": role.get(k), "new_value": new_role.get(k)})
+    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, role.id, AuditLogEntryType.ROLE_UPDATE,
+                          changes=changes)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return c_json(await new_role.json)
 
 
@@ -1441,6 +1567,19 @@ async def api_guilds_guild_roles_role_delete(user: User, guild: Guild, member: G
         raise InvalidDataErr(400, Errors.make(50028))
     await core.deleteRole(role)
     await core.sendGuildRoleDeleteEvent(role)
+
+    changes = [
+        {"old_value": role.name, "key": "name"},
+        {"old_value": role.permissions, "key": "permissions"},
+        {"old_value": role.color, "key": "color"},
+        {"old_value": role.hoist, "key": "hoist"},
+        {"old_value": role.mentionable, "key": "mentionable"}
+    ]
+    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, role.id, AuditLogEntryType.ROLE_DELETE,
+                          changes=changes)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return "", 204
 
 
@@ -1493,7 +1632,7 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
     data = await request.get_json()
     target_member = await core.getGuildMember(guild, target_user)
     new_member = target_member.copy()
-    if "roles" in data:
+    if "roles" in data: # TODO: add MEMBER_ROLE_UPDATE audit log event
         await member.checkPermission(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data["roles"]]
         guild_roles = {role.id: role for role in await core.getRoles(guild)}
@@ -1529,6 +1668,15 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
         new_member = target_member.copy(avatar=avatar)
         await core.updateMemberDiff(target_member, new_member)
     await core.sendGuildMemberUpdateEvent(new_member)
+
+    changes = []
+    for k, v in member.getDiff(new_member).items():
+        changes.append({"key": k, "old_value": member.get(k), "new_value": new_member.get(k)})
+    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, member.user_id, AuditLogEntryType.MEMBER_UPDATE,
+                          changes=changes)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return c_json(await new_member.json)
 
 
@@ -1544,9 +1692,37 @@ async def api_channels_channel_permissions_target_put(user: User, channel: Chann
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
     data = await request.get_json()
     del data["id"]
+    old_overwrite = await core.getPermissionOverwrite(channel, target_id)
     overwrite = PermissionOverwrite(**data, channel_id=channel.id, target_id=target_id)
     await core.putPermissionOverwrite(overwrite)
     await core.sendChannelUpdateEvent(channel)
+
+    if old_overwrite:
+        t = AuditLogEntryType.CHANNEL_OVERWRITE_UPDATE
+        changes = []
+        if old_overwrite.allow != overwrite.allow:
+            changes.append({"new_value": str(overwrite.allow), "old_value": str(old_overwrite.allow), "key": "allow"})
+        if old_overwrite.deny != overwrite.deny:
+            changes.append({"new_value": str(overwrite.deny), "old_value": str(old_overwrite.deny), "key": "deny"})
+    else:
+        t = AuditLogEntryType.CHANNEL_OVERWRITE_CREATE
+        changes = [
+            {"new_value": str(overwrite.target_id), "key": "id"},
+            {"new_value": str(overwrite.type), "key": "type"},
+            {"new_value": str(overwrite.allow), "key": "allow"},
+            {"new_value": str(overwrite.deny), "key": "deny"}
+        ]
+    options = {
+        "type": str(overwrite.type),
+        "id": str(overwrite.target_id)
+    }
+    if overwrite.type == 0:
+        role = await core.getRole(overwrite.target_id)
+        options["role_name"] = role.name
+    entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id, t, changes=changes, options=options)
+    await core.putAuditLogEntry(entry)
+    await core.sendAuditLogEntryCreateEvent(entry)
+
     return "", 204
 
 
@@ -1560,8 +1736,29 @@ async def api_channels_channel_permissions_target_delete(user: User, channel: Ch
     if not (member := await core.getGuildMember(guild, user.id)):
         raise InvalidDataErr(403, Errors.make(50001))
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
+    overwrite = await core.getPermissionOverwrite(channel, target_id)
     await core.deletePermissionOverwrite(channel, target_id)
     await core.sendChannelUpdateEvent(channel)
+
+    if overwrite:
+        changes = [
+            {"old_value": str(overwrite.target_id), "key": "id"},
+            {"old_value": str(overwrite.type), "key": "type"},
+            {"old_value": str(overwrite.allow), "key": "allow"},
+            {"old_value": str(overwrite.deny), "key": "deny"}
+        ]
+        options = {
+            "type": str(overwrite.type),
+            "id": str(overwrite.target_id)
+        }
+        if overwrite.type == 0:
+            role = await core.getRole(overwrite.target_id)
+            options["role_name"] = role.name
+        entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
+                              AuditLogEntryType.CHANNEL_OVERWRITE_DELETE, changes=changes, options=options)
+        await core.putAuditLogEntry(entry)
+        await core.sendAuditLogEntryCreateEvent(entry)
+
     return "", 204
 
 
@@ -1618,6 +1815,36 @@ async def api_guilds_guild_vanityurl_patch(user: User, guild: Guild, member: Gui
         await core.putInvite(invite)
     await core.sendGuildUpdateEvent(new_guild)
     return c_json({"code": new_guild.vanity_url_code})
+
+
+@app.get("/api/v9/guilds/<int:guild>/audit-logs")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_auditlogs_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    limit = int(request.args.get("limit", 50))
+    if limit > 50: limit = 50
+    before = request.args.get("before")
+    if before is not None: before = int(before)
+    entries = await core.getAuditLogEntries(guild, limit, before)
+    userdatas = {}
+    for entry in entries:
+        target_user_id = entry.target_user_id
+        if target_user_id and target_user_id not in userdatas:
+            userdatas[target_user_id] = await core.getUserData(UserId(target_user_id))
+    userdatas = list(userdatas.values())
+
+    data = {
+        "application_commands": [],
+        "audit_log_entries": [await entry.json for entry in entries],
+        "auto_moderation_rules": [],
+        "guild_scheduled_events": [],
+        "integrations": [],
+        "threads": [],
+        "users": [await userdata.json for userdata in userdatas],
+        "webhooks": [],
+    }
+
+    return c_json(data)
 
 
 # Stickers & gifs

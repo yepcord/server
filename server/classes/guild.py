@@ -6,10 +6,10 @@ from typing import Optional
 from schema import Or, And, Use
 
 from .user import UserId
-from ..snowflake import Snowflake
 from ..ctx import getCore, Ctx
-from ..enums import ChannelType
+from ..enums import ChannelType, AuditLogEntryType
 from ..model import model, Model, field
+from ..snowflake import Snowflake
 from ..utils import NoneType
 from ..utils import b64encode, int_length
 
@@ -315,3 +315,38 @@ class GuildBan(Model):
             "reason": self.reason
         }
         return data
+
+
+@model
+@dataclass
+class AuditLogEntry(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    user_id: int = field()
+    target_id: Optional[int] = None
+    action_type: int = 0
+    reason: Optional[str] = None
+    changes: list = field(db_name="j_changes", default_factory=list)
+    options: dict = field(db_name="j_options", default_factory=dict)
+
+    @property
+    async def json(self) -> dict:
+        data = {
+            "user_id": str(self.user_id),
+            "target_id": str(self.target_id),
+            "id": str(self.id),
+            "action_type": self.action_type,
+            "guild_id": str(self.guild_id)
+        }
+        if self.changes: data["changes"] = self.changes
+        if self.options: data["options"] = self.options
+        if self.reason: data["reason"] = self.reason
+        return data
+
+    @property
+    def target_user_id(self) -> Optional[int]:
+        if self.action_type in (AuditLogEntryType.MEMBER_UPDATE, AuditLogEntryType.MEMBER_BAN_ADD,
+                                AuditLogEntryType.MEMBER_BAN_REMOVE, AuditLogEntryType.MEMBER_KICK,
+                                AuditLogEntryType.MEMBER_ROLE_UPDATE, AuditLogEntryType.MEMBER_DISCONNECT,
+                                AuditLogEntryType.MEMBER_MOVE):
+            return self.target_id

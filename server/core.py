@@ -12,7 +12,7 @@ from typing import Optional, Union, List, Tuple, Dict
 from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel, PermissionOverwrite, _Channel
-from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
@@ -797,13 +797,13 @@ class Core(Singleton):
         roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
         channels = []
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
-                                permission_overwrites=[], flags=0, rate_limit=0))
+                                flags=0, rate_limit=0))
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Voice Channels", position=0,
-                                permission_overwrites=[], flags=0, rate_limit=0))
+                                flags=0, rate_limit=0))
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_TEXT, guild_id=guild.id, name="general", position=0,
-                                parent_id=channels[0].id, permission_overwrites=[], flags=0, rate_limit=0))
+                                parent_id=channels[0].id, flags=0, rate_limit=0))
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_VOICE, guild_id=guild.id, name="General", position=0,
-                                parent_id=channels[1].id, bitrate=64000, user_limit=0, permission_overwrites=[], flags=0, rate_limit=0))
+                                parent_id=channels[1].id, bitrate=64000, user_limit=0, flags=0, rate_limit=0))
         members = [GuildMember(user.id, guild.id, int(time()))]
 
         guild.system_channel_id = channels[2].id
@@ -1152,6 +1152,20 @@ class Core(Singleton):
                 await db.deleteInvite(invite)
             else:
                 await db.useInvite(invite)
+
+    async def putAuditLogEntry(self, entry: AuditLogEntry) -> None:
+        async with self.db() as db:
+            return await db.putAuditLogEntry(entry)
+
+    async def getAuditLogEntries(self, guild: Guild, limit: int, before: Optional[int]=None) -> List[AuditLogEntry]:
+        async with self.db() as db:
+            return await db.getAuditLogEntries(guild, limit, before)
+
+    async def sendAuditLogEntryCreateEvent(self, entry: AuditLogEntry) -> None:
+        guild = await self.getGuild(entry.guild_id)
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "audit_log_entry_create", "data": {"users": [guild.owner_id],
+                                                                "entry_obj": await entry.json}})
 
 
 import server.ctx as c

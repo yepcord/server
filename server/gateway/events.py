@@ -708,3 +708,17 @@ class GuildMembersChunkEvent(DispatchEvent):
             }
         }
         return data
+
+class GuildAuditLogEntryCreateEvent(DispatchEvent):
+    NAME = "GUILD_AUDIT_LOG_ENTRY_CREATE"
+
+    def __init__(self, entry_obj):
+        self.entry_obj = entry_obj
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.entry_obj
+        }
+        return data
