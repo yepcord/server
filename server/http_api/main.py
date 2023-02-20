@@ -1250,12 +1250,15 @@ async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
     data = await request.get_json()
     for j in ("id", "owner_id", "features", "max_members"):
         if j in data: del data[j]
-    if "icon" in data:
-        img = data["icon"]
-        del data["icon"]
-        if (img := getImage(img)) and validImage(img):
-            if h := await cdn.setGuildIconFromBytesIO(guild.id, img):
-                data["icon"] = h
+    for image_type, func in (("icon", cdn.setGuildIconFromBytesIO), ("banner", cdn.setBannerFromBytesIO),
+                             ("splash", cdn.setGuildSplashFromBytesIO)):
+        if image_type in data:
+            img = data[image_type]
+            if img is not None:
+                del data[image_type]
+                if (img := getImage(img)) and validImage(img):
+                    if h := await func(guild.id, img):
+                        data[image_type] = h
     new_guild = guild.copy(**data)
     await core.updateGuildDiff(guild, new_guild)
     await core.sendGuildUpdateEvent(new_guild)
