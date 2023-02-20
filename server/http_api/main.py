@@ -1514,6 +1514,13 @@ async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: Gu
     if "guild_id" in data: del data["guild_id"]
     if role.id == guild.id:
         data = {"permissions": data["permissions"]} if "permissions" in data else {} # Only allow permissions editing for @everyone role
+    if "icon" in data:
+        img = data["icon"]
+        if img is not None:
+            del data["icon"]
+            if (img := getImage(img)) and validImage(img):
+                if h := await cdn.setRoleIconFromBytesIO(role.id, img):
+                    data["icon"] = h
     new_role = role.copy(**data)
     await core.updateRoleDiff(role, new_role)
     await core.sendGuildRoleUpdateEvent(new_role)

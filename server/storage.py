@@ -110,6 +110,11 @@ class _Storage:
     async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
         raise NotImplementedError
 
+    async def getRoleIcon(self, rid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        anim = icon_hash.startswith("a_")
+        def_size = 256 if anim else 1024
+        return await self._getImage("role_icon", rid, icon_hash, size, fmt, def_size, lambda s: s)
+
     async def getBanner(self, uid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = banner_hash.startswith("a_")
         def_size = 480 if anim else 600
@@ -142,6 +147,11 @@ class _Storage:
 
     async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
         raise NotImplementedError
+
+    async def setRoleIconFromBytesIO(self, rid: int, image: BytesIO) -> str:
+        a = imageFrames(Image.open(image)) > 1
+        size = 256 if a else 1024
+        return await self._setImage("role_icon", rid, size, lambda s: s, image)
 
     async def uploadAttachment(self, data, attachment):
         raise NotImplementedError
