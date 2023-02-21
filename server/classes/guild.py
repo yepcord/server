@@ -402,8 +402,7 @@ class AuditLogEntry(Model):
         changes = [
             {"old_value": channel.name, "key": "name"},
             {"old_value": channel.type, "key": "type"},
-            {"old_value": [await overwrite.json for overwrite in await getCore().getPermissionOverwrites(channel)],
-             "key": "permission_overwrites"},
+            {"old_value": [], "key": "permission_overwrites"},
             {"old_value": channel.nsfw, "key": "nsfw"},
             {"old_value": channel.rate_limit, "key": "rate_limit_per_user"},
             {"old_value": channel.flags, "key": "flags"}
