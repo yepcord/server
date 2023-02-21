@@ -1,18 +1,20 @@
 # All 'Guild' classes (Guild, etc.)
+from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
 
 from schema import Or, And, Use
 
-from .user import UserId
+from .user import UserId, User, GuildMember
 from ..ctx import getCore, Ctx
 from ..enums import ChannelType, AuditLogEntryType
 from ..model import model, Model, field
 from ..snowflake import Snowflake
 from ..utils import NoneType
 from ..utils import b64encode, int_length
-
+if TYPE_CHECKING:
+    from .channel import Channel
 
 class _Guild:
     id: int
@@ -350,3 +352,124 @@ class AuditLogEntry(Model):
                                 AuditLogEntryType.MEMBER_ROLE_UPDATE, AuditLogEntryType.MEMBER_DISCONNECT,
                                 AuditLogEntryType.MEMBER_MOVE):
             return self.target_id
+
+    @staticmethod
+    def get_changes(before: Model, after: Model) -> List[dict]:
+        changes = []
+        for k, v in before.getDiff(after).items():
+            changes.append({"key": k, "old_value": before.get(k), "new_value": after.get(k)})
+        return changes
+
+    @classmethod
+    def guild_update(cls, guild: Guild, new_guild: Guild, user: User) -> AuditLogEntry:
+        return AuditLogEntry(Snowflake.makeId(), guild.id, user.id, guild.id, AuditLogEntryType.GUILD_UPDATE,
+                              changes=cls.get_changes(guild, new_guild))
+
+    @classmethod
+    def emoji_create(cls, emoji: Emoji, user: User) -> AuditLogEntry:
+        changes = [{"new_value": emoji.name, "key": "name"}]
+        return AuditLogEntry(Snowflake.makeId(), emoji.guild_id, user.id, emoji.id, AuditLogEntryType.EMOJI_CREATE,
+                             changes=changes)
+
+    @classmethod
+    def emoji_delete(cls, emoji: Emoji, user: User) -> AuditLogEntry:
+        changes = [{"old_value": emoji.name, "key": "name"}]
+        return AuditLogEntry(Snowflake.makeId(), emoji.guild_id, user.id, emoji.id, AuditLogEntryType.EMOJI_DELETE,
+                          changes=changes)
+
+    @classmethod
+    def channel_create(cls, channel: Channel, user: User) -> AuditLogEntry:
+        changes = [
+            {"new_value": channel.name, "key": "name"},
+            {"new_value": channel.type, "key": "type"},
+            {"new_value": [], "key": "permission_overwrites"},
+            {"new_value": channel.nsfw, "key": "nsfw"},
+            {"new_value": channel.rate_limit, "key": "rate_limit_per_user"},
+            {"new_value": channel.flags, "key": "flags"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
+                             AuditLogEntryType.CHANNEL_CREATE,
+                             changes=changes)
+
+    @classmethod
+    def channel_update(cls, channel: Channel, new_channel: Channel, user: User) -> AuditLogEntry:
+        return AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
+                             AuditLogEntryType.CHANNEL_CREATE,
+                             changes=cls.get_changes(channel, new_channel))
+
+    @classmethod
+    def channel_delete(cls, channel: Channel, user: User) -> AuditLogEntry:
+        changes = [
+            {"old_value": channel.name, "key": "name"},
+            {"old_value": channel.type, "key": "type"},
+            {"old_value": [await overwrite.json for overwrite in await getCore().getPermissionOverwrites(channel)],
+             "key": "permission_overwrites"},
+            {"old_value": channel.nsfw, "key": "nsfw"},
+            {"old_value": channel.rate_limit, "key": "rate_limit_per_user"},
+            {"old_value": channel.flags, "key": "flags"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
+                             AuditLogEntryType.CHANNEL_DELETE,
+                             changes=changes)
+
+    @classmethod
+    def invite_create(cls, invite: Invite, user: User) -> AuditLogEntry:
+        changes = [
+            {"new_value": invite.code, "key": "code"},
+            {"new_value": invite.channel_id, "key": "channel_id"},
+            {"new_value": invite.inviter_id, "key": "inviter_id"},
+            {"new_value": invite.uses, "key": "uses"},
+            {"new_value": invite.max_uses, "key": "max_uses"},
+            {"new_value": invite.max_age, "key": "max_age"},
+            {"new_value": invite.temporary, "key": "temporary"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), invite.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_CREATE,
+                              changes=changes)
+
+    @classmethod
+    def invite_delete(cls, invite: Invite, user: User) -> AuditLogEntry:
+        changes = [
+            {"old_value": invite.code, "key": "code"},
+            {"old_value": invite.channel_id, "key": "channel_id"},
+            {"old_value": invite.inviter_id, "key": "inviter_id"},
+            {"old_value": invite.uses, "key": "uses"},
+            {"old_value": invite.max_uses, "key": "max_uses"},
+            {"old_value": invite.max_age, "key": "max_age"},
+            {"old_value": invite.temporary, "key": "temporary"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), invite.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_DELETE,
+                              changes=changes)
+
+    @classmethod
+    def role_create(cls, role: Role, user: User) -> AuditLogEntry:
+        changes = [
+            {"new_value": role.name, "key": "name"},
+            {"new_value": role.permissions, "key": "permissions"},
+            {"new_value": role.color, "key": "color"},
+            {"new_value": role.hoist, "key": "hoist"},
+            {"new_value": role.mentionable, "key": "mentionable"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), role.guild_id, user.id, role.id, AuditLogEntryType.ROLE_CREATE,
+                              changes=changes)
+
+    @classmethod
+    def role_update(cls, role: Role, new_role: Role, user: User) -> AuditLogEntry:
+        return  AuditLogEntry(Snowflake.makeId(), role.guild_id, user.id, role.id, AuditLogEntryType.ROLE_UPDATE,
+                          changes=cls.get_changes(role, new_role))
+
+    @classmethod
+    def role_delete(cls, role: Role, user: User) -> AuditLogEntry:
+        changes = [
+            {"old_value": role.name, "key": "name"},
+            {"old_value": role.permissions, "key": "permissions"},
+            {"old_value": role.color, "key": "color"},
+            {"old_value": role.hoist, "key": "hoist"},
+            {"old_value": role.mentionable, "key": "mentionable"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), role.guild_id, user.id, role.id, AuditLogEntryType.ROLE_DELETE,
+                              changes=changes)
+
+    @classmethod
+    def member_update(cls, member: GuildMember, new_member: GuildMember, user: User) -> AuditLogEntry:
+        return  AuditLogEntry(Snowflake.makeId(), member.guild_id, user.id, member.user_id, AuditLogEntryType.MEMBER_UPDATE,
+                          changes=cls.get_changes(member, new_member))
