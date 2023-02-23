@@ -593,3 +593,33 @@ class GuildTemplate(Model):
     @property
     def code(self) -> str:
         return b64encode(self.id.to_bytes(int_length(self.id), 'big'))
+
+@model
+@dataclass
+class Webhook(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    channel_id: int = field()
+    user_id: int = field()
+    type: int = field()
+    name: str = field()
+    token: str = field()
+    application_id: Optional[int] = field(default=None, nullable=True, validation=Or(Use(int), NoneType))
+    avatar: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
+
+    @property
+    async def json(self) -> dict:
+        userdata = await getCore().getUserData(UserId(self.user_id))
+        data = {
+            "type": self.type,
+            "id": str(self.id),
+            "name": self.name,
+            "avatar": self.avatar,
+            "channel_id": str(self.channel_id),
+            "guild_id": str(self.guild_id),
+            "application_id": str(self.application_id) if self.application_id is not None else self.application_id,
+            "token": self.token,
+            "user": await userdata.json
+        }
+
+        return data

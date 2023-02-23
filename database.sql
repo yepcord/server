@@ -326,6 +326,20 @@ CREATE TABLE `guild_templates` (
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
+DROP TABLE IF EXISTS `webhooks`;
+CREATE TABLE `webhooks` (
+  `id` bigint NOT NULL PRIMARY KEY,
+  `guild_id` bigint NOT NULL,
+  `channel_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
+  `application_id` bigint DEFAULT NULL,
+  `type` int NOT NULL,
+  `name` text NOT NULL,
+  `avatar` text DEFAULT NULL,
+  `token` text DEFAULT NULL,
+  FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
 DROP TABLE IF EXISTS `read_states`;
 CREATE TABLE `read_states` (
   `uid` bigint NOT NULL,

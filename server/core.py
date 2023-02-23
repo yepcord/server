@@ -12,7 +12,7 @@ from typing import Optional, Union, List, Tuple, Dict
 from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel, PermissionOverwrite, _Channel
-from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
@@ -1258,6 +1258,33 @@ class Core(Singleton):
     async def deleteGuild(self, guild: Guild) -> None:
         async with self.db() as db:
             await db.deleteGuild(guild)
+
+    async def putWebhook(self, webhook: Webhook) -> None:
+        async with self.db() as db:
+            await db.putWebhook(webhook)
+
+    async def deleteWebhook(self, webhook: Webhook) -> None:
+        async with self.db() as db:
+            await db.deleteWebhook(webhook)
+
+    async def updateWebhookDiff(self, before: Webhook, after: Webhook) -> None:
+        async with self.db() as db:
+            await db.updateWebhookDiff(before, after)
+
+    async def getWebhooks(self, guild: Guild) -> List[Webhook]:
+        async with self.db() as db:
+            return await db.getWebhooks(guild)
+
+    async def getWebhook(self, webhook_id: int) -> Optional[Webhook]:
+        async with self.db() as db:
+            return await db.getWebhook(webhook_id)
+
+    async def sendWebhooksUpdateEvent(self, webhook: Webhook) -> None:
+        guild = await self.getGuild(webhook.guild_id)
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "webhooks_update", "data": {"users": [guild.owner_id],
+                                                                   "guild_id": webhook.guild_id,
+                                                                   "channel_id": webhook.channel_id}})
 
 
 import server.ctx as c

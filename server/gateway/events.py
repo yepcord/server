@@ -727,3 +727,21 @@ class GuildAuditLogEntryCreateEvent(DispatchEvent):
             "d": self.entry_obj
         }
         return data
+
+class WebhooksUpdateEvent(DispatchEvent):
+    NAME = "WEBHOOKS_UPDATE"
+
+    def __init__(self, guild_id, channel_id):
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "guild_id": str(self.guild_id),
+                "channel_id": str(self.channel_id)
+            }
+        }
+        return data

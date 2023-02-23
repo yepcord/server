@@ -1,8 +1,10 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from functools import wraps
 from json import dumps as jdumps, loads as jloads
+from os import urandom
 from random import choice
 from time import time
+from typing import Optional
 
 from PIL import Image
 from async_timeout import timeout
@@ -12,14 +14,14 @@ from quart import Quart, request
 from quart.globals import request_ctx
 
 from ..classes.channel import Channel, PermissionOverwrite
-from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry, GuildTemplate
+from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry, GuildTemplate, Webhook
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember, UserId
 from ..config import Config
 from ..core import Core, CDN
 from ..ctx import Ctx
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions, \
-    AuditLogEntryType
+    AuditLogEntryType, WebhookType
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..geoip import getLanguageCode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
@@ -1921,6 +1923,97 @@ async def api_guilds_guild_delete(user: User, guild: Guild):
     await core.sendGuildDeleteEvent(guild, user)
 
     return "", 204
+
+
+@app.post("/api/v9/channels/<int:channel>/webhooks")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_webhooks_post(user: User, channel: Channel):
+    if not channel.get("guild_id"):
+        raise InvalidDataErr(403, Errors.make(50003))
+    guild = await core.getGuild(channel.guild_id)
+    member = await core.getGuildMember(guild, user.id)
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+
+    data = await request.get_json()
+    if not (name := data.get("name")):
+        raise InvalidDataErr(400,
+                             Errors.make(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+
+    webhook = Webhook(Snowflake.makeId(), guild.id, channel.id, user.id, WebhookType.INCOMING, name,
+                      b64encode(urandom(48)), None, None)
+    await core.putWebhook(webhook)
+    await core.sendWebhooksUpdateEvent(webhook)
+
+    return c_json(await webhook.json)
+
+
+@app.get("/api/v9/guilds/<int:guild>/webhooks")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_webhooks_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    webhooks = [await webhook.json for webhook in await core.getWebhooks(guild)]
+    return c_json(webhooks)
+
+
+@app.get("/api/v9/channels/<int:channel>/webhooks")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_webhooks_get(user: User, channel: Channel):
+    if not channel.get("guild_id"):
+        raise InvalidDataErr(403, Errors.make(50003))
+    guild = await core.getGuild(channel.guild_id)
+    member = await core.getGuildMember(guild, user.id)
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+
+    webhooks = [await webhook.json for webhook in await core.getWebhooks(guild)]
+    return c_json(webhooks)
+
+
+@app.delete("/api/v9/webhooks/<int:webhook>")
+@app.delete("/api/v9/webhooks/<int:webhook>/<string:token>")
+@multipleDecorators(usingDB, getUser)
+async def api_webhooks_webhook_delete(user: User, webhook: int, token: Optional[str]=None):
+    if webhook := await core.getWebhook(webhook):
+        if webhook.token != token:
+            guild = await core.getGuild(webhook.guild_id)
+            if not (member := await core.getGuildMember(guild, user.id)):
+                raise InvalidDataErr(403, Errors.make(50013))
+            await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+        await core.deleteWebhook(webhook)
+        await core.sendWebhooksUpdateEvent(webhook)
+
+    return "", 204
+
+
+@app.patch("/api/v9/webhooks/<int:webhook>")
+@multipleDecorators(usingDB, getUser)
+async def api_webhooks_webhook_patch(user: User, webhook: int):
+    if not (webhook := await core.getWebhook(webhook)):
+        raise InvalidDataErr(404, Errors.make(10015))
+    guild = await core.getGuild(webhook.guild_id)
+    if not (member := await core.getGuildMember(guild, user.id)):
+        raise InvalidDataErr(403, Errors.make(50013))
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    data = await request.get_json()
+    data = {
+        "name": str(data.get("name") or webhook.name),
+        "channel_id": int(data.get("channel_id") or webhook.channel_id),
+        "avatar": data.get("avatar")
+    }
+    if (img := data["avatar"]) or img is None:
+        if img is not None:
+            if (img := getImage(img)) and validImage(img):
+                if h := await cdn.setAvatarFromBytesIO(webhook.id, img):
+                    img = h
+        data["avatar"] = img
+    else:
+        del data["avatar"]
+
+    new_webhook = webhook.copy(**data)
+
+    await core.updateWebhookDiff(webhook, new_webhook)
+    await core.sendWebhooksUpdateEvent(new_webhook)
+
+    return c_json(await new_webhook.json)
 
 
 # Stickers & gifs

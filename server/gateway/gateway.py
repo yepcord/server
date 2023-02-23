@@ -426,6 +426,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(GuildAuditLogEntryCreateEvent(entry_obj))
 
+    async def webhooks_update(self, users, guild_id, channel_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(WebhooksUpdateEvent(guild_id, channel_id))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

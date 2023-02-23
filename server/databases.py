@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple, Dict
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite
-from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate
+from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
@@ -368,6 +368,21 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def deleteGuild(self, guild: Guild) -> None: ...
+
+    @abstractmethod
+    async def putWebhook(self, webhook: Webhook) -> None: ...
+
+    @abstractmethod
+    async def deleteWebhook(self, webhook: Webhook) -> None: ...
+
+    @abstractmethod
+    async def updateWebhookDiff(self, before: Webhook, after: Webhook) -> None: ...
+
+    @abstractmethod
+    async def getWebhooks(self, guild: Guild) -> List[Webhook]: ...
+
+    @abstractmethod
+    async def getWebhook(self, webhook_id: int) -> Optional[Webhook]: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -1082,3 +1097,30 @@ class MySqlConnection:
 
     async def deleteGuild(self, guild: Guild) -> None:
         await self.cur.execute(f'DELETE FROM `guilds` WHERE `id`={guild.id} LIMIT 1;')
+
+    async def putWebhook(self, webhook: Webhook) -> None:
+        q = json_to_sql(webhook.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `webhooks` ({fields}) VALUES ({values});')
+
+    async def deleteWebhook(self, webhook: Webhook) -> None:
+        await self.cur.execute(f'DELETE FROM `webhooks` WHERE `id`={webhook.id};')
+
+    async def updateWebhookDiff(self, before: Webhook, after: Webhook) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `webhooks` SET {diff} WHERE `id`={before.id};')
+
+    async def getWebhooks(self, guild: Guild) -> List[Webhook]:
+        webhooks = []
+        await self.cur.execute(f'SELECT * FROM `webhooks` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            webhooks.append(Webhook.from_result(self.cur.description, r))
+        return webhooks
+
+    async def getWebhook(self, webhook_id: int) -> Optional[Webhook]:
+        await self.cur.execute(f'SELECT * FROM `webhooks` WHERE `id`={webhook_id};')
+        if r := await self.cur.fetchone():
+            return Webhook.from_result(self.cur.description, r)
