@@ -1752,6 +1752,8 @@ async def api_channels_channel_permissions_target_put(user: User, channel: Chann
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
 
+    await core.setTemplateDirty(GuildId(channel.guild_id))
+
     return "", 204
 
 
@@ -1787,6 +1789,8 @@ async def api_channels_channel_permissions_target_delete(user: User, channel: Ch
                               AuditLogEntryType.CHANNEL_OVERWRITE_DELETE, changes=changes, options=options)
         await core.putAuditLogEntry(entry)
         await core.sendAuditLogEntryCreateEvent(entry)
+
+        await core.setTemplateDirty(GuildId(channel.guild_id))
 
     return "", 204
 
@@ -1874,6 +1878,28 @@ async def api_guilds_guild_auditlogs_get(user: User, guild: Guild, member: Guild
     }
 
     return c_json(data)
+
+@app.post("/api/v9/guilds/templates/<string:template>")
+@multipleDecorators(usingDB, getUser)
+async def api_guilds_templates_template(user: User, template: str):
+    try:
+        template_id = int.from_bytes(b64decode(template), "big")
+        if not (template := await core.getGuildTemplateById(template_id)):
+            raise ValueError
+    except ValueError:
+        raise InvalidDataErr(404, Errors.make(10057))
+
+    guild_id = Snowflake.makeId()
+    data = await request.get_json()
+    icon = None
+    if img := data.get("icon"):
+        if (img := getImage(img)) and validImage(img):
+            if h := await cdn.setGuildIconFromBytesIO(guild_id, img):
+                icon = h
+
+    guild = await core.createGuildFromTemplate(guild_id, user, template, data.get("name"), icon)
+    Ctx["with_channels"] = True
+    return c_json(await guild.json)
 
 
 # Stickers & gifs

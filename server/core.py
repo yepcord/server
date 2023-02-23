@@ -23,7 +23,7 @@ from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .pubsub_client import Broadcaster
 from .responses import channelInfoResponse
 from .snowflake import Snowflake
-from .utils import b64encode, b64decode, MFA, execute_after, int_length
+from .utils import b64encode, b64decode, MFA, execute_after, int_length, NoneType
 
 
 class CDN:
@@ -809,6 +809,68 @@ class Core(Singleton):
         guild.system_channel_id = channels[2].id
         async with self.db() as db:
             await db.createGuild(guild, roles, channels, members)
+        guild.fill_defaults()
+        Ctx["with_members"] = True
+        Ctx["with_channels"] = True
+        await self.sendGuildCreateEvent(guild, [user.id])
+        Ctx["with_members"] = False
+        Ctx["with_channels"] = False
+        return guild
+
+    async def createGuildFromTemplate(self, guild_id: int, user: User, template: GuildTemplate, name: Optional[str], icon: Optional[str]) -> Guild:
+        serialized = template.serialized_guild
+        serialized["name"] = name or serialized["name"]
+        serialized["icon"] = icon
+        replaced_ids: Dict[Union[int, NoneType], Union[int, NoneType]] = {None: None, 0: guild_id}
+        roles = []
+        channels = []
+        overwrites = []
+
+        for role in serialized["roles"]:
+            if role["id"] not in replaced_ids:
+                replaced_ids[role["id"]] = Snowflake.makeId()
+            role["id"] = replaced_ids[role["id"]]
+            roles.append(Role(guild_id=guild_id, **role))
+
+        for channel in serialized["channels"]:
+            if channel["id"] not in replaced_ids:
+                replaced_ids[channel["id"]] = Snowflake.makeId()
+            channel["id"] = channel_id = replaced_ids[channel["id"]]
+            channel["parent_id"] = replaced_ids.get(channel["parent_id"], None)
+            for overwrite in channel["permission_overwrites"]:
+                overwrite["target_id"] = replaced_ids[overwrite["id"]]
+                overwrite["channel_id"] = channel_id
+                del overwrite["id"]
+                overwrites.append(PermissionOverwrite(**overwrite))
+            del channel["permission_overwrites"]
+
+            channel["rate_limit"] = channel["rate_limit_per_user"]
+            channel["default_auto_archive"] = channel["default_auto_archive_duration"]
+            del channel["rate_limit_per_user"]
+            del channel["default_auto_archive_duration"]
+
+            del channel["available_tags"]
+            del channel["template"]
+            del channel["default_reaction_emoji"]
+            del channel["default_thread_rate_limit_per_user"]
+            del channel["default_sort_order"]
+            del channel["default_forum_layout"]
+
+            channels.append(Channel(guild_id=guild_id, **channel))
+
+        serialized["afk_channel_id"] = replaced_ids.get(serialized["afk_channel_id"], None)
+        serialized["system_channel_id"] = replaced_ids.get(serialized["system_channel_id"], None)
+
+        del serialized["roles"]
+        del serialized["channels"]
+
+        guild = Guild(guild_id, user.id, features=[], **serialized)
+        members = [GuildMember(user.id, guild.id, int(time()))]
+
+        async with self.db() as db:
+            await db.createGuild(guild, roles, channels, members)
+            for overwrite in overwrites:
+                await db.putPermissionOverwrite(overwrite)
         guild.fill_defaults()
         Ctx["with_members"] = True
         Ctx["with_channels"] = True

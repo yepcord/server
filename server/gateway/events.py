@@ -406,11 +406,16 @@ class GuildCreateEvent(DispatchEvent):
         self.guild_obj = guild_obj
 
     async def json(self) -> dict:
-        return {
+        data = {
             "t": self.NAME,
             "op": self.OP,
             "d": self.guild_obj
         }
+        if "presences" not in data["d"]: data["d"]["presences"] = []
+        if "voice_states" not in data["d"]: data["d"]["voice_states"] = []
+        if "embedded_activities" not in data["d"]: data["d"]["embedded_activities"] = []
+
+        return data
 
 class GuildUpdateEvent(GuildCreateEvent):
     NAME = "GUILD_UPDATE"
