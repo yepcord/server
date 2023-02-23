@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple, Dict
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite
-from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry
+from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
@@ -350,6 +350,21 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def getAuditLogEntries(self, guild: Guild, limit: int, before: Optional[int]=None) -> List[AuditLogEntry]: ...
+
+    @abstractmethod
+    async def getGuildTemplate(self, guild: _Guild) -> Optional[GuildTemplate]: ...
+
+    @abstractmethod
+    async def putGuildTemplate(self, template: GuildTemplate) -> None: ...
+
+    @abstractmethod
+    async def getGuildTemplateById(self, template_id: int) -> Optional[GuildTemplate]: ...
+
+    @abstractmethod
+    async def deleteGuildTemplate(self, template: GuildTemplate) -> None: ...
+
+    @abstractmethod
+    async def updateTemplateDiff(self, before: GuildTemplate, after: GuildTemplate) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -1016,7 +1031,7 @@ class MySqlConnection:
         return invites
 
     async def getVanityCodeInvite(self, code: str) -> Optional[Invite]:
-        await self.cur.execute(f'SELECT * FROM `invites` WHERE `vanity_code`="{escape_string(code)}"')
+        await self.cur.execute(f'SELECT * FROM `invites` WHERE `vanity_code`="{escape_string(code)}";')
         if r := await self.cur.fetchone():
             return Invite.from_result(self.cur.description, r)
 
@@ -1036,3 +1051,28 @@ class MySqlConnection:
         for r in await self.cur.fetchall():
             entries.append(AuditLogEntry.from_result(self.cur.description, r))
         return entries
+
+    async def getGuildTemplate(self, guild: _Guild) -> Optional[GuildTemplate]:
+        await self.cur.execute(f'SELECT * FROM `guild_templates` WHERE `guild_id`={guild.id};')
+        if r := await self.cur.fetchone():
+            return GuildTemplate.from_result(self.cur.description, r)
+
+    async def putGuildTemplate(self, template: GuildTemplate) -> None:
+        q = json_to_sql(template.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `guild_templates` ({fields}) VALUES ({values});')
+
+    async def getGuildTemplateById(self, template_id: int) -> Optional[GuildTemplate]:
+        await self.cur.execute(f'SELECT * FROM `guild_templates` WHERE `id`={template_id};')
+        if r := await self.cur.fetchone():
+            return GuildTemplate.from_result(self.cur.description, r)
+
+    async def deleteGuildTemplate(self, template: GuildTemplate) -> None:
+        await self.cur.execute(f'DELETE FROM `guild_templates` WHERE `id`={template.id} LIMIT 1;')
+
+    async def updateTemplateDiff(self, before: GuildTemplate, after: GuildTemplate) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `guild_templates` SET {diff} WHERE `id`={before.id};')

@@ -12,7 +12,7 @@ from typing import Optional, Union, List, Tuple, Dict
 from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel, PermissionOverwrite, _Channel
-from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
@@ -1166,6 +1166,32 @@ class Core(Singleton):
         await self.mcl.broadcast("guild_events",
                                  {"e": "audit_log_entry_create", "data": {"users": [guild.owner_id],
                                                                 "entry_obj": await entry.json}})
+
+    async def getGuildTemplate(self, guild: _Guild) -> Optional[GuildTemplate]:
+        async with self.db() as db:
+            return await db.getGuildTemplate(guild)
+
+    async def putGuildTemplate(self, template: GuildTemplate) -> None:
+        async with self.db() as db:
+            return await db.putGuildTemplate(template)
+
+    async def getGuildTemplateById(self, template_id: int) -> Optional[GuildTemplate]:
+        async with self.db() as db:
+            return await db.getGuildTemplateById(template_id)
+
+    async def deleteGuildTemplate(self, template: GuildTemplate) -> None:
+        async with self.db() as db:
+            return await db.deleteGuildTemplate(template)
+
+    async def updateTemplateDiff(self, before: GuildTemplate, after: GuildTemplate) -> None:
+        async with self.db() as db:
+            await db.updateTemplateDiff(before, after)
+
+    async def setTemplateDirty(self, guild: _Guild) -> None:
+        if not (template := await self.getGuildTemplate(guild)):
+            return
+        new_template = template.copy(is_dirty=True)
+        await self.updateTemplateDiff(template, new_template)
 
 
 import server.ctx as c

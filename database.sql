@@ -311,6 +311,21 @@ CREATE TABLE `guild_audit_log_entries` (
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
+DROP TABLE IF EXISTS `guild_templates`;
+CREATE TABLE `guild_templates` (
+  `id` bigint NOT NULL PRIMARY KEY,
+  `guild_id` bigint NOT NULL,
+  `name` text NOT NULL,
+  `description` longtext DEFAULT NULL,
+  `usage_count` int NOT NULL,
+  `creator_id` bigint NOT NULL,
+  `created_at` bigint NOT NULL,
+  `j_serialized_guild` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "{}" CHECK(json_valid(`j_serialized_guild`)),
+  `updated_at` bigint DEFAULT NULL,
+  `is_dirty` bool DEFAULT false,
+  FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
 DROP TABLE IF EXISTS `read_states`;
 CREATE TABLE `read_states` (
   `uid` bigint NOT NULL,

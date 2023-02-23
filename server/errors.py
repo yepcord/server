@@ -28,8 +28,10 @@ class _Errors:
     err_10011 = "Unknown Role"
     err_10013 = "Unknown User"
     err_10014 = "Unknown Emoji"
+    err_10057 = "Unknown server template"
 
     err_30003 = "Maximum number of pins reached (50)"
+    err_30031 = "A server can only have a single template."
 
     err_40007 = "The user is banned from this guild."
 

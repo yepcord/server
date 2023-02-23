@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING, Dict, Union
 
 from schema import Or, And, Use
 
@@ -472,3 +472,124 @@ class AuditLogEntry(Model):
     def member_update(cls, member: GuildMember, new_member: GuildMember, user: User) -> AuditLogEntry:
         return  AuditLogEntry(Snowflake.makeId(), member.guild_id, user.id, member.user_id, AuditLogEntryType.MEMBER_UPDATE,
                           changes=cls.get_changes(member, new_member))
+
+@model
+@dataclass
+class GuildTemplate(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    name: str = field()
+    description: Optional[str] = field()
+    usage_count: int = field()
+    creator_id: int = field()
+    created_at: int = field()
+    serialized_guild: dict = field(db_name="j_serialized_guild")
+    updated_at: Optional[int] = None
+    is_dirty: Optional[bool] = None
+
+    @property
+    async def json(self) -> dict:
+        creator_data = await getCore().getUserData(UserId(self.creator_id))
+        updated_at = self.updated_at
+        if updated_at is None:
+            updated_at = self.created_at
+        data = {
+            "code": self.code,
+            "name": self.name,
+            "description": self.description,
+            "usage_count": self.usage_count,
+            "creator_id": str(self.creator_id),
+            "creator": await creator_data.json,
+            "created_at": Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "updated_at": datetime.utcfromtimestamp(updated_at).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "source_guild_id": str(self.guild_id),
+            "serialized_source_guild": self.serialized_guild,
+            "is_dirty": self.is_dirty
+        }
+        return data
+
+    @staticmethod
+    async def serialize_guild(guild: Guild) -> dict:
+        replaced_ids: Dict[Union[int, NoneType], Union[int, NoneType]] = {None: None}
+        last_replaced_id = 0
+        serialized_roles = []
+        serialized_channels = []
+
+        # Serialize roles
+        roles = await getCore().getRoles(guild)
+        roles.sort(key=lambda r: r.id)
+        for role in roles:
+            replaced_ids[role.id] = last_replaced_id
+            role.id = last_replaced_id
+            last_replaced_id += 1
+            serialized_roles.append({
+                "id": role.id,
+                "name": role.name,
+                "color": role.color,
+                "hoist": role.hoist,
+                "mentionable": role.mentionable,
+                "permissions": str(role.permissions),
+                "icon": None,
+                "unicode_emoji": role.unicode_emoji
+            })
+
+        # Serialize channels
+        channels = await getCore().getGuildChannels(guild)
+        channels.sort(key=lambda ch: (int(ch.type == ChannelType.GUILD_CATEGORY), ch.id), reverse=True)
+        for channel in channels:
+            serialized_permission_overwrites = []
+            for overwrite in await getCore().getPermissionOverwrites(channel):
+                if overwrite.type == 0: # Overwrite for role
+                    role_id = replaced_ids[overwrite.target_id]
+                    if role_id is None:
+                        continue
+                    overwrite = await overwrite.json
+                    overwrite["id"] = role_id
+                    serialized_permission_overwrites.append(overwrite)
+            replaced_ids[channel.id] = last_replaced_id
+            channel.id = last_replaced_id
+            last_replaced_id += 1
+
+            serialized_channels.append({
+                "id": channel.id,
+                "type": channel.type,
+                "name": channel.name,
+                "position": channel.position,
+                "topic": channel.get("topic", None),
+                "bitrate": channel.get("bitrate", 64000),
+                "user_limit": channel.get("user_limit", 0),
+                "nsfw": channel.get("nsfw", 0),
+                "rate_limit_per_user": channel.get("rate_limit", 0),
+                "parent_id": replaced_ids.get(channel.parent_id),
+                "default_auto_archive_duration": channel.get("default_auto_archive", None),
+                "permission_overwrites": serialized_permission_overwrites,
+                "available_tags": None, # ???
+                "template": "", # ???
+                "default_reaction_emoji": None, # ???
+                "default_thread_rate_limit_per_user": None, # ???
+                "default_sort_order": None, # ???
+                "default_forum_layout": None # ???
+            })
+
+        # Serialize guild
+        data = {
+            "name": guild.name,
+            "description": guild.description,
+            "region": guild.region,
+            "verification_level": guild.verification_level,
+            "default_message_notifications": guild.default_message_notifications,
+            "explicit_content_filter": guild.explicit_content_filter,
+            "preferred_locale": guild.preferred_locale,
+            "afk_timeout": guild.afk_timeout,
+            "roles": serialized_roles,
+            "channels": serialized_channels,
+            "afk_channel_id": replaced_ids.get(guild.afk_channel_id),
+            "system_channel_id": replaced_ids.get(guild.system_channel_id),
+            "system_channel_flags": guild.system_channel_flags
+        }
+
+        return data
+
+    @property
+    def code(self) -> str:
+        return b64encode(self.id.to_bytes(int_length(self.id), 'big'))

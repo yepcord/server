@@ -12,7 +12,7 @@ from quart import Quart, request
 from quart.globals import request_ctx
 
 from ..classes.channel import Channel, PermissionOverwrite
-from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry
+from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry, GuildTemplate
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember, UserId
 from ..config import Config
@@ -227,6 +227,27 @@ def getRole(f):
         kwargs["role"] = role
         return await f(*args, **kwargs)
     return wrapped
+
+def getGuildTemplate(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (template := kwargs.get("template")):
+            raise InvalidDataErr(404, Errors.make(10057))
+        if not (guild := kwargs.get("guild")):
+            raise InvalidDataErr(404, Errors.make(10004))
+        try:
+            template_id = int.from_bytes(b64decode(template), "big")
+            if not (template := await core.getGuildTemplateById(template_id)):
+                raise ValueError
+            if template.guild_id != guild.id:
+                raise ValueError
+        except ValueError:
+            raise InvalidDataErr(404, Errors.make(10057))
+        kwargs["template"] = template
+        return await f(*args, **kwargs)
+
+    return wrapped
+
 
 getGuildWithMember = getGuild(with_member=True)
 getGuildWithoutMember = getGuild(with_member=False)
@@ -726,6 +747,8 @@ async def api_channels_channel_patch(user: User, channel: Channel):
         entry = AuditLogEntry.channel_update(channel, new_channel, user)
         await core.putAuditLogEntry(entry)
         await core.sendAuditLogEntryCreateEvent(entry)
+
+        await core.setTemplateDirty(GuildId(channel.guild_id))
     diff = channel.getDiff(new_channel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
         message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=new_channel.name)
@@ -766,6 +789,9 @@ async def api_channels_channel_delete(user: User, channel: Channel):
 
         await core.deleteChannel(channel)
         await core.sendGuildChannelDeleteEvent(channel)
+
+        await core.setTemplateDirty(GuildId(channel.guild_id))
+
         return await channelInfoResponse(channel)
     return "", 204
 
@@ -1234,13 +1260,70 @@ async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
 
+    await core.setTemplateDirty(guild)
+
     return c_json(await new_guild.json)
 
 
 @app.get("/api/v9/guilds/<int:guild>/templates")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_templates_get(user: User, guild: Guild):
-    return c_json([])
+    templates = []
+    if template := await core.getGuildTemplate(guild):
+        templates.append(await template.json)
+    return c_json(templates)
+
+
+@app.post("/api/v9/guilds/<int:guild>/templates")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_templates_post(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    data = await request.get_json()
+    if not (name := data.get("name")):
+        raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+    description = data.get("description")
+    if await core.getGuildTemplate(guild):
+        raise InvalidDataErr(400, Errors.make(30031))
+
+    template = GuildTemplate(Snowflake.makeId(), guild.id, name, description, 0, user.id, int(time()),
+                             await GuildTemplate.serialize_guild(guild))
+    await core.putGuildTemplate(template)
+
+    return c_json(await template.json)
+
+
+@app.delete("/api/v9/guilds/<int:guild>/templates/<string:template>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getGuildTemplate)
+async def api_guilds_guild_templates_template_delete(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    await core.deleteGuildTemplate(template)
+    return c_json(await template.json)
+
+
+@app.put("/api/v9/guilds/<int:guild>/templates/<string:template>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getGuildTemplate)
+async def api_guilds_guild_templates_template_put(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    new_template = template.copy()
+    if template.is_dirty:
+        new_template.set(serialized_guild=await GuildTemplate.serialize_guild(guild), is_dirty=False,
+                         updated_at=int(time()))
+    await core.updateTemplateDiff(template, new_template)
+    return c_json(await new_template.json)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/templates/<string:template>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getGuildTemplate)
+async def api_guilds_guild_templates_template_patch(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    data = await request.get_json()
+    new_template = template.copy()
+    if name := data.get("name"):
+        new_template.set(name=name)
+    if description := data.get("description"):
+        new_template.set(description=description)
+    await core.updateTemplateDiff(template, new_template)
+    return c_json(await new_template.json)
 
 
 @app.get("/api/v9/guilds/<int:guild>/emojis")
@@ -1311,6 +1394,7 @@ async def api_guilds_guild_channels_patch(user: User, guild: Guild, member: Guil
         await core.updateChannelDiff(channel, nChannel)
         channel.set(**change)
         await core.sendChannelUpdateEvent(channel)
+    await core.setTemplateDirty(guild)
     return "", 204
 
 
@@ -1324,6 +1408,7 @@ async def api_guilds_guild_channels_post(user: User, guild: Guild, member: Guild
     if "id" in data: del data["id"]
     ctype = data.get("type", ChannelType.GUILD_TEXT)
     if "type" in data: del data["type"]
+    if "permission_overwrites" in data: del data["permission_overwrites"] # TODO: set permission_overwrites after channel creation
     channel = Channel(Snowflake.makeId(), ctype, guild_id=guild.id, **data)
     channel = await core.createGuildChannel(channel)
     await core.sendChannelCreateEvent(channel)
@@ -1331,6 +1416,8 @@ async def api_guilds_guild_channels_post(user: User, guild: Guild, member: Guild
     entry = AuditLogEntry.channel_create(channel, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
+
+    await core.setTemplateDirty(guild)
 
     return await channelInfoResponse(channel)
 
@@ -1444,6 +1531,8 @@ async def api_guilds_guild_roles_post(user: User, guild: Guild, member: GuildMem
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
 
+    await core.setTemplateDirty(guild)
+
     return c_json(await role.json)
 
 
@@ -1470,6 +1559,8 @@ async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: Gu
     entry = AuditLogEntry.role_update(role, new_role, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
+
+    await core.setTemplateDirty(guild)
 
     return c_json(await new_role.json)
 
@@ -1501,6 +1592,9 @@ async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMe
         await core.sendGuildRoleUpdateEvent(new_role)
     roles = await core.getRoles(guild)
     roles = [await role.json for role in roles]
+
+    await core.setTemplateDirty(guild)
+
     return c_json(roles)
 
 
@@ -1516,6 +1610,8 @@ async def api_guilds_guild_roles_role_delete(user: User, guild: Guild, member: G
     entry = AuditLogEntry.role_delete(role, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
+
+    await core.setTemplateDirty(guild)
 
     return "", 204
 
