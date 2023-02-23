@@ -366,6 +366,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def updateTemplateDiff(self, before: GuildTemplate, after: GuildTemplate) -> None: ...
 
+    @abstractmethod
+    async def deleteGuild(self, guild: Guild) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -1076,3 +1079,6 @@ class MySqlConnection:
         diff = json_to_sql(diff)
         if diff:
             await self.cur.execute(f'UPDATE `guild_templates` SET {diff} WHERE `id`={before.id};')
+
+    async def deleteGuild(self, guild: Guild) -> None:
+        await self.cur.execute(f'DELETE FROM `guilds` WHERE `id`={guild.id} LIMIT 1;')

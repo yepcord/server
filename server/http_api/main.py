@@ -1901,6 +1901,27 @@ async def api_guilds_templates_template(user: User, template: str):
     Ctx["with_channels"] = True
     return c_json(await guild.json)
 
+@app.post("/api/v9/guilds/<int:guild>/delete")
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_delete(user: User, guild: Guild):
+    if user.id != guild.owner_id:
+        raise InvalidDataErr(403, Errors.make(50013))
+
+    data = await request.get_json()
+    if mfa := await core.getMfa(user):
+        code = data.get("code")
+        code = code.replace("-", "").replace(" ", "")
+        if not code:
+            raise InvalidDataErr(400, Errors.make(60008))
+        if code != mfa.getCode():
+            if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
+                raise InvalidDataErr(400, Errors.make(60008))
+
+    await core.deleteGuild(guild)
+    await core.sendGuildDeleteEvent(guild, user)
+
+    return "", 204
+
 
 # Stickers & gifs
 

@@ -793,7 +793,7 @@ class Core(Singleton):
             return await db.getInvite(invite_id)
 
     async def createGuild(self, user: User, name: str) -> Guild:
-        guild = Guild(Snowflake.makeId(), user.id, name, system_channel_id=0)
+        guild = Guild(Snowflake.makeId(), user.id, name, system_channel_id=0, features=[])
         roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
         channels = []
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
@@ -1254,6 +1254,10 @@ class Core(Singleton):
             return
         new_template = template.copy(is_dirty=True)
         await self.updateTemplateDiff(template, new_template)
+
+    async def deleteGuild(self, guild: Guild) -> None:
+        async with self.db() as db:
+            await db.deleteGuild(guild)
 
 
 import server.ctx as c
