@@ -78,12 +78,28 @@ async def banners_uid_hash(uid, name):
     size = int(request.args.get("size", 600))
     if fmt not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    if size not in [600, 480, 300]:
+    if size not in ALLOWED_AVATAR_SIZES:
         return b'', 400
+    if size > 600: size = 600
     banner = await cdn.getBanner(uid, bhash, size, fmt)
     if not banner:
         return b'', 404
-    return banner, 200, {"Content-Type": "image/webp"}
+    return banner, 200, {"Content-Type": f"image/{fmt}"}
+
+@app.get("/splashes/<int:uid>/<string:name>")
+async def splashes_uid_hash(uid, name):
+    bhash = name.split(".")[0]
+    fmt = name.split(".")[1]
+    size = int(request.args.get("size", 600))
+    if fmt not in ["webp", "png", "jpg", "gif"]:
+        return b'', 400
+    if size not in ALLOWED_AVATAR_SIZES:
+        return b'', 400
+    if size > 600: size = 600
+    banner = await cdn.getGuildSplash(uid, bhash, size, fmt)
+    if not banner:
+        return b'', 404
+    return banner, 200, {"Content-Type": f"image/{fmt}"}
 
 @app.get("/channel-icons/<int:cid>/<string:name>")
 async def channelicons_cid_hash(cid, name):
@@ -111,6 +127,21 @@ async def icons_gid_hash(gid, name):
         return b'', 400
     if size > 1024: size = 1024
     icon = await cdn.getGuildIcon(gid, ihash, size, fmt)
+    if not icon:
+        return b'', 404
+    return icon, 200, {"Content-Type": f"image/{fmt}"}
+
+@app.get("/role-icons/<int:rid>/<string:name>")
+async def roleicons_rid_hash(rid, name):
+    ihash = name.split(".")[0]
+    fmt = name.split(".")[1]
+    size = int(request.args.get("size", 1024))
+    if fmt not in ["webp", "png", "jpg", "gif"]:
+        return b'', 400
+    if size not in ALLOWED_AVATAR_SIZES:
+        return b'', 400
+    if size > 1024: size = 1024
+    icon = await cdn.getRoleIcon(rid, ihash, size, fmt)
     if not icon:
         return b'', 404
     return icon, 200, {"Content-Type": f"image/{fmt}"}

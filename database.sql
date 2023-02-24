@@ -257,6 +257,7 @@ CREATE TABLE `messages` (
   `j_sticker_items` JSON NOT NULL DEFAULT "[]",
   `j_extra_data` JSON NOT NULL DEFAULT "{}",
   `guild_id` bigint DEFAULT NULL,
+  `j_webhook_author` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "{}" CHECK(json_valid(`j_webhook_author`)),
   FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
@@ -309,6 +310,35 @@ CREATE TABLE `guild_audit_log_entries` (
   `j_changes` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "[]" CHECK(json_valid(`j_changes`)),
   `j_options` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "{}" CHECK(json_valid(`j_options`)),
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `guild_templates`;
+CREATE TABLE `guild_templates` (
+  `id` bigint NOT NULL PRIMARY KEY,
+  `guild_id` bigint NOT NULL,
+  `name` text NOT NULL,
+  `description` longtext DEFAULT NULL,
+  `usage_count` int NOT NULL,
+  `creator_id` bigint NOT NULL,
+  `created_at` bigint NOT NULL,
+  `j_serialized_guild` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "{}" CHECK(json_valid(`j_serialized_guild`)),
+  `updated_at` bigint DEFAULT NULL,
+  `is_dirty` bool DEFAULT false,
+  FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `webhooks`;
+CREATE TABLE `webhooks` (
+  `id` bigint NOT NULL PRIMARY KEY,
+  `guild_id` bigint NOT NULL,
+  `channel_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
+  `application_id` bigint DEFAULT NULL,
+  `type` int NOT NULL,
+  `name` text NOT NULL,
+  `avatar` text DEFAULT NULL,
+  `token` text DEFAULT NULL,
+  FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `read_states`;

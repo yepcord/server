@@ -4,10 +4,10 @@ from hashlib import md5
 from io import BytesIO
 from os import makedirs
 from os.path import join as pjoin, isfile
+from typing import Optional, Tuple, Union
 
 from PIL import Image, ImageSequence
 from aiofiles import open as aopen
-from typing import Optional, Tuple, Union
 
 try:
     from aioftp import Client, StatusCodeError
@@ -67,13 +67,17 @@ async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str):
     return res[0]
 
 async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
-    def _resize():
+    def _resize(form: str):
         img = image.resize(size)
         b = BytesIO()
-        img.save(b, format=form, save_all=True)
+        save_all = True
+        if form.lower() == "jpg":
+            form = "JPEG"
+            save_all = False
+        img.save(b, format=form, save_all=save_all)
         return b.getvalue()
     with ThreadPoolExecutor() as pool:
-        res = await gather(get_event_loop().run_in_executor(pool, _resize))
+        res = await gather(get_event_loop().run_in_executor(pool, _resize, form))
     return res[0]
 
 def imageFrames(img) -> int:
@@ -110,10 +114,20 @@ class _Storage:
     async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
         raise NotImplementedError
 
+    async def getRoleIcon(self, rid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        anim = icon_hash.startswith("a_")
+        def_size = 256 if anim else 1024
+        return await self._getImage("role_icon", rid, icon_hash, size, fmt, def_size, lambda s: s)
+
     async def getBanner(self, uid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = banner_hash.startswith("a_")
         def_size = 480 if anim else 600
-        return await self._getImage("banner", uid, banner_hash, size, fmt, def_size, lambda s: int(240*s/600))
+        return await self._getImage("banner", uid, banner_hash, size, fmt, def_size, lambda s: int(9 * s / 16))
+
+    async def getGuildSplash(self, gid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        anim = banner_hash.startswith("a_")
+        def_size = 480 if anim else 600
+        return await self._getImage("splash", gid, banner_hash, size, fmt, def_size, lambda s: int(9*s/16))
 
     async def setAvatarFromBytesIO(self, uid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
@@ -123,7 +137,12 @@ class _Storage:
     async def setBannerFromBytesIO(self, uid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 480 if a else 600
-        return await self._setImage("banner", uid, size, lambda s: int(240*s/600), image)
+        return await self._setImage("banner", uid, size, lambda s: int(9 * s / 16), image)
+
+    async def setGuildSplashFromBytesIO(self, gid: int, image: BytesIO) -> str:
+        a = imageFrames(Image.open(image)) > 1
+        size = 480 if a else 600
+        return await self._setImage("splash", gid, size, lambda s: int(9*s/16), image)
 
     async def setChannelIconFromBytesIO(self, cid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
@@ -142,6 +161,11 @@ class _Storage:
 
     async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
         raise NotImplementedError
+
+    async def setRoleIconFromBytesIO(self, rid: int, image: BytesIO) -> str:
+        a = imageFrames(Image.open(image)) > 1
+        size = 256 if a else 1024
+        return await self._setImage("role_icon", rid, size, lambda s: s, image)
 
     async def uploadAttachment(self, data, attachment):
         raise NotImplementedError

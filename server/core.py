@@ -12,7 +12,7 @@ from typing import Optional, Union, List, Tuple, Dict
 from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel, PermissionOverwrite, _Channel
-from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
@@ -23,7 +23,7 @@ from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .pubsub_client import Broadcaster
 from .responses import channelInfoResponse
 from .snowflake import Snowflake
-from .utils import b64encode, b64decode, MFA, execute_after, int_length
+from .utils import b64encode, b64decode, MFA, execute_after, int_length, NoneType
 
 
 class CDN:
@@ -793,7 +793,7 @@ class Core(Singleton):
             return await db.getInvite(invite_id)
 
     async def createGuild(self, user: User, name: str) -> Guild:
-        guild = Guild(Snowflake.makeId(), user.id, name, system_channel_id=0)
+        guild = Guild(Snowflake.makeId(), user.id, name, system_channel_id=0, features=[])
         roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
         channels = []
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
@@ -809,6 +809,68 @@ class Core(Singleton):
         guild.system_channel_id = channels[2].id
         async with self.db() as db:
             await db.createGuild(guild, roles, channels, members)
+        guild.fill_defaults()
+        Ctx["with_members"] = True
+        Ctx["with_channels"] = True
+        await self.sendGuildCreateEvent(guild, [user.id])
+        Ctx["with_members"] = False
+        Ctx["with_channels"] = False
+        return guild
+
+    async def createGuildFromTemplate(self, guild_id: int, user: User, template: GuildTemplate, name: Optional[str], icon: Optional[str]) -> Guild:
+        serialized = template.serialized_guild
+        serialized["name"] = name or serialized["name"]
+        serialized["icon"] = icon
+        replaced_ids: Dict[Union[int, NoneType], Union[int, NoneType]] = {None: None, 0: guild_id}
+        roles = []
+        channels = []
+        overwrites = []
+
+        for role in serialized["roles"]:
+            if role["id"] not in replaced_ids:
+                replaced_ids[role["id"]] = Snowflake.makeId()
+            role["id"] = replaced_ids[role["id"]]
+            roles.append(Role(guild_id=guild_id, **role))
+
+        for channel in serialized["channels"]:
+            if channel["id"] not in replaced_ids:
+                replaced_ids[channel["id"]] = Snowflake.makeId()
+            channel["id"] = channel_id = replaced_ids[channel["id"]]
+            channel["parent_id"] = replaced_ids.get(channel["parent_id"], None)
+            for overwrite in channel["permission_overwrites"]:
+                overwrite["target_id"] = replaced_ids[overwrite["id"]]
+                overwrite["channel_id"] = channel_id
+                del overwrite["id"]
+                overwrites.append(PermissionOverwrite(**overwrite))
+            del channel["permission_overwrites"]
+
+            channel["rate_limit"] = channel["rate_limit_per_user"]
+            channel["default_auto_archive"] = channel["default_auto_archive_duration"]
+            del channel["rate_limit_per_user"]
+            del channel["default_auto_archive_duration"]
+
+            del channel["available_tags"]
+            del channel["template"]
+            del channel["default_reaction_emoji"]
+            del channel["default_thread_rate_limit_per_user"]
+            del channel["default_sort_order"]
+            del channel["default_forum_layout"]
+
+            channels.append(Channel(guild_id=guild_id, **channel))
+
+        serialized["afk_channel_id"] = replaced_ids.get(serialized["afk_channel_id"], None)
+        serialized["system_channel_id"] = replaced_ids.get(serialized["system_channel_id"], None)
+
+        del serialized["roles"]
+        del serialized["channels"]
+
+        guild = Guild(guild_id, user.id, features=[], **serialized)
+        members = [GuildMember(user.id, guild.id, int(time()))]
+
+        async with self.db() as db:
+            await db.createGuild(guild, roles, channels, members)
+            for overwrite in overwrites:
+                await db.putPermissionOverwrite(overwrite)
         guild.fill_defaults()
         Ctx["with_members"] = True
         Ctx["with_channels"] = True
@@ -1166,6 +1228,63 @@ class Core(Singleton):
         await self.mcl.broadcast("guild_events",
                                  {"e": "audit_log_entry_create", "data": {"users": [guild.owner_id],
                                                                 "entry_obj": await entry.json}})
+
+    async def getGuildTemplate(self, guild: _Guild) -> Optional[GuildTemplate]:
+        async with self.db() as db:
+            return await db.getGuildTemplate(guild)
+
+    async def putGuildTemplate(self, template: GuildTemplate) -> None:
+        async with self.db() as db:
+            return await db.putGuildTemplate(template)
+
+    async def getGuildTemplateById(self, template_id: int) -> Optional[GuildTemplate]:
+        async with self.db() as db:
+            return await db.getGuildTemplateById(template_id)
+
+    async def deleteGuildTemplate(self, template: GuildTemplate) -> None:
+        async with self.db() as db:
+            return await db.deleteGuildTemplate(template)
+
+    async def updateTemplateDiff(self, before: GuildTemplate, after: GuildTemplate) -> None:
+        async with self.db() as db:
+            await db.updateTemplateDiff(before, after)
+
+    async def setTemplateDirty(self, guild: _Guild) -> None:
+        if not (template := await self.getGuildTemplate(guild)):
+            return
+        new_template = template.copy(is_dirty=True)
+        await self.updateTemplateDiff(template, new_template)
+
+    async def deleteGuild(self, guild: Guild) -> None:
+        async with self.db() as db:
+            await db.deleteGuild(guild)
+
+    async def putWebhook(self, webhook: Webhook) -> None:
+        async with self.db() as db:
+            await db.putWebhook(webhook)
+
+    async def deleteWebhook(self, webhook: Webhook) -> None:
+        async with self.db() as db:
+            await db.deleteWebhook(webhook)
+
+    async def updateWebhookDiff(self, before: Webhook, after: Webhook) -> None:
+        async with self.db() as db:
+            await db.updateWebhookDiff(before, after)
+
+    async def getWebhooks(self, guild: Guild) -> List[Webhook]:
+        async with self.db() as db:
+            return await db.getWebhooks(guild)
+
+    async def getWebhook(self, webhook_id: int) -> Optional[Webhook]:
+        async with self.db() as db:
+            return await db.getWebhook(webhook_id)
+
+    async def sendWebhooksUpdateEvent(self, webhook: Webhook) -> None:
+        guild = await self.getGuild(webhook.guild_id)
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "webhooks_update", "data": {"users": [guild.owner_id],
+                                                                   "guild_id": webhook.guild_id,
+                                                                   "channel_id": webhook.channel_id}})
 
 
 import server.ctx as c

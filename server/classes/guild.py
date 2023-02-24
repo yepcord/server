@@ -1,18 +1,20 @@
 # All 'Guild' classes (Guild, etc.)
+from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING, Dict, Union
 
 from schema import Or, And, Use
 
-from .user import UserId
+from .user import UserId, User, GuildMember
 from ..ctx import getCore, Ctx
 from ..enums import ChannelType, AuditLogEntryType
 from ..model import model, Model, field
 from ..snowflake import Snowflake
 from ..utils import NoneType
 from ..utils import b64encode, int_length
-
+if TYPE_CHECKING:
+    from .channel import Channel
 
 class _Guild:
     id: int
@@ -350,3 +352,274 @@ class AuditLogEntry(Model):
                                 AuditLogEntryType.MEMBER_ROLE_UPDATE, AuditLogEntryType.MEMBER_DISCONNECT,
                                 AuditLogEntryType.MEMBER_MOVE):
             return self.target_id
+
+    @staticmethod
+    def get_changes(before: Model, after: Model) -> List[dict]:
+        changes = []
+        for k, v in before.getDiff(after).items():
+            changes.append({"key": k, "old_value": before.get(k), "new_value": after.get(k)})
+        return changes
+
+    @classmethod
+    def guild_update(cls, guild: Guild, new_guild: Guild, user: User) -> AuditLogEntry:
+        return AuditLogEntry(Snowflake.makeId(), guild.id, user.id, guild.id, AuditLogEntryType.GUILD_UPDATE,
+                              changes=cls.get_changes(guild, new_guild))
+
+    @classmethod
+    def emoji_create(cls, emoji: Emoji, user: User) -> AuditLogEntry:
+        changes = [{"new_value": emoji.name, "key": "name"}]
+        return AuditLogEntry(Snowflake.makeId(), emoji.guild_id, user.id, emoji.id, AuditLogEntryType.EMOJI_CREATE,
+                             changes=changes)
+
+    @classmethod
+    def emoji_delete(cls, emoji: Emoji, user: User) -> AuditLogEntry:
+        changes = [{"old_value": emoji.name, "key": "name"}]
+        return AuditLogEntry(Snowflake.makeId(), emoji.guild_id, user.id, emoji.id, AuditLogEntryType.EMOJI_DELETE,
+                          changes=changes)
+
+    @classmethod
+    def channel_create(cls, channel: Channel, user: User) -> AuditLogEntry:
+        changes = [
+            {"new_value": channel.name, "key": "name"},
+            {"new_value": channel.type, "key": "type"},
+            {"new_value": [], "key": "permission_overwrites"},
+            {"new_value": channel.nsfw, "key": "nsfw"},
+            {"new_value": channel.rate_limit, "key": "rate_limit_per_user"},
+            {"new_value": channel.flags, "key": "flags"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
+                             AuditLogEntryType.CHANNEL_CREATE,
+                             changes=changes)
+
+    @classmethod
+    def channel_update(cls, channel: Channel, new_channel: Channel, user: User) -> AuditLogEntry:
+        return AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
+                             AuditLogEntryType.CHANNEL_CREATE,
+                             changes=cls.get_changes(channel, new_channel))
+
+    @classmethod
+    def channel_delete(cls, channel: Channel, user: User) -> AuditLogEntry:
+        changes = [
+            {"old_value": channel.name, "key": "name"},
+            {"old_value": channel.type, "key": "type"},
+            {"old_value": [], "key": "permission_overwrites"},
+            {"old_value": channel.nsfw, "key": "nsfw"},
+            {"old_value": channel.rate_limit, "key": "rate_limit_per_user"},
+            {"old_value": channel.flags, "key": "flags"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
+                             AuditLogEntryType.CHANNEL_DELETE,
+                             changes=changes)
+
+    @classmethod
+    def invite_create(cls, invite: Invite, user: User) -> AuditLogEntry:
+        changes = [
+            {"new_value": invite.code, "key": "code"},
+            {"new_value": invite.channel_id, "key": "channel_id"},
+            {"new_value": invite.inviter_id, "key": "inviter_id"},
+            {"new_value": invite.uses, "key": "uses"},
+            {"new_value": invite.max_uses, "key": "max_uses"},
+            {"new_value": invite.max_age, "key": "max_age"},
+            {"new_value": invite.temporary, "key": "temporary"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), invite.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_CREATE,
+                              changes=changes)
+
+    @classmethod
+    def invite_delete(cls, invite: Invite, user: User) -> AuditLogEntry:
+        changes = [
+            {"old_value": invite.code, "key": "code"},
+            {"old_value": invite.channel_id, "key": "channel_id"},
+            {"old_value": invite.inviter_id, "key": "inviter_id"},
+            {"old_value": invite.uses, "key": "uses"},
+            {"old_value": invite.max_uses, "key": "max_uses"},
+            {"old_value": invite.max_age, "key": "max_age"},
+            {"old_value": invite.temporary, "key": "temporary"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), invite.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_DELETE,
+                              changes=changes)
+
+    @classmethod
+    def role_create(cls, role: Role, user: User) -> AuditLogEntry:
+        changes = [
+            {"new_value": role.name, "key": "name"},
+            {"new_value": role.permissions, "key": "permissions"},
+            {"new_value": role.color, "key": "color"},
+            {"new_value": role.hoist, "key": "hoist"},
+            {"new_value": role.mentionable, "key": "mentionable"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), role.guild_id, user.id, role.id, AuditLogEntryType.ROLE_CREATE,
+                              changes=changes)
+
+    @classmethod
+    def role_update(cls, role: Role, new_role: Role, user: User) -> AuditLogEntry:
+        return  AuditLogEntry(Snowflake.makeId(), role.guild_id, user.id, role.id, AuditLogEntryType.ROLE_UPDATE,
+                          changes=cls.get_changes(role, new_role))
+
+    @classmethod
+    def role_delete(cls, role: Role, user: User) -> AuditLogEntry:
+        changes = [
+            {"old_value": role.name, "key": "name"},
+            {"old_value": role.permissions, "key": "permissions"},
+            {"old_value": role.color, "key": "color"},
+            {"old_value": role.hoist, "key": "hoist"},
+            {"old_value": role.mentionable, "key": "mentionable"}
+        ]
+        return AuditLogEntry(Snowflake.makeId(), role.guild_id, user.id, role.id, AuditLogEntryType.ROLE_DELETE,
+                              changes=changes)
+
+    @classmethod
+    def member_update(cls, member: GuildMember, new_member: GuildMember, user: User) -> AuditLogEntry:
+        return  AuditLogEntry(Snowflake.makeId(), member.guild_id, user.id, member.user_id, AuditLogEntryType.MEMBER_UPDATE,
+                          changes=cls.get_changes(member, new_member))
+
+@model
+@dataclass
+class GuildTemplate(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    name: str = field()
+    description: Optional[str] = field()
+    usage_count: int = field()
+    creator_id: int = field()
+    created_at: int = field()
+    serialized_guild: dict = field(db_name="j_serialized_guild")
+    updated_at: Optional[int] = None
+    is_dirty: Optional[bool] = None
+
+    @property
+    async def json(self) -> dict:
+        creator_data = await getCore().getUserData(UserId(self.creator_id))
+        updated_at = self.updated_at
+        if updated_at is None:
+            updated_at = self.created_at
+        data = {
+            "code": self.code,
+            "name": self.name,
+            "description": self.description,
+            "usage_count": self.usage_count,
+            "creator_id": str(self.creator_id),
+            "creator": await creator_data.json,
+            "created_at": Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "updated_at": datetime.utcfromtimestamp(updated_at).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "source_guild_id": str(self.guild_id),
+            "serialized_source_guild": self.serialized_guild,
+            "is_dirty": self.is_dirty
+        }
+        return data
+
+    @staticmethod
+    async def serialize_guild(guild: Guild) -> dict:
+        replaced_ids: Dict[Union[int, NoneType], Union[int, NoneType]] = {None: None}
+        last_replaced_id = 0
+        serialized_roles = []
+        serialized_channels = []
+
+        # Serialize roles
+        roles = await getCore().getRoles(guild)
+        roles.sort(key=lambda r: r.id)
+        for role in roles:
+            replaced_ids[role.id] = last_replaced_id
+            role.id = last_replaced_id
+            last_replaced_id += 1
+            serialized_roles.append({
+                "id": role.id,
+                "name": role.name,
+                "color": role.color,
+                "hoist": role.hoist,
+                "mentionable": role.mentionable,
+                "permissions": str(role.permissions),
+                "icon": None,
+                "unicode_emoji": role.unicode_emoji
+            })
+
+        # Serialize channels
+        channels = await getCore().getGuildChannels(guild)
+        channels.sort(key=lambda ch: (int(ch.type == ChannelType.GUILD_CATEGORY), ch.id), reverse=True)
+        for channel in channels:
+            serialized_permission_overwrites = []
+            for overwrite in await getCore().getPermissionOverwrites(channel):
+                if overwrite.type == 0: # Overwrite for role
+                    role_id = replaced_ids[overwrite.target_id]
+                    if role_id is None:
+                        continue
+                    overwrite = await overwrite.json
+                    overwrite["id"] = role_id
+                    serialized_permission_overwrites.append(overwrite)
+            replaced_ids[channel.id] = last_replaced_id
+            channel.id = last_replaced_id
+            last_replaced_id += 1
+
+            serialized_channels.append({
+                "id": channel.id,
+                "type": channel.type,
+                "name": channel.name,
+                "position": channel.position,
+                "topic": channel.get("topic", None),
+                "bitrate": channel.get("bitrate", 64000),
+                "user_limit": channel.get("user_limit", 0),
+                "nsfw": channel.get("nsfw", 0),
+                "rate_limit_per_user": channel.get("rate_limit", 0),
+                "parent_id": replaced_ids.get(channel.parent_id),
+                "default_auto_archive_duration": channel.get("default_auto_archive", None),
+                "permission_overwrites": serialized_permission_overwrites,
+                "available_tags": None, # ???
+                "template": "", # ???
+                "default_reaction_emoji": None, # ???
+                "default_thread_rate_limit_per_user": None, # ???
+                "default_sort_order": None, # ???
+                "default_forum_layout": None # ???
+            })
+
+        # Serialize guild
+        data = {
+            "name": guild.name,
+            "description": guild.description,
+            "region": guild.region,
+            "verification_level": guild.verification_level,
+            "default_message_notifications": guild.default_message_notifications,
+            "explicit_content_filter": guild.explicit_content_filter,
+            "preferred_locale": guild.preferred_locale,
+            "afk_timeout": guild.afk_timeout,
+            "roles": serialized_roles,
+            "channels": serialized_channels,
+            "afk_channel_id": replaced_ids.get(guild.afk_channel_id),
+            "system_channel_id": replaced_ids.get(guild.system_channel_id),
+            "system_channel_flags": guild.system_channel_flags
+        }
+
+        return data
+
+    @property
+    def code(self) -> str:
+        return b64encode(self.id.to_bytes(int_length(self.id), 'big'))
+
+@model
+@dataclass
+class Webhook(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    channel_id: int = field()
+    user_id: int = field()
+    type: int = field()
+    name: str = field()
+    token: str = field()
+    application_id: Optional[int] = field(default=None, nullable=True, validation=Or(Use(int), NoneType))
+    avatar: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
+
+    @property
+    async def json(self) -> dict:
+        userdata = await getCore().getUserData(UserId(self.user_id))
+        data = {
+            "type": self.type,
+            "id": str(self.id),
+            "name": self.name,
+            "avatar": self.avatar,
+            "channel_id": str(self.channel_id),
+            "guild_id": str(self.guild_id),
+            "application_id": str(self.application_id) if self.application_id is not None else self.application_id,
+            "token": self.token,
+            "user": await userdata.json
+        }
+
+        return data

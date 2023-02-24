@@ -1,8 +1,10 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from functools import wraps
 from json import dumps as jdumps, loads as jloads
+from os import urandom
 from random import choice
 from time import time
+from typing import Optional
 
 from PIL import Image
 from async_timeout import timeout
@@ -12,14 +14,14 @@ from quart import Quart, request
 from quart.globals import request_ctx
 
 from ..classes.channel import Channel, PermissionOverwrite
-from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry
+from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry, GuildTemplate, Webhook
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
 from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember, UserId
 from ..config import Config
 from ..core import Core, CDN
 from ..ctx import Ctx
 from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions, \
-    AuditLogEntryType
+    AuditLogEntryType, WebhookType
 from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..geoip import getLanguageCode
 from ..proto import PreloadedUserSettings, FrecencyUserSettings
@@ -119,14 +121,29 @@ def usingDB(f):
     setattr(f, "__db", True)
     return f
 
+def allowWithoutUser(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        Ctx["allow_without_user"] = True
+        return await f(*args, **kwargs)
+
+    return wrapped
+
 def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (session := Session.from_token(request.headers.get("Authorization", ""))) \
-                or not await core.validSession(session):
-            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-        if not (user := await core.getUser(session.uid)):
-            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        try:
+            if not (session := Session.from_token(request.headers.get("Authorization", ""))) \
+                    or not await core.validSession(session):
+                raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+            if not (user := await core.getUser(session.uid)):
+                raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        except InvalidDataErr as e:
+            if e.code != 401:
+                raise
+            if not Ctx.get("allow_without_user"):
+                raise
+            user = User(0)
         Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
@@ -228,10 +245,71 @@ def getRole(f):
         return await f(*args, **kwargs)
     return wrapped
 
+def getGuildTemplate(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (template := kwargs.get("template")):
+            raise InvalidDataErr(404, Errors.make(10057))
+        if not (guild := kwargs.get("guild")):
+            raise InvalidDataErr(404, Errors.make(10004))
+        try:
+            template_id = int.from_bytes(b64decode(template), "big")
+            if not (template := await core.getGuildTemplateById(template_id)):
+                raise ValueError
+            if template.guild_id != guild.id:
+                raise ValueError
+        except ValueError:
+            raise InvalidDataErr(404, Errors.make(10057))
+        kwargs["template"] = template
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
 getGuildWithMember = getGuild(with_member=True)
 getGuildWithoutMember = getGuild(with_member=False)
 getGuildWM = getGuildWithMember
 getGuildWoM = getGuildWithoutMember
+
+
+# Idk
+
+
+async def processMessageData(message_id: int, data: Optional[dict], channel_id: int) -> dict:
+    if data is None:  # Multipart request
+        if request.content_length > 1024 * 1024 * 100:
+            raise InvalidDataErr(400, Errors.make(50006))  # TODO: replace with correct error
+        async with timeout(app.config["BODY_TIMEOUT"]):
+            files = list((await request.files).values())
+            data = await request.form
+            data = jloads(data["payload_json"])
+            if len(files) > 10:
+                raise InvalidDataErr(400, Errors.make(50013, {
+                    "files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
+            for idx, file in enumerate(files):
+                att = {"filename": None}
+                if idx + 1 <= len(data["attachments"]):
+                    att = data["attachments"][idx]
+                name = att.get("filename") or file.filename or "unknown"
+                content = file.getvalue()
+                att = Attachment(Snowflake.makeId(), channel_id, message_id, name, len(content), {})
+                cot = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
+                att.set(content_type=cot)
+                if cot.startswith("image/"):
+                    img = Image.open(file)
+                    att.set(metadata={"height": img.height, "width": img.width})
+                    img.close()
+                await cdn.uploadAttachment(content, att)
+                att.uploaded = True
+                await core.putAttachment(att)
+    if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
+        raise InvalidDataErr(400, Errors.make(50006))
+    if "id" in data: del data["id"]
+    if "channel_id" in data: del data["channel_id"]
+    if "author" in data: del data["author"]
+    if "attachments" in data: del data["attachments"]
+    return data
+
 
 # Auth
 
@@ -714,25 +792,23 @@ async def api_channels_channel_patch(user: User, channel: Channel):
     if "default_thread_rate_limit_per_user" in data: del data["default_thread_rate_limit_per_user"] # TODO
     if "default_reaction_emoji" in data: del data["default_reaction_emoji"] # TODO
     if "guild_id" in data: del data["guild_id"]
-    nChannel = channel.copy(**data)
-    await core.updateChannelDiff(channel, nChannel)
+    new_channel = channel.copy(**data)
+    await core.updateChannelDiff(channel, new_channel)
     if channel.type == ChannelType.GROUP_DM:
-        await core.sendDMChannelUpdateEvent(nChannel)
+        await core.sendDMChannelUpdateEvent(new_channel)
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
-        await core.sendChannelUpdateEvent(nChannel)
+        await core.sendChannelUpdateEvent(new_channel)
 
-        changes = []
-        for k, v in channel.getDiff(nChannel).items():
-            changes.append({"key": k, "old_value": channel.get(k), "new_value": nChannel.get(k)})
-        entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id, AuditLogEntryType.CHANNEL_UPDATE,
-                              changes=changes)
+        entry = AuditLogEntry.channel_update(channel, new_channel, user)
         await core.putAuditLogEntry(entry)
         await core.sendAuditLogEntryCreateEvent(entry)
-    diff = channel.getDiff(nChannel)
+
+        await core.setTemplateDirty(GuildId(channel.guild_id))
+    diff = channel.getDiff(new_channel)
     if "name" in diff and channel.type == ChannelType.GROUP_DM:
-        message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=nChannel.name)
+        message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_NAME_CHANGE, content=new_channel.name)
         await core.sendMessage(message)
     if "icon" in diff and channel.type == ChannelType.GROUP_DM:
         message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_ICON_CHANGE, content="")
@@ -764,21 +840,15 @@ async def api_channels_channel_delete(user: User, channel: Channel):
         member = await core.getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
-        changes = [
-            {"old_value": channel.name, "key": "name"},
-            {"old_value": channel.type, "key": "type"},
-            {"old_value": [await overwrite.json for overwrite in await core.getPermissionOverwrites(channel)], "key": "permission_overwrites"},
-            {"old_value": channel.nsfw, "key": "nsfw"},
-            {"old_value": channel.rate_limit, "key": "rate_limit_per_user"},
-            {"old_value": channel.flags, "key": "flags"}
-        ]
-        entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id, AuditLogEntryType.CHANNEL_DELETE,
-                              changes=changes)
+        entry = AuditLogEntry.channel_delete(channel, user)
         await core.putAuditLogEntry(entry)
         await core.sendAuditLogEntryCreateEvent(entry)
 
         await core.deleteChannel(channel)
         await core.sendGuildChannelDeleteEvent(channel)
+
+        await core.setTemplateDirty(GuildId(channel.guild_id))
+
         return await channelInfoResponse(channel)
     return "", 204
 
@@ -813,37 +883,7 @@ async def api_channels_channel_messages_post(user: User, channel: Channel):
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     message_id = Snowflake.makeId()
     data = await request.get_json()
-    if data is None: # Multipart request
-        if request.content_length > 1024*1024*100:
-            raise InvalidDataErr(400, Errors.make(50006)) # TODO: replace with correct error
-        async with timeout(app.config["BODY_TIMEOUT"]):
-            files = list((await request.files).values())
-            data = await request.form
-            data = jloads(data["payload_json"])
-            if len(files) > 10:
-                raise InvalidDataErr(400, Errors.make(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
-            for idx, file in enumerate(files):
-                att = {"filename": None}
-                if idx+1 <= len(data["attachments"]):
-                    att = data["attachments"][idx]
-                name = att.get("filename") or file.filename or "unknown"
-                content = file.getvalue()
-                att = Attachment(Snowflake.makeId(), channel.id, message_id, name, len(content), {})
-                cot = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
-                att.set(content_type=cot)
-                if cot.startswith("image/"):
-                    img = Image.open(file)
-                    att.set(metadata={"height": img.height, "width": img.width})
-                    img.close()
-                await cdn.uploadAttachment(content, att)
-                att.uploaded = True
-                await core.putAttachment(att)
-    if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
-        raise InvalidDataErr(400, Errors.make(50006))
-    if "id" in data: del data["id"]
-    if "channel_id" in data: del data["channel_id"]
-    if "author" in data: del data["author"]
-    if "attachments" in data: del data["attachments"]
+    data = await processMessageData(message_id, data, channel.id)
     message = Message(id=message_id, channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
     await message.check()
     message = await core.sendMessage(message)
@@ -1139,17 +1179,7 @@ async def api_channels_channel_invites_post(user: User, channel: Channel):
     max_uses = data.get("max_uses", 0)
     invite = await core.createInvite(channel, user, max_age=max_age, max_uses=max_uses)
     if channel.get("guild_id"):
-        changes = [
-            {"new_value": invite.code, "key": "code"},
-            {"new_value": invite.channel_id, "key": "channel_id"},
-            {"new_value": invite.inviter_id, "key": "inviter_id"},
-            {"new_value": invite.uses, "key": "uses"},
-            {"new_value": invite.max_uses, "key": "max_uses"},
-            {"new_value": invite.max_age, "key": "max_age"},
-            {"new_value": invite.temporary, "key": "temporary"}
-        ]
-        entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_CREATE,
-                              changes=changes)
+        entry = AuditLogEntry.invite_create(invite, user)
         await core.putAuditLogEntry(entry)
         await core.sendAuditLogEntryCreateEvent(entry)
     return c_json(await invite.json)
@@ -1215,17 +1245,7 @@ async def api_invites_invite_delete(user: User, invite: Invite):
         await core.deleteInvite(invite)
         await core.sendInviteDeleteEvent(invite)
 
-        changes = [
-            {"old_value": invite.code, "key": "code"},
-            {"old_value": invite.channel_id, "key": "channel_id"},
-            {"old_value": invite.inviter_id, "key": "inviter_id"},
-            {"old_value": invite.uses, "key": "uses"},
-            {"old_value": invite.max_uses, "key": "max_uses"},
-            {"old_value": invite.max_age, "key": "max_age"},
-            {"old_value": invite.temporary, "key": "temporary"}
-        ]
-        entry = AuditLogEntry(Snowflake.makeId(), invite.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_DELETE,
-                              changes=changes)
+        entry = AuditLogEntry.invite_delete(invite, user)
         await core.putAuditLogEntry(entry)
         await core.sendAuditLogEntryCreateEvent(entry)
     return c_json(await invite.json)
@@ -1250,23 +1270,24 @@ async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
     data = await request.get_json()
     for j in ("id", "owner_id", "features", "max_members"):
         if j in data: del data[j]
-    if "icon" in data:
-        img = data["icon"]
-        del data["icon"]
-        if (img := getImage(img)) and validImage(img):
-            if h := await cdn.setGuildIconFromBytesIO(guild.id, img):
-                data["icon"] = h
+    for image_type, func in (("icon", cdn.setGuildIconFromBytesIO), ("banner", cdn.setBannerFromBytesIO),
+                             ("splash", cdn.setGuildSplashFromBytesIO)):
+        if image_type in data:
+            img = data[image_type]
+            if img is not None:
+                del data[image_type]
+                if (img := getImage(img)) and validImage(img):
+                    if h := await func(guild.id, img):
+                        data[image_type] = h
     new_guild = guild.copy(**data)
     await core.updateGuildDiff(guild, new_guild)
     await core.sendGuildUpdateEvent(new_guild)
 
-    changes = []
-    for k, v in guild.getDiff(new_guild).items():
-        changes.append({"key": k, "old_value": guild.get(k), "new_value": new_guild.get(k)})
-    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, guild.id, AuditLogEntryType.GUILD_UPDATE,
-                          changes=changes)
+    entry = AuditLogEntry.guild_update(guild, new_guild, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
+
+    await core.setTemplateDirty(guild)
 
     return c_json(await new_guild.json)
 
@@ -1274,7 +1295,62 @@ async def api_guilds_guild_patch(user: User, guild: Guild, member: GuildMember):
 @app.get("/api/v9/guilds/<int:guild>/templates")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def api_guilds_guild_templates_get(user: User, guild: Guild):
-    return c_json([])
+    templates = []
+    if template := await core.getGuildTemplate(guild):
+        templates.append(await template.json)
+    return c_json(templates)
+
+
+@app.post("/api/v9/guilds/<int:guild>/templates")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_templates_post(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    data = await request.get_json()
+    if not (name := data.get("name")):
+        raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+    description = data.get("description")
+    if await core.getGuildTemplate(guild):
+        raise InvalidDataErr(400, Errors.make(30031))
+
+    template = GuildTemplate(Snowflake.makeId(), guild.id, name, description, 0, user.id, int(time()),
+                             await GuildTemplate.serialize_guild(guild))
+    await core.putGuildTemplate(template)
+
+    return c_json(await template.json)
+
+
+@app.delete("/api/v9/guilds/<int:guild>/templates/<string:template>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getGuildTemplate)
+async def api_guilds_guild_templates_template_delete(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    await core.deleteGuildTemplate(template)
+    return c_json(await template.json)
+
+
+@app.put("/api/v9/guilds/<int:guild>/templates/<string:template>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getGuildTemplate)
+async def api_guilds_guild_templates_template_put(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    new_template = template.copy()
+    if template.is_dirty:
+        new_template.set(serialized_guild=await GuildTemplate.serialize_guild(guild), is_dirty=False,
+                         updated_at=int(time()))
+    await core.updateTemplateDiff(template, new_template)
+    return c_json(await new_template.json)
+
+
+@app.patch("/api/v9/guilds/<int:guild>/templates/<string:template>")
+@multipleDecorators(usingDB, getUser, getGuildWM, getGuildTemplate)
+async def api_guilds_guild_templates_template_patch(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    data = await request.get_json()
+    new_template = template.copy()
+    if name := data.get("name"):
+        new_template.set(name=name)
+    if description := data.get("description"):
+        new_template.set(description=description)
+    await core.updateTemplateDiff(template, new_template)
+    return c_json(await new_template.json)
 
 
 @app.get("/api/v9/guilds/<int:guild>/emojis")
@@ -1304,11 +1380,7 @@ async def api_guilds_guild_emojis_post(user: User, guild: Guild, member: GuildMe
     await core.addEmoji(emoji, guild)
     emoji.fill_defaults()
 
-    changes = [
-        {"new_value": emoji.name, "key": "name"},
-    ]
-    entry = AuditLogEntry(Snowflake.makeId(), emoji.guild_id, user.id, emoji.id, AuditLogEntryType.EMOJI_CREATE,
-                          changes=changes)
+    entry = AuditLogEntry.emoji_create(emoji, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
 
@@ -1326,11 +1398,7 @@ async def api_guilds_guild_emojis_emoji_delete(user: User, guild: Guild, member:
         return "", 204
     await core.deleteEmoji(emoji, guild)
 
-    changes = [
-        {"old_value": emoji.name, "key": "name"},
-    ]
-    entry = AuditLogEntry(Snowflake.makeId(), emoji.guild_id, user.id, emoji.id, AuditLogEntryType.EMOJI_DELETE,
-                          changes=changes)
+    entry = AuditLogEntry.emoji_delete(emoji, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
 
@@ -1353,6 +1421,7 @@ async def api_guilds_guild_channels_patch(user: User, guild: Guild, member: Guil
         await core.updateChannelDiff(channel, nChannel)
         channel.set(**change)
         await core.sendChannelUpdateEvent(channel)
+    await core.setTemplateDirty(guild)
     return "", 204
 
 
@@ -1366,22 +1435,16 @@ async def api_guilds_guild_channels_post(user: User, guild: Guild, member: Guild
     if "id" in data: del data["id"]
     ctype = data.get("type", ChannelType.GUILD_TEXT)
     if "type" in data: del data["type"]
+    if "permission_overwrites" in data: del data["permission_overwrites"] # TODO: set permission_overwrites after channel creation
     channel = Channel(Snowflake.makeId(), ctype, guild_id=guild.id, **data)
     channel = await core.createGuildChannel(channel)
     await core.sendChannelCreateEvent(channel)
 
-    changes = [
-        {"new_value": channel.name, "key": "name"},
-        {"new_value": channel.type, "key": "type"},
-        {"new_value": [], "key": "permission_overwrites"},
-        {"new_value": channel.nsfw, "key": "nsfw"},
-        {"new_value": channel.rate_limit, "key": "rate_limit_per_user"},
-        {"new_value": channel.flags, "key": "flags"}
-    ]
-    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, channel.id, AuditLogEntryType.CHANNEL_CREATE,
-                          changes=changes)
+    entry = AuditLogEntry.channel_create(channel, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
+
+    await core.setTemplateDirty(guild)
 
     return await channelInfoResponse(channel)
 
@@ -1446,7 +1509,7 @@ async def api_guilds_guild_bans_user_put(user: User, guild: Guild, member: Guild
                         await core.sendMessageDeleteEvent(Message(messages[0], channel, uid))
 
             entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, target_member.id,
-                                  AuditLogEntryType.MEMBER_BAN_ADD, reason)
+                                  AuditLogEntryType.MEMBER_BAN_ADD, reason=reason)
             await core.putAuditLogEntry(entry)
             await core.sendAuditLogEntryCreateEvent(entry)
     return "", 204
@@ -1491,16 +1554,11 @@ async def api_guilds_guild_roles_post(user: User, guild: Guild, member: GuildMem
     await core.createGuildRole(role)
     await core.sendGuildRoleCreateEvent(role)
 
-    changes = [
-        {"new_value": role.name, "key": "name"},
-        {"new_value": role.permissions, "key": "permissions"},
-        {"new_value": role.color, "key": "color"},
-        {"new_value": role.hoist, "key": "hoist"},
-        {"new_value": role.mentionable, "key": "mentionable"}
-    ]
-    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, role.id, AuditLogEntryType.ROLE_CREATE, changes=changes)
+    entry = AuditLogEntry.role_create(role, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
+
+    await core.setTemplateDirty(guild)
 
     return c_json(await role.json)
 
@@ -1514,17 +1572,22 @@ async def api_guilds_guild_roles_role_patch(user: User, guild: Guild, member: Gu
     if "guild_id" in data: del data["guild_id"]
     if role.id == guild.id:
         data = {"permissions": data["permissions"]} if "permissions" in data else {} # Only allow permissions editing for @everyone role
+    if "icon" in data:
+        img = data["icon"]
+        if img is not None:
+            del data["icon"]
+            if (img := getImage(img)) and validImage(img):
+                if h := await cdn.setRoleIconFromBytesIO(role.id, img):
+                    data["icon"] = h
     new_role = role.copy(**data)
     await core.updateRoleDiff(role, new_role)
     await core.sendGuildRoleUpdateEvent(new_role)
 
-    changes = []
-    for k, v in guild.getDiff(role).items():
-        changes.append({"key": k, "old_value": role.get(k), "new_value": new_role.get(k)})
-    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, role.id, AuditLogEntryType.ROLE_UPDATE,
-                          changes=changes)
+    entry = AuditLogEntry.role_update(role, new_role, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
+
+    await core.setTemplateDirty(guild)
 
     return c_json(await new_role.json)
 
@@ -1556,6 +1619,9 @@ async def api_guilds_guild_roles_patch(user: User, guild: Guild, member: GuildMe
         await core.sendGuildRoleUpdateEvent(new_role)
     roles = await core.getRoles(guild)
     roles = [await role.json for role in roles]
+
+    await core.setTemplateDirty(guild)
+
     return c_json(roles)
 
 
@@ -1568,17 +1634,11 @@ async def api_guilds_guild_roles_role_delete(user: User, guild: Guild, member: G
     await core.deleteRole(role)
     await core.sendGuildRoleDeleteEvent(role)
 
-    changes = [
-        {"old_value": role.name, "key": "name"},
-        {"old_value": role.permissions, "key": "permissions"},
-        {"old_value": role.color, "key": "color"},
-        {"old_value": role.hoist, "key": "hoist"},
-        {"old_value": role.mentionable, "key": "mentionable"}
-    ]
-    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, role.id, AuditLogEntryType.ROLE_DELETE,
-                          changes=changes)
+    entry = AuditLogEntry.role_delete(role, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
+
+    await core.setTemplateDirty(guild)
 
     return "", 204
 
@@ -1669,11 +1729,7 @@ async def api_guilds_guild_members_member_patch(user: User, guild: Guild, member
         await core.updateMemberDiff(target_member, new_member)
     await core.sendGuildMemberUpdateEvent(new_member)
 
-    changes = []
-    for k, v in member.getDiff(new_member).items():
-        changes.append({"key": k, "old_value": member.get(k), "new_value": new_member.get(k)})
-    entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, member.user_id, AuditLogEntryType.MEMBER_UPDATE,
-                          changes=changes)
+    entry = AuditLogEntry.member_update(target_member, new_member, user)
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
 
@@ -1723,6 +1779,8 @@ async def api_channels_channel_permissions_target_put(user: User, channel: Chann
     await core.putAuditLogEntry(entry)
     await core.sendAuditLogEntryCreateEvent(entry)
 
+    await core.setTemplateDirty(GuildId(channel.guild_id))
+
     return "", 204
 
 
@@ -1758,6 +1816,8 @@ async def api_channels_channel_permissions_target_delete(user: User, channel: Ch
                               AuditLogEntryType.CHANNEL_OVERWRITE_DELETE, changes=changes, options=options)
         await core.putAuditLogEntry(entry)
         await core.sendAuditLogEntryCreateEvent(entry)
+
+        await core.setTemplateDirty(GuildId(channel.guild_id))
 
     return "", 204
 
@@ -1846,6 +1906,189 @@ async def api_guilds_guild_auditlogs_get(user: User, guild: Guild, member: Guild
 
     return c_json(data)
 
+@app.post("/api/v9/guilds/templates/<string:template>")
+@multipleDecorators(usingDB, getUser)
+async def api_guilds_templates_template(user: User, template: str):
+    try:
+        template_id = int.from_bytes(b64decode(template), "big")
+        if not (template := await core.getGuildTemplateById(template_id)):
+            raise ValueError
+    except ValueError:
+        raise InvalidDataErr(404, Errors.make(10057))
+
+    guild_id = Snowflake.makeId()
+    data = await request.get_json()
+    icon = None
+    if img := data.get("icon"):
+        if (img := getImage(img)) and validImage(img):
+            if h := await cdn.setGuildIconFromBytesIO(guild_id, img):
+                icon = h
+
+    guild = await core.createGuildFromTemplate(guild_id, user, template, data.get("name"), icon)
+    Ctx["with_channels"] = True
+    return c_json(await guild.json)
+
+@app.post("/api/v9/guilds/<int:guild>/delete")
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def api_guilds_guild_delete(user: User, guild: Guild):
+    if user.id != guild.owner_id:
+        raise InvalidDataErr(403, Errors.make(50013))
+
+    data = await request.get_json()
+    if mfa := await core.getMfa(user):
+        code = data.get("code")
+        code = code.replace("-", "").replace(" ", "")
+        if not code:
+            raise InvalidDataErr(400, Errors.make(60008))
+        if code != mfa.getCode():
+            if not (len(code) == 8 and await core.useMfaCode(mfa.uid, code)):
+                raise InvalidDataErr(400, Errors.make(60008))
+
+    await core.deleteGuild(guild)
+    await core.sendGuildDeleteEvent(guild, user)
+
+    return "", 204
+
+
+@app.post("/api/v9/channels/<int:channel>/webhooks")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_webhooks_post(user: User, channel: Channel):
+    if not channel.get("guild_id"):
+        raise InvalidDataErr(403, Errors.make(50003))
+    guild = await core.getGuild(channel.guild_id)
+    member = await core.getGuildMember(guild, user.id)
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+
+    data = await request.get_json()
+    if not (name := data.get("name")):
+        raise InvalidDataErr(400,
+                             Errors.make(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+
+    webhook = Webhook(Snowflake.makeId(), guild.id, channel.id, user.id, WebhookType.INCOMING, name,
+                      b64encode(urandom(48)), None, None)
+    await core.putWebhook(webhook)
+    await core.sendWebhooksUpdateEvent(webhook)
+
+    return c_json(await webhook.json)
+
+
+@app.get("/api/v9/guilds/<int:guild>/webhooks")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def api_guilds_guild_webhooks_get(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    webhooks = [await webhook.json for webhook in await core.getWebhooks(guild)]
+    return c_json(webhooks)
+
+
+@app.get("/api/v9/channels/<int:channel>/webhooks")
+@multipleDecorators(usingDB, getUser, getChannel)
+async def api_channels_channel_webhooks_get(user: User, channel: Channel):
+    if not channel.get("guild_id"):
+        raise InvalidDataErr(403, Errors.make(50003))
+    guild = await core.getGuild(channel.guild_id)
+    member = await core.getGuildMember(guild, user.id)
+    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+
+    webhooks = [await webhook.json for webhook in await core.getWebhooks(guild)]
+    return c_json(webhooks)
+
+
+@app.delete("/api/v9/webhooks/<int:webhook>")
+@app.delete("/api/v9/webhooks/<int:webhook>/<string:token>")
+@multipleDecorators(usingDB, allowWithoutUser, getUser)
+async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token: Optional[str]=None):
+    if webhook := await core.getWebhook(webhook):
+        if webhook.token != token:
+            guild = await core.getGuild(webhook.guild_id)
+            if not (member := await core.getGuildMember(guild, user.id)):
+                raise InvalidDataErr(403, Errors.make(50013))
+            await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+        await core.deleteWebhook(webhook)
+        await core.sendWebhooksUpdateEvent(webhook)
+
+    return "", 204
+
+
+@app.patch("/api/v9/webhooks/<int:webhook>")
+@app.patch("/api/v9/webhooks/<int:webhook>/<string:token>")
+@multipleDecorators(usingDB, allowWithoutUser, getUser)
+async def api_webhooks_webhook_patch(user: Optional[User], webhook: int, token: Optional[str]=None):
+    if not (webhook := await core.getWebhook(webhook)):
+        raise InvalidDataErr(404, Errors.make(10015))
+    if webhook.token != token:
+        guild = await core.getGuild(webhook.guild_id)
+        if not (member := await core.getGuildMember(guild, user.id)):
+            raise InvalidDataErr(403, Errors.make(50013))
+        await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    data = await request.get_json()
+    if user.id == 0:
+        if "channel_id" in data: del data["channel_id"]
+    data = {
+        "name": str(data.get("name") or webhook.name),
+        "channel_id": int(data.get("channel_id") or webhook.channel_id),
+        "avatar": data.get("avatar")
+    }
+    if (img := data["avatar"]) or img is None:
+        if img is not None:
+            if (img := getImage(img)) and validImage(img):
+                if h := await cdn.setAvatarFromBytesIO(webhook.id, img):
+                    img = h
+        data["avatar"] = img
+    else:
+        del data["avatar"]
+
+    new_webhook = webhook.copy(**data)
+
+    await core.updateWebhookDiff(webhook, new_webhook)
+    await core.sendWebhooksUpdateEvent(new_webhook)
+
+    return c_json(await new_webhook.json)
+
+
+@app.get("/api/v9/webhooks/<int:webhook>")
+@app.get("/api/v9/webhooks/<int:webhook>/<string:token>")
+@multipleDecorators(usingDB, allowWithoutUser, getUser)
+async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Optional[str]=None):
+    if not (webhook := await core.getWebhook(webhook)):
+        raise InvalidDataErr(404, Errors.make(10015))
+    if webhook.token != token:
+        guild = await core.getGuild(webhook.guild_id)
+        if not (member := await core.getGuildMember(guild, user.id)):
+            raise InvalidDataErr(403, Errors.make(50013))
+        await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+
+    return c_json(await webhook.json)
+
+
+@app.post("/api/v9/webhooks/<int:webhook>/<string:token>")
+@multipleDecorators(usingDB)
+async def api_webhooks_webhook_post(webhook: int, token: str):
+    if not (webhook := await core.getWebhook(webhook)):
+        raise InvalidDataErr(404, Errors.make(10015))
+    if webhook.token != token:
+        raise InvalidDataErr(403, Errors.make(50013))
+
+    message_id = Snowflake.makeId()
+    data = await request.get_json()
+    data = await processMessageData(message_id, data, webhook.channel_id)
+    author = {
+        "bot": True,
+        "id": str(webhook.id),
+        "username": data.get("username", None) or webhook.name,
+        "avatar": data.get("avatar", None) or webhook.avatar,
+        "discriminator": "0000"
+    }
+    if "username" in data: del data["username"]
+    if "avatar" in data: del data["avatar"]
+    message = Message(id=message_id, channel_id=webhook.channel_id, author=0, guild_id=webhook.guild_id,
+                      webhook_author=author, **data)
+    await message.check()
+    message = await core.sendMessage(message)
+
+    if request.args.get("wait") == "true":
+        return c_json(await message.json)
+    else:
+        return "", 204
 
 # Stickers & gifs
 

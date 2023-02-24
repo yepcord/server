@@ -192,3 +192,10 @@ class AuditLogEntryType(E):
     AUTO_MODERATION_BLOCK_MESSAGE = 143
     AUTO_MODERATION_FLAG_TO_CHANNEL = 144
     AUTO_MODERATION_USER_COMMUNICATION_DISABLED = 145
+
+
+# https://discord.com/developers/docs/resources/webhook#webhook-object-webhook-types
+class WebhookType(E):
+    INCOMING = 1
+    CHANNEL_FOLLOWER = 2
+    APPLICATION = 3
