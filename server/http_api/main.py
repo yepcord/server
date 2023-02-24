@@ -121,14 +121,29 @@ def usingDB(f):
     setattr(f, "__db", True)
     return f
 
+def allowWithoutUser(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        Ctx["allow_without_user"] = True
+        return await f(*args, **kwargs)
+
+    return wrapped
+
 def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (session := Session.from_token(request.headers.get("Authorization", ""))) \
-                or not await core.validSession(session):
-            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-        if not (user := await core.getUser(session.uid)):
-            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        try:
+            if not (session := Session.from_token(request.headers.get("Authorization", ""))) \
+                    or not await core.validSession(session):
+                raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+            if not (user := await core.getUser(session.uid)):
+                raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        except InvalidDataErr as e:
+            if e.code != 401:
+                raise
+            if not Ctx.get("allow_without_user"):
+                raise
+            user = User(0)
         Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
@@ -255,6 +270,46 @@ getGuildWithMember = getGuild(with_member=True)
 getGuildWithoutMember = getGuild(with_member=False)
 getGuildWM = getGuildWithMember
 getGuildWoM = getGuildWithoutMember
+
+
+# Idk
+
+
+async def processMessageData(message_id: int, data: Optional[dict], channel_id: int) -> dict:
+    if data is None:  # Multipart request
+        if request.content_length > 1024 * 1024 * 100:
+            raise InvalidDataErr(400, Errors.make(50006))  # TODO: replace with correct error
+        async with timeout(app.config["BODY_TIMEOUT"]):
+            files = list((await request.files).values())
+            data = await request.form
+            data = jloads(data["payload_json"])
+            if len(files) > 10:
+                raise InvalidDataErr(400, Errors.make(50013, {
+                    "files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
+            for idx, file in enumerate(files):
+                att = {"filename": None}
+                if idx + 1 <= len(data["attachments"]):
+                    att = data["attachments"][idx]
+                name = att.get("filename") or file.filename or "unknown"
+                content = file.getvalue()
+                att = Attachment(Snowflake.makeId(), channel_id, message_id, name, len(content), {})
+                cot = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
+                att.set(content_type=cot)
+                if cot.startswith("image/"):
+                    img = Image.open(file)
+                    att.set(metadata={"height": img.height, "width": img.width})
+                    img.close()
+                await cdn.uploadAttachment(content, att)
+                att.uploaded = True
+                await core.putAttachment(att)
+    if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
+        raise InvalidDataErr(400, Errors.make(50006))
+    if "id" in data: del data["id"]
+    if "channel_id" in data: del data["channel_id"]
+    if "author" in data: del data["author"]
+    if "attachments" in data: del data["attachments"]
+    return data
+
 
 # Auth
 
@@ -828,37 +883,7 @@ async def api_channels_channel_messages_post(user: User, channel: Channel):
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     message_id = Snowflake.makeId()
     data = await request.get_json()
-    if data is None: # Multipart request
-        if request.content_length > 1024*1024*100:
-            raise InvalidDataErr(400, Errors.make(50006)) # TODO: replace with correct error
-        async with timeout(app.config["BODY_TIMEOUT"]):
-            files = list((await request.files).values())
-            data = await request.form
-            data = jloads(data["payload_json"])
-            if len(files) > 10:
-                raise InvalidDataErr(400, Errors.make(50013, {"files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
-            for idx, file in enumerate(files):
-                att = {"filename": None}
-                if idx+1 <= len(data["attachments"]):
-                    att = data["attachments"][idx]
-                name = att.get("filename") or file.filename or "unknown"
-                content = file.getvalue()
-                att = Attachment(Snowflake.makeId(), channel.id, message_id, name, len(content), {})
-                cot = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
-                att.set(content_type=cot)
-                if cot.startswith("image/"):
-                    img = Image.open(file)
-                    att.set(metadata={"height": img.height, "width": img.width})
-                    img.close()
-                await cdn.uploadAttachment(content, att)
-                att.uploaded = True
-                await core.putAttachment(att)
-    if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
-        raise InvalidDataErr(400, Errors.make(50006))
-    if "id" in data: del data["id"]
-    if "channel_id" in data: del data["channel_id"]
-    if "author" in data: del data["author"]
-    if "attachments" in data: del data["attachments"]
+    data = await processMessageData(message_id, data, channel.id)
     message = Message(id=message_id, channel_id=channel.id, author=user.id, **data, **({} if not channel.guild_id else {"guild_id": channel.guild_id}))
     await message.check()
     message = await core.sendMessage(message)
@@ -1970,8 +1995,8 @@ async def api_channels_channel_webhooks_get(user: User, channel: Channel):
 
 @app.delete("/api/v9/webhooks/<int:webhook>")
 @app.delete("/api/v9/webhooks/<int:webhook>/<string:token>")
-@multipleDecorators(usingDB, getUser)
-async def api_webhooks_webhook_delete(user: User, webhook: int, token: Optional[str]=None):
+@multipleDecorators(usingDB, allowWithoutUser, getUser)
+async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token: Optional[str]=None):
     if webhook := await core.getWebhook(webhook):
         if webhook.token != token:
             guild = await core.getGuild(webhook.guild_id)
@@ -1985,15 +2010,19 @@ async def api_webhooks_webhook_delete(user: User, webhook: int, token: Optional[
 
 
 @app.patch("/api/v9/webhooks/<int:webhook>")
-@multipleDecorators(usingDB, getUser)
-async def api_webhooks_webhook_patch(user: User, webhook: int):
+@app.patch("/api/v9/webhooks/<int:webhook>/<string:token>")
+@multipleDecorators(usingDB, allowWithoutUser, getUser)
+async def api_webhooks_webhook_patch(user: Optional[User], webhook: int, token: Optional[str]=None):
     if not (webhook := await core.getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
-    guild = await core.getGuild(webhook.guild_id)
-    if not (member := await core.getGuildMember(guild, user.id)):
-        raise InvalidDataErr(403, Errors.make(50013))
-    await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    if webhook.token != token:
+        guild = await core.getGuild(webhook.guild_id)
+        if not (member := await core.getGuildMember(guild, user.id)):
+            raise InvalidDataErr(403, Errors.make(50013))
+        await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
     data = await request.get_json()
+    if user.id == 0:
+        if "channel_id" in data: del data["channel_id"]
     data = {
         "name": str(data.get("name") or webhook.name),
         "channel_id": int(data.get("channel_id") or webhook.channel_id),
@@ -2015,6 +2044,51 @@ async def api_webhooks_webhook_patch(user: User, webhook: int):
 
     return c_json(await new_webhook.json)
 
+
+@app.get("/api/v9/webhooks/<int:webhook>")
+@app.get("/api/v9/webhooks/<int:webhook>/<string:token>")
+@multipleDecorators(usingDB, allowWithoutUser, getUser)
+async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Optional[str]=None):
+    if not (webhook := await core.getWebhook(webhook)):
+        raise InvalidDataErr(404, Errors.make(10015))
+    if webhook.token != token:
+        guild = await core.getGuild(webhook.guild_id)
+        if not (member := await core.getGuildMember(guild, user.id)):
+            raise InvalidDataErr(403, Errors.make(50013))
+        await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+
+    return c_json(await webhook.json)
+
+
+@app.post("/api/v9/webhooks/<int:webhook>/<string:token>")
+@multipleDecorators(usingDB)
+async def api_webhooks_webhook_post(webhook: int, token: str):
+    if not (webhook := await core.getWebhook(webhook)):
+        raise InvalidDataErr(404, Errors.make(10015))
+    if webhook.token != token:
+        raise InvalidDataErr(403, Errors.make(50013))
+
+    message_id = Snowflake.makeId()
+    data = await request.get_json()
+    data = await processMessageData(message_id, data, webhook.channel_id)
+    author = {
+        "bot": True,
+        "id": str(webhook.id),
+        "username": data.get("username", None) or webhook.name,
+        "avatar": data.get("avatar", None) or webhook.avatar,
+        "discriminator": "0000"
+    }
+    if "username" in data: del data["username"]
+    if "avatar" in data: del data["avatar"]
+    message = Message(id=message_id, channel_id=webhook.channel_id, author=0, guild_id=webhook.guild_id,
+                      webhook_author=author, **data)
+    await message.check()
+    message = await core.sendMessage(message)
+
+    if request.args.get("wait") == "true":
+        return c_json(await message.json)
+    else:
+        return "", 204
 
 # Stickers & gifs
 

@@ -49,6 +49,7 @@ class Message(_Message, Model):
     nonce: Optional[str] = field(default=None, excluded=True)
     tts: Optional[str] = field(default=None, excluded=True)
     sticker_ids: Optional[str] = field(default=None, excluded=True)
+    webhook_author: Optional[dict] = field(db_name="j_webhook_author", default=None, private=True)
 
     @property
     async def json(self) -> dict:
@@ -56,7 +57,10 @@ class Message(_Message, Model):
         data["id"] = str(data["id"])
         data["channel_id"] = str(data["channel_id"])
         if data.get("guild_id"): data["guild_id"] = str(data["guild_id"])
-        data["author"] = await (await getCore().getUserData(UserId(self.author))).json
+        if self.author != 0:
+            data["author"] = await (await getCore().getUserData(UserId(self.author))).json
+        else:
+            data["author"] = self.webhook_author
         data["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None
         data["tts"] = False
         data["timestamp"] = Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")

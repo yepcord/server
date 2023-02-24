@@ -257,6 +257,7 @@ CREATE TABLE `messages` (
   `j_sticker_items` JSON NOT NULL DEFAULT "[]",
   `j_extra_data` JSON NOT NULL DEFAULT "{}",
   `guild_id` bigint DEFAULT NULL,
+  `j_webhook_author` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "{}" CHECK(json_valid(`j_webhook_author`)),
   FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
