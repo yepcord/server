@@ -13,6 +13,7 @@ from magic import from_buffer
 from quart import Quart, request
 from quart.globals import request_ctx
 
+from ..classes.gifs import Gifs
 from ..classes.channel import Channel, PermissionOverwrite
 from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry, GuildTemplate, Webhook
 from ..classes.message import Message, Attachment, Reaction, SearchFilter
@@ -70,6 +71,7 @@ elif storage.lower() == "ftp":
         raise Exception("You must set 'FTP_HOST', 'FTP_USER', 'FTP_PASSWORD' variables for using ftp storage type.")
     storage = FTPStorage(*a)
 cdn = CDN(storage, core)
+gifs = Gifs(Config("TENOR_KEY"))
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
@@ -2100,7 +2102,34 @@ async def api_stickerpacks_get():
 
 @app.get("/api/v9/gifs/trending")
 async def api_gifs_trending_get():
-    return c_json('{"gifs": [], "categories": []}') # TODO
+    result = {"gifs": [], "categories": []}
+    for category in await gifs.categories:
+        result["categories"].append(category.json)
+        result["categories"][-1]["src"] = result["categories"][-1]["src"][:-4]+".mp4"
+    return c_json(result)
+
+
+@app.get("/api/v9/gifs/trending-gifs")
+async def api_gifs_trendinggifs_get():
+    return c_json('[]')  # ???
+
+
+@app.post("/api/v9/gifs/select")
+async def api_gifs_select_post():
+    return "", 204
+
+
+@app.get("/api/v9/gifs/search")
+async def api_gifs_search():
+    search = await gifs.search(**request.args)
+    result = [gif.json for gif in search.gifs]
+    return c_json(result)
+
+@app.get("/api/v9/gifs/suggest")
+async def api_gifs_suggest():
+    args = {**request.args}
+    if "limit" in args: args["limit"] = int(args["limit"])
+    return await gifs.suggest(**args)
 
 
 # Hypesquad
