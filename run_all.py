@@ -60,7 +60,6 @@ processes = [
     Process("Gateway", app="server.gateway.main:app", port=8001),
     Process("CDN", app="server.cdn.main:app", port=8003),
     Process("RemoteAuth", app="server.remote_auth.main:app", port=8002),
-    Process("Client", app="client.main:app", port=8080, disable_logs=True),
 ]
 
 skip_logs = [
