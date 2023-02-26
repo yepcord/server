@@ -2,11 +2,11 @@ from datetime import datetime
 from typing import Optional
 
 from .events import *
-from ..pubsub_client import Client
-from ..enums import GatewayOp
-from ..core import Core
-from ..classes.user import UserId, Session
-from ..classes.guild import GuildId
+from ..yepcord.pubsub_client import Client
+from ..yepcord.enums import GatewayOp
+from ..yepcord.core import Core
+from ..yepcord.classes.user import UserId, Session
+from ..yepcord.classes.guild import GuildId
 from os import urandom
 from json import dumps as jdumps
 

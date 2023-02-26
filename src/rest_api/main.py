@@ -13,24 +13,24 @@ from magic import from_buffer
 from quart import Quart, request
 from quart.globals import request_ctx
 
-from ..classes.gifs import Gifs
-from ..classes.channel import Channel, PermissionOverwrite
-from ..classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry, GuildTemplate, Webhook
-from ..classes.message import Message, Attachment, Reaction, SearchFilter
-from ..classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember, UserId
-from ..config import Config
-from ..core import Core, CDN
-from ..ctx import Ctx
-from ..enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions, \
+from ..yepcord.classes.gifs import Gifs
+from ..yepcord.classes.channel import Channel, PermissionOverwrite
+from ..yepcord.classes.guild import Emoji, GuildId, Invite, Guild, Role, AuditLogEntry, GuildTemplate, Webhook
+from ..yepcord.classes.message import Message, Attachment, Reaction, SearchFilter
+from ..yepcord.classes.user import Session, UserSettings, UserData, UserNote, UserFlags, User, GuildMember, UserId
+from ..yepcord.config import Config
+from ..yepcord.core import Core, CDN
+from ..yepcord.ctx import Ctx
+from ..yepcord.enums import ChannelType, MessageType, UserFlags as UserFlagsE, RelationshipType, GuildPermissions, \
     AuditLogEntryType, WebhookType
-from ..errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
-from ..geoip import getLanguageCode
-from ..proto import PreloadedUserSettings, FrecencyUserSettings
-from ..responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, \
+from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
+from ..yepcord.geoip import getLanguageCode
+from ..yepcord.proto import PreloadedUserSettings, FrecencyUserSettings
+from ..yepcord.responses import userSettingsResponse, userdataResponse, userConsentResponse, userProfileResponse, \
     channelInfoResponse
-from ..snowflake import Snowflake
-from ..storage import FileStorage, S3Storage, FTPStorage
-from ..utils import b64decode, b64encode, c_json, getImage, validImage, MFA, execute_after, LOCALES
+from ..yepcord.snowflake import Snowflake
+from ..yepcord.storage import FileStorage, S3Storage, FTPStorage
+from ..yepcord.utils import b64decode, b64encode, c_json, getImage, validImage, MFA, execute_after, LOCALES
 
 
 class YEPcord(Quart):

@@ -1,5 +1,5 @@
 from email.message import EmailMessage
-from hashlib import sha256, sha512
+from hashlib import sha512
 from hmac import new
 from json import loads, dumps
 from time import time
@@ -8,8 +8,8 @@ from zlib import compressobj, Z_FULL_FLUSH
 
 from aiosmtplib import send as smtp_send, SMTPConnectError
 
-from server.config import Config
-from server.utils import b64decode, b64encode
+from ..config import Config
+from ..utils import b64decode, b64encode
 
 
 class ZlibCompressor:

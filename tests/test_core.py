@@ -4,13 +4,13 @@ from typing import Coroutine, Any
 
 import pytest as pt
 
-from server.classes.user import Session, UserId, UserSettings, UserData
-from server.config import Config
-from server.core import Core
-from server.enums import UserFlags as UserFlagsE, RelationshipType
-from server.errors import InvalidDataErr
-from server.snowflake import Snowflake
-from server.utils import b64decode
+from src.yepcord.classes.user import Session, UserId, UserSettings, UserData
+from src.yepcord.config import Config
+from src.yepcord.core import Core
+from src.yepcord.enums import UserFlags as UserFlagsE, RelationshipType
+from src.yepcord.errors import InvalidDataErr
+from src.yepcord.snowflake import Snowflake
+from src.yepcord.utils import b64decode
 
 VARS = {
     "user_id": Snowflake.makeId()

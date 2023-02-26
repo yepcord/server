@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, List, TYPE_CHECKING, Tuple
+from typing import Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .guild import Role

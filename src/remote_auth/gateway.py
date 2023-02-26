@@ -8,9 +8,9 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives.hashes import SHA256
 
-from ..config import Config
-from ..utils import b64encode, b64decode
-from ..pubsub_client import Client
+from ..yepcord.config import Config
+from ..yepcord.utils import b64encode, b64decode
+from ..yepcord.pubsub_client import Client
 
 class GatewayClient:
     def __init__(self, ws, pubkey, fp, nonce):

@@ -1,9 +1,9 @@
 from quart import Quart, websocket
 
-from ..config import Config
-from ..classes.other import ZlibCompressor
-from ..core import Core
-from ..utils import b64decode
+from ..yepcord.config import Config
+from ..yepcord.classes.other import ZlibCompressor
+from ..yepcord.core import Core
+from ..yepcord.utils import b64decode
 from json import loads as jloads
 from asyncio import CancelledError
 from .gateway import Gateway

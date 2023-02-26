@@ -3,7 +3,7 @@ from os import getpid
 from random import randint
 from time import time
 
-from server.classes.other import Singleton
+from .classes.other import Singleton
 
 
 class Snowflake(Singleton):

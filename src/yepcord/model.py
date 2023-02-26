@@ -4,7 +4,7 @@ from typing import Optional, Any, get_type_hints
 
 from schema import Schema, Use, Optional as sOptional
 
-from server.utils import result_to_json
+from .utils import result_to_json
 
 _DEFAULT_META = {"excluded": False, "nullable": False, "db_name": None, "default": None, "validation": None,
                  "id_field": False, "private": False}

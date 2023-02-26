@@ -40,7 +40,7 @@ class Process:
         if not self.app:
             cmd = f"python -u {self.file}"
         else:
-            cmd = f"python -u -m uvicorn {self.app} --forwarded-allow-ips='*' --ssl-keyfile=ssl/key.pem --ssl-certfile=ssl/cert.pem --reload --reload-dir server --host 0.0.0.0" + (f" --port {self.port}" if self.port else "")
+            cmd = f"python -u -m uvicorn {self.app} --forwarded-allow-ips='*' --ssl-keyfile=ssl/key.pem --ssl-certfile=ssl/cert.pem --reload --reload-dir src --host 0.0.0.0" + (f" --port {self.port}" if self.port else "")
         self.running = True
         Thread(target=self._run, args=(cmd,)).start()
 
@@ -55,11 +55,11 @@ class Process:
         self.stop(True)
 
 processes = [
-    Process("IMT", file="main.py", wd="internal/pubsub"),
-    Process("HttpApi", app="server.http_api.main:app", port=8000),
-    Process("Gateway", app="server.gateway.main:app", port=8001),
-    Process("CDN", app="server.cdn.main:app", port=8003),
-    Process("RemoteAuth", app="server.remote_auth.main:app", port=8002),
+    Process("IMT", file="main.py", wd="src/pubsub"),
+    Process("HttpApi", app="src.rest_api.main:app", port=8000),
+    Process("Gateway", app="src.gateway.main:app", port=8001),
+    Process("CDN", app="src.cdn.main:app", port=8003),
+    Process("RemoteAuth", app="src.remote_auth.main:app", port=8002),
 ]
 
 skip_logs = [

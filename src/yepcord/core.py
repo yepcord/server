@@ -1286,7 +1286,6 @@ class Core(Singleton):
                                                                    "guild_id": webhook.guild_id,
                                                                    "channel_id": webhook.channel_id}})
 
-
-import server.ctx as c
+import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()
-from server.ctx import Ctx
+from .ctx import Ctx

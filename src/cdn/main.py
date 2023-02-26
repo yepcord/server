@@ -6,10 +6,10 @@ from async_timeout import timeout
 from magic import from_buffer
 from quart import Quart, request
 
-from ..config import Config
-from ..core import Core, CDN
-from ..storage import FileStorage, S3Storage, FTPStorage
-from ..utils import b64decode, ALLOWED_AVATAR_SIZES
+from ..yepcord.config import Config
+from ..yepcord.core import Core, CDN
+from ..yepcord.storage import FileStorage, S3Storage, FTPStorage
+from ..yepcord.utils import b64decode, ALLOWED_AVATAR_SIZES
 
 
 class YEPcord(Quart):

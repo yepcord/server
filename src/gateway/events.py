@@ -2,11 +2,11 @@ from base64 import b64encode
 from time import time
 from typing import List
 
-from ..classes.user import GuildMember
-from ..config import Config
-from ..snowflake import Snowflake
-from ..ctx import Ctx
-from ..enums import GatewayOp, ChannelType
+from ..yepcord.classes.user import GuildMember
+from ..yepcord.config import Config
+from ..yepcord.snowflake import Snowflake
+from ..yepcord.ctx import Ctx
+from ..yepcord.enums import GatewayOp, ChannelType
 
 
 class Event:

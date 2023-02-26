@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from time import mktime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from dateutil.parser import parse as dparse
 from pymysql.converters import escape_string
@@ -12,7 +12,7 @@ from .user import UserId
 from ..config import Config
 from ..ctx import getCore, Ctx
 from ..enums import MessageType
-from ..errors import EmbedErr, InvalidDataErr
+from ..errors import EmbedErr
 from ..model import Model, field, model
 from ..snowflake import Snowflake
 from ..utils import NoneType
