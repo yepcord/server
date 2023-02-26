@@ -416,11 +416,11 @@ class AuditLogEntry(Model):
         changes = [
             {"new_value": invite.code, "key": "code"},
             {"new_value": invite.channel_id, "key": "channel_id"},
-            {"new_value": invite.inviter_id, "key": "inviter_id"},
+            {"new_value": invite.inviter, "key": "inviter_id"},
             {"new_value": invite.uses, "key": "uses"},
             {"new_value": invite.max_uses, "key": "max_uses"},
             {"new_value": invite.max_age, "key": "max_age"},
-            {"new_value": invite.temporary, "key": "temporary"}
+            {"new_value": False, "key": "temporary"}
         ]
         return AuditLogEntry(Snowflake.makeId(), invite.guild_id, user.id, invite.id, AuditLogEntryType.INVITE_CREATE,
                               changes=changes)
