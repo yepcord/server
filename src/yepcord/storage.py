@@ -460,7 +460,7 @@ class FTPStorage(_Storage):
                     raise
 
 def getStorage() -> _Storage:
-    storage = Config.get("STORAGE_TYPE")
+    storage = Config.get("STORAGE_TYPE", "")
     if storage.lower() == "s3":
         a = (Config.get("S3_ENDPOINT"), Config.get("S3_KEYID"), Config.get("S3_ACCESSKEY"), Config.get("S3_BUCKET"))
         if None in a:
