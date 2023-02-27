@@ -166,7 +166,7 @@ class JWT:
             assert header_dict.get("typ") == "JWT"
             assert (exp := header_dict.get("exp", 0)) > time() or exp == 0
             signature = b64decode(signature)
-        except (IndexError, AssertionError, ValueError) as e:
+        except (IndexError, AssertionError, ValueError):
             return
 
         sig = f"{header}.{payload}".encode("utf8")

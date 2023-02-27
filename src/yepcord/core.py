@@ -559,10 +559,6 @@ class Core(Singleton):
             await db.putUserNote(note)
         await self.mcl.broadcast("user_events", {"e": "note_update", "data": {"user": note.user_id, "uid": note.note_user_id, "note": note.note}})
 
-    #async def putUserConnection(self, uc: UserConnection) -> None: # TODO: implement UserConnection
-    #    async with self.db() as db:
-    #        await db.putUserConnection(uc)
-
     async def putAttachment(self, attachment: Attachment) -> None:
         async with self.db() as db:
             await db.putAttachment(attachment)

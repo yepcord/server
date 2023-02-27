@@ -150,9 +150,6 @@ class DBConnection(ABC):
     @abstractmethod
     async def putUserNote(self, note: UserNote) -> None: ...
 
-    #@abstractmethod # TODO: implement UserConnection
-    #async def putUserConnection(self, uc: UserConnection) -> None: ...
-
     @abstractmethod
     async def putAttachment(self, attachment: Attachment) -> None: ...
 
@@ -635,12 +632,6 @@ class MySqlConnection:
             fields = ", ".join([f"`{f}`" for f, v in q])
             values = ", ".join([f"{v}" for f, v in q])
             await self.cur.execute(f'INSERT INTO `notes` ({fields}) VALUES ({values});')
-
-    #async def putUserConnection(self, uc: UserConnection) -> None: # TODO: implement UserConnection
-    #    q = json_to_sql(uc.to_sql_json(uc.to_typed_json, with_id=True), as_tuples=True)
-    #    fields = ", ".join([f"`{f}`" for f, v in q])
-    #    values = ", ".join([f"{v}" for f, v in q])
-    #    await self.cur.execute(f'INSERT INTO `connections` ({fields}) VALUES ({values});')
 
     async def putAttachment(self, attachment: Attachment) -> None:
         q = json_to_sql(attachment.toJSON(for_db=True), as_tuples=True)

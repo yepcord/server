@@ -52,7 +52,6 @@ cdn = CDN(getStorage(), core)
 app.gifs = Gifs(Config("TENOR_KEY"))
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
-#app.url_map.strict_slashes = False
 
 @app.before_serving
 async def before_serving():

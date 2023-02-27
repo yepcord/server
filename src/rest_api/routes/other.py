@@ -1,14 +1,9 @@
-from quart import Blueprint, request
+from quart import Blueprint
 
-from ..utils import usingDB, getUser, multipleDecorators
-from ...yepcord.classes.user import User, UserFlags
-from ...yepcord.ctx import getCore
-from ...yepcord.enums import UserFlags as UserFlagsE
 from ...yepcord.errors import InvalidDataErr, Errors
-
-# Base path is /
 from ...yepcord.utils import c_json
 
+# Base path is /
 other = Blueprint('other', __name__)
 
 

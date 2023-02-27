@@ -26,7 +26,7 @@ try:
 
     _SUPPORT_S3 = True
 except ImportError:
-    Session = None
+    Session = object
     ClientError = None
     _SUPPORT_S3 = False
 
