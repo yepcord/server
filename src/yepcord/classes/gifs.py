@@ -4,6 +4,8 @@ from typing import List
 
 from aiohttp import ClientSession
 
+from .other import Singleton
+
 
 @dataclass
 class _J:
@@ -44,7 +46,7 @@ class GifSuggestion(_J):
     time: int
 
 
-class Gifs:
+class Gifs(Singleton):
     def __init__(self, key: str = None, keep_searches: int = 100):
         self._key = key
         self._categories = []

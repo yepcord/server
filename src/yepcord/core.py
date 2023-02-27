@@ -26,7 +26,7 @@ from .snowflake import Snowflake
 from .utils import b64encode, b64decode, MFA, execute_after, int_length, NoneType
 
 
-class CDN:
+class CDN(Singleton):
     def __init__(self, storage, core):
         self.storage = storage
         self.core = core
@@ -1288,4 +1288,5 @@ class Core(Singleton):
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()
+c._getCDNStorage = lambda: CDN.getInstance().storage
 from .ctx import Ctx

@@ -8,7 +8,7 @@ from quart import Quart, request
 
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
-from ..yepcord.storage import FileStorage, S3Storage, FTPStorage
+from ..yepcord.storage import getStorage
 from ..yepcord.utils import b64decode, ALLOWED_AVATAR_SIZES
 
 
@@ -17,20 +17,7 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-api")
 core = Core(b64decode(Config("KEY")))
-storage = Config("STORAGE_TYPE")
-if storage == "local" or storage is None:
-    storage = FileStorage(Config("STORAGE_PATH", "files/"))
-elif storage.lower() == "s3":
-    a = (Config("S3_ENDPOINT"), Config("S3_KEYID"), Config("S3_ACCESSKEY"), Config("S3_BUCKET"))
-    if None in a:
-        raise Exception("You must set 'S3_ENDPOINT', 'S3_KEYID', 'S3_ACCESSKEY', 'S3_BUCKET' variables for using s3 storage type.")
-    storage = S3Storage(*a)
-elif storage.lower() == "ftp":
-    a = (Config("FTP_HOST"), Config("FTP_USER"), Config("FTP_PASSWORD"), int(Config("FTP_PORT", 21)))
-    if None in a:
-        raise Exception("You must set 'FTP_HOST', 'FTP_USER', 'FTP_PASSWORD' variables for using ftp storage type.")
-    storage = FTPStorage(*a)
-cdn = CDN(storage, core)
+cdn = CDN(getStorage(), core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 

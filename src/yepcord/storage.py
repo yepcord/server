@@ -9,6 +9,8 @@ from typing import Optional, Tuple, Union
 from PIL import Image, ImageSequence
 from aiofiles import open as aopen
 
+from .config import Config
+
 try:
     from aioftp import Client, StatusCodeError
 
@@ -456,3 +458,19 @@ class FTPStorage(_Storage):
             except ClientError as ce:
                 if "(404)" not in str(ce):
                     raise
+
+def getStorage() -> _Storage:
+    storage = Config.get("STORAGE_TYPE")
+    if storage.lower() == "s3":
+        a = (Config.get("S3_ENDPOINT"), Config.get("S3_KEYID"), Config.get("S3_ACCESSKEY"), Config.get("S3_BUCKET"))
+        if None in a:
+            raise Exception(
+                "You must set 'S3_ENDPOINT', 'S3_KEYID', 'S3_ACCESSKEY', 'S3_BUCKET' variables for using s3 storage type."
+            )
+        return S3Storage(*a)
+    elif storage.lower() == "ftp":
+        a = (Config.get("FTP_HOST"), Config.get("FTP_USER"), Config.get("FTP_PASSWORD"), int(Config.get("FTP_PORT", 21)))
+        if None in a:
+            raise Exception("You must set 'FTP_HOST', 'FTP_USER', 'FTP_PASSWORD' variables for using ftp storage type.")
+        return FTPStorage(*a)
+    return FileStorage(Config.get("STORAGE_PATH", "files/"))

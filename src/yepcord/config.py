@@ -35,5 +35,8 @@ class _Config:
     def __getitem__(self, item):
         return self(item)
 
+    def get(self, name, default=None):
+        return self(name, default)
+
 
 Config = _Config()
