@@ -16,7 +16,7 @@ try:
 
     _SUPPORT_FTP = True
 except ImportError:
-    Client = None
+    Client = object
     StatusCodeError = None
     _SUPPORT_FTP = False
 
