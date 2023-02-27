@@ -1,9 +1,10 @@
 __pycache__
 env*
-files/
-.idea/
+/files
+/.idea
 endpoints.*
 .local
 /rp
 *.db
 .coverage
+/ssl/*.pem

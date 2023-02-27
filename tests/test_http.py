@@ -2,8 +2,8 @@ from asyncio import get_event_loop
 from base64 import b64encode
 
 import pytest as pt
-from server.http_api.main import app
-from server.proto import PreloadedUserSettings, TextAndImagesSettings, RenderSpoilers
+from src.rest_api.main import app
+from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, RenderSpoilers
 
 
 class TestVars:
