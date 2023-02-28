@@ -134,9 +134,10 @@ async def get_settings(user: User):
 @users_me.patch("/settings")
 @multipleDecorators(usingDB, getUser)
 async def update_settings(user: User):
-    settings = await request.get_json()
-    if "uid" in settings: del settings["uid"]
-    new_settings = settings.copy(**settings)
+    new_settings = await request.get_json()
+    if "uid" in new_settings: del new_settings["uid"]
+    settings = await user.settings
+    new_settings = settings.copy(**new_settings)
     await getCore().setSettingsDiff(settings, new_settings)
     await getCore().sendUserUpdateEvent(user.id)
     return c_json(await new_settings.json)
