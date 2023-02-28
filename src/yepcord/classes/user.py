@@ -121,9 +121,57 @@ class UserSettings(Model):
 
     @property
     async def json(self) -> dict:
-        data = self.toJSON()
-        data["mfa"] = bool(data["mfa"])
+        data = {
+            "locale": self.locale,
+            "show_current_game": self.show_current_game,
+            "restricted_guilds": self.restricted_guilds,
+            "default_guilds_restricted": self.default_guilds_restricted,
+            "inline_attachment_media": self.inline_attachment_media,
+            "inline_embed_media": self.inline_attachment_media,
+            "gif_auto_play": self.gif_auto_play,
+            "render_embeds": self.render_embeds,
+            "render_reactions": self.render_reactions,
+            "animate_emoji": self.animate_emoji,
+            "enable_tts_command": self.enable_tts_command,
+            "message_display_compact": self.message_display_compact,
+            "convert_emoticons": self.convert_emoticons,
+            "explicit_content_filter": self.explicit_content_filter,
+            "disable_games_tab": self.disable_games_tab,
+            "theme": self.theme,
+            "developer_mode": self.developer_mode,
+            "guild_positions": self.guild_positions,
+            "detect_platform_accounts": self.detect_platform_accounts,
+            "status": self.status,
+            "afk_timeout": self.afk_timeout,
+            "timezone_offset": self.timezone_offset,
+            "stream_notifications_enabled": self.stream_notifications_enabled,
+            "allow_accessibility_detection": self.allow_accessibility_detection,
+            "contact_sync_enabled": self.contact_sync_enabled,
+            "native_phone_integration_enabled": self.native_phone_integration_enabled,
+            "animate_stickers": self.animate_stickers,
+            "friend_discovery_flags": self.friend_discovery_flags,
+            "view_nsfw_guilds": self.view_nsfw_guilds,
+            "view_nsfw_commands": self.view_nsfw_commands,
+            "passwordless": self.passwordless,
+            "friend_source_flags": self.friend_source_flags,
+            "guild_folders": self.guild_folders,
+            "custom_status": self.custom_status,
+            "activity_restricted_guild_ids": self.activity_restricted_guild_ids
+        }
+        if data["status"] == "offline":
+            data["status"] = "invisible"
         return data
+
+    @property
+    def consent_json(self) -> dict:
+        return {
+            "personalization": {
+                "consented": self.personalization
+            },
+            "usage_statistics": {
+                "consented": self.usage_statistics
+            }
+        }
 
     def to_proto(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
@@ -277,6 +325,30 @@ class UserData(Model):
         }
 
     @property
+    async def full_json(self) -> dict:
+        user = await getCore().getUser(self.uid)
+        settings = await user.settings
+        return {
+            "id": str(self.uid),
+            "username": self.username,
+            "avatar": self.avatar,
+            "avatar_decoration": self.avatar_decoration,
+            "discriminator": self.s_discriminator,
+            "public_flags": self.public_flags,
+            "flags": self.flags,
+            "banner": self.banner,
+            "banner_color": self.banner_color,
+            "accent_color": self.accent_color,
+            "bio": self.bio,
+            "locale": settings.locale,
+            "nsfw_allowed": self.nsfw_allowed,
+            "mfa_enabled": settings.mfa,
+            "email": user.email,
+            "verified": True,
+            "phone": self.phone
+        }
+
+    @property
     def s_discriminator(self) -> str:
         return str(self.discriminator).rjust(4, "0")
 
@@ -330,6 +402,43 @@ class User(_User, Model):
         if not self._uFrecencySettings:
             self._uFrecencySettings = await getCore().getFrecencySettings(self)
         return b64decode(self._uFrecencySettings.encode("utf8"))
+
+    async def profile(self, other_user: User, with_mutual_guilds: bool=False, mutual_friends_count: bool=False,
+                      guild_id: int=None) -> dict:
+        data = await self.data
+        premium_since = Snowflake.toDatetime(self.id).strftime("%Y-%m-%dT%H:%M:%SZ")
+        data = {
+            "user": {
+                "id": str(self.id),
+                "username": data.username,
+                "avatar": data.avatar,
+                "avatar_decoration": data.avatar_decoration,
+                "discriminator": data.s_discriminator,
+                "public_flags": data.public_flags,
+                "flags": data.flags,
+                "banner": data.banner,
+                "banner_color": data.banner_color,
+                "accent_color": data.accent_color,
+                "bio": data.bio
+            },
+            "connected_accounts": [],  # TODO
+            "premium_since": premium_since,
+            "premium_guild_since": premium_since,
+            "user_profile": {
+                "bio": data.bio,
+                "accent_color": data.accent_color
+            }
+        }
+        if guild_id and (guild := await getCore().getGuild(guild_id)):
+            if member := await getCore().getGuildMember(guild, self.id):
+                data["guild_member_profile"] = {"guild_id": str(guild_id)}
+                data["guild_member"] = await member.json
+        if mutual_friends_count:
+            data["mutual_friends_count"] = 0  # TODO
+        if with_mutual_guilds:
+            data["mutual_guilds"] = await getCore().getMutualGuilds(self, other_user)
+
+        return data
 
 @model
 @dataclass

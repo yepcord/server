@@ -4,7 +4,8 @@ from typing import Optional
 
 from schema import Or, Use
 
-from ..ctx import getCore
+from .user import UserId
+from ..ctx import getCore, Ctx
 from ..enums import ChannelType
 from ..model import model, field, Model
 from ..utils import NoneType
@@ -53,6 +54,45 @@ class Channel(_Channel, Model):
 
     @property
     async def json(self) -> dict:
+        """
+        Returns dict object for discord.
+        Set Ctx["user_id"] to True when Channel.type is ChannelType.DM or ChannelType.GROUP_DM to remove current user
+          id from result.
+        Set Ctx["user_id"] to False when Channel.type is ChannelType.DM or ChannelType.GROUP_DM to return users ids list
+          in recipients field instead of users data.
+        :return:
+        """
+        last_message_id = str(self.last_message_id) if self.last_message_id is not None else self.last_message_id
+        if self.type in (ChannelType.DM, ChannelType.GROUP_DM):
+            recipients = self.recipients.copy()
+            if user_id := Ctx.get("user_id"):
+                recipients.remove(user_id)
+            with_ids = Ctx.get("with_ids", True)
+            if not with_ids:
+                _recipients = recipients
+                recipients = []
+                for u in _recipients:
+                    userdata = await getCore().getUserData(UserId(u))
+                    recipients.append(await userdata.json)
+            else:
+                recipients = [str(recipient) for recipient in recipients]
+            if self.type == ChannelType.DM:
+                return {
+                    "type": self.type,
+                    "recipient_ids" if with_ids else "recipients": recipients,
+                    "last_message_id": last_message_id,
+                    "id": str(self.id)
+                }
+            elif self.type == ChannelType.GROUP_DM:
+                return {
+                    "type": self.type,
+                    "recipient_ids" if with_ids else "recipients": recipients,
+                    "last_message_id": last_message_id,
+                    "id": str(self.id),
+                    "owner_id": str(self.owner_id),
+                    "name": self.name,
+                    "icon": self.icon
+                }
         if self.type == ChannelType.GUILD_CATEGORY:
             return {
                 "type": self.type,
@@ -77,7 +117,7 @@ class Channel(_Channel, Model):
                 ],
                 "parent_id": str(self.parent_id) if self.parent_id is not None else self.parent_id,
                 "name": self.name,
-                "last_message_id": str(self.last_message_id) if self.last_message_id is not None else self.last_message_id,
+                "last_message_id": last_message_id,
                 "id": str(self.id),
                 "flags": self.flags,
                 "guild_id": str(self.guild_id),
@@ -95,7 +135,7 @@ class Channel(_Channel, Model):
                 ],
                 "parent_id": str(self.parent_id) if self.parent_id is not None else self.parent_id,
                 "name": self.name,
-                "last_message_id": str(self.last_message_id) if self.last_message_id is not None else self.last_message_id,
+                "last_message_id": last_message_id,
                 "id": str(self.id),
                 "flags": self.flags,
                 "bitrate": self.bitrate,
