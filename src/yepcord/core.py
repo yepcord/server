@@ -172,10 +172,13 @@ class Core(Singleton):
     async def checkUserPassword(self, user: User, password: str) -> bool:
         return checkpw(self.prepPassword(password, user.id), user.password.encode("utf8"))
 
-    async def changeUserDiscriminator(self, user: User, discriminator: int) -> bool:
+    async def changeUserDiscriminator(self, user: User, discriminator: int, changed_username: bool=False) -> bool:
         username = (await user.data).username
         if await self.getUserByUsername(username, discriminator):
-            return False
+            if changed_username:
+                return False
+            raise InvalidDataErr(400, Errors.make(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS",
+                                                                       "message": "This discriminator already used by someone. Please enter something else."}}))
         data = await user.data
         ndata = data.copy(discriminator=discriminator)
         async with self.db() as db:
@@ -639,7 +642,7 @@ class Core(Singleton):
         signature = token.split(".")[2]
         return signature.replace("-", "").replace("_", "")[:8].upper()
 
-    async def createDMGroupChannel(self, user: User, recipients: list) -> Channel:
+    async def createDMGroupChannel(self, user: User, recipients: list, name: Optional[str]=None) -> Channel:
         if user.id not in recipients:
             recipients.append(user.id)
         async with self.db() as db:

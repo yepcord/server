@@ -2,6 +2,7 @@ from json import dumps as jdumps
 
 from quart import Quart, request
 from quart.globals import request_ctx
+from quart_schema import QuartSchema
 
 from .routes.auth import auth
 from .routes.channels import channels
@@ -47,6 +48,7 @@ class YEPcord(Quart):
 
 
 app = YEPcord("YEPcord-api")
+QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
 app.gifs = Gifs(Config("TENOR_KEY"))

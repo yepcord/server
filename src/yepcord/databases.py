@@ -681,9 +681,11 @@ class MySqlConnection:
     async def changeUserEmail(self, uid: int, email: str) -> None:
         await self.cur.execute(f'UPDATE `users` SET `email`="{escape_string(email)}", `verified`=false WHERE `id`={uid};')
 
-    async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int) -> Channel:
-        await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`) VALUES ({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(jdumps(recipients))}", {owner_id});')
-        return Channel(channel_id, ChannelType.GROUP_DM, recipients=recipients, owner_id=owner_id, icon=None, name=None)
+    async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int, name: Optional[str]=None) -> Channel:
+        await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`, `name`) VALUES '
+                               f'({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(jdumps(recipients))}", '
+                               f'{owner_id}, "{escape_string(name)}");')
+        return Channel(channel_id, ChannelType.GROUP_DM, recipients=recipients, owner_id=owner_id, icon=None, name=name)
 
     async def updateChannelDiff(self, before: Channel, after: Channel) -> None:
         diff = before.get_diff(after)
