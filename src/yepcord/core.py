@@ -262,7 +262,7 @@ class Core(Singleton):
                     "avatar_decoration": d.avatar_decoration,
                     "avatar": d.avatar
                 })
-            for channel in await db.getPrivateChannels(user):
+            for channel in await db.getPrivateChannels(user, with_hidden=True):
                 uids = channel.recipients.copy()
                 uids.remove(user.id)
                 for uid in uids:
@@ -404,6 +404,9 @@ class Core(Singleton):
         async with self.db() as db:
             if not (channel := await db.getDMChannel(u1, u2)):
                 return await self.createDMChannel([u1, u2])
+        if await self.isDmChannelHidden(UserId(u1), channel):
+            await self.unhideDmChannel(UserId(u1), channel)
+            await self.sendDMChannelCreateEvent(channel=channel, users=[u1])
         return await self.getLastMessageIdForChannel(channel)
 
     async def getLastMessageIdForChannel(self, channel: Channel) -> Channel:
@@ -423,32 +426,9 @@ class Core(Singleton):
             channel = await db.createDMChannel(cid, recipients)
         return channel.set(last_message_id=None)
 
-    async def getPrivateChannels(self, user: _User) -> list:
+    async def getPrivateChannels(self, user: _User, with_hidden: bool=False) -> List[Channel]:
         async with self.db() as db:
-            _channels = [await self.getLastMessageIdForChannel(channel) for channel in await db.getPrivateChannels(user)]
-        channels = []
-        for channel in _channels:
-            ids = channel.recipients.copy()
-            ids.remove(user.id)
-            ids = [str(i) for i in ids]
-            if channel.type == ChannelType.DM:
-                channels.append({
-                    "type": channel.type,
-                    "recipient_ids": ids,
-                    "last_message_id": channel.last_message_id,
-                    "id": str(channel.id)
-                })
-            elif channel.type == ChannelType.GROUP_DM:
-                channels.append({
-                    "type": channel.type,
-                    "recipient_ids": ids,
-                    "last_message_id": channel.last_message_id,
-                    "id": str(channel.id),
-                    "owner_id": str(channel.owner_id),
-                    "name": channel.name,
-                    "icon": channel.icon
-                })
-        return channels
+            return [await self.getLastMessageIdForChannel(channel) for channel in await db.getPrivateChannels(user, with_hidden=with_hidden)]
 
     async def getChannelMessages(self, channel, limit: int, before: int=None, after: int=None) -> List[Message]:
         async with self.db() as db:
@@ -1285,6 +1265,18 @@ class Core(Singleton):
                                  {"e": "webhooks_update", "data": {"users": [guild.owner_id],
                                                                    "guild_id": webhook.guild_id,
                                                                    "channel_id": webhook.channel_id}})
+
+    async def hideDmChannel(self, user: _User, channel: Channel) -> None:
+        async with self.db() as db:
+            await db.hideDmChannel(user, channel)
+
+    async def unhideDmChannel(self, user: _User, channel: Channel) -> None:
+        async with self.db() as db:
+            await db.unhideDmChannel(user, channel)
+
+    async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool:
+        async with self.db() as db:
+            return await db.isDmChannelHidden(user, channel)
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()

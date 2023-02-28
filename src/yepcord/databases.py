@@ -118,7 +118,7 @@ class DBConnection(ABC):
     async def createDMChannel(self, channel_id: int, recipients: List[int]) -> Channel: ...
 
     @abstractmethod
-    async def getPrivateChannels(self, user: _User) -> List[Channel]: ...
+    async def getPrivateChannels(self, user: _User, with_hidden: bool=False) -> List[Channel]: ...
 
     @abstractmethod
     async def getChannelMessages(self, channel, limit: int, before: int = None, after: int = None) -> List[Message]: ...
@@ -381,6 +381,15 @@ class DBConnection(ABC):
     @abstractmethod
     async def getWebhook(self, webhook_id: int) -> Optional[Webhook]: ...
 
+    @abstractmethod
+    async def hideDmChannel(self, user: User, channel: Channel) -> None: ...
+
+    @abstractmethod
+    async def unhideDmChannel(self, user: User, channel: Channel) -> None: ...
+
+    @abstractmethod
+    async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -558,9 +567,12 @@ class MySqlConnection:
         await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`) VALUES ({channel_id}, {ChannelType.DM}, "{recipients}");')
         return Channel(channel_id, ChannelType.DM, recipients=recipients)
 
-    async def getPrivateChannels(self, user: _User) -> List[Channel]:
+    async def getPrivateChannels(self, user: _User, with_hidden: bool=False) -> List[Channel]:
         channels = []
-        await self.cur.execute(f'SELECT * FROM channels WHERE JSON_CONTAINS(channels.j_recipients, {user.id}, "$");')
+        hidden = ""
+        if not with_hidden:
+            hidden = f' AND `id` NOT IN (SELECT `channel_id` from `hidden_dm_channels` WHERE `user_id`={user.id})'
+        await self.cur.execute(f'SELECT * FROM channels WHERE JSON_CONTAINS(channels.j_recipients, {user.id}, "$"){hidden};')
         for r in await self.cur.fetchall():
             channels.append(Channel.from_result(self.cur.description, r))
         return channels
@@ -1115,3 +1127,15 @@ class MySqlConnection:
         await self.cur.execute(f'SELECT * FROM `webhooks` WHERE `id`={webhook_id};')
         if r := await self.cur.fetchone():
             return Webhook.from_result(self.cur.description, r)
+
+    async def hideDmChannel(self, user: User, channel: Channel) -> None:
+        await self.cur.execute(f'INSERT INTO `hidden_dm_channels` VALUES ({user.id}, {channel.id}) '
+                               f'ON DUPLICATE KEY UPDATE `user_id`=`user_id`;') # Ignore duplicate key error
+
+    async def unhideDmChannel(self, user: User, channel: Channel) -> None:
+        await self.cur.execute(f'DELETE FROM `hidden_dm_channels` WHERE `user_id`={user.id} '
+                               f'AND `channel_id`={channel.id} LIMIT 1;')
+
+    async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool:
+        await self.cur.execute(f'SELECT * FROM `hidden_dm_channels` WHERE `user_id`={user.id} AND `channel_id`={channel.id};')
+        return bool(await self.cur.fetchone())

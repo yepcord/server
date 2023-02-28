@@ -228,6 +228,14 @@ CREATE TABLE `channels` (
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
+DROP TABLE IF EXISTS `hidden_dm_channels`;
+CREATE TABLE `hidden_dm_channels` (
+  `user_id` bigint NOT NULL,
+  `channel_id` bigint NOT NULL,
+  PRIMARY KEY (`user_id`, `channel_id`),
+  FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
 DROP TABLE IF EXISTS `permission_overwrites`;
 CREATE TABLE `permission_overwrites` (
   `channel_id` bigint NOT NULL,
@@ -359,13 +367,6 @@ CREATE TABLE `notes` (
   FOREIGN KEY (`uid`) REFERENCES `users`(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`target_uid`) REFERENCES `users`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
-#DROP TABLE IF EXISTS `guild_templates`;
-#CREATE TABLE `guild_templates` (
-#  `id` bigint NOT NULL,
-#  `updated_at` bigint NOT NULL,
-#  `template` JSON NOT NULL DEFAULT "{}"
-#) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 #DROP TABLE IF EXISTS `connections`;
 #CREATE TABLE `connections` (

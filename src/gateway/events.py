@@ -74,7 +74,7 @@ class ReadyEvent(DispatchEvent):
                 "guild_experiments": [], # TODO
                 "guild_join_requests": [], # TODO
                 "merged_members": [], # TODO
-                "private_channels": await self.core.getPrivateChannels(self.user),
+                "private_channels": [await channel.json for channel in await self.core.getPrivateChannels(self.user)],
                 "read_state": {
                     "version": 1,
                     "partial": False,

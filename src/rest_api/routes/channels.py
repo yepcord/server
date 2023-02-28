@@ -79,7 +79,7 @@ async def update_channel(user: User, channel: Channel):
 @multipleDecorators(usingDB, getUser, getChannel)
 async def delete_channel(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
-        # TODO: hide dm channel
+        await getCore().hideDmChannel(user, channel)
         await getCore().sendDMChannelDeleteEvent(channel, users=[user.id])
         return c_json(await channel.json)
     elif channel.type == ChannelType.GROUP_DM:

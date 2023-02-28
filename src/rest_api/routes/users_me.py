@@ -6,7 +6,7 @@ from quart import Blueprint, request
 from ..utils import usingDB, getSession, getUser, multipleDecorators, getGuildWM
 from ...yepcord.classes.guild import Guild
 from ...yepcord.classes.user import Session, User, GuildMember, UserSettings, UserNote
-from ...yepcord.ctx import getCore, getCDNStorage
+from ...yepcord.ctx import getCore, getCDNStorage, Ctx
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import c_json, execute_after, MFA, validImage, getImage
@@ -349,13 +349,14 @@ async def leave_guild(user: User, guild: Guild, member: GuildMember):
     return "", 204
 
 
-@users_me.get("/api/v9/users/@me/channels")
+@users_me.get("/channels")
 @multipleDecorators(usingDB, getUser)
 async def get_dm_channels(user: User):
-    return c_json(await getCore().getPrivateChannels(user))
+    channels = [await channel.json for channel in await getCore().getPrivateChannels(user)]
+    return c_json(channels)
 
 
-@users_me.post("/api/v9/users/@me/channels")
+@users_me.post("/channels")
 @multipleDecorators(usingDB, getUser)
 async def new_dm_channel(user: User):
     data = await request.get_json()

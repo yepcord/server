@@ -62,6 +62,7 @@ class Channel(_Channel, Model):
           in recipients field instead of users data.
         :return:
         """
+        last_message_id = str(self.last_message_id) if self.last_message_id is not None else self.last_message_id
         if self.type in (ChannelType.DM, ChannelType.GROUP_DM):
             recipients = self.recipients.copy()
             if user_id := Ctx.get("user_id"):
@@ -73,18 +74,20 @@ class Channel(_Channel, Model):
                 for u in _recipients:
                     userdata = await getCore().getUserData(UserId(u))
                     recipients.append(await userdata.json)
+            else:
+                recipients = [str(recipient) for recipient in recipients]
             if self.type == ChannelType.DM:
                 return {
                     "type": self.type,
                     "recipient_ids" if with_ids else "recipients": recipients,
-                    "last_message_id": self.last_message_id,
+                    "last_message_id": last_message_id,
                     "id": str(self.id)
                 }
             elif self.type == ChannelType.GROUP_DM:
                 return {
                     "type": self.type,
                     "recipient_ids" if with_ids else "recipients": recipients,
-                    "last_message_id": self.last_message_id,
+                    "last_message_id": last_message_id,
                     "id": str(self.id),
                     "owner_id": str(self.owner_id),
                     "name": self.name,
@@ -114,7 +117,7 @@ class Channel(_Channel, Model):
                 ],
                 "parent_id": str(self.parent_id) if self.parent_id is not None else self.parent_id,
                 "name": self.name,
-                "last_message_id": str(self.last_message_id) if self.last_message_id is not None else self.last_message_id,
+                "last_message_id": last_message_id,
                 "id": str(self.id),
                 "flags": self.flags,
                 "guild_id": str(self.guild_id),
@@ -132,7 +135,7 @@ class Channel(_Channel, Model):
                 ],
                 "parent_id": str(self.parent_id) if self.parent_id is not None else self.parent_id,
                 "name": self.name,
-                "last_message_id": str(self.last_message_id) if self.last_message_id is not None else self.last_message_id,
+                "last_message_id": last_message_id,
                 "id": str(self.id),
                 "flags": self.flags,
                 "bitrate": self.bitrate,
