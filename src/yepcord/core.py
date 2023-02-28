@@ -9,6 +9,7 @@ from os import urandom
 from random import randint
 from time import time
 from typing import Optional, Union, List, Tuple, Dict
+
 from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel, PermissionOverwrite, _Channel
@@ -21,7 +22,6 @@ from .databases import MySQL
 from .enums import RelationshipType, ChannelType
 from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .pubsub_client import Broadcaster
-from .responses import channelInfoResponse
 from .snowflake import Snowflake
 from .utils import b64encode, b64decode, MFA, execute_after, int_length, NoneType
 
@@ -158,6 +158,10 @@ class Core(Singleton):
     async def setUserdata(self, userdata: UserData) -> None:
         async with self.db() as db:
             await db.setUserData(userdata)
+
+    async def setUserdataDiff(self, before: UserData, after: UserData) -> None:
+        async with self.db() as db:
+            await db.setUserDataDiff(before, after)
 
     async def getUserProfile(self, uid: int, cUser: _User) -> User:
         # TODO: check for relationship, mutual guilds or mutual friends
@@ -969,7 +973,7 @@ class Core(Singleton):
     async def sendChannelUpdateEvent(self, channel: Channel) -> None:
         await self.mcl.broadcast("guild_events", {"e": "channel_update",
                                                   "data": {"users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
-                                                           "channel_obj": await channelInfoResponse(channel)}})
+                                                           "channel_obj": await channel.json}})
 
     async def createGuildChannel(self, channel: Channel) -> Channel:
         async with self.db() as db:
@@ -980,13 +984,13 @@ class Core(Singleton):
         await self.mcl.broadcast("guild_events", {"e": "channel_create",
                                                   "data": {
                                                       "users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
-                                                      "channel_obj": await channelInfoResponse(channel)}})
+                                                      "channel_obj": await channel.json}})
 
     async def sendGuildChannelDeleteEvent(self, channel: Channel) -> None:
         await self.mcl.broadcast("guild_events", {"e": "channel_delete",
                                                   "data": {
                                                       "users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
-                                                      "channel_obj": await channelInfoResponse(channel)}})
+                                                      "channel_obj": await channel.json}})
 
     async def createGuildMember(self, guild: Guild, user: _User) -> GuildMember:
         member = GuildMember(user.id, guild.id, int(time()))

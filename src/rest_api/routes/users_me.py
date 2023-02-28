@@ -5,11 +5,10 @@ from quart import Blueprint, request
 
 from ..utils import usingDB, getSession, getUser, multipleDecorators, getGuildWM
 from ...yepcord.classes.guild import Guild
-from ...yepcord.classes.user import Session, User, GuildMember, UserSettings, UserNote, UserData
+from ...yepcord.classes.user import Session, User, GuildMember, UserSettings, UserNote
 from ...yepcord.ctx import getCore, getCDNStorage
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
-from ...yepcord.responses import userSettingsResponse, userConsentResponse, userdataResponse, channelInfoResponse
 from ...yepcord.utils import c_json, execute_after, MFA, validImage, getImage
 
 # Base path is /api/vX/users/@me
@@ -19,16 +18,17 @@ users_me = Blueprint('users_@me', __name__)
 @users_me.get("/", strict_slashes=False)
 @multipleDecorators(usingDB, getUser)
 async def get_me(user: User):
-    return c_json(await userdataResponse(user))
+    userdata = await user.data
+    return c_json(await userdata.full_json)
 
 
 @users_me.patch("/", strict_slashes=False)
 @multipleDecorators(usingDB, getUser)
 async def update_me(user: User):
-    data = await user.data
+    userdata = await user.data
     _settings = await request.get_json()
-    d = "discriminator" in _settings and _settings.get("discriminator") != data.discriminator
-    u = "username" in _settings and _settings.get("username") != data.username
+    d = "discriminator" in _settings and _settings.get("discriminator") != userdata.discriminator
+    u = "username" in _settings and _settings.get("username") != userdata.username
     if d or u:
         if "password" not in _settings or not await getCore().checkUserPassword(user, _settings["password"]):
             raise InvalidDataErr(400, Errors.make(50035, {"password": {"code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."}}))
@@ -38,7 +38,7 @@ async def update_me(user: User):
         if d:
             if not await getCore().changeUserDiscriminator(user, int(_settings["discriminator"])):
                 if u:
-                    return c_json(await userdataResponse(user))
+                    return c_json(await userdata.full_json)
                 raise InvalidDataErr(400, Errors.make(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS", "message": "This discriminator already used by someone. Please enter something else."}}))
             del _settings["discriminator"]
     if "new_password" in _settings:
@@ -68,11 +68,13 @@ async def update_me(user: User):
             if not (v := await getCDNStorage().setBannerFromBytesIO(user.id, img)):
                 continue
         settings[k] = v
+    if "uid" in settings: del settings["uid"]
+    new_userdata = userdata.copy()
     if settings:
-        if "uid" in settings: del settings["uid"]
-        await getCore().setUserdata(UserData(user.id, **settings))
+        new_userdata.set(**settings)
+        await getCore().setUserdataDiff(userdata, new_userdata)
     await getCore().sendUserUpdateEvent(user.id)
-    return c_json(await userdataResponse(user))
+    return c_json(await new_userdata.full_json)
 
 
 @users_me.patch("/profile")
@@ -87,39 +89,46 @@ async def get_my_profile(user: User):
             if not (v := await getCDNStorage().setBannerFromBytesIO(user.id, img)):
                 continue
         settings[k] = v
+    if "uid" in settings: del settings["uid"]
+    userdata = await user.data
+    new_userdata = userdata.copy()
     if settings:
-        if "uid" in settings: del settings["uid"]
-        await getCore().setUserdata(UserData(user.id, **settings))
+        new_userdata.set(**settings)
+        await getCore().setUserdataDiff(userdata, new_userdata)
     await getCore().sendUserUpdateEvent(user.id)
-    return c_json(await userdataResponse(user))
+    return c_json(await new_userdata.full_json)
 
 
 @users_me.get("/consent")
 @multipleDecorators(usingDB, getUser)
 async def get_consent_settings(user: User):
-    return c_json(await userConsentResponse(user))
+    settings = await user.settings
+    return c_json(settings.consent_json)
 
 
 @users_me.post("/consent")
 @multipleDecorators(usingDB, getUser)
 async def update_consent_settings(user: User):
     data = await request.get_json()
+    settings = await user.settings
+    new_settings = settings
     if data["grant"] or data["revoke"]:
-        settings = {}
+        new_settings = {}
         for g in data.get("grant", []):
-            settings[g] = True
+            new_settings[g] = True
         for r in data.get("revoke", []):
-            settings[r] = False
-        if "uid" in settings: del settings["uid"]
-        s = UserSettings(user.id, **settings)
-        await getCore().setSettings(s)
-    return c_json(await userConsentResponse(user))
+            new_settings[r] = False
+        if "uid" in new_settings: del new_settings["uid"]
+        new_settings = settings.copy(**new_settings)
+        await getCore().setSettingsDiff(settings, new_settings)
+    return c_json(new_settings.consent_json)
 
 
 @users_me.get("/settings")
 @multipleDecorators(usingDB, getUser)
 async def get_settings(user: User):
-    return c_json(await userSettingsResponse(user))
+    settings = await user.settings
+    return c_json(await settings.json)
 
 
 @users_me.patch("/settings")
@@ -127,10 +136,10 @@ async def get_settings(user: User):
 async def update_settings(user: User):
     settings = await request.get_json()
     if "uid" in settings: del settings["uid"]
-    s = UserSettings(user.id, **settings)
-    await getCore().setSettings(s)
+    new_settings = settings.copy(**settings)
+    await getCore().setSettingsDiff(settings, new_settings)
     await getCore().sendUserUpdateEvent(user.id)
-    return c_json(await userSettingsResponse(user))
+    return c_json(await new_settings.json)
 
 
 @users_me.get("/settings-proto/1")
@@ -354,17 +363,18 @@ async def new_dm_channel(user: User):
     if len(rep) == 1:
         if int(rep[0]) == user.id:
             raise InvalidDataErr(400, Errors.make(50007))
-        ch = await getCore().getDMChannelOrCreate(user.id, rep[0])
+        channel = await getCore().getDMChannelOrCreate(user.id, rep[0])
     elif len(rep) == 0:
-        ch = await getCore().createDMGroupChannel(user, [])
+        channel = await getCore().createDMGroupChannel(user, [])
     else:
         if user.id in rep:
             rep.remove(user.id)
         if len(rep) == 0:
             raise InvalidDataErr(400, Errors.make(50007))
         elif len(rep) == 1:
-            ch = await getCore().getDMChannelOrCreate(user.id, rep[0])
+            channel = await getCore().getDMChannelOrCreate(user.id, rep[0])
         else:
-            ch = await getCore().createDMGroupChannel(user, rep)
-    await getCore().sendDMChannelCreateEvent(ch)
-    return c_json(await channelInfoResponse(ch, user, ids=False))
+            channel = await getCore().createDMGroupChannel(user, rep)
+    await getCore().sendDMChannelCreateEvent(channel)
+    Ctx["with_ids"] = False
+    return c_json(await channel.json)

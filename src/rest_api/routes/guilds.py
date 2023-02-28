@@ -10,7 +10,6 @@ from ...yepcord.classes.user import User, GuildMember, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx
 from ...yepcord.enums import GuildPermissions, AuditLogEntryType, ChannelType
 from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.responses import channelInfoResponse
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import c_json, validImage, getImage, b64decode
 
@@ -210,7 +209,7 @@ async def create_channel(user: User, guild: Guild, member: GuildMember):
 
     await getCore().setTemplateDirty(guild)
 
-    return await channelInfoResponse(channel)
+    return c_json(await channel.json)
 
 
 @guilds.get("/<int:guild>/invites")

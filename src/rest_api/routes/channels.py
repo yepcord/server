@@ -14,7 +14,6 @@ from ...yepcord.ctx import getCore, getCDNStorage, Ctx
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, RelationshipType, AuditLogEntryType, \
     WebhookType
 from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.responses import channelInfoResponse
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import c_json, validImage, getImage, b64encode
 
@@ -25,7 +24,7 @@ channels = Blueprint('channels', __name__)
 @channels.get("/<channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def get_channel(user: User, channel: Channel):
-    return c_json(await channelInfoResponse(channel, user))
+    return c_json(await channel.json)
 
 
 @channels.patch("/<int:channel>")
@@ -73,14 +72,16 @@ async def update_channel(user: User, channel: Channel):
         message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id, type=MessageType.CHANNEL_ICON_CHANGE, content="")
         await getCore().sendMessage(message)
     channel.set(**data)
-    return c_json(await channelInfoResponse(channel, user))
+    return c_json(await channel.json)
 
 
 @channels.delete("/<int:channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def delete_channel(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
-        return "", 204 # TODO: hide dm channel
+        # TODO: hide dm channel
+        await getCore().sendDMChannelDeleteEvent(channel, users=[user.id])
+        return c_json(await channel.json)
     elif channel.type == ChannelType.GROUP_DM:
         msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_REMOVE, extra_data={"user": user.id})
         await getCore().sendMessage(msg)
@@ -91,9 +92,9 @@ async def delete_channel(user: User, channel: Channel):
             await getCore().deleteChannel(channel)
         elif channel.owner_id == user.id:
             channel.recipients.remove(user.id)
-            nChannel = channel.copy()
-            nChannel.owner_id = choice(channel.recipients)
-            await getCore().updateChannelDiff(channel, nChannel)
+            new_channel = channel.copy()
+            new_channel.owner_id = choice(channel.recipients)
+            await getCore().updateChannelDiff(channel, new_channel)
             await getCore().sendDMChannelUpdateEvent(channel)
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
         member = await getCore().getGuildMember(GuildId(channel.guild_id), user.id)
@@ -108,7 +109,7 @@ async def delete_channel(user: User, channel: Channel):
 
         await getCore().setTemplateDirty(GuildId(channel.guild_id))
 
-        return await channelInfoResponse(channel)
+        return c_json(await channel.json)
     return "", 204
 
 
