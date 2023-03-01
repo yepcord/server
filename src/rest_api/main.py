@@ -4,6 +4,7 @@ from quart import Quart, request
 from quart.globals import request_ctx
 from quart_schema import QuartSchema
 
+from src.rest_api.routes.webhooks import webhooks
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
@@ -96,7 +97,7 @@ app.register_blueprint(users, url_prefix="/api/v9/users")
 app.register_blueprint(channels, url_prefix="/api/v9/channels")
 app.register_blueprint(invites, url_prefix="/api/v9/invites")
 app.register_blueprint(guilds, url_prefix="/api/v9/guilds")
-app.register_blueprint(guilds, url_prefix="/api/v9/webhooks")
+app.register_blueprint(webhooks, url_prefix="/api/v9/webhooks")
 app.register_blueprint(gifs, url_prefix="/api/v9/gifs")
 app.register_blueprint(hypesquad, url_prefix="/api/v9/hypesquad")
 app.register_blueprint(other, url_prefix="/")

@@ -649,7 +649,7 @@ class MySqlConnection:
         q = json_to_sql(attachment.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
-        await self.cur.execute(f'INSERT INTO `attachments` ({fields}) VALUES ({values});')
+        await self.cur.execute(f'set FOREIGN_KEY_CHECKS=0; INSERT INTO `attachments` ({fields}) VALUES ({values});')
 
     async def getAttachment(self, id: int) -> Optional[Attachment]:
         await self.cur.execute(f'SELECT * FROM `attachments` WHERE `id`="{id}"')
@@ -682,9 +682,10 @@ class MySqlConnection:
         await self.cur.execute(f'UPDATE `users` SET `email`="{escape_string(email)}", `verified`=false WHERE `id`={uid};')
 
     async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int, name: Optional[str]=None) -> Channel:
+        name = f'"{escape_string(name)}"' if name is not None else "NULL"
         await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`, `name`) VALUES '
                                f'({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(jdumps(recipients))}", '
-                               f'{owner_id}, "{escape_string(name)}");')
+                               f'{owner_id}, {name});')
         return Channel(channel_id, ChannelType.GROUP_DM, recipients=recipients, owner_id=owner_id, icon=None, name=name)
 
     async def updateChannelDiff(self, before: Channel, after: Channel) -> None:
@@ -1104,6 +1105,7 @@ class MySqlConnection:
         await self.cur.execute(f'DELETE FROM `guilds` WHERE `id`={guild.id} LIMIT 1;')
 
     async def putWebhook(self, webhook: Webhook) -> None:
+        print(webhook)
         q = json_to_sql(webhook.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])

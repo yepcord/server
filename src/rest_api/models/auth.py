@@ -1,31 +1,26 @@
-from dataclasses import dataclass
+from pydantic import BaseModel
 
 
-@dataclass
-class Register:
+class Register(BaseModel):
     username: str
     email: str
     password: str
     date_of_birth: str = "2000-01-01"
 
 
-@dataclass
-class Login:
+class Login(BaseModel):
     login: str
     password: str
 
 
-@dataclass
-class MfaLogin:
+class MfaLogin(BaseModel):
     ticket: str
     code: str
 
 
-@dataclass
-class ViewBackupCodes:
+class ViewBackupCodes(BaseModel):
     password: str
 
 
-@dataclass
-class VerifyEmail:
+class VerifyEmail(BaseModel):
     token: str

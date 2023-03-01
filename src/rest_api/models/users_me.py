@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import Optional, List
 
 
@@ -10,17 +10,16 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     avatar: Optional[str] = ""
 
-    def __post_init__(self):
-        if self.discriminator is not None:
-            if self.discriminator < 1 or self.discriminator > 9999:
-                self.discriminator = None
+    @validator("discriminator")
+    def validate_discriminator(cls, value: Optional[int]):
+        if value is not None:
+            if value < 1 or value > 9999:
+                value = None
+        return value
 
     @property
     def to_json(self) -> dict:
-        data = {}
-        if self.avatar != "":
-            data["avatar"] = self.avatar
-        return data
+        return self.dict(include={"avatar"})
 
 
 class UserProfileUpdate(BaseModel):
