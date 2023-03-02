@@ -341,3 +341,16 @@ class WebhookCreate(BaseModel):
                                  Errors.make(50035,
                                              {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         return value
+
+
+class SearchQuery(BaseModel):
+    author_id: Optional[int] = None
+    sort_by: Optional[str] = None
+    sort_order: Optional[str] = None
+    mentions: Optional[int] = None
+    has: Optional[str] = None
+    min_id: Optional[int] = None
+    max_id: Optional[int] = None
+    pinned: Optional[str] = None
+    offset: Optional[int] = None
+    content: Optional[str] = None

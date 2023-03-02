@@ -1,7 +1,9 @@
 from typing import Optional
 
 from quart import Blueprint, request
+from quart_schema import validate_request
 
+from ..models.webhooks import WebhookUpdate, WebhookMessageCreate
 from ..utils import usingDB, getUser, multipleDecorators, allowWithoutUser, processMessageData
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User
@@ -33,8 +35,8 @@ async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token:
 
 @webhooks.patch("/<int:webhook>")
 @webhooks.patch("/<int:webhook>/<string:token>")
-@multipleDecorators(usingDB, allowWithoutUser, getUser)
-async def api_webhooks_webhook_patch(user: Optional[User], webhook: int, token: Optional[str]=None):
+@multipleDecorators(validate_request(WebhookUpdate), usingDB, allowWithoutUser, getUser)
+async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], webhook: int, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
@@ -42,24 +44,16 @@ async def api_webhooks_webhook_patch(user: Optional[User], webhook: int, token: 
         if not (member := await getCore().getGuildMember(guild, user.id)):
             raise InvalidDataErr(403, Errors.make(50013))
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-    data = await request.get_json()
     if user.id == 0:
-        if "channel_id" in data: del data["channel_id"]
-    data = {
-        "name": str(data.get("name") or webhook.name),
-        "channel_id": int(data.get("channel_id") or webhook.channel_id),
-        "avatar": data.get("avatar")
-    }
-    if (img := data["avatar"]) or img is None:
+        if data.channel_id: data.channel_id = None
+    if (img := data.avatar) or img is None:
         if img is not None:
-            if (img := getImage(img)) and validImage(img):
-                if h := await getCDNStorage().setAvatarFromBytesIO(webhook.id, img):
-                    img = h
-        data["avatar"] = img
-    else:
-        del data["avatar"]
+            img = getImage(img)
+            if h := await getCDNStorage().setAvatarFromBytesIO(webhook.id, img):
+                img = h
+        data.avatar = img
 
-    new_webhook = webhook.copy(**data)
+    new_webhook = webhook.copy(**data.dict(exclude_defaults=True))
 
     await getCore().updateWebhookDiff(webhook, new_webhook)
     await getCore().sendWebhooksUpdateEvent(new_webhook)
@@ -100,10 +94,9 @@ async def api_webhooks_webhook_post(webhook: int, token: str):
         "avatar": data.get("avatar", None) or webhook.avatar,
         "discriminator": "0000"
     }
-    if "username" in data: del data["username"]
-    if "avatar" in data: del data["avatar"]
+    data = WebhookMessageCreate(**data)
     message = Message(id=message_id, channel_id=webhook.channel_id, author=0, guild_id=webhook.guild_id,
-                      webhook_author=author, **data)
+                      webhook_author=author, **data.to_json())
     await message.check()
     message = await getCore().sendMessage(message)
 

@@ -4,10 +4,10 @@ from time import time
 
 from emoji import is_emoji
 from quart import Blueprint, request
-from quart_schema import validate_request
+from quart_schema import validate_request, validate_querystring
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate
+    WebhookCreate, SearchQuery
 from ..utils import usingDB, getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData
 from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import GuildId, AuditLogEntry, Webhook
@@ -348,12 +348,12 @@ async def get_message_reactions(user: User, channel: Channel, message: Message, 
 
 
 @channels.get("/<int:channel>/messages/search")
-@multipleDecorators(usingDB, getUser, getChannel)
-async def search_messages(user: User, channel: Channel):
+@multipleDecorators(validate_querystring(SearchQuery), usingDB, getUser, getChannel)
+async def search_messages(query: SearchQuery, user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await getCore().getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL, channel=channel)
-    messages, total = await getCore().searchMessages(SearchFilter(**request.args))
+    messages, total = await getCore().searchMessages(SearchFilter(**query.dict(exclude_defaults=True)))
     Ctx["search"] = True
     messages = [[await message.json] for message in messages]
     for message in messages:
