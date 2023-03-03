@@ -1,48 +1,58 @@
 from time import time
 
 from quart import Blueprint, request
+from quart_schema import validate_request
 
+from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUpdate, EmojiCreate, EmojiUpdate, \
+    ChannelsPositionsChangeList, ChannelCreate, BanMember, RoleCreate, RoleUpdate, \
+    RolesPositionsChangeList, AddRoleMembers, MemberUpdate, SetVanityUrl, GuildCreateFromTemplate, GuildDelete
 from ..utils import usingDB, getUser, multipleDecorators, getGuildWM, getGuildWoM, getGuildTemplate, getRole
 from ...yepcord.classes.channel import Channel
 from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User, GuildMember, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx
-from ...yepcord.enums import GuildPermissions, AuditLogEntryType, ChannelType
+from ...yepcord.enums import GuildPermissions, AuditLogEntryType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, validImage, getImage, b64decode
+from ...yepcord.utils import c_json, getImage, b64decode
 
 # Base path is /api/vX/guilds
 guilds = Blueprint('guilds', __name__)
 
 
-@guilds.post("")
-@multipleDecorators(usingDB, getUser)
-async def create_guild(user: User):
-    data = await request.get_json()
-    guild = await getCore().createGuild(user, data["name"])
+@guilds.post("/", strict_slashes=False)
+@multipleDecorators(validate_request(GuildCreate), usingDB, getUser)
+async def create_guild(data: GuildCreate, user: User):
+    guild_id = Snowflake.makeId()
+    if data.icon:
+        img = getImage(data.icon)
+        if h := await getCDNStorage().setGuildIconFromBytesIO(guild_id, img):
+            data.icon = h
+    guild = await getCore().createGuild(guild_id, user, **data.dict(exclude_defaults=True))
     Ctx["with_channels"] = True
     return c_json(await guild.json)
 
 
 @guilds.patch("/<int:guild>")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def update_guild(user: User, guild: Guild, member: GuildMember):
+@multipleDecorators(validate_request(GuildUpdate), usingDB, getUser, getGuildWM)
+async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    data = await request.get_json()
-    for j in ("id", "owner_id", "features", "max_members"):
-        if j in data: del data[j]
+    data.owner_id = None # TODO: make guild ownership transfer
     for image_type, func in (("icon", getCDNStorage().setGuildIconFromBytesIO), ("banner", getCDNStorage().setBannerFromBytesIO),
                              ("splash", getCDNStorage().setGuildSplashFromBytesIO)):
-        if image_type in data:
-            img = data[image_type]
-            if img is not None:
-                del data[image_type]
-                if (img := getImage(img)) and validImage(img):
-                    if h := await func(guild.id, img):
-                        data[image_type] = h
-    new_guild = guild.copy(**data)
+        if img := getattr(data, image_type):
+            setattr(data, image_type, "")
+            img = getImage(img)
+            if h := await func(guild.id, img):
+                setattr(data, image_type, h)
+    for ch in ("afk_channel_id", "system_channel_id"):
+        if (channel_id := getattr(data, ch)) is not None:
+            if (channel := await getCore().getChannel(channel_id)) is None:
+                setattr(data, ch, None)
+            elif channel.guild_id != guild.id:
+                setattr(data, ch, None)
+    new_guild = guild.copy(**data.dict(exclude_defaults=True))
     await getCore().updateGuildDiff(guild, new_guild)
     await getCore().sendGuildUpdateEvent(new_guild)
 
@@ -56,8 +66,9 @@ async def update_guild(user: User, guild: Guild, member: GuildMember):
 
 
 @guilds.get("/<int:guild>/templates")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def get_guild_templates(user: User, guild: Guild):
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def get_guild_templates(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     templates = []
     if template := await getCore().getGuildTemplate(guild):
         templates.append(await template.json)
@@ -65,17 +76,13 @@ async def get_guild_templates(user: User, guild: Guild):
 
 
 @guilds.post("/<int:guild>/templates")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def create_guild_template(user: User, guild: Guild, member: GuildMember):
+@multipleDecorators(validate_request(TemplateCreate), usingDB, getUser, getGuildWM)
+async def create_guild_template(data: TemplateCreate, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    data = await request.get_json()
-    if not (name := data.get("name")):
-        raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-    description = data.get("description")
     if await getCore().getGuildTemplate(guild):
         raise InvalidDataErr(400, Errors.make(30031))
 
-    template = GuildTemplate(Snowflake.makeId(), guild.id, name, description, 0, user.id, int(time()),
+    template = GuildTemplate(Snowflake.makeId(), guild.id, data.name, data.description, 0, user.id, int(time()),
                              await GuildTemplate.serialize_guild(guild))
     await getCore().putGuildTemplate(template)
 
@@ -103,15 +110,10 @@ async def sync_guild_template(user: User, guild: Guild, member: GuildMember, tem
 
 
 @guilds.patch("/<int:guild>/templates/<string:template>")
-@multipleDecorators(usingDB, getUser, getGuildWM, getGuildTemplate)
-async def update_guild_template(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
+@multipleDecorators(validate_request(TemplateUpdate), usingDB, getUser, getGuildWM, getGuildTemplate)
+async def update_guild_template(data: TemplateUpdate, user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    data = await request.get_json()
-    new_template = template.copy()
-    if name := data.get("name"):
-        new_template.set(name=name)
-    if description := data.get("description"):
-        new_template.set(description=description)
+    new_template = template.copy(**data.dict(exclude_defaults=True))
     await getCore().updateTemplateDiff(template, new_template)
     return c_json(await new_template.json)
 
@@ -126,21 +128,15 @@ async def get_guild_emojis(user: User, guild: Guild):
 
 
 @guilds.post("/<int:guild>/emojis")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def create_guild_emoji(user: User, guild: Guild, member: GuildMember):
+@multipleDecorators(validate_request(EmojiCreate), usingDB, getUser, getGuildWM)
+async def create_guild_emoji(data: EmojiCreate, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
-    data = await request.get_json()
-    if not data.get("image"):
-        raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-    if not data.get("name"):
-        raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-    if not (img := getImage(data["image"])) or not validImage(img):
+    img = getImage(data.image)
+    emoji_id = Snowflake.makeId()
+    if not (emd := await getCDNStorage().setEmojiFromBytesIO(emoji_id, img)):
         raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
-    eid = Snowflake.makeId()
-    if not (emd := await getCDNStorage().setEmojiFromBytesIO(eid, img)):
-        raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
-    emoji = Emoji(eid, data["name"], user.id, guild.id, animated=emd["animated"])
-    await getCore().addEmoji(emoji, guild)
+    emoji = Emoji(emoji_id, data.name, user.id, guild.id, animated=emd["animated"])
+    await getCore().addEmoji(emoji, guild) # TODO: check if emojis limit exceeded
     emoji.fill_defaults()
 
     entry = AuditLogEntry.emoji_create(emoji, user)
@@ -148,6 +144,22 @@ async def create_guild_emoji(user: User, guild: Guild, member: GuildMember):
     await getCore().sendAuditLogEntryCreateEvent(entry)
 
     return c_json(await emoji.json)
+
+
+@guilds.patch("/<int:guild>/emojis/<int:emoji>")
+@multipleDecorators(validate_request(EmojiUpdate), usingDB, getUser, getGuildWM)
+async def update_guild_emoji(data: EmojiUpdate, user: User, guild: Guild, member: GuildMember, emoji: int):
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    if (emoji := await getCore().getEmoji(emoji)) is None:
+        raise InvalidDataErr(400, Errors.make(10014))
+    elif emoji.guild_id != guild.id:
+        raise InvalidDataErr(400, Errors.make(10014))
+    new_emoji = emoji.copy(**data.dict(exclude_defaults=True))
+
+    await getCore().updateEmojiDiff(emoji, new_emoji)
+    await getCore().sendGuildEmojisUpdatedEvent(guild)
+
+    return c_json(await new_emoji.json)
 
 
 @guilds.delete("/<int:guild>/emojis/<int:emoji>")
@@ -170,36 +182,33 @@ async def delete_guild_emoji(user: User, guild: Guild, member: GuildMember, emoj
 
 @guilds.patch("/<int:guild>/channels")
 @multipleDecorators(usingDB, getUser, getGuildWM)
-async def update_guild_channels(user: User, guild: Guild, member: GuildMember):
+async def update_channels_positions(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
-    if not (data := await request.get_json()):
+    data = await request.get_json()
+    if not data:
         return "", 204
-    for change in data:
-        if not (channel := await getCore().getChannel(int(change["id"]))):
+    data = ChannelsPositionsChangeList(changes=data)
+    for change in data.changes:
+        if not (channel := await getCore().getChannel(change.id)):
             continue
-        del change["id"]
-        if "type" in change: del change["type"]
-        if "guild_id" in change: del change["guild_id"]
-        nChannel = Channel(channel.id, channel.type, channel.guild_id, **change)
-        await getCore().updateChannelDiff(channel, nChannel)
-        channel.set(**change)
-        await getCore().sendChannelUpdateEvent(channel)
+        if change.parent_id:
+            if not (parent_channel := await getCore().getChannel(change.parent_id)):
+                change.parent_id = 0
+            elif parent_channel.guild_id != guild.id:
+                change.parent_id = 0
+        change = change.dict(exclude_defaults=True, exclude={"id"})
+        new_channel = channel.copy(**change)
+        await getCore().updateChannelDiff(channel, new_channel)
+        await getCore().sendChannelUpdateEvent(new_channel)
     await getCore().setTemplateDirty(guild)
     return "", 204
 
 
 @guilds.post("/<int:guild>/channels")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def create_channel(user: User, guild: Guild, member: GuildMember):
+@multipleDecorators(validate_request(ChannelCreate), usingDB, getUser, getGuildWM)
+async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
-    data = await request.get_json()
-    if not data.get("name"):
-        raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-    if "id" in data: del data["id"]
-    ctype = data.get("type", ChannelType.GUILD_TEXT)
-    if "type" in data: del data["type"]
-    if "permission_overwrites" in data: del data["permission_overwrites"] # TODO: set permission_overwrites after channel creation
-    channel = Channel(Snowflake.makeId(), ctype, guild_id=guild.id, **data)
+    channel = Channel(Snowflake.makeId(), guild_id=guild.id, **data.to_json(data.type))
     channel = await getCore().createGuildChannel(channel)
     await getCore().sendChannelCreateEvent(channel)
 
@@ -246,8 +255,8 @@ async def kick_member(user: User, guild: Guild, member: GuildMember, uid: int):
 
 
 @guilds.put("/<int:guild>/bans/<int:uid>")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def ban_member(user: User, guild: Guild, member: GuildMember, uid: int):
+@multipleDecorators(validate_request(BanMember), usingDB, getUser, getGuildWM)
+async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMember, uid: int):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     if target_member := await getCore().getGuildMember(guild, uid):
         if not await member.perm_checker.canKickOrBan(target_member):
@@ -260,9 +269,7 @@ async def ban_member(user: User, guild: Guild, member: GuildMember, uid: int):
             await getCore().sendGuildMemberRemoveEvent(guild, target_user)
             await getCore().sendGuildDeleteEvent(guild, target_member)
             await getCore().sendGuildBanAddEvent(guild, target_user)
-            data = await request.get_json()
-            if (delete_message_seconds := data.get("delete_message_seconds", 0)) > 0:
-                if delete_message_seconds > 604800: delete_message_seconds = 604800 # 7 days
+            if (delete_message_seconds := data.delete_message_seconds) > 0:
                 after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
                 deleted_messages = await getCore().bulkDeleteGuildMessagesFromBanned(guild, uid, after)
                 for channel, messages in deleted_messages.items():
@@ -307,13 +314,15 @@ async def get_guild_integrations(user: User, guild: Guild, member: GuildMember):
 
 
 @guilds.post("/<int:guild>/roles")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def create_role(user: User, guild: Guild, member: GuildMember):
+@multipleDecorators(validate_request(RoleCreate), usingDB, getUser, getGuildWM)
+async def create_role(data: RoleCreate, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-    data = await request.get_json()
-    if "id" in data: del data["id"]
-    if "guild_id" in data: del data["guild_id"]
-    role = Role(Snowflake.makeId(), guild.id, **data)
+    role_id = Snowflake.makeId()
+    if data.icon:
+        img = getImage(data.icon)
+        if h := await getCDNStorage().setRoleIconFromBytesIO(role_id, img):
+            data.icon = h
+    role = Role(role_id, guild.id, **data.dict())
     await getCore().createGuildRole(role)
     await getCore().sendGuildRoleCreateEvent(role)
 
@@ -327,22 +336,18 @@ async def create_role(user: User, guild: Guild, member: GuildMember):
 
 
 @guilds.patch("/<int:guild>/roles/<int:role>")
-@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
-async def update_role(user: User, guild: Guild, member: GuildMember, role: Role):
+@multipleDecorators(validate_request(RoleUpdate), usingDB, getUser, getGuildWM, getRole)
+async def update_role(data: RoleUpdate, user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-    data = await request.get_json()
-    if "id" in data: del data["id"]
-    if "guild_id" in data: del data["guild_id"]
     if role.id == guild.id:
-        data = {"permissions": data["permissions"]} if "permissions" in data else {} # Only allow permissions editing for @everyone role
-    if "icon" in data:
-        img = data["icon"]
-        if img is not None:
-            del data["icon"]
-            if (img := getImage(img)) and validImage(img):
-                if h := await getCDNStorage().setRoleIconFromBytesIO(role.id, img):
-                    data["icon"] = h
-    new_role = role.copy(**data)
+        data = {"permissions": data.permissions} if data.permissions is not None else {} # Only allow permissions editing for @everyone role
+    if data.icon != "":
+        if (img := data.icon) is not None:
+            data.icon = ""
+            img = getImage(img)
+            if h := await getCDNStorage().setRoleIconFromBytesIO(role.id, img):
+                data.icon = h
+    new_role = role.copy(**data.dict(exclude_defaults=True))
     await getCore().updateRoleDiff(role, new_role)
     await getCore().sendGuildRoleUpdateEvent(new_role)
 
@@ -361,16 +366,18 @@ async def update_roles_positions(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     roles_data = await request.get_json()
     roles = await getCore().getRoles(guild)
-    roles.remove([role for role in roles if role.id == guild.id][0])
+    roles.remove([role for role in roles if role.id == guild.id][0]) # Remove @everyone role
 
     if not await member.perm_checker.canChangeRolesPositions(roles_data, roles):
         raise InvalidDataErr(403, Errors.make(50013))
 
+    roles_data = RolesPositionsChangeList(changes=roles_data)
+
     changes = []
-    for data in roles_data:
-        if not (role := [role for role in roles if role.id == int(data["id"])]): continue # Don't add non-existing roles
+    for data in roles_data.changes:
+        if not (role := [role for role in roles if role.id == data.id]): continue # Don't add non-existing roles
         role = role[0]
-        if (pos := data["position"]) < 1: pos = 1
+        if (pos := data.position) < 1: pos = 1
         new_role = role.copy(position=pos)
         changes.append(new_role)
     changes.sort(key=lambda r: (r.position, r.permissions))
@@ -429,15 +436,13 @@ async def get_role_members(user: User, guild: Guild, role: Role):
 
 
 @guilds.patch("/<int:guild>/roles/<int:role>/members")
-@multipleDecorators(usingDB, getUser, getGuildWM, getRole)
-async def add_role_members(user: User, guild: Guild, member: GuildMember, role: Role):
+@multipleDecorators(validate_request(AddRoleMembers), usingDB, getUser, getGuildWM, getRole)
+async def add_role_members(data: AddRoleMembers, user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     if (role.id == guild.id or role.position >= (await member.top_role).position) and member.id != guild.owner_id:
         raise InvalidDataErr(403, Errors.make(50013))
     members = {}
-    member_ids = (await request.get_json()).get("member_ids", [])
-    member_ids = [int(member_id) for member_id in member_ids]
-    for member_id in member_ids:
+    for member_id in data.member_ids:
         target_member = await getCore().getGuildMember(guild, member_id)
         if not await getCore().memberHasRole(target_member, role):
             await getCore().addMemberRole(target_member, role)
@@ -447,49 +452,41 @@ async def add_role_members(user: User, guild: Guild, member: GuildMember, role: 
 
 
 @guilds.patch("/<int:guild>/members/<string:target_user>")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def update_member(user: User, guild: Guild, member: GuildMember, target_user: str):
+@multipleDecorators(validate_request(MemberUpdate), usingDB, getUser, getGuildWM)
+async def update_member(data: MemberUpdate, user: User, guild: Guild, member: GuildMember, target_user: str):
     if target_user == "@me":
         target_user = user.id
     target_user = int(target_user)
-    data = await request.get_json()
     target_member = await getCore().getGuildMember(guild, target_user)
-    new_member = target_member.copy()
-    if "roles" in data: # TODO: add MEMBER_ROLE_UPDATE audit log event
+    if data.roles is not None: # TODO: add MEMBER_ROLE_UPDATE audit log event
         await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-        roles = [int(role) for role in data["roles"]]
+        roles = [int(role) for role in data.roles]
         guild_roles = {role.id: role for role in await getCore().getRoles(guild)}
         roles = [role_id for role_id in roles if role_id in guild_roles]
         user_top_role = await member.top_role
         for role_id in roles:
-            if guild_roles[role_id].position >= user_top_role.position:
+            if guild_roles[role_id].position >= user_top_role.position and member.id != guild.owner_id:
                 raise InvalidDataErr(403, Errors.make(50013))
         await getCore().setMemberRolesFromList(target_member, roles)
-    target_member = new_member.copy()
-    if "nick" in data:
+        data.roles = None
+    if data.nick is not None:
         await member.checkPermission(
             GuildPermissions.CHANGE_NICKNAME
             if target_member.user_id == member.user_id else
             GuildPermissions.MANAGE_NICKNAMES
         )
-        nick = data["nick"]
-        if not nick.strip(): nick = None
-        new_member = target_member.copy(nick=nick)
-        await getCore().updateMemberDiff(target_member, new_member)
-    target_member = new_member.copy()
-    if "avatar" in data and target_member.user_id == member.user_id:
-        avatar = data["avatar"]
-        if (img := getImage(avatar)) and validImage(img):
+    if data.avatar != "":
+        if target_member.user_id != member.user_id:
+            raise InvalidDataErr(403, Errors.make(50013))
+        img = data.avatar
+        if img is not None:
+            img = getImage(img)
             if av := await getCDNStorage().setGuildAvatarFromBytesIO(user.id, guild.id, img):
-                avatar = av
+                data.avatar = av
             else:
-                avatar = member.avatar
-        elif avatar is None:
-            pass
-        else:
-            avatar = member.avatar
-        new_member = target_member.copy(avatar=avatar)
-        await getCore().updateMemberDiff(target_member, new_member)
+                data.avatar = ""
+    new_member = target_member.copy(**data.dict(exclude_defaults=True))
+    await getCore().updateMemberDiff(target_member, new_member)
     await getCore().sendGuildMemberUpdateEvent(new_member)
 
     entry = AuditLogEntry.member_update(target_member, new_member, user)
@@ -513,26 +510,26 @@ async def get_vanity_url(user: User, guild: Guild, member: GuildMember):
 
 
 @guilds.patch("/<int:guild>/vanity-url")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def update_vanity_url(user: User, guild: Guild, member: GuildMember):
+@multipleDecorators(validate_request(SetVanityUrl), usingDB, getUser, getGuildWM)
+async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    data = await request.get_json()
-    if "code" not in data:
+    if data.code is None:
         return c_json({"code": guild.vanity_url_code})
-    code = data.get("code")
-    if code == guild.vanity_url_code:
+    if data.code == guild.vanity_url_code:
         return c_json({"code": guild.vanity_url_code})
-    if not code:
+    if not data.code:
         new_guild = guild.copy(vanity_url_code=None)
         await getCore().updateGuildDiff(guild, new_guild)
         if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
             await getCore().deleteInvite(invite)
     else:
+        if await getCore().getVanityCodeInvite(data.code):
+            return c_json({"code": guild.vanity_url_code})
         if guild.vanity_url_code and (invite := await getCore().getVanityCodeInvite(guild.vanity_url_code)):
             await getCore().deleteInvite(invite)
-        new_guild = guild.copy(vanity_url_code=code)
+        new_guild = guild.copy(vanity_url_code=data.code)
         await getCore().updateGuildDiff(guild, new_guild)
-        invite = Invite(Snowflake.makeId(), guild.system_channel_id, guild.owner_id, int(time()), 0, vanity_code=code,
+        invite = Invite(Snowflake.makeId(), guild.system_channel_id, guild.owner_id, int(time()), 0, vanity_code=data.code,
                         guild_id=guild.id)
         await getCore().putInvite(invite)
     await getCore().sendGuildUpdateEvent(new_guild)
@@ -568,9 +565,10 @@ async def get_audit_logs(user: User, guild: Guild, member: GuildMember):
 
     return c_json(data)
 
+
 @guilds.post("/templates/<string:template>")
-@multipleDecorators(usingDB, getUser)
-async def create_from_template(user: User, template: str):
+@multipleDecorators(validate_request(GuildCreateFromTemplate), usingDB, getUser)
+async def create_from_template(data: GuildCreateFromTemplate, user: User, template: str):
     try:
         template_id = int.from_bytes(b64decode(template), "big")
         if not (template := await getCore().getGuildTemplateById(template_id)):
@@ -579,31 +577,26 @@ async def create_from_template(user: User, template: str):
         raise InvalidDataErr(404, Errors.make(10057))
 
     guild_id = Snowflake.makeId()
-    data = await request.get_json()
-    icon = None
-    if img := data.get("icon"):
-        if (img := getImage(img)) and validImage(img):
-            if h := await getCDNStorage().setGuildIconFromBytesIO(guild_id, img):
-                icon = h
+    if data.icon:
+        img = getImage(data.icon)
+        if h := await getCDNStorage().setGuildIconFromBytesIO(guild_id, img):
+            data.icon = h
 
-    guild = await getCore().createGuildFromTemplate(guild_id, user, template, data.get("name"), icon)
+    guild = await getCore().createGuildFromTemplate(guild_id, user, template, data.name, data.icon)
     Ctx["with_channels"] = True
     return c_json(await guild.json)
 
 @guilds.post("/<int:guild>/delete")
-@multipleDecorators(usingDB, getUser, getGuildWoM)
-async def delete_guild(user: User, guild: Guild):
+@multipleDecorators(validate_request(GuildDelete), usingDB, getUser, getGuildWoM)
+async def delete_guild(data: GuildDelete, user: User, guild: Guild):
     if user.id != guild.owner_id:
         raise InvalidDataErr(403, Errors.make(50013))
 
-    data = await request.get_json()
     if mfa := await getCore().getMfa(user):
-        code = data.get("code")
-        code = code.replace("-", "").replace(" ", "")
-        if not code:
+        if not data.code:
             raise InvalidDataErr(400, Errors.make(60008))
-        if code != mfa.getCode():
-            if not (len(code) == 8 and await getCore().useMfaCode(mfa.uid, code)):
+        if data.code != mfa.getCode():
+            if not (len(data.code) == 8 and await getCore().useMfaCode(mfa.uid, data.code)):
                 raise InvalidDataErr(400, Errors.make(60008))
 
     await getCore().deleteGuild(guild)

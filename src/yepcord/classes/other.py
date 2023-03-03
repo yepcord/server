@@ -193,3 +193,31 @@ class JWT:
         signature = b64encode(signature)
 
         return f"{header}.{payload}.{signature}"
+
+class BitFlags:
+    def __init__(self, value: int, cls):
+        self.cls = cls
+        self.value = value
+        self.parsedFlags = self.parseFlags()
+
+    def parseFlags(self) -> list:
+        flags = []
+        value = self.value
+        self.value = 0
+        for val in self.cls.values().values():
+            if (value & val) == val:
+                flags.append(val)
+                self.value |= val
+        return flags
+
+    def add(self, val: int):
+        if val not in self.parsedFlags:
+            self.value |= val
+            self.parsedFlags.append(val)
+        return self
+
+    def remove(self, val: int):
+        if val in self.parsedFlags:
+            self.value &= ~val
+            self.parsedFlags.remove(val)
+        return self

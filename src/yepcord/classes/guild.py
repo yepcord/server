@@ -41,7 +41,7 @@ class Guild(_Guild, Model):
     region: Optional[str] = None
     afk_channel_id: Optional[int] = field(default=None, nullable=True, validation=Or(Use(int), NoneType))
     afk_timeout: Optional[int] = None
-    system_channel_id: Optional[int] = None
+    system_channel_id: Optional[int] = field(default=None, nullable=True, validation=Or(Use(int), NoneType))
     verification_level: Optional[int] = None
     default_message_notifications: Optional[int] = None
     mfa_level: Optional[int] = None
@@ -56,6 +56,8 @@ class Guild(_Guild, Model):
 
     @property
     async def json(self) -> dict:
+        afk_channel_id = str(self.afk_channel_id) if self.afk_channel_id is not None else None
+        system_channel_id = str(self.system_channel_id) if self.system_channel_id is not None else None
         data = {
             "id": str(self.id),
             "name": self.name,
@@ -80,9 +82,9 @@ class Guild(_Guild, Model):
             "owner_id": str(self.owner_id),
             "application_id": None,  # TODO
             "region": self.region,
-            "afk_channel_id": self.afk_channel_id,
+            "afk_channel_id": afk_channel_id,
             "afk_timeout": self.afk_timeout,
-            "system_channel_id": str(self.system_channel_id),
+            "system_channel_id": system_channel_id,
             "widget_enabled": False,  # TODO
             "widget_channel_id": None,  # TODO
             "verification_level": self.verification_level,

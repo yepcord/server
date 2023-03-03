@@ -390,6 +390,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool: ...
 
+    @abstractmethod
+    async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -1143,3 +1146,9 @@ class MySqlConnection:
     async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool:
         await self.cur.execute(f'SELECT * FROM `hidden_dm_channels` WHERE `user_id`={user.id} AND `channel_id`={channel.id};')
         return bool(await self.cur.fetchone())
+
+    async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `emojis` SET {diff} WHERE `id`={before.id};')

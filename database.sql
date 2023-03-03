@@ -128,7 +128,7 @@ CREATE TABLE `guilds` (
   `region` text NOT NULL DEFAULT "deprecated",
   `afk_channel_id` bigint DEFAULT NULL,
   `afk_timeout` int DEFAULT 300,
-  `system_channel_id` bigint NOT NULL,
+  `system_channel_id` bigint DEFAULT NULL,
   `verification_level` int NOT NULL DEFAULT 0,
   `default_message_notifications` int NOT NULL DEFAULT 0,
   `mfa_level` int NOT NULL DEFAULT 0,

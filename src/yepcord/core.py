@@ -775,8 +775,8 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getInvite(invite_id)
 
-    async def createGuild(self, user: User, name: str) -> Guild:
-        guild = Guild(Snowflake.makeId(), user.id, name, system_channel_id=0, features=[])
+    async def createGuild(self, guild_id: int, user: User, name: str, **kwargs) -> Guild:
+        guild = Guild(guild_id, user.id, name, system_channel_id=0, features=[], **kwargs)
         roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
         channels = []
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
@@ -926,10 +926,15 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getEmojis(guild_id)
 
+    async def sendGuildEmojisUpdatedEvent(self, guild: Guild) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "emojis_update",
+                                                  "data": {"users": await self.getGuildMembersIds(guild),
+                                                           "guild_id": guild.id}})
+
     async def addEmoji(self, emoji: Emoji, guild: Guild) -> None:
         async with self.db() as db:
             await db.addEmoji(emoji)
-        await self.mcl.broadcast("guild_events", {"e": "emojis_update", "data": {"users": await self.getGuildMembersIds(guild), "guild_id": guild.id}})
+        await self.sendGuildEmojisUpdatedEvent(guild)
 
     async def getEmoji(self, emoji_id: int) -> Optional[Emoji]:
         async with self.db() as db:
@@ -938,7 +943,7 @@ class Core(Singleton):
     async def deleteEmoji(self, emoji: Emoji, guild: Guild) -> None:
         async with self.db() as db:
             await db.deleteEmoji(emoji)
-        await self.mcl.broadcast("guild_events", {"e": "emojis_update", "data": {"users": await self.getGuildMembersIds(guild), "guild_id": guild.id}})
+        await self.sendGuildEmojisUpdatedEvent(guild)
 
     async def getEmojiByReaction(self, reaction: str) -> Optional[Emoji]:
         try:
@@ -1280,6 +1285,10 @@ class Core(Singleton):
     async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool:
         async with self.db() as db:
             return await db.isDmChannelHidden(user, channel)
+
+    async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None:
+        async with self.db() as db:
+            await db.updateEmojiDiff(before, after)
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()

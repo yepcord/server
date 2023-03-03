@@ -83,9 +83,8 @@ class ChannelUpdate(BaseModel):
             if value not in (0, 1): value = None
         return value
 
-    @validator("default_auto_archive", allow_reuse=True)
-    @validator("auto_archive_duration", allow_reuse=True)
-    def validate_video_quality_mode(cls, value: Optional[int]):
+    @validator("default_auto_archive", "auto_archive_duration")
+    def validate_auto_archive(cls, value: Optional[int]):
         ALLOWED_DURATIONS = (60, 1440, 4320, 10080)
         if value is not None:
             if value not in ALLOWED_DURATIONS:

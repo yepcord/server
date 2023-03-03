@@ -101,8 +101,8 @@ class PutNote(BaseModel):
 
 class MfaEnable(BaseModel):
     password: str
-    secret: str
-    code: str
+    secret: Optional[str] = None
+    code: Optional[str] = None
 
 
 class MfaDisable(BaseModel):

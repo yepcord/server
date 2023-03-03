@@ -15,7 +15,7 @@ class WebhookUpdate(BaseModel):
     def validate_avatar(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
-                value = None
+                value = ""
         return value
 
 
