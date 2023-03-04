@@ -2,10 +2,10 @@ from typing import Optional, List
 
 from pydantic import BaseModel, validator, Field
 
-from src.yepcord.classes.other import BitFlags
-from src.yepcord.enums import SystemChannelFlags, ChannelType
-from src.yepcord.errors import InvalidDataErr, Errors
-from src.yepcord.utils import getImage, validImage, LOCALES
+from ...yepcord.classes.other import BitFlags
+from ...yepcord.enums import SystemChannelFlags, ChannelType
+from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.utils import getImage, validImage, LOCALES
 
 
 class GuildCreate(BaseModel):

@@ -4,7 +4,7 @@ from quart import Quart, request
 from quart.globals import request_ctx
 from quart_schema import QuartSchema
 
-from src.rest_api.routes.webhooks import webhooks
+from .routes.webhooks import webhooks
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, validator
 
-from src.yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import InvalidDataErr, Errors
 
 
 class HypesquadHouseChange(BaseModel):
