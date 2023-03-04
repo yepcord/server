@@ -136,7 +136,7 @@ async def get_protobuf_settings(user: User):
 @multipleDecorators(validate_request(SettingsProtoUpdate), usingDB, getUser)
 async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
     if not data.settings:
-        raise InvalidDataErr(400, Errors.make(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
     try:
         proto = PreloadedUserSettings()
         proto.ParseFromString(_b64decode(data.settings.encode("utf8")))
@@ -164,7 +164,7 @@ async def get_protobuf_frecency_settings(user: User):
 @multipleDecorators(validate_request(SettingsProtoUpdate), usingDB, getUser)
 async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: User):
     if not data.settings:
-        raise InvalidDataErr(400, Errors.make(50013, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
+        raise InvalidDataErr(400, Errors.make(50035, {"settings": {"code": "BASE_TYPE_REQUIRED", "message": "Required field."}}))
     try:
         proto_new = FrecencyUserSettings()
         proto_new.ParseFromString(_b64decode(data.settings.encode("utf8")))

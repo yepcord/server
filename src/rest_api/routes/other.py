@@ -131,7 +131,8 @@ async def api_users_me_settingsproto_3():
 
 @other.route("/api/v9/users/@me/settings-proto/<int:t>", methods=["GET", "PATCH"])
 async def api_users_me_settingsproto_type(t):
-    raise InvalidDataErr(400, Errors.make(50013, {"type": {"code": "BASE_TYPE_CHOICES", "message": "Value must be one of (<UserSettingsTypes.PRELOADED_USER_SETTINGS: 1>, <UserSettingsTypes.FRECENCY_AND_FAVORITES_SETTINGS: 2>, <UserSettingsTypes.TEST_SETTINGS: 3>)."}}))
+    raise InvalidDataErr(400, Errors.make(50035, {"type": {"code": "BASE_TYPE_CHOICES", "message":
+        "Value must be one of (<UserSettingsTypes.PRELOADED_USER_SETTINGS: 1>, <UserSettingsTypes.FRECENCY_AND_FAVORITES_SETTINGS: 2>, <UserSettingsTypes.TEST_SETTINGS: 3>)."}}))
 
 
 @other.get("/api/v9/gateway")

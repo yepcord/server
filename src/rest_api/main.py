@@ -2,7 +2,7 @@ from json import dumps as jdumps
 
 from quart import Quart, request
 from quart.globals import request_ctx
-from quart_schema import QuartSchema
+from quart_schema import QuartSchema, RequestSchemaValidationError
 
 from .routes.webhooks import webhooks
 from .routes.auth import auth
@@ -18,7 +18,7 @@ from ..yepcord.classes.gifs import Gifs
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
 from ..yepcord.ctx import Ctx
-from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
+from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.storage import getStorage
 from ..yepcord.utils import b64decode, b64encode, c_json
 
@@ -79,6 +79,12 @@ async def ydataerror_handler(e):
         ticket = b64encode(jdumps([e.uid, "login"]))
         ticket += f".{e.sid}.{e.sig}"
         return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
+
+
+@app.errorhandler(RequestSchemaValidationError)
+async def handle_validation_error(error: RequestSchemaValidationError):
+    pydantic_error = error.validation_error
+    return c_json(Errors.from_pydantic(pydantic_error), 400)
 
 
 @app.after_request

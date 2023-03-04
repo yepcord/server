@@ -646,7 +646,7 @@ class Core(Singleton):
         if user.id not in recipients:
             recipients.append(user.id)
         async with self.db() as db:
-            return await db.createDMGroupChannel(Snowflake.makeId(), recipients, user.id)
+            return await db.createDMGroupChannel(Snowflake.makeId(), recipients, user.id, name)
 
     async def sendDMChannelCreateEvent(self, channel: Channel, *, users=None) -> None:
         if not users:
