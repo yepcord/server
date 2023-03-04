@@ -21,3 +21,12 @@ class WebhookUpdate(BaseModel):
 
 class WebhookMessageCreate(MessageCreate):
     pass
+
+
+class WebhookMessageCreateQuery(BaseModel):
+    wait: bool = False
+
+    def __init__(self, **data):
+        if "wait" in data:
+            data["wait"] = data["wait"].lower() == "true"
+        super().__init__(**data)

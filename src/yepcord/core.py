@@ -433,7 +433,7 @@ class Core(Singleton):
         async with self.db() as db:
             return [await self.getLastMessageIdForChannel(channel) for channel in await db.getPrivateChannels(user, with_hidden=with_hidden)]
 
-    async def getChannelMessages(self, channel, limit: int, before: int=None, after: int=None) -> List[Message]:
+    async def getChannelMessages(self, channel, limit: int, before: int=0, after: int=0) -> List[Message]:
         async with self.db() as db:
             return await db.getChannelMessages(channel, limit, before, after)
 

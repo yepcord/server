@@ -1,9 +1,9 @@
 from typing import Optional
 
 from quart import Blueprint, request
-from quart_schema import validate_request
+from quart_schema import validate_request, validate_querystring
 
-from ..models.webhooks import WebhookUpdate, WebhookMessageCreate
+from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
 from ..utils import usingDB, getUser, multipleDecorators, allowWithoutUser, processMessageData
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User
@@ -77,8 +77,8 @@ async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Op
 
 
 @webhooks.post("/<int:webhook>/<string:token>")
-@multipleDecorators(usingDB)
-async def api_webhooks_webhook_post(webhook: int, token: str):
+@multipleDecorators(validate_querystring(WebhookMessageCreateQuery), usingDB)
+async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webhook: int, token: str):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
@@ -100,7 +100,7 @@ async def api_webhooks_webhook_post(webhook: int, token: str):
     await message.check()
     message = await getCore().sendMessage(message)
 
-    if request.args.get("wait") == "true":
+    if query_args.wait:
         return c_json(await message.json)
     else:
         return "", 204

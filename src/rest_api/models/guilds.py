@@ -423,3 +423,14 @@ class GuildDelete(BaseModel):
     @validator("code")
     def validate_code(cls, value: str):
         return value.replace("-", "").replace(" ", "")
+
+
+class GetAuditLogsQuery(BaseModel):
+    limit: int = 50
+    before: Optional[int] = None
+
+    @validator("limit")
+    def validate_limit(cls, value: int):
+        if value < 0 or value > 50:
+            value = 50
+        return value

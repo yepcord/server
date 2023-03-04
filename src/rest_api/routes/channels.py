@@ -7,7 +7,7 @@ from quart import Blueprint, request
 from quart_schema import validate_request, validate_querystring
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, SearchQuery
+    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery
 from ..utils import usingDB, getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData
 from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import GuildId, AuditLogEntry, Webhook
@@ -116,13 +116,12 @@ async def delete_channel(user: User, channel: Channel):
 
 
 @channels.get("/<int:channel>/messages")
-@multipleDecorators(usingDB, getUser, getChannel)
-async def get_messages(user: User, channel: Channel):
+@multipleDecorators(validate_querystring(GetMessagesQuery), usingDB, getUser, getChannel)
+async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await getCore().getGuildMember(GuildId(channel.guild_id), user.id)
-        await member.checkPermission(GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-    args = request.args
-    messages = await channel.messages(args.get("limit", 50), int(args.get("before", 0)), int(args.get("after", 0)))
+        await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
+    messages = await channel.messages(**query_args.dict())
     messages = [await m.json for m in messages]
     return c_json(messages)
 
@@ -329,8 +328,8 @@ async def remove_message_reaction(user: User, channel: Channel, message: Message
 
 
 @channels.get("/<int:channel>/messages/<int:message>/reactions/<string:reaction>")
-@multipleDecorators(usingDB, getUser, getChannel, getMessage)
-async def get_message_reactions(user: User, channel: Channel, message: Message, reaction: str):
+@multipleDecorators(validate_querystring(GetReactionsQuery), usingDB, getUser, getChannel, getMessage)
+async def get_message_reactions(query_args: GetReactionsQuery, user: User, channel: Channel, message: Message, reaction: str):
     if channel.get("guild_id"):
         member = await getCore().getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
@@ -341,10 +340,7 @@ async def get_message_reactions(user: User, channel: Channel, message: Message, 
         "emoji_id": None if isinstance(reaction, str) else reaction.id,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
     }
-    limit = int(request.args.get("limit", 3))
-    if limit > 10:
-        limit = 10
-    return await getCore().getReactedUsers(Reaction(message.id, 0, **r), limit)
+    return await getCore().getReactedUsers(Reaction(message.id, 0, **r), query_args.limit)
 
 
 @channels.get("/<int:channel>/messages/search")

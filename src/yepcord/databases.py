@@ -580,7 +580,7 @@ class MySqlConnection:
             channels.append(Channel.from_result(self.cur.description, r))
         return channels
 
-    async def getChannelMessages(self, channel, limit: int, before: int = None, after: int = None) -> List[Message]:
+    async def getChannelMessages(self, channel, limit: int, before: int = 0, after: int = 0) -> List[Message]:
         messages = []
         where = [f"`channel_id`={channel.id}"]
         if before:

@@ -1,5 +1,7 @@
 from quart import Blueprint, request
+from quart_schema import validate_querystring
 
+from ..models.invites import GetInviteQuery
 from ..utils import usingDB, getUser, multipleDecorators, getInvite
 from ...yepcord.classes.guild import Invite, GuildId, AuditLogEntry
 from ...yepcord.classes.message import Message
@@ -15,10 +17,9 @@ invites = Blueprint('invites', __name__)
 
 
 @invites.get("/api/v9/invites/<string:invite>")
-@multipleDecorators(usingDB, getInvite)
-async def get_invite(invite: Invite):
-    data = request.args
-    Ctx["with_counts"] = data.get("with_counts", "false").lower == "true"
+@multipleDecorators(validate_querystring(GetInviteQuery), usingDB, getInvite)
+async def get_invite(query_args: GetInviteQuery, invite: Invite):
+    Ctx["with_counts"] = query_args.with_counts
     invite = await invite.json
     for excl in ["max_age", "created_at"]: # Remove excluded fields
         if excl in invite:

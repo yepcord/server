@@ -1,11 +1,12 @@
 from time import time
 
 from quart import Blueprint, request
-from quart_schema import validate_request
+from quart_schema import validate_request, validate_querystring
 
 from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUpdate, EmojiCreate, EmojiUpdate, \
     ChannelsPositionsChangeList, ChannelCreate, BanMember, RoleCreate, RoleUpdate, \
-    RolesPositionsChangeList, AddRoleMembers, MemberUpdate, SetVanityUrl, GuildCreateFromTemplate, GuildDelete
+    RolesPositionsChangeList, AddRoleMembers, MemberUpdate, SetVanityUrl, GuildCreateFromTemplate, GuildDelete, \
+    GetAuditLogsQuery
 from ..utils import usingDB, getUser, multipleDecorators, getGuildWM, getGuildWoM, getGuildTemplate, getRole
 from ...yepcord.classes.channel import Channel
 from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role
@@ -537,14 +538,10 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
 
 
 @guilds.get("/<int:guild>/audit-logs")
-@multipleDecorators(usingDB, getUser, getGuildWM)
-async def get_audit_logs(user: User, guild: Guild, member: GuildMember):
+@multipleDecorators(validate_querystring(GetAuditLogsQuery), usingDB, getUser, getGuildWM)
+async def get_audit_logs(query_args: GetAuditLogsQuery, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    limit = int(request.args.get("limit", 50))
-    if limit > 50: limit = 50
-    before = request.args.get("before")
-    if before is not None: before = int(before)
-    entries = await getCore().getAuditLogEntries(guild, limit, before)
+    entries = await getCore().getAuditLogEntries(guild, **query_args.dict())
     userdatas = {}
     for entry in entries:
         target_user_id = entry.target_user_id

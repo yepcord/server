@@ -353,3 +353,29 @@ class SearchQuery(BaseModel):
     pinned: Optional[str] = None
     offset: Optional[int] = None
     content: Optional[str] = None
+
+
+class GetMessagesQuery(BaseModel):
+    limit: int = 50
+    before: int = 0
+    after: int = 0
+
+    @validator("limit")
+    def validate_limit(cls, value: int):
+        if value < 0:
+            value = 50
+        elif value > 100:
+            value = 100
+        return value
+
+
+class GetReactionsQuery(BaseModel):
+    limit: int = 3
+
+    @validator("limit")
+    def validate_limit(cls, value: int):
+        if value < 0:
+            value = 3
+        elif value > 10:
+            value = 10
+        return value
