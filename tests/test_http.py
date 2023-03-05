@@ -163,7 +163,7 @@ async def test_relationships(testapp):
     assert len(await response.get_json()) == 0
     response = await client.post('/api/v9/users/@me/relationships', headers=headers, json={"username": data2["username"], "discriminator": data2["discriminator"]})
     assert response.status_code == 204
-    response = await client.put(f"/api/v9/users/@me/relationships/{data['id']}", headers=headers)
+    response = await client.put(f"/api/v9/users/@me/relationships/{data['id']}", headers=headers, json={})
     assert response.status_code == 204
 
     response = await client.get('/api/v9/users/@me/relationships', headers=headers)

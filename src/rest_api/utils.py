@@ -197,7 +197,8 @@ async def processMessageData(message_id: int, data: Optional[dict], channel_id: 
                 if idx + 1 <= len(data["attachments"]):
                     att = data["attachments"][idx]
                 name = att.get("filename") or file.filename or "unknown"
-                content = file.getvalue()
+                get_content = getattr(file, "getvalue", file.read)
+                content = get_content()
                 att = Attachment(Snowflake.makeId(), channel_id, message_id, name, len(content), {})
                 cot = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
                 att.set(content_type=cot)
@@ -210,8 +211,47 @@ async def processMessageData(message_id: int, data: Optional[dict], channel_id: 
                 await getCore().putAttachment(att)
     if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
         raise InvalidDataErr(400, Errors.make(50006))
-    if "id" in data: del data["id"]
-    if "channel_id" in data: del data["channel_id"]
-    if "author" in data: del data["author"]
-    if "attachments" in data: del data["attachments"]
     return data
+
+
+def makeEmbedError(code, path=None, replaces=None):
+    if replaces is None: replaces = {}
+    base_error = {"code": 50035, "errors": {"embeds": {}}, "message": "Invalid Form Body"}
+
+    def insertError(error):
+        errors = base_error["errors"]["embeds"]
+        if path is None:
+            errors["_errors"] = error
+            return
+        for el in path.split("."):
+            errors[el] = {}
+            errors = errors[el]
+        errors["_errors"] = error
+
+    if code == 23:
+        insertError([{"code": "BASE_TYPE_REQUIRED", "message": "This field is required"}])
+        return base_error
+    elif code == 24:
+        m = "Scheme \"%SCHEME%\" is not supported. Scheme must be one of ('http', 'https')."
+        for k, v in replaces.items():
+            m = m.replace(f"%{k.upper()}%", v)
+        insertError([{"code": "URL_TYPE_INVALID_SCHEME", "message": m}])
+        return base_error
+    elif code == 25:
+        m = "Could not parse %VALUE%. Should be ISO8601."
+        for k, v in replaces.items():
+            m = m.replace(f"%{k.upper()}%", v)
+        insertError([{"code": "DATE_TIME_TYPE_PARSE", "message": m}])
+        return base_error
+    elif code == 26:
+        insertError([{"code": "NUMBER_TYPE_MAX", "message": "int value should be <= 16777215 and >= 0."}])
+        return base_error
+    elif code == 27:
+        m = "Must be %LENGTH% or fewer in length."
+        for k, v in replaces.items():
+            m = m.replace(f"%{k.upper()}%", v)
+        insertError([{"code": "BASE_TYPE_MAX_LENGTH", "message": m}])
+        return base_error
+    elif code == 28:
+        insertError([{"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or fewer in length."}])
+        return base_error

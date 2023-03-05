@@ -2,7 +2,9 @@ from json import dumps as jdumps
 
 from quart import Quart, request
 from quart.globals import request_ctx
+from quart_schema import QuartSchema, RequestSchemaValidationError
 
+from .routes.webhooks import webhooks
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
@@ -16,7 +18,7 @@ from ..yepcord.classes.gifs import Gifs
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
 from ..yepcord.ctx import Ctx
-from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr
+from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.storage import getStorage
 from ..yepcord.utils import b64decode, b64encode, c_json
 
@@ -47,6 +49,7 @@ class YEPcord(Quart):
 
 
 app = YEPcord("YEPcord-api")
+QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
 app.gifs = Gifs(Config("TENOR_KEY"))
@@ -78,6 +81,12 @@ async def ydataerror_handler(e):
         return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
 
 
+@app.errorhandler(RequestSchemaValidationError)
+async def handle_validation_error(error: RequestSchemaValidationError):
+    pydantic_error = error.validation_error
+    return c_json(Errors.from_pydantic(pydantic_error), 400)
+
+
 @app.after_request
 async def set_cors_headers(response):
     response.headers['Server'] = "YEPcord"
@@ -94,7 +103,7 @@ app.register_blueprint(users, url_prefix="/api/v9/users")
 app.register_blueprint(channels, url_prefix="/api/v9/channels")
 app.register_blueprint(invites, url_prefix="/api/v9/invites")
 app.register_blueprint(guilds, url_prefix="/api/v9/guilds")
-app.register_blueprint(guilds, url_prefix="/api/v9/webhooks")
+app.register_blueprint(webhooks, url_prefix="/api/v9/webhooks")
 app.register_blueprint(gifs, url_prefix="/api/v9/gifs")
 app.register_blueprint(hypesquad, url_prefix="/api/v9/hypesquad")
 app.register_blueprint(other, url_prefix="/")

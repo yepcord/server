@@ -390,6 +390,9 @@ class DBConnection(ABC):
     @abstractmethod
     async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool: ...
 
+    @abstractmethod
+    async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -577,7 +580,7 @@ class MySqlConnection:
             channels.append(Channel.from_result(self.cur.description, r))
         return channels
 
-    async def getChannelMessages(self, channel, limit: int, before: int = None, after: int = None) -> List[Message]:
+    async def getChannelMessages(self, channel, limit: int, before: int = 0, after: int = 0) -> List[Message]:
         messages = []
         where = [f"`channel_id`={channel.id}"]
         if before:
@@ -649,7 +652,7 @@ class MySqlConnection:
         q = json_to_sql(attachment.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
-        await self.cur.execute(f'INSERT INTO `attachments` ({fields}) VALUES ({values});')
+        await self.cur.execute(f'set FOREIGN_KEY_CHECKS=0; INSERT INTO `attachments` ({fields}) VALUES ({values});')
 
     async def getAttachment(self, id: int) -> Optional[Attachment]:
         await self.cur.execute(f'SELECT * FROM `attachments` WHERE `id`="{id}"')
@@ -681,9 +684,12 @@ class MySqlConnection:
     async def changeUserEmail(self, uid: int, email: str) -> None:
         await self.cur.execute(f'UPDATE `users` SET `email`="{escape_string(email)}", `verified`=false WHERE `id`={uid};')
 
-    async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int) -> Channel:
-        await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`) VALUES ({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(jdumps(recipients))}", {owner_id});')
-        return Channel(channel_id, ChannelType.GROUP_DM, recipients=recipients, owner_id=owner_id, icon=None, name=None)
+    async def createDMGroupChannel(self, channel_id: int, recipients: List[int], owner_id: int, name: Optional[str]=None) -> Channel:
+        name = f'"{escape_string(name)}"' if name is not None else "NULL"
+        await self.cur.execute(f'INSERT INTO `channels` (`id`, `type`, `j_recipients`, `owner_id`, `name`) VALUES '
+                               f'({channel_id}, {ChannelType.GROUP_DM}, "{escape_string(jdumps(recipients))}", '
+                               f'{owner_id}, {name});')
+        return Channel(channel_id, ChannelType.GROUP_DM, recipients=recipients, owner_id=owner_id, icon=None, name=name)
 
     async def updateChannelDiff(self, before: Channel, after: Channel) -> None:
         diff = before.get_diff(after)
@@ -1102,6 +1108,7 @@ class MySqlConnection:
         await self.cur.execute(f'DELETE FROM `guilds` WHERE `id`={guild.id} LIMIT 1;')
 
     async def putWebhook(self, webhook: Webhook) -> None:
+        print(webhook)
         q = json_to_sql(webhook.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
@@ -1139,3 +1146,9 @@ class MySqlConnection:
     async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool:
         await self.cur.execute(f'SELECT * FROM `hidden_dm_channels` WHERE `user_id`={user.id} AND `channel_id`={channel.id};')
         return bool(await self.cur.fetchone())
+
+    async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `emojis` SET {diff} WHERE `id`={before.id};')

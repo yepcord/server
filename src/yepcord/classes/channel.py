@@ -46,7 +46,7 @@ class Channel(_Channel, Model):
     flags: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     last_message_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True, excluded=True)
 
-    async def messages(self, limit: int=50, before: int=None, after: int=None):
+    async def messages(self, limit: int=50, before: int=0, after: int=0):
         limit = int(limit)
         if limit > 100:
             limit = 100

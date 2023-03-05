@@ -1,21 +1,17 @@
-from io import BytesIO
-from uuid import UUID
+from quart import Quart
+from quart_schema import validate_querystring
 
-from PIL import Image
-from async_timeout import timeout
-from magic import from_buffer
-from quart import Quart, request
-
+from .models import CdnImageSizeQuery
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
 from ..yepcord.storage import getStorage
-from ..yepcord.utils import b64decode, ALLOWED_AVATAR_SIZES
+from ..yepcord.utils import b64decode
 
 
 class YEPcord(Quart):
     pass # Maybe it will be needed in the future
 
-app = YEPcord("YEPcord-api")
+app = YEPcord("YEPcord-Cdn")
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
 
@@ -41,174 +37,121 @@ async def set_cors_headers(response):
     response.headers['Content-Security-Policy'] = "connect-src *;"
     return response
 
-# Auth
 
-@app.get("/avatars/<int:uid>/<string:name>")
-async def avatars_uid_hash(uid, name):
-    ahash = name.split(".")[0]
-    fmt = name.split(".")[1]
-    size = int(request.args.get("size", 1024))
-    if fmt not in ["webp", "png", "jpg", "gif"]:
+# Images (avatars, banners, emojis, icons, etc.)
+
+
+@app.get("/avatars/<int:user_id>/<string:file_hash>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_avatar(query_args: CdnImageSizeQuery, user_id: int, file_hash: str, format: str):
+    if format not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    if size not in ALLOWED_AVATAR_SIZES:
-        return b'', 400
-    if size > 1024: size = 1024
-    avatar = await cdn.getAvatar(uid, ahash, size, fmt)
-    if not avatar:
+    if query_args.size > 1024: query_args.size = 1024
+    if not (avatar := await cdn.getAvatar(user_id, file_hash, query_args.size, format)):
         return b'', 404
-    return avatar, 200, {"Content-Type": f"image/{fmt}"}
+    return avatar, 200, {"Content-Type": f"image/{format}"}
 
-@app.get("/banners/<int:uid>/<string:name>")
-async def banners_uid_hash(uid, name):
-    bhash = name.split(".")[0]
-    fmt = name.split(".")[1]
-    size = int(request.args.get("size", 600))
-    if fmt not in ["webp", "png", "jpg", "gif"]:
+
+@app.get("/banners/<int:user_id>/<string:file_hash>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_banner(query_args: CdnImageSizeQuery, user_id: int, file_hash: str, format: str):
+    if format not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    if size not in ALLOWED_AVATAR_SIZES:
-        return b'', 400
-    if size > 600: size = 600
-    banner = await cdn.getBanner(uid, bhash, size, fmt)
-    if not banner:
+    if query_args.size > 600: query_args.size = 600
+    if not (banner := await cdn.getBanner(user_id, file_hash, query_args.size, format)):
         return b'', 404
-    return banner, 200, {"Content-Type": f"image/{fmt}"}
+    return banner, 200, {"Content-Type": f"image/{format}"}
 
-@app.get("/splashes/<int:uid>/<string:name>")
-async def splashes_uid_hash(uid, name):
-    bhash = name.split(".")[0]
-    fmt = name.split(".")[1]
-    size = int(request.args.get("size", 600))
-    if fmt not in ["webp", "png", "jpg", "gif"]:
+
+@app.get("/splashes/<int:guild_id>/<string:file_hash>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_splash(query_args: CdnImageSizeQuery, guild_id: int, file_hash: str, format: str):
+    if format not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    if size not in ALLOWED_AVATAR_SIZES:
-        return b'', 400
-    if size > 600: size = 600
-    banner = await cdn.getGuildSplash(uid, bhash, size, fmt)
-    if not banner:
+    if query_args.size > 600: query_args.size = 600
+    if not (splash := await cdn.getGuildSplash(guild_id, file_hash, query_args.size, format)):
         return b'', 404
-    return banner, 200, {"Content-Type": f"image/{fmt}"}
+    return splash, 200, {"Content-Type": f"image/{format}"}
 
-@app.get("/channel-icons/<int:cid>/<string:name>")
-async def channelicons_cid_hash(cid, name):
-    ihash = name.split(".")[0]
-    fmt = name.split(".")[1]
-    size = int(request.args.get("size", 1024))
-    if fmt not in ["webp", "png", "jpg", "gif"]:
+
+@app.get("/channel-icons/<int:channel_id>/<string:file_hash>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_channel_icon(query_args: CdnImageSizeQuery, channel_id: int, file_hash: str, format: str):
+    if format not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    if size not in ALLOWED_AVATAR_SIZES:
-        return b'', 400
-    if size > 1024: size = 1024
-    icon = await cdn.getChannelIcon(cid, ihash, size, fmt)
-    if not icon:
+    if query_args.size > 1024: query_args.size = 1024
+    if not (icon := await cdn.getChannelIcon(channel_id, file_hash, query_args.size, format)):
         return b'', 404
-    return icon, 200, {"Content-Type": f"image/{fmt}"}
+    return icon, 200, {"Content-Type": f"image/{format}"}
 
-@app.get("/icons/<int:gid>/<string:name>")
-async def icons_gid_hash(gid, name):
-    ihash = name.split(".")[0]
-    fmt = name.split(".")[1]
-    size = int(request.args.get("size", 1024))
-    if fmt not in ["webp", "png", "jpg", "gif"]:
+
+@app.get("/icons/<int:guild_id>/<string:file_hash>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_guild_icon(query_args: CdnImageSizeQuery, guild_id: int, file_hash: str, format: str):
+    if format not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    if size not in ALLOWED_AVATAR_SIZES:
-        return b'', 400
-    if size > 1024: size = 1024
-    icon = await cdn.getGuildIcon(gid, ihash, size, fmt)
-    if not icon:
+    if query_args.size > 1024: query_args.size = 1024
+    if not (icon := await cdn.getGuildIcon(guild_id, file_hash, query_args.size, format)):
         return b'', 404
-    return icon, 200, {"Content-Type": f"image/{fmt}"}
+    return icon, 200, {"Content-Type": f"image/{format}"}
 
-@app.get("/role-icons/<int:rid>/<string:name>")
-async def roleicons_rid_hash(rid, name):
-    ihash = name.split(".")[0]
-    fmt = name.split(".")[1]
-    size = int(request.args.get("size", 1024))
-    if fmt not in ["webp", "png", "jpg", "gif"]:
+
+@app.get("/role-icons/<int:role_id>/<string:file_hash>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_role_icon(query_args: CdnImageSizeQuery, role_id: int, file_hash: str, format: str):
+    if format not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    if size not in ALLOWED_AVATAR_SIZES:
-        return b'', 400
-    if size > 1024: size = 1024
-    icon = await cdn.getRoleIcon(rid, ihash, size, fmt)
-    if not icon:
+    if query_args.size > 1024: query_args.size = 1024
+    if not (icon := await cdn.getRoleIcon(role_id, file_hash, query_args.size, format)):
         return b'', 404
-    return icon, 200, {"Content-Type": f"image/{fmt}"}
+    return icon, 200, {"Content-Type": f"image/{format}"}
 
-@app.get("/emojis/<string:name>")
-async def emojis_eid(name):
-    eid = int(name.split(".")[0])
-    fmt = name.split(".")[1]
-    size = int(request.args.get("size", 56))
-    if fmt not in ["webp", "png", "jpg", "gif"]:
+
+@app.get("/emojis/<int:emoji_id>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_emoji(query_args: CdnImageSizeQuery, emoji_id: int, format: str):
+    if format not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
-    if size not in ALLOWED_AVATAR_SIZES:
-        return b'', 400
-    if size > 56: size = 56
-    em = await core.getEmoji(eid)
-    if not em:
-        for a in (False, True):
-            emoji = await cdn.getEmoji(eid, size, fmt, a)
-            if emoji:
+    if query_args.size > 56: query_args.size = 56
+    emoji = await core.getEmoji(emoji_id)
+    if not emoji:
+        # If emoji deleted or never existed
+        for animated in (False, True):
+            emoji = await cdn.getEmoji(emoji_id, query_args.size, format, animated)
+            if emoji: # If deleted from database, but file found
                 break
     else:
-        emoji = await cdn.getEmoji(eid, size, fmt, em.animated)
+        emoji = await cdn.getEmoji(emoji_id, query_args.size, format, emoji.animated)
     if not emoji:
         return b'', 404
-    return emoji, 200, {"Content-Type": f"image/{fmt}"}
+    return emoji, 200, {"Content-Type": f"image/{format}"}
+
+
+@app.get("/guilds/<int:guild_id>/users/<int:member_id>/avatars/<string:file_hash>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_guild_avatar(query_args: CdnImageSizeQuery, guild_id: int, member_id: int, file_hash: str, format: str):
+    if format not in ["webp", "png", "jpg", "gif"]:
+        return b'', 400
+    if query_args.size > 1024: query_args.size = 1024
+    if not (avatar := await cdn.getGuildAvatar(member_id, guild_id, file_hash, query_args.size, format)):
+        return b'', 404
+    return avatar, 200, {"Content-Type": f"image/{format}"}
+
+
+# Attachments
+
 
 @app.get("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")
-async def attachments_channelid_attachmentid_name(channel_id, attachment_id, name):
-    att = await core.getAttachment(attachment_id)
-    if not att:
+async def get_attachment(channel_id: int, attachment_id: int, name: str):
+    if not (attachment := await core.getAttachment(attachment_id)):
         return b'', 404
-    h = {}
-    if att.get("content_type"):
-        h["Content-Type"] = att.content_type
-    att = await cdn.getAttachment(channel_id, attachment_id, name)
-    if not att:
+    headers = {}
+    if attachment.get("content_type"):
+        headers["Content-Type"] = attachment.content_type
+    if not (attachment := await cdn.getAttachment(channel_id, attachment_id, name)):
         return b'', 404
-    return att, 200, h
+    return attachment, 200, headers
 
-@app.put("/upload/attachment/<string:uuid>/<string:filename>")
-async def upload_attachment_uuid_filename(uuid, filename):
-    try:
-        uuid = str(UUID(uuid))
-    except ValueError:
-        return "Not found", 404
-    if not (attachment := await core.getAttachmentByUUID(uuid)):
-        return "Not found", 404
-    if attachment.filename != filename:
-        return "Not found", 404
-    if attachment.uploaded:
-        return ""
-    if request.content_length > 100*1024*1024:
-        return "Payload Too Large", 413
-    async with timeout(100):
-        data = await request.body
-    meta = {}
-    ct = attachment.get("content_type")
-    if not ct:
-        ct = from_buffer(data[:1024], mime=True)
-    if ct.startswith("image/"):
-        img = Image.open(BytesIO(data))
-        meta.update({"height": img.height, "width": img.width})
-        img.close()
-    await cdn.uploadAttachment(data, attachment)
-    await core.updateAttachment(attachment, attachment.copy().set(uploaded=True, metadata=meta, content_type=ct))
-
-@app.get("/guilds/<int:guild>/users/<int:member>/avatars/<string:name>")
-async def guilds_guild_users_user_avatars_name_get(guild: int, member: int, name: str):
-    ahash = name.split(".")[0]
-    fmt = name.split(".")[1]
-    size = int(request.args.get("size", 1024))
-    if fmt not in ["webp", "png", "jpg", "gif"]:
-        return b'', 400
-    if size not in ALLOWED_AVATAR_SIZES:
-        return b'', 400
-    if size > 1024: size = 1024
-    avatar = await cdn.getGuildAvatar(member, guild, ahash, size, fmt)
-    if not avatar:
-        return b'', 404
-    return avatar, 200, {"Content-Type": f"image/{fmt}"}
 
 if __name__ == "__main__":
     from uvicorn import run as urun

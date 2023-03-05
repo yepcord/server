@@ -14,7 +14,7 @@ from schema import And, Use, Or, Optional as sOptional, Regex
 from ..errors import InvalidDataErr, Errors
 from ..snowflake import Snowflake
 from ..ctx import getCore
-from ..enums import RelationshipType, UserFlags as UserFlagsE, GuildPermissions
+from ..enums import RelationshipType, GuildPermissions
 from ..model import model, field, Model
 from ..proto import AppearanceSettings, Locale, TimezoneOffset, Theme, LocalizationSettings, ShowCurrentGame, \
     Status, StatusSettings, PrivacySettings, FriendSourceFlags, ViewImageDescriptions, MessageDisplayCompact, \
@@ -462,31 +462,6 @@ class UserNote(Model):
     user_id: int = field(db_name="uid")
     note_user_id: int = field(db_name="target_uid")
     note: str = field(validation=Or(Use(str), NoneType), nullable=True)
-
-class UserFlags:
-    def __init__(self, value: int):
-        self.value = value
-        self.parsedFlags = self.parseFlags(value)
-
-    @staticmethod
-    def parseFlags(value: int) -> list:
-        flags = []
-        for val in UserFlagsE.values().values():
-            if (value & val) == val:
-                flags.append(val)
-        return flags
-
-    def add(self, val: int):
-        if val not in self.parsedFlags:
-            self.value += val
-            self.parsedFlags.append(val)
-        return self
-
-    def remove(self, val: int):
-        if val in self.parsedFlags:
-            self.value -= val
-            self.parsedFlags.remove(val)
-        return self
 
 class PermissionsChecker:
     def __init__(self, member: GuildMember):

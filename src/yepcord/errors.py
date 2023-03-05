@@ -1,3 +1,6 @@
+from pydantic import ValidationError
+
+
 class YDataError(Exception):
     pass
 
@@ -80,6 +83,24 @@ class _Errors:
                 e = e[p]
             e["_errors"] = [error]
         return err
+
+    @staticmethod
+    def from_pydantic(exc: ValidationError):
+        errors = {}
+        for error in exc.errors():
+            loc = error["loc"][0]
+            if loc not in errors:
+                errors[loc] = {"_errors": []}
+            if error["type"] == "value_error.missing":
+                errors[loc]["_errors"].append({"code": "BASE_TYPE_REQUIRED", "message": "Required field."})
+            elif error["type"] in ("type_error.integer", "type_error.float"):
+                message = "Value is not int." if error["type"] == "type_error.integer" else "Value is not float."
+                errors[loc]["_errors"].append({"code": "NUMBER_TYPE_COERCE", "message": message})
+            else:
+                errors[loc]["_errors"].append(
+                    {"code": "ERROR_TYPE_UNKNOWN", "message": "Something wrong with this value.",
+                     "_error_type": error["type"]})
+        return {"code": 50035, "errors": errors, "message": "Invalid Form Body"}
 
 
 Errors = _Errors()

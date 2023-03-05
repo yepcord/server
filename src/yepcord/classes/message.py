@@ -1,10 +1,8 @@
 # All 'Message' classes (Message, etc.)
 from dataclasses import dataclass
-from time import mktime
 from typing import Optional
 from uuid import uuid4
 
-from dateutil.parser import parse as dparse
 from pymysql.converters import escape_string
 from schema import Or, And
 
@@ -12,7 +10,6 @@ from .user import UserId
 from ..config import Config
 from ..ctx import getCore, Ctx
 from ..enums import MessageType
-from ..errors import EmbedErr
 from ..model import Model, field, model
 from ..snowflake import Snowflake
 from ..utils import NoneType
@@ -110,11 +107,6 @@ class Message(_Message, Model):
             if not hasattr(self, k):
                 setattr(self, k, v)
         return self
-
-    async def check(self):
-        self.embeds = Embeds(self.embeds).json
-        if self.embeds is None:
-            self.embeds = []
 
 
 @model
@@ -231,215 +223,3 @@ class SearchFilter(Model):
         else:
             where += f" LIMIT 25"
         return where
-
-
-class Embeds:
-    def __init__(self, data: list):
-        self.data = data
-        self._total_text_length = 0
-
-    @staticmethod
-    def makeError(code, path=None, replaces=None):
-        if replaces is None: replaces = {}
-        base_error = {"code": 50035, "errors": {"embeds": {}}, "message": "Invalid Form Body"}
-
-        def insertError(error):
-            errors = base_error["errors"]["embeds"]
-            if path is None:
-                errors["_errors"] = error
-                return
-            for el in path.split("."):
-                errors[el] = {}
-                errors = errors[el]
-            errors["_errors"] = error
-
-        if code == 23:
-            insertError([{"code": "BASE_TYPE_REQUIRED", "message": "This field is required"}])
-            return base_error
-        elif code == 24:
-            m = "Scheme \"%SCHEME%\" is not supported. Scheme must be one of ('http', 'https')."
-            for k, v in replaces.items():
-                m = m.replace(f"%{k.upper()}%", v)
-            insertError([{"code": "URL_TYPE_INVALID_SCHEME", "message": m}])
-            return base_error
-        elif code == 25:
-            m = "Could not parse %VALUE%. Should be ISO8601."
-            for k, v in replaces.items():
-                m = m.replace(f"%{k.upper()}%", v)
-            insertError([{"code": "DATE_TIME_TYPE_PARSE", "message": m}])
-            return base_error
-        elif code == 26:
-            insertError([{"code": "NUMBER_TYPE_MAX", "message": "int value should be <= 16777215 and >= 0."}])
-            return base_error
-        elif code == 27:
-            m = "Must be %LENGTH% or fewer in length."
-            for k, v in replaces.items():
-                m = m.replace(f"%{k.upper()}%", v)
-            insertError([{"code": "BASE_TYPE_MAX_LENGTH", "message": m}])
-            return base_error
-        elif code == 28:
-            insertError([{"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or fewer in length."}])
-            return base_error
-
-    def delOptionalFields(self, index: int) -> None:
-        """
-        Removes non-required fields in embed with given index if field is empty
-        :param index:
-        :return:
-        """
-        fields = ["description", "url", "timestamp", "color", "footer", "image", "thumbnail", "video", "provider",
-                  "author"]
-        data = self.data[index]
-        for field in fields:
-            if (v := data.get(field)) and not bool(v):
-                del data[field]
-
-    def validateTitle(self, idx: int, embed: dict) -> None:
-        self._total_text_length += (title_len := len(embed.get("title")))
-        if title_len > 256:
-            raise EmbedErr(self.makeError(27, f"{idx}.title", {"length": "256"}))
-
-    def validateDescription(self, idx: int, embed: dict) -> None:
-        if desc := embed.get("description"):
-            embed["description"] = str(desc)
-            self._total_text_length += (description_len := len(desc))
-            if description_len > 4096:
-                raise EmbedErr(self.makeError(27, f"{idx}.description", {"length": "2048"}))
-
-    def validateUrl(self, idx: int, embed: dict) -> None:
-        if url := embed.get("url"):
-            url = str(url)
-            embed["url"] = url
-            if (scheme := url.split(":")[0]) not in ["http", "https"]:
-                raise EmbedErr(self.makeError(24, f"{idx}.url", {"scheme": scheme}))
-
-    def validateTimestamp(self, idx: int, embed: dict) -> None:
-        if ts := embed.get("timestamp"):
-            ts = str(ts)
-            embed["timestamp"] = ts
-            try:
-                ts = mktime(dparse(ts).timetuple())
-            except ValueError:
-                raise EmbedErr(self.makeError(25, f"{idx}.timestamp", {"value": ts}))
-
-    def validateColor(self, idx: int, embed: dict) -> None:
-        try:
-            if color := embed.get("color"):
-                color = int(color)
-                if color > 0xffffff or color < 0:
-                    raise EmbedErr(self.makeError(26, f"{idx}.color"))
-        except ValueError:
-            del embed["color"]
-
-    def validateFooter(self, idx: int, embed: dict) -> None:
-        if footer := embed.get("footer"):
-            if not footer.get("text"):
-                del embed["footer"]
-            else:
-                self._total_text_length += (footer_len := len(footer.get("text")))
-                if footer_len > 2048:
-                    raise EmbedErr(self.makeError(27, f"{idx}.footer.text", {"length": "2048"}))
-                if (url := footer.get("icon_url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
-                    raise EmbedErr(self.makeError(24, f"{idx}.footer.icon_url", {"scheme": scheme}))
-                if footer.get("proxy_icon_url"): del footer["proxy_icon_url"]  # Not supported
-
-    def validateImageField(self, image: dict, idx: int):
-        if (url := image.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
-            raise EmbedErr(self.makeError(24, f"{idx}.image.url", {"embed_index": idx, "scheme": scheme}))
-        if image.get("proxy_url"): del image["proxy_url"]  # Not supported
-        if width := image.get("width"):
-            try:
-                image["width"] = int(width)
-            except ValueError:
-                del image["width"]
-        if height := image.get("height"):
-            try:
-                image["height"] = int(height)
-            except ValueError:
-                del image["height"]
-
-    def validateImage(self, idx: int, embed: dict) -> None:
-        if image := embed.get("image"):
-            if not image.get("url"):
-                del embed["image"]
-            else:
-                self.validateImageField(image, idx)
-
-    def validateThumbnail(self, idx: int, embed: dict) -> None:
-        if thumbnail := embed.get("thumbnail"):
-            if not thumbnail.get("url"):
-                del embed["thumbnail"]
-            else:
-                self.validateImageField(thumbnail, idx)
-
-    def validateVideo(self, idx: int, embed: dict) -> None:
-        if video := embed.get("video"):
-            if not video.get("url"):
-                del embed["video"]
-            else:
-                self.validateImageField(video, idx)
-
-    def validateProvider(self, idx: int, embed: dict) -> None:
-        if embed.get("provider"): del embed["provider"]  # Not supported
-
-    def validateAuthor(self, idx: int, embed: dict) -> None:
-        if author := embed.get("author"):
-            if not (name := author.get("name")):
-                del embed["author"]
-            else:
-                if len(name) > 256:
-                    raise EmbedErr(self.makeError(27, f"{idx}.author.name", {"length": "256"}))
-                if (url := author.get("url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
-                    raise EmbedErr(self.makeError(24, f"{idx}.author.url", {"scheme": scheme}))
-                if (url := author.get("icon_url")) and (scheme := url.split(":")[0]) not in ["http", "https"]:
-                    raise EmbedErr(self.makeError(24, f"{idx}.author.icon_url", {"scheme": scheme}))
-                if author.get("proxy_icon_url"): del author["proxy_icon_url"]  # Not supported
-
-    def validateFields(self, idx: int, embed: dict) -> None:
-        if fields := embed.get("fields"):
-            embed["fields"] = fields = fields[:25]
-            for fidx, field in enumerate(fields):
-                if not (name := field.get("name")):
-                    raise EmbedErr(self.makeError(23, f"{idx}.fields.{fidx}.name"))
-                self._total_text_length += (name_len := len(name))
-                if name_len > 256:
-                    raise EmbedErr(self.makeError(27, f"{idx}.fields.{fidx}.name", {"length": "256"}))
-
-                if not (value := field.get("value")):
-                    raise EmbedErr(self.makeError(23, f"{idx}.fields.{fidx}.value"))
-                self._total_text_length += (value_len := len(value))
-                if value_len > 1024:
-                    raise EmbedErr(self.makeError(27, f"{idx}.fields.{fidx}.value", {"length": "1024"}))
-                if not field.get("inline"): field["inline"] = False
-
-    @property
-    def json(self) -> Optional[list]:
-        if not self.data:
-            return
-        if len(self.data) > 10:
-            raise EmbedErr(self.makeError(28))
-        if not isinstance(self.data, list):
-            return
-        for idx, embed in enumerate(self.data):
-            if not isinstance(embed, dict):
-                return
-            if not embed.get("title"):
-                raise EmbedErr(self.makeError(23, f"{idx}"))
-            embed["type"] = "rich"  # Single supported embed type now
-            embed["title"] = str(embed["title"])
-            self.delOptionalFields(idx)
-            self.validateTitle(idx, embed)
-            self.validateDescription(idx, embed)
-            self.validateUrl(idx, embed)
-            self.validateTimestamp(idx, embed)
-            self.validateColor(idx, embed)
-            self.validateFooter(idx, embed)
-            self.validateImage(idx, embed)
-            self.validateVideo(idx, embed)
-            self.validateProvider(idx, embed)
-            self.validateAuthor(idx, embed)
-            self.validateFields(idx, embed)
-            if self._total_text_length > 6000:
-                raise EmbedErr(self.makeError(27, replaces={"length": "6000"}))
-
-        return self.data

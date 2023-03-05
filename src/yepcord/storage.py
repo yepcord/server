@@ -74,6 +74,7 @@ async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
         b = BytesIO()
         save_all = True
         if form.lower() == "jpg":
+            img = img.convert('RGB')
             form = "JPEG"
             save_all = False
         img.save(b, format=form, save_all=save_all)

@@ -172,10 +172,13 @@ class Core(Singleton):
     async def checkUserPassword(self, user: User, password: str) -> bool:
         return checkpw(self.prepPassword(password, user.id), user.password.encode("utf8"))
 
-    async def changeUserDiscriminator(self, user: User, discriminator: int) -> bool:
+    async def changeUserDiscriminator(self, user: User, discriminator: int, changed_username: bool=False) -> bool:
         username = (await user.data).username
         if await self.getUserByUsername(username, discriminator):
-            return False
+            if changed_username:
+                return False
+            raise InvalidDataErr(400, Errors.make(50035, {"username": {"code": "USERNAME_TOO_MANY_USERS",
+                                                                       "message": "This discriminator already used by someone. Please enter something else."}}))
         data = await user.data
         ndata = data.copy(discriminator=discriminator)
         async with self.db() as db:
@@ -430,7 +433,7 @@ class Core(Singleton):
         async with self.db() as db:
             return [await self.getLastMessageIdForChannel(channel) for channel in await db.getPrivateChannels(user, with_hidden=with_hidden)]
 
-    async def getChannelMessages(self, channel, limit: int, before: int=None, after: int=None) -> List[Message]:
+    async def getChannelMessages(self, channel, limit: int, before: int=0, after: int=0) -> List[Message]:
         async with self.db() as db:
             return await db.getChannelMessages(channel, limit, before, after)
 
@@ -639,11 +642,11 @@ class Core(Singleton):
         signature = token.split(".")[2]
         return signature.replace("-", "").replace("_", "")[:8].upper()
 
-    async def createDMGroupChannel(self, user: User, recipients: list) -> Channel:
+    async def createDMGroupChannel(self, user: User, recipients: list, name: Optional[str]=None) -> Channel:
         if user.id not in recipients:
             recipients.append(user.id)
         async with self.db() as db:
-            return await db.createDMGroupChannel(Snowflake.makeId(), recipients, user.id)
+            return await db.createDMGroupChannel(Snowflake.makeId(), recipients, user.id, name)
 
     async def sendDMChannelCreateEvent(self, channel: Channel, *, users=None) -> None:
         if not users:
@@ -772,8 +775,8 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getInvite(invite_id)
 
-    async def createGuild(self, user: User, name: str) -> Guild:
-        guild = Guild(Snowflake.makeId(), user.id, name, system_channel_id=0, features=[])
+    async def createGuild(self, guild_id: int, user: User, name: str, **kwargs) -> Guild:
+        guild = Guild(guild_id, user.id, name, system_channel_id=0, features=[], **kwargs)
         roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
         channels = []
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
@@ -923,10 +926,15 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getEmojis(guild_id)
 
+    async def sendGuildEmojisUpdatedEvent(self, guild: Guild) -> None:
+        await self.mcl.broadcast("guild_events", {"e": "emojis_update",
+                                                  "data": {"users": await self.getGuildMembersIds(guild),
+                                                           "guild_id": guild.id}})
+
     async def addEmoji(self, emoji: Emoji, guild: Guild) -> None:
         async with self.db() as db:
             await db.addEmoji(emoji)
-        await self.mcl.broadcast("guild_events", {"e": "emojis_update", "data": {"users": await self.getGuildMembersIds(guild), "guild_id": guild.id}})
+        await self.sendGuildEmojisUpdatedEvent(guild)
 
     async def getEmoji(self, emoji_id: int) -> Optional[Emoji]:
         async with self.db() as db:
@@ -935,7 +943,7 @@ class Core(Singleton):
     async def deleteEmoji(self, emoji: Emoji, guild: Guild) -> None:
         async with self.db() as db:
             await db.deleteEmoji(emoji)
-        await self.mcl.broadcast("guild_events", {"e": "emojis_update", "data": {"users": await self.getGuildMembersIds(guild), "guild_id": guild.id}})
+        await self.sendGuildEmojisUpdatedEvent(guild)
 
     async def getEmojiByReaction(self, reaction: str) -> Optional[Emoji]:
         try:
@@ -1277,6 +1285,10 @@ class Core(Singleton):
     async def isDmChannelHidden(self, user: _User, channel: Channel) -> bool:
         async with self.db() as db:
             return await db.isDmChannelHidden(user, channel)
+
+    async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None:
+        async with self.db() as db:
+            await db.updateEmojiDiff(before, after)
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()

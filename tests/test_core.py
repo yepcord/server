@@ -279,7 +279,12 @@ async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core])
     userdata2 = await user2.userdata
 
     # Try to change first user discriminator to second user discriminator
-    assert not await testCore.changeUserDiscriminator(user1, userdata2.discriminator)
+    assert not await testCore.changeUserDiscriminator(user1, userdata2.discriminator, True)
+    try:
+        await testCore.changeUserDiscriminator(user1, userdata2.discriminator, False)
+        assert False
+    except InvalidDataErr:
+        pass
 
 
 @pt.mark.asyncio
