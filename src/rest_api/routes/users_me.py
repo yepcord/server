@@ -7,9 +7,10 @@ from quart_schema import validate_request
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, SettingsProtoUpdate, \
     RelationshipRequest, PutNote, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, DmChannelCreate
 from ..utils import usingDB, getUser, multipleDecorators, getSession, getGuildWM
+from ...gateway.events import RelationshipAddEvent
 from ...yepcord.classes.guild import Guild
 from ...yepcord.classes.user import User, UserSettings, UserNote, Session, GuildMember
-from ...yepcord.ctx import getCore, getCDNStorage, Ctx
+from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import c_json, execute_after, MFA, validImage, getImage
@@ -195,6 +196,10 @@ async def new_relationship(data: RelationshipRequest, user: User):
         raise InvalidDataErr(400, Errors.make(80007))
     await getCore().checkRelationShipAvailable(target_user, user)
     await getCore().reqRelationship(target_user, user)
+
+    await getGw().dispatch(RelationshipAddEvent(user.id, await user.userdata, 3), [target_user.id])
+    await getGw().dispatch(RelationshipAddEvent(target_user.id, await target_user.userdata, 4), [user.id])
+
     return "", 204
 
 

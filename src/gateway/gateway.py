@@ -103,16 +103,6 @@ class GatewayEvents:
         self.core = gw.core
         self.clients = gw.clients
 
-    async def relationship_req(self, current_user, target_user):
-        tClient = [u for u in self.clients if u.id == target_user and u.connected]
-        cClient = [u for u in self.clients if u.id == current_user and u.connected]
-        d = await self.core.getUserData(UserId(current_user)) if tClient else None
-        for cl in tClient:
-            await cl.esend(RelationshipAddEvent(current_user, d, 3))
-        d = await self.core.getUserData(UserId(target_user)) if cClient else None
-        for cl in cClient:
-            await cl.esend(RelationshipAddEvent(target_user, d, 4))
-
     async def relationship_acc(self, current_user, target_user, channel_id):
         tClient = [u for u in self.clients if u.id == target_user and u.connected]
         cClient = [u for u in self.clients if u.id == current_user and u.connected]
@@ -442,6 +432,7 @@ class Gateway:
 
     async def init(self):
         await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
+        await self.mcl.subscribe("all_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("channel_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("message_events", self.mcl_eventsCallback)

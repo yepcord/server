@@ -47,7 +47,6 @@ class Core(Singleton):
     async def initMCL(self):
         try:
             await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
-            self.mcl.set_callback(self.mclCallback)
         except ConnectionRefusedError:
             self.mcl.online = False
             self.mcl.running = True
@@ -209,7 +208,6 @@ class Core(Singleton):
     async def reqRelationship(self, tUser: _User, cUser: _User) -> None:
         async with self.db() as db:
             await db.insertRelationShip(Relationship(cUser.id, tUser.id, RelationshipType.PENDING))
-        await self.mcl.broadcast("user_events", {"e": "relationship_req", "data": {"target_user": tUser.id, "current_user": cUser.id}})
 
     async def getRelationships(self, user: _User, with_data=False) -> list:
         async def _d(uid, t):

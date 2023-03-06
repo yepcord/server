@@ -2,7 +2,7 @@ from base64 import b64encode
 from time import time
 from typing import List
 
-from ..yepcord.classes.user import GuildMember
+from ..yepcord.classes.user import GuildMember, UserData
 from ..yepcord.config import Config
 from ..yepcord.snowflake import Snowflake
 from ..yepcord.ctx import Ctx
@@ -14,6 +14,9 @@ class Event:
 
 class DispatchEvent(Event):
     OP = GatewayOp.DISPATCH
+    NAME = ""
+
+    async def json(self) -> dict: ...
 
 class ReadyEvent(DispatchEvent):
     NAME = "READY"
@@ -128,7 +131,7 @@ class ReadySupplementalEvent(DispatchEvent):
 class RelationshipAddEvent(DispatchEvent):
     NAME = "RELATIONSHIP_ADD"
 
-    def __init__(self, user_id, userdata, type):
+    def __init__(self, user_id: int, userdata: UserData, type: int):
         self.user_id = user_id
         self.userdata = userdata
         self.type = type
@@ -138,14 +141,7 @@ class RelationshipAddEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "user": {
-                    "username": self.userdata.username,
-                    "public_flags": self.userdata.public_flags,
-                    "id": str(self.user_id),
-                    "discriminator": self.userdata.s_discriminator,
-                    "avatar_decoration": self.userdata.avatar_decoration,
-                    "avatar": self.userdata.avatar
-                },
+                "user": await self.userdata.json,
                 "type": self.type,
                 "should_notify": True,
                 "nickname": None,
