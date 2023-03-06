@@ -13,7 +13,8 @@ from typing import Optional, Union, List, Tuple, Dict
 from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel, PermissionOverwrite, _Channel
-from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook
+from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, \
+    Sticker
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
@@ -276,14 +277,7 @@ class Core(Singleton):
                     if [u for u in users if u["id"] == str(uid)]:
                         continue
                     d = await self.getUserData(UserId(uid))
-                    users.append({
-                        "username": d.username,
-                        "public_flags": d.public_flags,
-                        "id": str(uid),
-                        "discriminator": d.s_discriminator,
-                        "avatar_decoration": d.avatar_decoration,
-                        "avatar": d.avatar
-                    })
+                    users.append(await d.json)
         return users
 
     async def accRelationship(self, user: _User, uid: int) -> None:
@@ -1289,6 +1283,34 @@ class Core(Singleton):
     async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None:
         async with self.db() as db:
             await db.updateEmojiDiff(before, after)
+
+    async def getGuildStickers(self, guild: _Guild) -> List[Sticker]:
+        async with self.db() as db:
+            return await db.getGuildStickers(guild)
+
+    async def getSticker(self, sticker_id: int) -> Optional[Sticker]:
+        async with self.db() as db:
+            return await db.getSticker(sticker_id)
+
+    async def putSticker(self, sticker: Sticker) -> None:
+        async with self.db() as db:
+            await db.putSticker(sticker)
+
+    async def updateStickerDiff(self, before: Sticker, after: Sticker) -> None:
+        async with self.db() as db:
+            await db.updateStickerDiff(before, after)
+
+    async def deleteSticker(self, sticker: Sticker) -> None:
+        async with self.db() as db:
+            await db.deleteSticker(sticker)
+
+    async def sendGuildStickerUpdateEvent(self, guild: _Guild) -> None:
+        stickers = await self.getGuildStickers(guild)
+        stickers = [await sticker.json for sticker in stickers]
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "stickers_update", "data": {"users": await self.getGuildMembersIds(guild),
+                                                                   "stickers": stickers,
+                                                                   "guild_id": guild.id}})
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()

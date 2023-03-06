@@ -77,7 +77,9 @@ class Guild(_Guild, Model):
             "emojis": [
                 await emoji.json for emoji in await getCore().getEmojis(self.id)  # Get json for every emoji in guild
             ],
-            "stickers": [], # TODO
+            "stickers": [
+                await sticker.json for sticker in await getCore().getGuildStickers(self)  # Get json for every sticker in guild
+            ],
             "banner": self.banner,
             "owner_id": str(self.owner_id),
             "application_id": None,  # TODO
@@ -624,4 +626,34 @@ class Webhook(Model):
             "user": await userdata.json
         }
 
+        return data
+
+@model
+@dataclass
+class Sticker(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    user_id: int = field()
+    name: str = field()
+    tags: str = field()
+    type: int = field()
+    format: int = field()
+    description: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
+
+    @property
+    async def json(self) -> dict:
+        data = {
+            "id": str(self.id),
+            "name": self.name,
+            "description": self.description,
+            "tags": self.tags,
+            "type": self.type,
+            "format_type": self.format,
+            "guild_id": str(self.guild_id),
+            "available": True,
+            "asset": ""
+        }
+        if Ctx.get("with_user", True):
+            userdata = await getCore().getUserData(UserId(self.user_id))
+            data["user"] = await userdata.json
         return data

@@ -96,9 +96,7 @@ async def _getMessage(user, channel, message_id):
 def getMessage(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if isinstance((message := await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))), tuple):
-            return message
-        kwargs["message"] = message
+        kwargs["message"] = await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))
         return await f(*args, **kwargs)
     return wrapped
 
@@ -209,7 +207,7 @@ async def processMessageData(message_id: int, data: Optional[dict], channel_id: 
                 await getCDNStorage().uploadAttachment(content, att)
                 att.uploaded = True
                 await getCore().putAttachment(att)
-    if not data.get("content") and not data.get("embeds") and not data.get("attachments"):
+    if not data.get("content") and not data.get("embeds") and not data.get("attachments") and not data.get("sticker_ids"):
         raise InvalidDataErr(400, Errors.make(50006))
     return data
 

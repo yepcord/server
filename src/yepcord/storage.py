@@ -91,7 +91,7 @@ class _Storage:
         bytes]:
         raise NotImplementedError
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
         raise NotImplementedError
 
     async def getAvatar(self, uid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
@@ -113,6 +113,10 @@ class _Storage:
         anim = avatar_hash.startswith("a_")
         def_size = 256 if anim else 1024
         return await self._getImage(f"guild/{gid}/avatar", uid, avatar_hash, size, fmt, def_size, lambda s: s)
+
+    async def getSticker(self, sticker_id: int, size: int, fmt: str, animated: bool) -> Optional[bytes]:
+        sticker_hash = "a_sticker" if animated else "sticker"
+        return await self._getImage("sticker", sticker_id, sticker_hash, size, fmt, 320, lambda s: s)
 
     async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
         raise NotImplementedError
@@ -162,6 +166,9 @@ class _Storage:
         size = 256 if a else 1024
         return await self._setImage(f"guild/{gid}/avatar", uid, size, lambda s: s, image)
 
+    async def setStickerFromBytesIO(self, sticker_id: int, image: BytesIO) -> str:
+        return await self._setImage(f"sticker", sticker_id, 320, lambda s: s, image, def_hash="sticker")
+
     async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
         raise NotImplementedError
 
@@ -200,10 +207,13 @@ class FileStorage(_Storage):
                         await f.write(data)
                     return data
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
-        hash = md5()
-        hash.update(image.getvalue())
-        hash = hash.hexdigest()
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
+        if def_hash is not None:
+            hash = def_hash
+        else:
+            hash = md5()
+            hash.update(image.getvalue())
+            hash = hash.hexdigest()
         image = Image.open(image)
         anim = imageFrames(image) > 1
         form = "gif" if anim else "png"
@@ -298,11 +308,14 @@ class S3Storage(_Storage):
                         await s3.upload_fileobj(BytesIO(data), self.bucket, paths[0])
                         return data
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
         async with self._sess.client("s3", **self._args) as s3:
-            hash = md5()
-            hash.update(image.getvalue())
-            hash = hash.hexdigest()
+            if def_hash is not None:
+                hash = def_hash
+            else:
+                hash = md5()
+                hash.update(image.getvalue())
+                hash = hash.hexdigest()
             image = Image.open(image)
             anim = imageFrames(image) > 1
             form = "gif" if anim else "png"
@@ -399,11 +412,14 @@ class FTPStorage(_Storage):
                         await ftp.s_upload(paths[0], data)
                         return data
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
         async with self._getClient() as ftp:
-            hash = md5()
-            hash.update(image.getvalue())
-            hash = hash.hexdigest()
+            if def_hash is not None:
+                hash = def_hash
+            else:
+                hash = md5()
+                hash.update(image.getvalue())
+                hash = hash.hexdigest()
             image = Image.open(image)
             anim = imageFrames(image) > 1
             form = "gif" if anim else "png"

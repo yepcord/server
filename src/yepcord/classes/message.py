@@ -41,6 +41,7 @@ class Message(_Message, Model):
     thread: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     components: Optional[list] = field(db_name="j_components", default=None)
     sticker_items: Optional[list] = field(db_name="j_sticker_items", default=None)
+    stickers: Optional[list] = field(db_name="j_stickers", default=None)
     extra_data: Optional[dict] = field(db_name="j_extra_data", default=None, private=True)
     guild_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     nonce: Optional[str] = field(default=None, excluded=True)

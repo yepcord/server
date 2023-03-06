@@ -745,3 +745,21 @@ class WebhooksUpdateEvent(DispatchEvent):
             }
         }
         return data
+
+class StickersUpdateEvent(DispatchEvent):
+    NAME = "GUILD_STICKERS_UPDATE"
+
+    def __init__(self, guild_id, stickers):
+        self.guild_id = guild_id
+        self.stickers = stickers
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "guild_id": str(self.guild_id),
+                "stickers": self.stickers
+            }
+        }
+        return data

@@ -120,14 +120,16 @@ class TemplateCreate(BaseModel):
         if not value:
             raise InvalidDataErr(400, Errors.make(50035, {
                 "name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-        if len(value) > 100:
-            value = value[:100]  # TODO: raise exception instead
+        if len(value) > 100 or len(value) < 2:
+            raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 2 and 100 in length."}}))
         return value
 
     @validator("description")
     def validate_description(cls, value: str):
         if len(value) > 120:
-            value = value[:120]  # TODO: raise exception instead
+            raise InvalidDataErr(400, Errors.make(50035, {"description": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 1 and 120 in length."}}))
         return value
 
 
@@ -141,7 +143,8 @@ class TemplateUpdate(TemplateCreate):
             if not value:
                 value = None
             elif len(value) > 100:
-                value = value[:100]  # TODO: raise exception instead
+                raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 2 and 100 in length."}}))
         return value
 
 
@@ -433,4 +436,67 @@ class GetAuditLogsQuery(BaseModel):
     def validate_limit(cls, value: int):
         if value < 0 or value > 50:
             value = 50
+        return value
+
+
+class CreateSticker(BaseModel):
+    name: str
+    description: Optional[str] = None
+    tags: str
+
+    @validator("name")
+    def validate_name(cls, value: str):
+        value = value.strip()
+        if len(value) < 2 or len(value) > 30:
+            raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 2 and 30 in length."}}))
+        return value
+
+    @validator("description")
+    def validate_description(cls, value: Optional[str]):
+        if value is not None:
+            value = value.strip()
+            if len(value) > 100:
+                raise InvalidDataErr(400, Errors.make(50035, {"description": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 0 and 100 in length."}}))
+        return value
+
+    @validator("tags")
+    def validate_tags(cls, value: Optional[str]):
+        value = value.strip()
+        if len(value) < 2 or len(value) > 200:
+            raise InvalidDataErr(400, Errors.make(50035, {"tags": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 2 and 200 in length."}}))
+        return value
+
+class UpdateSticker(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[str] = None
+
+    @validator("name")
+    def validate_name(cls, value: str):
+        if value is not None:
+            value = value.strip()
+            if len(value) < 2 or len(value) > 30:
+                raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 2 and 30 in length."}}))
+        return value
+
+    @validator("description")
+    def validate_description(cls, value: Optional[str]):
+        if value is not None:
+            value = value.strip()
+            if len(value) > 100:
+                raise InvalidDataErr(400, Errors.make(50035, {"description": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 0 and 100 in length."}}))
+        return value
+
+    @validator("tags")
+    def validate_tags(cls, value: Optional[str]):
+        if value is not None:
+            value = value.strip()
+            if len(value) < 2 or len(value) > 200:
+                raise InvalidDataErr(400, Errors.make(50035, {"tags": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 2 and 200 in length."}}))
         return value

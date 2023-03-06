@@ -293,6 +293,7 @@ class MessageCreate(BaseModel):
     content: Optional[str] = None
     nonce: Optional[str] = None
     embeds: List[EmbedModel] = Field(default_factory=list)
+    sticker_ids: List[int] = Field(default_factory=list)
     message_reference: Optional[int] = None
     flags: Optional[int] = None
 
@@ -304,7 +305,23 @@ class MessageCreate(BaseModel):
     @validator("content")
     def validate_content(cls, value: Optional[str]):
         if value is not None:
-            if len(value) > 2000: value = value[:2000] # TODO: raise exception instead
+            if len(value) > 2000:
+                raise InvalidDataErr(400, Errors.make(50035, {"content": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 1 and 2000 in length."}}))
+        return value
+
+    @validator("embeds")
+    def validate_embeds(cls, value: List[EmbedModel]):
+        if len(value) > 10:
+            raise InvalidDataErr(400, Errors.make(50035, {"embeds": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 1 and 10 in length."}}))
+        return value
+
+    @validator("sticker_ids")
+    def validate_sticker_ids(cls, value: List[int]):
+        if len(value) > 3:
+            raise InvalidDataErr(400, Errors.make(50035, {"sticker_ids": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 1 and 3 in length."}}))
         return value
 
     def to_json(self) -> dict:
@@ -318,7 +335,9 @@ class MessageUpdate(BaseModel):
     @validator("content")
     def validate_content(cls, value: Optional[str]):
         if value is not None:
-            if len(value) > 2000: value = value[:2000]  # TODO: raise exception instead
+            if len(value) > 2000:
+                raise InvalidDataErr(400, Errors.make(50035, {"content": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 1 and 2000 in length."}}))
         return value
 
     def to_json(self) -> dict:
@@ -379,3 +398,8 @@ class GetReactionsQuery(BaseModel):
         elif value > 10:
             value = 10
         return value
+
+
+class MessageAck(BaseModel):
+    manual: bool = False
+    mention_count: int = 0

@@ -7,12 +7,12 @@ from quart import Blueprint, request
 from quart_schema import validate_request, validate_querystring
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery
+    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck
 from ..utils import usingDB, getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData
 from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import GuildId, AuditLogEntry, Webhook
 from ...yepcord.classes.message import Reaction, SearchFilter, Message
-from ...yepcord.classes.user import User
+from ...yepcord.classes.user import User, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, RelationshipType, AuditLogEntryType, \
     WebhookType
@@ -147,9 +147,30 @@ async def send_message(user: User, channel: Channel):
     data = await processMessageData(message_id, data, channel.id)
     if "message_reference" in data and int(data["message_reference"]["channel_id"]) != channel.id: del data["message_reference"]
     data = MessageCreate(**data)
-    message = Message(id=message_id, channel_id=channel.id, author=user.id, **data.to_json(), guild_id=channel.guild_id)
+    stickers = [await getCore().getSticker(sticker_id) for sticker_id in data.sticker_ids]
+    if not data.content and not data.embeds and not await getCore().getAttachments(Message(message_id, 0, 0)) \
+            and not data.sticker_ids:
+        raise InvalidDataErr(400, Errors.make(50006))
+    stickers_data = {"sticker_items": [], "stickers": []}
+    Ctx["with_user"] = False
+    for sticker in stickers:
+        stickers_data["stickers"].append(await sticker.json)
+        stickers_data["sticker_items"].append({
+            "format_type": sticker.format,
+            "id": str(sticker.id),
+            "name": sticker.name,
+        })
+    message = Message(id=message_id, channel_id=channel.id, author=user.id, **data.to_json(), **stickers_data,
+                      guild_id=channel.guild_id)
+    if channel.type == ChannelType.DM:
+        recipients = channel.recipients.copy()
+        recipients.remove(user.id)
+        other_user = recipients[0]
+        if await getCore().isDmChannelHidden(UserId(other_user), channel):
+            await getCore().unhideDmChannel(UserId(other_user), channel)
+            await getCore().sendDMChannelCreateEvent(channel=channel, users=[other_user])
     message = await getCore().sendMessage(message)
-    if await getCore().delReadStateIfExists(user.id, channel.id):
+    if await getCore().setReadState(user.id, channel.id, 0, message.id):
         await getCore().sendMessageAck(user.id, channel.id, message.id)
     return c_json(await message.json)
 
@@ -182,17 +203,16 @@ async def edit_message(data: MessageUpdate, user: User, channel: Channel, messag
     return c_json(await new_message.json)
 
 @channels.post("/<int:channel>/messages/<int:message>/ack")
-@multipleDecorators(usingDB, getUser, getChannel)
-async def send_message_ack(user: User, channel: Channel, message: Message):
-    data = await request.get_json()
-    if data.get("manual") and (ct := int(data.get("mention_count"))):
-        if isinstance((message := await _getMessage(user, channel, message)), tuple):
-            return message
+@multipleDecorators(validate_request(MessageAck), usingDB, getUser, getChannel)
+async def send_message_ack(data: MessageAck, user: User, channel: Channel, message: int):
+    if data.manual and (ct := data.mention_count):
+        message = await _getMessage(user, channel, message)
         await getCore().setReadState(user.id, channel.id, ct, message.id)
         await getCore().sendMessageAck(user.id, channel.id, message.id, ct, True)
     else:
-        await getCore().delReadStateIfExists(user.id, channel.id)
-        await getCore().sendMessageAck(user.id, channel.id, message.id)
+        ct = len(await getCore().getChannelMessages(channel, 99, channel.last_message_id, message))
+        await getCore().setReadState(user.id, channel.id, ct, message)
+        await getCore().sendMessageAck(user.id, channel.id, message)
     return c_json({"token": None})
 
 

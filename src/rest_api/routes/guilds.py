@@ -1,22 +1,24 @@
+from io import BytesIO
 from time import time
 
-from quart import Blueprint, request
+from async_timeout import timeout
+from quart import Blueprint, request, current_app
 from quart_schema import validate_request, validate_querystring
 
 from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUpdate, EmojiCreate, EmojiUpdate, \
     ChannelsPositionsChangeList, ChannelCreate, BanMember, RoleCreate, RoleUpdate, \
     RolesPositionsChangeList, AddRoleMembers, MemberUpdate, SetVanityUrl, GuildCreateFromTemplate, GuildDelete, \
-    GetAuditLogsQuery
+    GetAuditLogsQuery, CreateSticker, UpdateSticker
 from ..utils import usingDB, getUser, multipleDecorators, getGuildWM, getGuildWoM, getGuildTemplate, getRole
 from ...yepcord.classes.channel import Channel
-from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role
+from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role, Sticker
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User, GuildMember, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx
-from ...yepcord.enums import GuildPermissions, AuditLogEntryType
+from ...yepcord.enums import GuildPermissions, AuditLogEntryType, StickerType, StickerFormat
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, getImage, b64decode
+from ...yepcord.utils import c_json, getImage, b64decode, validImage, imageType
 
 # Base path is /api/vX/guilds
 guilds = Blueprint('guilds', __name__)
@@ -583,6 +585,7 @@ async def create_from_template(data: GuildCreateFromTemplate, user: User, templa
     Ctx["with_channels"] = True
     return c_json(await guild.json)
 
+
 @guilds.post("/<int:guild>/delete")
 @multipleDecorators(validate_request(GuildDelete), usingDB, getUser, getGuildWoM)
 async def delete_guild(data: GuildDelete, user: User, guild: Guild):
@@ -608,3 +611,64 @@ async def get_guild_webhooks(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
     webhooks = [await webhook.json for webhook in await getCore().getWebhooks(guild)]
     return c_json(webhooks)
+
+
+@guilds.get("/<int:guild>/stickers")
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def get_guild_stickers(user: User, guild: Guild):
+    stickers = await getCore().getGuildStickers(guild)
+    stickers = [await sticker.json for sticker in stickers]
+    return c_json(stickers)
+
+
+@guilds.post("/<int:guild>/stickers")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    if request.content_length > 1024 * 512:
+        raise InvalidDataErr(400, Errors.make(50006))
+    async with timeout(current_app.config["BODY_TIMEOUT"]):
+        if not (file := (await request.files).get("file")):
+            raise InvalidDataErr(400, Errors.make(50046))
+        data = CreateSticker(**dict(await request.form))
+        sticker_b = BytesIO(getattr(file, "getvalue", file.read)())
+        if sticker_b.tell() > 1024 * 512 or not (img := getImage(sticker_b)) or not validImage(img):
+            raise InvalidDataErr(400, Errors.make(50006))
+        sticker_type = getattr(StickerFormat, str(imageType(img)).upper(), StickerFormat.PNG)
+        sticker = Sticker(Snowflake.makeId(), guild.id, user.id, data.name, data.tags, StickerType.GUILD, sticker_type,
+                          data.description)
+        if not await getCDNStorage().setStickerFromBytesIO(sticker.id, img):
+            raise InvalidDataErr(400, Errors.make(50006))
+        await getCore().putSticker(sticker)
+    await getCore().sendGuildStickerUpdateEvent(guild)
+
+    return c_json(await sticker.json)
+
+
+@guilds.patch("/<int:guild>/stickers/<int:sticker>")
+@multipleDecorators(validate_request(UpdateSticker), usingDB, getUser, getGuildWM)
+async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, member: GuildMember, sticker: int):
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    if not (sticker := await getCore().getSticker(sticker)):
+        raise InvalidDataErr(404, Errors.make(10060))
+    if sticker.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10060))
+    new_sticker = sticker.copy(**data.dict(exclude_defaults=True))
+    await getCore().updateStickerDiff(sticker, new_sticker)
+    await getCore().sendGuildStickerUpdateEvent(guild)
+    return c_json(await new_sticker.json)
+
+
+@guilds.delete("/<int:guild>/stickers/<int:sticker>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def delete_guild_sticker(user: User, guild: Guild, member: GuildMember, sticker: int):
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    if not (sticker := await getCore().getSticker(sticker)):
+        raise InvalidDataErr(404, Errors.make(10060))
+    if sticker.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10060))
+
+    await getCore().deleteSticker(sticker)
+    await getCore().sendGuildStickerUpdateEvent(guild)
+
+    return "", 204

@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple, Dict
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite
-from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook
+from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, Sticker
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
@@ -392,6 +392,21 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None: ...
+
+    @abstractmethod
+    async def getGuildStickers(self, guild: _Guild) -> List[Sticker]: ...
+
+    @abstractmethod
+    async def getSticker(self, sticker_id: int) -> Optional[Sticker]: ...
+
+    @abstractmethod
+    async def putSticker(self, sticker: Sticker) -> None: ...
+
+    @abstractmethod
+    async def updateStickerDiff(self, before: Sticker, after: Sticker) -> None: ...
+
+    @abstractmethod
+    async def deleteSticker(self, sticker: Sticker) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -1108,7 +1123,6 @@ class MySqlConnection:
         await self.cur.execute(f'DELETE FROM `guilds` WHERE `id`={guild.id} LIMIT 1;')
 
     async def putWebhook(self, webhook: Webhook) -> None:
-        print(webhook)
         q = json_to_sql(webhook.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
@@ -1152,3 +1166,30 @@ class MySqlConnection:
         diff = json_to_sql(diff)
         if diff:
             await self.cur.execute(f'UPDATE `emojis` SET {diff} WHERE `id`={before.id};')
+
+    async def getGuildStickers(self, guild: _Guild) -> List[Sticker]:
+        stickers = []
+        await self.cur.execute(f'SELECT * FROM `stickers` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            stickers.append(Sticker.from_result(self.cur.description, r))
+        return stickers
+
+    async def getSticker(self, sticker_id: int) -> Optional[Sticker]:
+        await self.cur.execute(f'SELECT * FROM `stickers` WHERE `id`={sticker_id};')
+        if r := await self.cur.fetchone():
+            return Sticker.from_result(self.cur.description, r)
+
+    async def putSticker(self, sticker: Sticker) -> None:
+        q = json_to_sql(sticker.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `stickers` ({fields}) VALUES ({values});')
+
+    async def updateStickerDiff(self, before: Sticker, after: Sticker) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `stickers` SET {diff} WHERE `id`={before.id};')
+
+    async def deleteSticker(self, sticker: Sticker) -> None:
+        await self.cur.execute(f'DELETE FROM `stickers` WHERE `id`={sticker.id} LIMIT 1;')
