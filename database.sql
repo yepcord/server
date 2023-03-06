@@ -360,7 +360,7 @@ CREATE TABLE `stickers` (
   `tags` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `type` int NOT NULL,
   `format` int NOT NULL,
-  FOREIGN KEY (`guilds_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
+  FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `read_states`;
