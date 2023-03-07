@@ -16,12 +16,16 @@ class GatewayDispatcher(Singleton):
         await self.bc.start(f"ws://{Config('PS_ADDRESS')}:5050")
         return self
 
-    async def dispatch(self, event: DispatchEvent, clients: Optional[list[int]], **kwargs) -> None:
+    async def dispatch(self, event: DispatchEvent, users: Optional[list[int]]=None, channel_id: Optional[int]=None,
+                       guild_id: Optional[int]=None, permissions: Optional[list[int]]=None) -> None:
+        if not users and not channel_id and not guild_id:
+            return
         await self.bc.broadcast("all_events", {
-            "event": event.NAME,
             "data": await event.json(),
-            "clients": clients,
-            **kwargs
+            "users": users,
+            "channel_id": channel_id,
+            "guild_id": guild_id,
+            "permissions": permissions,
         })
 
 import src.yepcord.ctx as c

@@ -18,6 +18,13 @@ class DispatchEvent(Event):
 
     async def json(self) -> dict: ...
 
+class RawDispatchEvent(DispatchEvent):
+    def __init__(self, data: dict):
+        self.data = data
+
+    async def json(self) -> dict:
+        return self.data
+
 class ReadyEvent(DispatchEvent):
     NAME = "READY"
 

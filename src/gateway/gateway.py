@@ -422,6 +422,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(WebhooksUpdateEvent(guild_id, channel_id))
 
+    async def sendToUsers(self, event: RawDispatchEvent, users: list[int]) -> None:
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(event)
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core
@@ -432,7 +438,7 @@ class Gateway:
 
     async def init(self):
         await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
-        await self.mcl.subscribe("all_events", self.mcl_eventsCallback)
+        await self.mcl.subscribe("all_events", self.mcl_allEventsCallback)
         await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("channel_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("message_events", self.mcl_eventsCallback)
@@ -443,6 +449,14 @@ class Gateway:
         func = getattr(self.ev, ev)
         if func:
             await func(**data["data"])
+
+    async def mcl_allEventsCallback(self, payload: dict) -> None:
+        event = RawDispatchEvent(payload["data"])
+        if payload["users"] is not None:
+            await self.ev.sendToUsers(event, payload["users"])
+        payload["channel_id"]
+        payload["guild_id"]
+        payload["permissions"]
 
     async def send(self, client: GatewayClient, op: int, **data) -> None:
         r = {"op": op}
