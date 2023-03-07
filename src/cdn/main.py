@@ -1,6 +1,7 @@
 from quart import Quart
 from quart_schema import validate_querystring
 
+from src.yepcord.enums import StickerFormat
 from .models import CdnImageSizeQuery
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
@@ -136,6 +137,27 @@ async def get_guild_avatar(query_args: CdnImageSizeQuery, guild_id: int, member_
     if not (avatar := await cdn.getGuildAvatar(member_id, guild_id, file_hash, query_args.size, format)):
         return b'', 404
     return avatar, 200, {"Content-Type": f"image/{format}"}
+
+
+@app.get("/stickers/<int:sticker_id>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_sticker(query_args: CdnImageSizeQuery, sticker_id: int, format: str):
+    if format not in ["webp", "png", "gif"]:
+        return b'', 400
+    if query_args.size > 320: query_args.size = 320
+    sticker = await core.getSticker(sticker_id)
+    if not sticker:
+        # If sticker deleted or never existed
+        for animated in (False, True):
+            sticker = await cdn.getSticker(sticker_id, query_args.size, format, animated)
+            if sticker: # If deleted from database, but file found
+                break
+    else:
+        sticker = await cdn.getSticker(sticker_id, query_args.size, format,
+                                       sticker.format in (StickerFormat.APNG, StickerFormat.GIF))
+    if not sticker:
+        return b'', 404
+    return sticker, 200, {"Content-Type": f"image/{format}"}
 
 
 # Attachments

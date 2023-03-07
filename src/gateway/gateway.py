@@ -432,6 +432,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(WebhooksUpdateEvent(guild_id, channel_id))
 
+    async def stickers_update(self, users, guild_id, stickers):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(StickersUpdateEvent(guild_id, stickers))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

@@ -33,6 +33,7 @@ class _Errors:
     err_10014 = "Unknown Emoji"
     err_10015 = "Unknown Webhook"
     err_10057 = "Unknown server template"
+    err_10060 = "Unknown sticker"
 
     err_30003 = "Maximum number of pins reached (50)"
     err_30031 = "A server can only have a single template."
@@ -48,6 +49,7 @@ class _Errors:
     err_50018 = "Password does not match"
     err_50028 = "Invalid Role"
     err_50035 = "Invalid Form Body"
+    err_50046 = "Invalid Asset"
     err_50055 = "Invalid Guild"
     err_50104 = "Malformed user settings payload"
 
