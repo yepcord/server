@@ -1,4 +1,5 @@
 from asyncio import get_event_loop
+from json import dumps
 from random import randint, choice
 from typing import Coroutine, Any
 
@@ -7,10 +8,10 @@ import pytest as pt
 from src.yepcord.classes.user import Session, UserId, UserSettings, UserData
 from src.yepcord.config import Config
 from src.yepcord.core import Core
-from src.yepcord.enums import UserFlags as UserFlagsE, RelationshipType
-from src.yepcord.errors import InvalidDataErr
+from src.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType
+from src.yepcord.errors import InvalidDataErr, MfaRequiredErr
 from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import b64decode
+from src.yepcord.utils import b64decode, b64encode
 
 VARS = {
     "user_id": Snowflake.makeId()
@@ -432,12 +433,23 @@ async def test_logoutUser_success(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_getMfa_success(testCore: Coroutine[Any, Any, Core]):
+async def test_getMfa(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     user = await testCore.getUser(VARS["user_id"])
-    if not (await user.settings).mfa:
-        assert await testCore.getMfa(user) is None
+    settings = await user.settings
+    if settings.mfa:
+        await testCore.setSettingsDiff(settings, settings.copy(mfa=None))
+        settings = await testCore.getUserSettings(user)
 
+    assert await testCore.getMfa(user) is None
+
+    await testCore.setSettingsDiff(settings, settings.copy(mfa="a"*16))
+    user = await testCore.getUser(VARS["user_id"])
+    settings = await testCore.getUserSettings(user)
+    mfa = await testCore.getMfa(user)
+    assert mfa is not None
+    assert mfa.key.lower() == "a"*16
+    await testCore.setSettingsDiff(settings, settings.copy(mfa=None))
 
 @pt.mark.asyncio
 async def test_setBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
@@ -470,22 +482,46 @@ async def test_getBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
 
 @pt.mark.asyncio
 async def test_getMfaFromTicket_success(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    user = await testCore.getUser(VARS["user_id"])
+    settings = await user.settings
+    await testCore.setSettingsDiff(settings, settings.copy(mfa="b" * 16))
+
+    try:
+        await testCore.login(user.email, "test_password123")
+        assert False
+    except MfaRequiredErr as e:
+        ticket = b64encode(dumps([e.uid, "login"])) + f".{e.sid}.{e.sig}"
+
+    mfa = await testCore.getMfaFromTicket(ticket)
+    assert mfa is not None
+    assert mfa.key.lower() == "b" * 16
 
 
 @pt.mark.asyncio
-async def test_getMfaFromTicket_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+async def test_generateUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
+    user = await testCore.getUser(VARS["user_id"])
+    settings = await user.settings
+    await testCore.setSettingsDiff(settings, settings.copy(mfa="c" * 16))
+    user = await testCore.getUser(VARS["user_id"])
+    VARS["mfa_nonce"] = await testCore.generateUserMfaNonce(user)
 
 
 @pt.mark.asyncio
-async def test_generateUserMfaNonce_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_generateUserMfaNonce_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+async def test_verifyUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
+    user = await testCore.getUser(VARS["user_id"])
+    nonce, regenerate_nonce = VARS["mfa_nonce"]
+    await core.verifyUserMfaNonce(user, nonce, False)
+    await core.verifyUserMfaNonce(user, regenerate_nonce, True)
+    for args in ((nonce, True), (regenerate_nonce, False)):
+        try:
+            await core.verifyUserMfaNonce(user, *args)
+            assert False
+        except InvalidDataErr:
+            pass # Ok
+    del VARS["mfa_nonce"]
 
 
 @pt.mark.asyncio
@@ -506,63 +542,43 @@ async def test_useMfaCode_fail(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
+async def test_getDMChannelOrCreate_success(testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
+    channel = await testCore.getDMChannelOrCreate(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
+    assert channel is not None
+    assert channel.type == ChannelType.DM
+    assert set(channel.recipients) == {VARS["user_id"] + 100000, VARS["user_id"] + 200000}
+    VARS["channel_id"] = channel.id
+
+
+@pt.mark.asyncio
 async def test_getChannel_success(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    channel = await testCore.getChannel(VARS["channel_id"])
+    assert channel is not None
+    assert channel.type == ChannelType.DM
 
 
 @pt.mark.asyncio
 async def test_getChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getDMChannelOrCreate_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getDMChannelOrCreate_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    channel = await testCore.getChannel(0)
+    assert channel is None
 
 
 @pt.mark.asyncio
 async def test_getLastMessageIdForChannel_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getLastMessageIdForChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getLastMessageId_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getLastMessageId_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    channel = await testCore.getChannel(VARS["channel_id"])
+    await testCore.getLastMessageIdForChannel(channel)
+    assert channel.last_message_id is None or channel.last_message_id > 0
 
 
 @pt.mark.asyncio
 async def test_getChannelMessagesCount_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getChannelMessagesCount_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createDMChannel_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createDMChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
+    testCore = await testCore
+    channel = await testCore.getChannel(VARS["channel_id"])
+    assert await testCore.getChannelMessagesCount(channel, Snowflake.makeId(False), 0) == 0
 
 
 @pt.mark.asyncio
