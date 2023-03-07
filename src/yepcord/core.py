@@ -132,9 +132,9 @@ class Core(Singleton):
                 await db.insertSession(session)
             return session
 
-    async def getUser(self, uid: int) -> Optional[User]:
+    async def getUser(self, uid: int, allow_deleted: bool=True) -> Optional[User]:
         async with self.db() as db:
-            return await db.getUser(uid)
+            return await db.getUser(uid, allow_deleted)
 
     async def validSession(self, session: Session) -> bool:
         async with self.db() as db:
@@ -166,7 +166,7 @@ class Core(Singleton):
 
     async def getUserProfile(self, uid: int, cUser: _User) -> User:
         # TODO: check for relationship, mutual guilds or mutual friends
-        if not (user := await self.getUser(uid)):
+        if not (user := await self.getUser(uid, False)):
             raise InvalidDataErr(404, Errors.make(10013))
         return user
 
@@ -1311,6 +1311,22 @@ class Core(Singleton):
                                  {"e": "stickers_update", "data": {"users": await self.getGuildMembersIds(guild),
                                                                    "stickers": stickers,
                                                                    "guild_id": guild.id}})
+
+    async def getUserOwnedGuilds(self, user: User) -> List[Guild]:
+        async with self.db() as db:
+            return await db.getUserOwnedGuilds(user)
+
+    async def getUserOwnedGroups(self, user: User) -> List[Channel]:
+        async with self.db() as db:
+            return await db.getUserOwnedGroups(user)
+
+    async def deleteUser(self, user: User) -> List[Channel]:
+        async with self.db() as db:
+            return await db.deleteUser(user)
+
+    async def sendUserDeleteEvent(self, user: User) -> None:
+        await self.mcl.broadcast("user_events",
+                                 {"e": "user_delete", "data": {"users": [user.id], "user_id": user.id}})
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()

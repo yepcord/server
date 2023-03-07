@@ -39,6 +39,7 @@ class _Errors:
     err_30031 = "A server can only have a single template."
 
     err_40007 = "The user is banned from this guild."
+    err_40011 = "You must transfer ownership of any owned guilds before deleting your account"
 
     err_50001 = "Missing Access"
     err_50003 = "Cannot execute action on a DM channel"
@@ -48,6 +49,7 @@ class _Errors:
     err_50013 = "Missing Permissions"
     err_50018 = "Password does not match"
     err_50028 = "Invalid Role"
+    err_50033 = "Invalid Recipient(s)"
     err_50035 = "Invalid Form Body"
     err_50046 = "Invalid Asset"
     err_50055 = "Invalid Guild"

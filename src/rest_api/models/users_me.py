@@ -1,6 +1,8 @@
 from pydantic import BaseModel, validator
 from typing import Optional, List
 
+from ...yepcord.errors import InvalidDataErr, Errors
+
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
@@ -94,6 +96,14 @@ class RelationshipRequest(BaseModel):
     username: str
     discriminator: int
 
+    @validator("discriminator")
+    def validate_discriminator(cls, value: int):
+        if value < 1 or value > 9999:
+            raise InvalidDataErr(400,
+                                 Errors.make(50035,
+                                             {"name": {"code": "BASE_TYPE_BAD_INT", "message": "Must be between 1 and 9999"}}))
+        return value
+
 
 class PutNote(BaseModel):
     note: Optional[str] = None
@@ -122,3 +132,7 @@ class RelationshipPut(BaseModel):
 class DmChannelCreate(BaseModel):
     recipients: List[int]
     name: Optional[str] = None
+
+
+class DeleteRequest(BaseModel):
+    password: str

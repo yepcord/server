@@ -4,7 +4,8 @@ CREATE TABLE `users` (
   `email` longtext NOT NULL,
   `password` longtext NOT NULL,
   `key` longtext NOT NULL,
-  `verified` bool NOT NULL DEFAULT false
+  `verified` bool NOT NULL DEFAULT false,
+  `deleted` bool NOT NULL DEFAULT false
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `sessions`;

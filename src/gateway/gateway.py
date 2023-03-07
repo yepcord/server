@@ -438,6 +438,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(StickersUpdateEvent(guild_id, stickers))
 
+    async def user_delete(self, users, user_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(UserDeleteEvent(user_id))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

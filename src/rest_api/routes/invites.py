@@ -16,7 +16,7 @@ from ...yepcord.utils import c_json
 invites = Blueprint('invites', __name__)
 
 
-@invites.get("/api/v9/invites/<string:invite>")
+@invites.get("/<string:invite>")
 @multipleDecorators(validate_querystring(GetInviteQuery), usingDB, getInvite)
 async def get_invite(query_args: GetInviteQuery, invite: Invite):
     Ctx["with_counts"] = query_args.with_counts
@@ -27,7 +27,7 @@ async def get_invite(query_args: GetInviteQuery, invite: Invite):
     return c_json(invite)
 
 
-@invites.post("/api/v9/invites/<string:invite>")
+@invites.post("/<string:invite>")
 @multipleDecorators(usingDB, getUser, getInvite)
 async def use_invite(user: User, invite: Invite):
     channel = await getCore().getChannel(invite.channel_id)
@@ -66,7 +66,7 @@ async def use_invite(user: User, invite: Invite):
     return c_json(inv)
 
 
-@invites.delete("/api/v9/invites/<string:invite>")
+@invites.delete("/<string:invite>")
 @multipleDecorators(usingDB, getUser, getInvite)
 async def delete_invite(user: User, invite: Invite):
     if invite.guild_id:

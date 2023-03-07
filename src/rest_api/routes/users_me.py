@@ -5,7 +5,8 @@ from quart import Blueprint, request
 from quart_schema import validate_request
 
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, SettingsProtoUpdate, \
-    RelationshipRequest, PutNote, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, DmChannelCreate
+    RelationshipRequest, PutNote, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, DmChannelCreate, \
+    DeleteRequest
 from ..utils import usingDB, getUser, multipleDecorators, getSession, getGuildWM
 from ...yepcord.classes.guild import Guild
 from ...yepcord.classes.user import User, UserSettings, UserNote, Session, GuildMember
@@ -207,6 +208,8 @@ async def get_relationships(user: User):
 @users_me.get("/notes/<int:target_uid>")
 @multipleDecorators(usingDB, getUser)
 async def get_notes(user: User, target_uid: int):
+    if not await getCore().getUser(target_uid, False):
+        raise InvalidDataErr(404, Errors.make(10013))
     if not (note := await getCore().getUserNote(user.id, target_uid)):
         raise InvalidDataErr(404, Errors.make(10013))
     return c_json(note.toJSON())
@@ -215,6 +218,8 @@ async def get_notes(user: User, target_uid: int):
 @users_me.put("/notes/<int:target_uid>")
 @multipleDecorators(validate_request(PutNote), usingDB, getUser)
 async def set_notes(data: PutNote, user: User, target_uid: int):
+    if not await getCore().getUser(target_uid, False):
+        raise InvalidDataErr(404, Errors.make(10013))
     if data.note:
         await getCore().putUserNote(UserNote(user.id, target_uid, data.note))
     return "", 204
@@ -333,6 +338,9 @@ async def get_dm_channels(user: User):
 @multipleDecorators(validate_request(DmChannelCreate), usingDB, getUser)
 async def new_dm_channel(data: DmChannelCreate, user: User):
     recipients = data.recipients
+    recipients_users = [await getCore().getUser(recipient) for recipient in recipients]
+    if None in recipients_users:
+        raise InvalidDataErr(400, Errors.make(50033))
     if len(recipients) == 1:
         if int(recipients[0]) == user.id:
             raise InvalidDataErr(400, Errors.make(50007))
@@ -351,3 +359,15 @@ async def new_dm_channel(data: DmChannelCreate, user: User):
     await getCore().sendDMChannelCreateEvent(channel)
     Ctx["with_ids"] = False
     return c_json(await channel.json)
+
+
+@users_me.post("/delete")
+@multipleDecorators(validate_request(DeleteRequest), usingDB, getUser)
+async def delete_user(data: DeleteRequest, user: User):
+    if not await getCore().checkUserPassword(user, data.password):
+        raise InvalidDataErr(400, Errors.make(50018))
+    if await getCore().getUserOwnedGuilds(user) or await getCore().getUserOwnedGroups(user):
+        raise InvalidDataErr(400, Errors.make(40011))
+    await getCore().deleteUser(user)
+    await getCore().sendUserDeleteEvent(user)
+    return "", 204
