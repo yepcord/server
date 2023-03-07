@@ -43,7 +43,7 @@ class DBConnection(ABC):
     async def insertSession(self, session: Session) -> None: ...
 
     @abstractmethod
-    async def getUser(self, uid: int) -> Optional[User]: ...
+    async def getUser(self, uid: int, allow_deleted: bool=True) -> Optional[User]: ...
 
     @abstractmethod
     async def validSession(self, session: Session) -> bool: ...
@@ -408,6 +408,15 @@ class DBConnection(ABC):
     @abstractmethod
     async def deleteSticker(self, sticker: Sticker) -> None: ...
 
+    @abstractmethod
+    async def deleteUser(self, user: User) -> None: ...
+
+    @abstractmethod
+    async def getUserOwnedGuilds(self, user: User) -> List[Guild]: ...
+
+    @abstractmethod
+    async def getUserOwnedGroups(self, user: User) -> List[Channel]: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -469,8 +478,11 @@ class MySqlConnection:
     async def insertSession(self, session: Session) -> None:
         await self.cur.execute(f'INSERT INTO `sessions` VALUES ({session.id}, {session.sid}, "{session.sig}");')
 
-    async def getUser(self, uid: int) -> Optional[User]:
-        await self.cur.execute(f'SELECT * FROM `users` WHERE `id`={uid};')
+    async def getUser(self, uid: int, allow_deleted: bool=True) -> Optional[User]:
+        d = ""
+        if not allow_deleted:
+            d = f" and `deleted`=false"
+        await self.cur.execute(f'SELECT * FROM `users` WHERE `id`={uid}{d};')
         if r := await self.cur.fetchone():
             return User.from_result(self.cur.description, r)
 
@@ -1193,3 +1205,33 @@ class MySqlConnection:
 
     async def deleteSticker(self, sticker: Sticker) -> None:
         await self.cur.execute(f'DELETE FROM `stickers` WHERE `id`={sticker.id} LIMIT 1;')
+
+    async def deleteUser(self, user: User) -> None:
+        await self.cur.execute(f'UPDATE `users` SET `deleted`=true, `email`="", `password`="", `key`="" '
+                               f'WHERE `id`={user.id};')
+        await self.cur.execute(f'UPDATE `userdata` SET `discriminator`=0, `username`="Deleted User", `avatar`=NULL, '
+                               f'`avatar_decoration`=NULL, `public_flags`=0 WHERE `uid`={user.id};')
+
+        await self.cur.execute(f'DELETE FROM `sessions` WHERE `uid`={user.id};')
+        await self.cur.execute(f'DELETE FROM `relationships` WHERE `u1`={user.id} OR `u2`={user.id};')
+        await self.cur.execute(f'DELETE FROM `mfa_codes` WHERE `uid`={user.id};')
+        await self.cur.execute(f'DELETE FROM `guild_members_roles` WHERE `user_id`={user.id};')
+        await self.cur.execute(f'DELETE FROM `guild_members` WHERE `user_id`={user.id};')
+        await self.cur.execute(f'DELETE FROM `settings` WHERE `uid`={user.id};')
+        await self.cur.execute(f'DELETE FROM `frecency_settings` WHERE `uid`={user.id};')
+        await self.cur.execute(f'DELETE FROM `invites` WHERE `inviter`={user.id};')
+        await self.cur.execute(f'DELETE FROM `read_states` WHERE `uid`={user.id};')
+
+    async def getUserOwnedGuilds(self, user: User) -> List[Guild]:
+        guilds = []
+        await self.cur.execute(f'SELECT * FROM `guilds` WHERE `owner_id`={user.id};')
+        for r in await self.cur.fetchall():
+            guilds.append(Guild.from_result(self.cur.description, r))
+        return guilds
+
+    async def getUserOwnedGroups(self, user: User) -> List[Channel]:
+        groups = []
+        await self.cur.execute(f'SELECT * FROM `channels` WHERE `owner_id`={user.id} AND `type`={ChannelType.GROUP_DM};')
+        for r in await self.cur.fetchall():
+            groups.append(Channel.from_result(self.cur.description, r))
+        return groups

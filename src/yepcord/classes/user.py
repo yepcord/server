@@ -369,6 +369,7 @@ class User(_User, Model):
     password: Optional[str] = None
     key: Optional[str] = None
     verified: Optional[bool] = None
+    deleted: Optional[bool] = None
 
     def __post_init__(self) -> None:
         super().__post_init__()

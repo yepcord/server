@@ -763,3 +763,18 @@ class StickersUpdateEvent(DispatchEvent):
             }
         }
         return data
+
+class UserDeleteEvent(DispatchEvent):
+    NAME = "USER_DELETE"
+
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id)
+            }
+        }
