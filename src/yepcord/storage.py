@@ -118,6 +118,9 @@ class _Storage:
         sticker_hash = "a_sticker" if animated else "sticker"
         return await self._getImage("sticker", sticker_id, sticker_hash, size, fmt, 320, lambda s: s)
 
+    async def getGuildEvent(self, event_id: int, event_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        return await self._getImage("guild_event", event_id, event_hash, size, fmt, 600, lambda s: int(9 * s / 16))
+
     async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
         raise NotImplementedError
 
@@ -168,6 +171,9 @@ class _Storage:
 
     async def setStickerFromBytesIO(self, sticker_id: int, image: BytesIO) -> str:
         return await self._setImage(f"sticker", sticker_id, 320, lambda s: s, image, def_hash="sticker")
+
+    async def setGuildEventFromBytesIO(self, event_id: int, image: BytesIO) -> str:
+        return await self._setImage(f"guild_event", event_id, 600, lambda s: int(9 * s / 16), image)
 
     async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
         raise NotImplementedError

@@ -14,7 +14,7 @@ from bcrypt import hashpw, gensalt, checkpw
 
 from .classes.channel import Channel, PermissionOverwrite, _Channel
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, \
-    Sticker
+    Sticker, ScheduledEvent
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
@@ -1320,13 +1320,68 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getUserOwnedGroups(user)
 
-    async def deleteUser(self, user: User) -> List[Channel]:
+    async def deleteUser(self, user: User) -> None:
         async with self.db() as db:
             return await db.deleteUser(user)
 
     async def sendUserDeleteEvent(self, user: User) -> None:
         await self.mcl.broadcast("user_events",
                                  {"e": "user_delete", "data": {"users": [user.id], "user_id": user.id}})
+
+    async def getScheduledEventUserCount(self, event: ScheduledEvent) -> int:
+        async with self.db() as db:
+            return await db.getScheduledEventUserCount(event)
+
+    async def putScheduledEvent(self, event: ScheduledEvent) -> None:
+        async with self.db() as db:
+            await db.putScheduledEvent(event)
+
+    async def getScheduledEvent(self, event_id: int) -> Optional[ScheduledEvent]:
+        async with self.db() as db:
+            return await db.getScheduledEvent(event_id)
+
+    async def getScheduledEvents(self, guild: _Guild) -> List[ScheduledEvent]:
+        async with self.db() as db:
+            return await db.getScheduledEvents(guild)
+
+    async def updateScheduledEventDiff(self, before: ScheduledEvent, after: ScheduledEvent) -> None:
+        async with self.db() as db:
+            await db.updateStickerDiff(before, after)
+
+    async def sendScheduledEventCreateEvent(self, event: ScheduledEvent) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "event_create",
+                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.id)),
+                                           "event_obj": await event.json}})
+
+    async def sendScheduledEventUpdateEvent(self, event: ScheduledEvent) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "event_update", "data": {"users": await self.getGuildMembersIds(GuildId(event.id)),
+                                                                   "event_obj": await event.json}})
+
+    async def subscribeToScheduledEvent(self, user: User, event: ScheduledEvent) -> None:
+        async with self.db() as db:
+            await db.subscribeToScheduledEvent(user, event)
+
+    async def unsubscribeFromScheduledEvent(self, user: User, event: ScheduledEvent) -> None:
+        async with self.db() as db:
+            await db.unsubscribeFromScheduledEvent(user, event)
+
+    async def sendScheduledEventUserAddEvent(self, user: User, event: ScheduledEvent) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "event_user_add",
+                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.id)),
+                                           "user_id": user.id, "event_id": event.id, "guild_id": event.guild_id}})
+
+    async def sendScheduledEventUserRemoveEvent(self, user: User, event: ScheduledEvent) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "event_user_remove",
+                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.id)),
+                                           "user_id": user.id, "event_id": event.id, "guild_id": event.guild_id}})
+
+    async def getSubscribedScheduledEventIds(self, user: User, guild_id: int) -> list[int]:
+        async with self.db() as db:
+            return await db.getSubscribedScheduledEventIds(user, guild_id)
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()

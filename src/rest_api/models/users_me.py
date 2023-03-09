@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, Field
 from typing import Optional, List
 
 from ...yepcord.errors import InvalidDataErr, Errors
@@ -136,3 +136,12 @@ class DmChannelCreate(BaseModel):
 
 class DeleteRequest(BaseModel):
     password: str
+
+
+class GetScheduledEventsQuery(BaseModel):
+    guild_ids: list[int] = Field(default_factory=list)
+
+    def __init__(self, **data):
+        if "guild_ids" in data:
+            data["guild_ids"] = data["guild_ids"].split(",")
+        super().__init__(**data)

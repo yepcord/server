@@ -34,6 +34,7 @@ class _Errors:
     err_10015 = "Unknown Webhook"
     err_10057 = "Unknown server template"
     err_10060 = "Unknown sticker"
+    err_10070 = "Unknown Guild Scheduled Event"
 
     err_30003 = "Maximum number of pins reached (50)"
     err_30031 = "A server can only have a single template."

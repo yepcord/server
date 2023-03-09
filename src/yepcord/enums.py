@@ -227,3 +227,18 @@ class StickerFormat(E):
     APNG = 2
     LOTTIE = 3
     GIF = 4
+
+
+# https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-entity-types
+class ScheduledEventEntityType(E):
+    STAGE_INSTANCE = 1
+    VOICE = 2
+    EXTERNAL = 3
+
+
+# https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-status
+class ScheduledEventStatus(E):
+    SCHEDULED = 1
+    ACTIVE = 2
+    COMPLETED = 3
+    CANCELED = 4

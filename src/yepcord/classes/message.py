@@ -94,7 +94,7 @@ class Message(_Message, Model):
     DEFAULTS = {"content": None, "edit_timestamp": None, "embeds": [], "pinned": False,
                 "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
                 "thread": None, "components": [], "sticker_items": [], "extra_data": {},
-                "guild_id": None}  # TODO: remove or replace with mode convenient solution
+                "guild_id": None}
 
     def __post_init__(self) -> None:
         if self.embeds is None: self.embeds = []
@@ -103,7 +103,7 @@ class Message(_Message, Model):
         if self.extra_data is None: self.extra_data = {}
         super().__post_init__()
 
-    def fill_defaults(self):  # TODO: remove or replace with mode convenient solution
+    def fill_defaults(self):
         for k, v in self.DEFAULTS.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -181,7 +181,7 @@ class SearchFilter(Model):
         "file": "JSON_LENGTH(`j_attachments`) > 0",
         "embed": "JSON_LENGTH(`j_embeds`) > 0",
         "sound": "true in (select content_type LIKE '%audio/%' from attachments where JSON_CONTAINS(messages.j_attachments, attachments.id, '$'))",
-        # "sticker": "" # TODO
+        # "sticker": "" # TODO: check message for sticker
     }
 
     def __post_init__(self):

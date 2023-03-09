@@ -160,6 +160,17 @@ async def get_sticker(query_args: CdnImageSizeQuery, sticker_id: int, format: st
     return sticker, 200, {"Content-Type": f"image/{format}"}
 
 
+@app.get("/guild-events/<int:event_id>/<string:file_hash>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, file_hash: str, format: str):
+    if format not in ["png", "jpg"]:
+        return b'', 400
+    if query_args.size > 600: query_args.size = 600
+    if not (avatar := await cdn.getGuildEvent(event_id, file_hash, query_args.size, format)):
+        return b'', 404
+    return avatar, 200, {"Content-Type": f"image/{format}"}
+
+
 # Attachments
 
 
