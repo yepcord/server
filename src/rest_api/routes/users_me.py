@@ -1,14 +1,14 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from random import choice
 
-from quart import Blueprint, request
-from quart_schema import validate_request
+from quart import Blueprint
+from quart_schema import validate_request, validate_querystring
 
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, SettingsProtoUpdate, \
     RelationshipRequest, PutNote, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, DmChannelCreate, \
-    DeleteRequest
+    DeleteRequest, GetScheduledEventsQuery
 from ..utils import usingDB, getUser, multipleDecorators, getSession, getGuildWM
-from ...yepcord.classes.guild import Guild
+from ...yepcord.classes.guild import Guild, GuildId
 from ...yepcord.classes.user import User, UserSettings, UserNote, Session, GuildMember
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx
 from ...yepcord.errors import InvalidDataErr, Errors
@@ -371,3 +371,19 @@ async def delete_user(data: DeleteRequest, user: User):
     await getCore().deleteUser(user)
     await getCore().sendUserDeleteEvent(user)
     return "", 204
+
+
+@users_me.get("/scheduled-events")
+@multipleDecorators(validate_querystring(GetScheduledEventsQuery), usingDB, getUser)
+async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
+    events = []
+    for guild_id in query_args.guild_ids[:5]:
+        if not await getCore().getGuildMember(GuildId(guild_id), user.id):
+            raise InvalidDataErr(403, Errors.make(50001))
+        for event_id in await getCore().getSubscribedScheduledEventIds(user, guild_id):
+            events.append({
+                "guild_scheduled_event_id": str(event_id),
+                "user_id": str(user.id)  # current user or creator??
+            })
+
+    return c_json(events)

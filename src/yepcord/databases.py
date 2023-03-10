@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from json import dumps as jdumps
 from re import sub
 from time import time
@@ -7,11 +8,12 @@ from typing import Optional, List, Tuple, Dict
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite
-from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, Sticker
+from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, Sticker, \
+    ScheduledEvent
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
-from .enums import ChannelType
+from .enums import ChannelType, ScheduledEventStatus
 from .snowflake import Snowflake
 from .utils import json_to_sql
 
@@ -417,6 +419,33 @@ class DBConnection(ABC):
     @abstractmethod
     async def getUserOwnedGroups(self, user: User) -> List[Channel]: ...
 
+    @abstractmethod
+    async def getScheduledEventUserCount(self, event: ScheduledEvent) -> int: ...
+
+    @abstractmethod
+    async def putScheduledEvent(self, event: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def getScheduledEvent(self, event_id: int) -> Optional[ScheduledEvent]: ...
+
+    @abstractmethod
+    async def getScheduledEvents(self, guild: _Guild) -> List[ScheduledEvent]: ...
+
+    @abstractmethod
+    async def updateScheduledEventDiff(self, before: ScheduledEvent, after: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def subscribeToScheduledEvent(self, user: User, event: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def unsubscribeFromScheduledEvent(self, user: User, event: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def getSubscribedScheduledEventIds(self, user: User, guild_id: int) -> list[int]: ...
+
+    @abstractmethod
+    async def deleteScheduledEvent(self, event: ScheduledEvent) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -730,7 +759,6 @@ class MySqlConnection:
         elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
             await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id};")
         await self.cur.execute(f"DELETE FROM `read_states` WHERE `channel_id`={channel.id};")
-        # TODO: delete all messages in channel
 
     async def deleteMessagesAck(self, channel: Channel, user: User) -> None:
         await self.cur.execute(f"DELETE FROM `read_states` WHERE `uid`={user.id} AND `channel_id`={channel.id};")
@@ -1235,3 +1263,75 @@ class MySqlConnection:
         for r in await self.cur.fetchall():
             groups.append(Channel.from_result(self.cur.description, r))
         return groups
+
+    async def getScheduledEventUserCount(self, event: ScheduledEvent) -> int:
+        await self.cur.execute(f'SELECT COUNT(*) as c FROM `guild_events_subscribers` WHERE `event_id`={event.id};')
+        if r := await self.cur.fetchone():
+            return r[0]
+        return 0
+
+    async def putScheduledEvent(self, event: ScheduledEvent) -> None:
+        q = json_to_sql(event.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `guild_events` ({fields}) VALUES ({values});')
+
+    async def _setCanceledOrCompletedEvents(self, event_id: Optional[int]=None, guild: Optional[_Guild]=None) -> None:
+        def _updateStatus(ev: ScheduledEvent) -> ScheduledEvent:
+            new_event = ev.copy()
+            if ev.status == ScheduledEventStatus.SCHEDULED:
+                if not ev.end and ev.start < datetime.utcnow().timestamp() + 1800:
+                    new_event.status = ScheduledEventStatus.CANCELED
+                elif ev.end and ev.end < datetime.utcnow().timestamp():
+                    new_event.status = ScheduledEventStatus.CANCELED
+            elif ev.status == ScheduledEventStatus.ACTIVE:
+                if ev.end and ev.end < datetime.utcnow().timestamp():
+                    new_event.status = ScheduledEventStatus.COMPLETED
+            return new_event
+        if event_id is None and guild is None:
+            return
+        if event_id:
+            event = await self.getScheduledEvent(event_id, _check_status=False)
+            await self.updateScheduledEventDiff(event, _updateStatus(event))
+        if guild:
+            for event in await self.getScheduledEvents(guild, _check_status=False):
+                await self.updateScheduledEventDiff(event, _updateStatus(event))
+
+    async def getScheduledEvent(self, event_id: int, *, _check_status=True) -> Optional[ScheduledEvent]:
+        if _check_status:
+            await self._setCanceledOrCompletedEvents(event_id=event_id)
+        await self.cur.execute(f'SELECT * FROM `guild_events` WHERE `id`={event_id};')
+        if r := await self.cur.fetchone():
+            return ScheduledEvent.from_result(self.cur.description, r)
+
+    async def getScheduledEvents(self, guild: _Guild, *, _check_status=True) -> List[ScheduledEvent]:
+        if _check_status:
+            await self._setCanceledOrCompletedEvents(guild=guild)
+        events = []
+        await self.cur.execute(f'SELECT * FROM `guild_events` WHERE `guild_id`={guild.id} AND `status` NOT IN (3, 4);')
+        for r in await self.cur.fetchall():
+            events.append(ScheduledEvent.from_result(self.cur.description, r))
+        return events
+
+    async def updateScheduledEventDiff(self, before: ScheduledEvent, after: ScheduledEvent) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `guild_events` SET {diff} WHERE `id`={before.id};')
+
+    async def subscribeToScheduledEvent(self, user: User, event: ScheduledEvent) -> None:
+        await self.cur.execute(f'SELECT * FROM `guild_events_subscribers` WHERE `event_id`={event.id} '
+                               f'AND `user_id`={user.id};')
+        if not await self.cur.fetchone():
+            await self.cur.execute(f'INSERT INTO `guild_events_subscribers` VALUES ({event.id}, {user.id}, {event.guild_id});')
+
+    async def unsubscribeFromScheduledEvent(self, user: User, event: ScheduledEvent) -> None:
+        await self.cur.execute(f'DELETE FROM `guild_events_subscribers` WHERE `event_id`={event.id} AND `user_id`={user.id};')
+
+    async def getSubscribedScheduledEventIds(self, user: User, guild_id: int) -> list[int]:
+        await self.cur.execute(f'SELECT `event_id` FROM `guild_events_subscribers` WHERE `user_id`={user.id} AND '
+                               f'`guild_id`={guild_id};')
+        return [r[0] for r in await self.cur.fetchall()]
+
+    async def deleteScheduledEvent(self, event: ScheduledEvent) -> None:
+        await self.cur.execute(f'DELETE FROM `guild_events` WHERE `id`={event.id};')

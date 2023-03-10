@@ -364,6 +364,33 @@ CREATE TABLE `stickers` (
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
+DROP TABLE IF EXISTS `guild_events`;
+CREATE TABLE `guild_events` (
+  `id` bigint NOT NULL PRIMARY KEY,
+  `guild_id` bigint NOT NULL,
+  `creator_id` bigint NOT NULL,
+  `channel_id` bigint DEFAULT NULL,
+  `name` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL,
+  `start` int NOT NULL,
+  `end` int DEFAULT NULL,
+  `privacy_level` int NOT NULL DEFAULT 2,
+  `status` int NOT NULL DEFAULT 1,
+  `entity_type` int NOT NULL,
+  `entity_id` int DEFAULT NULL,
+  `j_entity_metadata` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT "{}" CHECK(json_valid(`j_entity_metadata`)),
+  `image` text DEFAULT NULL,
+  FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `guild_events_subscribers`;
+CREATE TABLE `guild_events_subscribers` (
+  `event_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
+  `guild_id` bigint NOT NULL,
+  FOREIGN KEY (`event_id`) REFERENCES `guild_events`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
 DROP TABLE IF EXISTS `read_states`;
 CREATE TABLE `read_states` (
   `uid` bigint NOT NULL,
