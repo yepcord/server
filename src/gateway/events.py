@@ -816,3 +816,6 @@ class ScheduledEventUserAddEvent(DispatchEvent):
 
 class ScheduledEventUserRemoveEvent(ScheduledEventUserAddEvent):
     NAME = "GUILD_SCHEDULED_EVENT_USER_REMOVE"
+
+class GuildScheduledEventDeleteEvent(GuildScheduledEventCreateEvent):
+    NAME = "GUILD_SCHEDULED_EVENT_DELETE"

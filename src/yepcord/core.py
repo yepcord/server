@@ -1346,17 +1346,17 @@ class Core(Singleton):
 
     async def updateScheduledEventDiff(self, before: ScheduledEvent, after: ScheduledEvent) -> None:
         async with self.db() as db:
-            await db.updateStickerDiff(before, after)
+            await db.updateScheduledEventDiff(before, after)
 
     async def sendScheduledEventCreateEvent(self, event: ScheduledEvent) -> None:
         await self.mcl.broadcast("guild_events",
                                  {"e": "event_create",
-                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.id)),
+                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
                                            "event_obj": await event.json}})
 
     async def sendScheduledEventUpdateEvent(self, event: ScheduledEvent) -> None:
         await self.mcl.broadcast("guild_events",
-                                 {"e": "event_update", "data": {"users": await self.getGuildMembersIds(GuildId(event.id)),
+                                 {"e": "event_update", "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
                                                                    "event_obj": await event.json}})
 
     async def subscribeToScheduledEvent(self, user: User, event: ScheduledEvent) -> None:
@@ -1370,18 +1370,28 @@ class Core(Singleton):
     async def sendScheduledEventUserAddEvent(self, user: User, event: ScheduledEvent) -> None:
         await self.mcl.broadcast("guild_events",
                                  {"e": "event_user_add",
-                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.id)),
+                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
                                            "user_id": user.id, "event_id": event.id, "guild_id": event.guild_id}})
 
     async def sendScheduledEventUserRemoveEvent(self, user: User, event: ScheduledEvent) -> None:
         await self.mcl.broadcast("guild_events",
                                  {"e": "event_user_remove",
-                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.id)),
+                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
                                            "user_id": user.id, "event_id": event.id, "guild_id": event.guild_id}})
 
     async def getSubscribedScheduledEventIds(self, user: User, guild_id: int) -> list[int]:
         async with self.db() as db:
             return await db.getSubscribedScheduledEventIds(user, guild_id)
+
+    async def deleteScheduledEvent(self, event: ScheduledEvent) -> None:
+        async with self.db() as db:
+            await db.deleteScheduledEvent(event)
+
+    async def sendScheduledEventDeleteEvent(self, event: ScheduledEvent) -> None:
+        await self.mcl.broadcast("guild_events",
+                                 {"e": "event_delete",
+                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
+                                           "event_obj": await event.json}})
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()

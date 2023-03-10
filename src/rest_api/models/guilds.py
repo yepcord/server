@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from time import mktime, time
 from typing import Optional, List
 
@@ -595,10 +595,12 @@ class CreateEvent(BaseModel):
         return value
 
     def __init__(self, **data):
-        if "scheduled_start_time" in data:
-            data["scheduled_start_time"] = mktime(dparse(data["scheduled_start_time"]).astimezone(UTC).timetuple())
-        if "scheduled_end_time" in data:
-            data["scheduled_end_time"] = mktime(dparse(data["scheduled_end_time"]).astimezone(UTC).timetuple())
+        if data.get("scheduled_start_time"):
+            dt = dparse(data["scheduled_start_time"]).replace(tzinfo=timezone.utc).astimezone(tz=None)
+            data["scheduled_start_time"] = mktime(dt.timetuple())
+        if data.get("scheduled_end_time"):
+            dt = dparse(data["scheduled_end_time"]).replace(tzinfo=timezone.utc).astimezone(tz=None)
+            data["scheduled_end_time"] = mktime(dt.timetuple())
         super().__init__(**data)
 
 

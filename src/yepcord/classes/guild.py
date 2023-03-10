@@ -691,7 +691,7 @@ class ScheduledEvent(Model):
         data = {
             "id": str(self.id),
             "guild_id": str(self.guild_id),
-            "channel_id ": str(channel_id),
+            "channel_id": str(channel_id),
             "creator_id": str(self.creator_id),
             "name": self.name,
             "description": self.description,

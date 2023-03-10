@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from json import dumps as jdumps
 from re import sub
 from time import time
@@ -12,7 +13,7 @@ from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLo
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
-from .enums import ChannelType
+from .enums import ChannelType, ScheduledEventStatus
 from .snowflake import Snowflake
 from .utils import json_to_sql
 
@@ -441,6 +442,9 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def getSubscribedScheduledEventIds(self, user: User, guild_id: int) -> list[int]: ...
+
+    @abstractmethod
+    async def deleteScheduledEvent(self, event: ScheduledEvent) -> None: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -1272,16 +1276,39 @@ class MySqlConnection:
         values = ", ".join([f"{v}" for f, v in q])
         await self.cur.execute(f'INSERT INTO `guild_events` ({fields}) VALUES ({values});')
 
-    async def getScheduledEvent(self, event_id: int) -> Optional[ScheduledEvent]:
+    async def _setCanceledOrCompletedEvents(self, event_id: Optional[int]=None, guild: Optional[_Guild]=None) -> None:
+        def _updateStatus(ev: ScheduledEvent) -> ScheduledEvent:
+            new_event = ev.copy()
+            if ev.status == ScheduledEventStatus.SCHEDULED:
+                if not ev.end and ev.start < datetime.utcnow().timestamp() + 1800:
+                    new_event.status = ScheduledEventStatus.CANCELED
+                elif ev.end and ev.end < datetime.utcnow().timestamp():
+                    new_event.status = ScheduledEventStatus.CANCELED
+            elif ev.status == ScheduledEventStatus.ACTIVE:
+                if ev.end and ev.end < datetime.utcnow().timestamp():
+                    new_event.status = ScheduledEventStatus.COMPLETED
+            return new_event
+        if event_id is None and guild is None:
+            return
+        if event_id:
+            event = await self.getScheduledEvent(event_id, _check_status=False)
+            await self.updateScheduledEventDiff(event, _updateStatus(event))
+        if guild:
+            for event in await self.getScheduledEvents(guild, _check_status=False):
+                await self.updateScheduledEventDiff(event, _updateStatus(event))
+
+    async def getScheduledEvent(self, event_id: int, *, _check_status=True) -> Optional[ScheduledEvent]:
+        if _check_status:
+            await self._setCanceledOrCompletedEvents(event_id=event_id)
         await self.cur.execute(f'SELECT * FROM `guild_events` WHERE `id`={event_id};')
         if r := await self.cur.fetchone():
             return ScheduledEvent.from_result(self.cur.description, r)
 
-    async def getScheduledEvents(self, guild: _Guild) -> List[ScheduledEvent]:
+    async def getScheduledEvents(self, guild: _Guild, *, _check_status=True) -> List[ScheduledEvent]:
+        if _check_status:
+            await self._setCanceledOrCompletedEvents(guild=guild)
         events = []
-        await self.cur.execute(f'SELECT * FROM `guild_events` WHERE `guild_id`={guild.id} AND '
-                               f'((`start` > {int(time())} AND `end` IS NULL) OR '
-                               f'(`end` IS NOT NULL OR `end` > {int(time())}));')
+        await self.cur.execute(f'SELECT * FROM `guild_events` WHERE `guild_id`={guild.id} AND `status` NOT IN (3, 4);')
         for r in await self.cur.fetchall():
             events.append(ScheduledEvent.from_result(self.cur.description, r))
         return events
@@ -1305,3 +1332,6 @@ class MySqlConnection:
         await self.cur.execute(f'SELECT `event_id` FROM `guild_events_subscribers` WHERE `user_id`={user.id} AND '
                                f'`guild_id`={guild_id};')
         return [r[0] for r in await self.cur.fetchall()]
+
+    async def deleteScheduledEvent(self, event: ScheduledEvent) -> None:
+        await self.cur.execute(f'DELETE FROM `guild_events` WHERE `id`={event.id};')

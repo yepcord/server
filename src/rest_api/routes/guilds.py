@@ -747,9 +747,8 @@ async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: 
     if event.status == ScheduledEventStatus.SCHEDULED:
         if new_event.status not in (ScheduledEventStatus.SCHEDULED, ScheduledEventStatus.ACTIVE, ScheduledEventStatus.CANCELED):
             valid_transition = False
-    elif event.status == ScheduledEventStatus.ACTIVE and new_event.status != ScheduledEventStatus.COMPLETED:
-        valid_transition = False
-    elif event.status != new_event.status:
+    elif (event.status == ScheduledEventStatus.ACTIVE and new_event.status != ScheduledEventStatus.COMPLETED) \
+            and event.status != new_event.status:
         valid_transition = False
 
     if not valid_transition:
@@ -788,5 +787,19 @@ async def unsubscribe_from_scheduled_event(user: User, guild: Guild, member: Gui
 
     await getCore().unsubscribeFromScheduledEvent(user, event)
     await getCore().sendScheduledEventUserRemoveEvent(user, event)
+
+    return "", 204
+
+
+@guilds.delete("/<int:guild>/scheduled-events/<int:event_id>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def delete_scheduled_event(user: User, guild: Guild, member: GuildMember, event_id: int):
+    await member.checkPermission(GuildPermissions.MANAGE_EVENTS)
+    event = await getCore().getScheduledEvent(event_id)
+    if not event or event.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10070))
+
+    await getCore().deleteScheduledEvent(event)
+    await getCore().sendScheduledEventDeleteEvent(event)
 
     return "", 204

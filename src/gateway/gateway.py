@@ -456,6 +456,12 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(GuildScheduledEventUpdateEvent(event_obj))
 
+    async def event_delete(self, users, event_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildScheduledEventDeleteEvent(event_obj))
+
     async def event_user_add(self, users, user_id, event_id, guild_id):
         if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
