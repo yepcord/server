@@ -358,7 +358,8 @@ class MessageCreate(BaseModel):
         if "message_reference" in data:
             data["message_reference"]["message_id"] = str(data["message_reference"]["message_id"])
             data["message_reference"]["channel_id"] = str(data["message_reference"]["channel_id"])
-            data["message_reference"]["guild_id"] = str(data["message_reference"]["guild_id"])
+            if data["message_reference"].get("guild_id"):
+                data["message_reference"]["guild_id"] = str(data["message_reference"]["guild_id"])
         return data
 
 
