@@ -13,7 +13,7 @@ from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLo
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
-from .enums import ChannelType, ScheduledEventStatus
+from .enums import ChannelType, ScheduledEventStatus, GUILD_CHANNELS
 from .snowflake import Snowflake
 from .utils import json_to_sql
 
@@ -756,7 +756,7 @@ class MySqlConnection:
     async def deleteChannel(self, channel: Channel) -> None:
         if channel.type == ChannelType.GROUP_DM:
             await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id} AND JSON_LENGTH(j_recipients) = 0;")
-        elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+        elif channel.type in GUILD_CHANNELS:
             await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id};")
         await self.cur.execute(f"DELETE FROM `read_states` WHERE `channel_id`={channel.id};")
 

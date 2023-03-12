@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
-from time import mktime, time
+from time import mktime
 from typing import Optional, List
 
 from dateutil.parser import parse as dparse
-from dateutil.tz import UTC
 from pydantic import BaseModel, validator, Field
 
+from .channels import PermissionOverwriteModel
 from ...yepcord.classes.other import BitFlags
-from ...yepcord.enums import SystemChannelFlags, ChannelType, ScheduledEventEntityType
+from ...yepcord.enums import SystemChannelFlags, ChannelType, ScheduledEventEntityType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.utils import getImage, validImage, LOCALES
 
@@ -208,7 +208,7 @@ class ChannelCreate(BaseModel):
     rate_limit: Optional[int] = Field(default=None, alias="rate_limit_per_user")
     bitrate: Optional[int] = None
     user_limit: Optional[int] = None
-    #permission_overwrites: List[PermissionOverwriteModel] = []
+    permission_overwrites: List[PermissionOverwriteModel] = Field(default_factory=list)
     parent_id: Optional[int] = None
     #rtc_region: Optional[str] = None
     video_quality_mode: Optional[int] = None
@@ -226,7 +226,7 @@ class ChannelCreate(BaseModel):
 
     @validator("type")
     def validate_type(cls, value: Optional[str]):
-        if value not in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY): # TODO: add other guild channel types
+        if value not in GUILD_CHANNELS:
             value = ChannelType.GUILD_TEXT
         return value
 
@@ -280,6 +280,10 @@ class ChannelCreate(BaseModel):
         elif channel_type == ChannelType.GUILD_VOICE:
             return self.dict(include={"name", "type", "position", "nsfw", "bitrate", "user_limit", "parent_id",
                                       "video_quality_mode"}, exclude_defaults=True)
+        elif channel_type == ChannelType.GUILD_NEWS:
+            return self.dict(
+                include={"name", "type", "position", "topic", "nsfw", "parent_id", "default_auto_archive"},
+                exclude_defaults=True)
 
 
 class BanMember(BaseModel):

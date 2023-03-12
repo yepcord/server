@@ -20,7 +20,7 @@ from .classes.other import EmailMsg, Singleton, JWT
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
 from .config import Config
 from .databases import MySQL
-from .enums import RelationshipType, ChannelType
+from .enums import RelationshipType, ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .pubsub_client import Broadcaster
 from .snowflake import Snowflake
@@ -431,10 +431,10 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getChannelMessages(channel, limit, before, after)
 
-    async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
+    async def getMessage(self, channel: _Channel, message_id: int) -> Optional[Message]:
+        if not message_id: return
         async with self.db() as db:
-            message = await db.getMessage(channel, message_id)
-        return message
+            return await db.getMessage(channel, message_id)
 
     async def sendMessage(self, message: Message) -> Message:
         async with self.db() as db:
@@ -479,7 +479,7 @@ class Core(Singleton):
         channel = await self.getChannel(channel_id)
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             return channel.recipients
-        elif channel.type in (ChannelType.GUILD_CATEGORY, ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
+        elif channel.type in GUILD_CHANNELS:
             return [member.user_id for member in await self.getGuildMembers(GuildId(channel.guild_id))]
 
     async def sendTypingEvent(self, user: _User, channel: Channel) -> None:
@@ -565,7 +565,7 @@ class Core(Singleton):
         if channel.type in (ChannelType.DM, ChannelType.GROUP_DM):
             if uid in channel.recipients:
                 return await self.getUser(uid)
-        elif channel.type in (ChannelType.GUILD_CATEGORY, ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
+        elif channel.type in GUILD_CHANNELS:
             return await self.getGuildMember(GuildId(channel.guild_id), uid)
 
     async def setFrecencySettingsBytes(self, uid: int, proto: bytes) -> None:

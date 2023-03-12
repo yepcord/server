@@ -10,7 +10,7 @@ from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUp
     RolesPositionsChangeList, AddRoleMembers, MemberUpdate, SetVanityUrl, GuildCreateFromTemplate, GuildDelete, \
     GetAuditLogsQuery, CreateSticker, UpdateSticker, CreateEvent, GetScheduledEvent, UpdateScheduledEvent
 from ..utils import usingDB, getUser, multipleDecorators, getGuildWM, getGuildWoM, getGuildTemplate, getRole
-from ...yepcord.classes.channel import Channel
+from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role, Sticker, ScheduledEvent
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User, GuildMember, UserId
@@ -213,6 +213,10 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
     channel = Channel(Snowflake.makeId(), guild_id=guild.id, **data.to_json(data.type))
     channel = await getCore().createGuildChannel(channel)
+    for overwrite in data.permission_overwrites:
+        overwrite = PermissionOverwrite(**overwrite.dict(), channel_id=channel.id, target_id=overwrite.id)
+        await getCore().putPermissionOverwrite(overwrite)
+
     await getCore().sendChannelCreateEvent(channel)
 
     entry = AuditLogEntry.channel_create(channel, user)
