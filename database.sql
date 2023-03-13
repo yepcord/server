@@ -260,7 +260,7 @@ CREATE TABLE `messages` (
   `application_id` bigint DEFAULT NULL,
   `type` int DEFAULT 0,
   `flags` int DEFAULT 0,
-  `message_reference` bigint DEFAULT NULL,
+  `j_message_reference` JSON NOT NULL DEFAULT "{}",
   `thread` bigint DEFAULT NULL,
   `j_components` JSON NOT NULL DEFAULT "[]",
   `j_sticker_items` JSON NOT NULL DEFAULT "[]",

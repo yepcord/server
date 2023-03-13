@@ -6,6 +6,7 @@ from uuid import uuid4
 from pymysql.converters import escape_string
 from schema import Or, And
 
+from .channel import ChannelId
 from .user import UserId
 from ..config import Config
 from ..ctx import getCore, Ctx
@@ -35,9 +36,9 @@ class Message(_Message, Model):
     pinned: Optional[bool] = False
     webhook_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     application_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
-    type: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
-    flags: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
-    message_reference: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
+    type: Optional[int] = field(validation=Or(int, NoneType), default=0)
+    flags: Optional[int] = field(validation=Or(int, NoneType), default=0)
+    message_reference: Optional[dict] = field(db_name="j_message_reference", default=None)
     thread: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     components: Optional[list] = field(db_name="j_components", default=None)
     sticker_items: Optional[list] = field(db_name="j_sticker_items", default=None)
@@ -46,7 +47,7 @@ class Message(_Message, Model):
     guild_id: Optional[int] = field(validation=Or(int, NoneType), default=None, nullable=True)
     nonce: Optional[str] = field(default=None, excluded=True)
     tts: Optional[str] = field(default=None, excluded=True)
-    sticker_ids: Optional[str] = field(default=None, excluded=True)
+    sticker_ids: Optional[list] = field(db_name="j_sticker_ids", default=None, excluded=True)
     webhook_author: Optional[dict] = field(db_name="j_webhook_author", default=None, private=True)
 
     @property
@@ -83,7 +84,11 @@ class Message(_Message, Model):
                 data["mentions"].append(await user.json)
         data["attachments"] = [await attachment.json for attachment in await getCore().getAttachments(self)]
         if self.message_reference:
-            data["message_reference"] = {"message_id": str(self.message_reference), "channel_id": str(self.channel_id)}
+            data["message_reference"] = self.message_reference
+            if self.type == MessageType.REPLY:
+                referenced_message = await getCore().getMessage(ChannelId(self.channel_id), int(self.message_reference["message_id"]))
+                referenced_message.message_reference = {}
+                data["referenced_message"] = await referenced_message.json if referenced_message else None
         if self.nonce is not None:
             data["nonce"] = self.nonce
         if not Ctx.get("search", False):
@@ -92,8 +97,8 @@ class Message(_Message, Model):
         return data
 
     DEFAULTS = {"content": None, "edit_timestamp": None, "embeds": [], "pinned": False,
-                "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": None,
-                "thread": None, "components": [], "sticker_items": [], "extra_data": {},
+                "webhook_id": None, "application_id": None, "type": 0, "flags": 0, "message_reference": {},
+                "thread": None, "components": [], "sticker_items": [], "sticker_ids": [], "extra_data": {},
                 "guild_id": None}
 
     def __post_init__(self) -> None:

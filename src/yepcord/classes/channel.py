@@ -141,6 +141,22 @@ class Channel(_Channel, Model):
                 "bitrate": self.bitrate,
                 "guild_id": str(self.guild_id)
             }
+        elif self.type == ChannelType.GUILD_NEWS:
+            return {
+                "type": self.type,
+                "topic": self.topic,
+                "position": self.position,
+                "permission_overwrites": [
+                    await overwrite.json for overwrite in await getCore().getPermissionOverwrites(self)
+                ],
+                "parent_id": str(self.parent_id) if self.parent_id is not None else self.parent_id,
+                "name": self.name,
+                "last_message_id": last_message_id,
+                "id": str(self.id),
+                "flags": self.flags,
+                "guild_id": str(self.guild_id),
+                "nsfw": self.nsfw
+            }
 
 @model
 @dataclass

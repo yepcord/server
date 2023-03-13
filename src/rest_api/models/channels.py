@@ -7,6 +7,8 @@ from dateutil.parser import parse as dparse
 from pydantic import BaseModel, validator, Field
 
 from ..utils import makeEmbedError
+from ...yepcord.classes.channel import Channel
+from ...yepcord.classes.message import Message
 from ...yepcord.enums import ChannelType
 from ...yepcord.errors import EmbedErr, InvalidDataErr, Errors
 from ...yepcord.utils import validImage, getImage
@@ -289,18 +291,24 @@ class EmbedModel(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+class MessageReferenceModel(BaseModel):
+    message_id: Optional[int] = None
+    channel_id: Optional[int] = None
+    guild_id: Optional[int] = None
+    fail_if_not_exists: Optional[int] = None
+
+    def dict(self, *args, **kwargs):
+        kwargs["include"] = {"message_id", "channel_id", "guild_id"}
+        return super().dict(*args, **kwargs)
+
+
 class MessageCreate(BaseModel):
     content: Optional[str] = None
     nonce: Optional[str] = None
     embeds: List[EmbedModel] = Field(default_factory=list)
     sticker_ids: List[int] = Field(default_factory=list)
-    message_reference: Optional[int] = None
+    message_reference: Optional[MessageReferenceModel] = None
     flags: Optional[int] = None
-
-    def __init__(self, **data):
-        if "message_reference" in data:
-            data["message_reference"] = data["message_reference"]["message_id"]
-        super().__init__(**data)
 
     @validator("content")
     def validate_content(cls, value: Optional[str]):
@@ -324,8 +332,35 @@ class MessageCreate(BaseModel):
                 "Must be between 1 and 3 in length."}}))
         return value
 
+    def validate_reply(self, channel: Channel, reply_to_message: Message):
+        if reply_to_message is None:
+            if self.message_reference.fail_if_not_exists:
+                raise InvalidDataErr(400, Errors.make(50035, {"message_reference": {
+                    "_errors": [{"code": "REPLIES_UNKNOWN_MESSAGE", "message": "Unknown message"}]}}))
+            else:
+                self.message_reference = None
+        else:
+            if not self.message_reference.channel_id:
+                self.message_reference.channel_id = channel.id
+            if not self.message_reference.guild_id:
+                self.message_reference.guild_id = channel.guild_id
+            if self.message_reference.channel_id != channel.id:
+                raise InvalidDataErr(400, Errors.make(50035, {"message_reference": {
+                    "_errors": [{"code": "REPLIES_CANNOT_REFERENCE_OTHER_CHANNEL",
+                                 "message": "Cannot reply to a message in a different channel"}]}}))
+            if self.message_reference.guild_id != channel.guild_id:
+                raise InvalidDataErr(400, Errors.make(50035, {"message_reference": {
+                    "_errors": [{"code": "REPLIES_UNKNOWN_MESSAGE",
+                                 "message": "Unknown message"}]}}))
+
     def to_json(self) -> dict:
-        return self.dict(exclude_defaults=True)
+        data = self.dict(exclude_defaults=True)
+        if "message_reference" in data:
+            data["message_reference"]["message_id"] = str(data["message_reference"]["message_id"])
+            data["message_reference"]["channel_id"] = str(data["message_reference"]["channel_id"])
+            if data["message_reference"].get("guild_id"):
+                data["message_reference"]["guild_id"] = str(data["message_reference"]["guild_id"])
+        return data
 
 
 class MessageUpdate(BaseModel):
