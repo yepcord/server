@@ -2,8 +2,10 @@ from asyncio import get_event_loop
 from base64 import b64encode
 
 import pytest as pt
+from google.protobuf.wrappers_pb2 import StringValue
+
 from src.rest_api.main import app
-from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, RenderSpoilers
+from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings
 
 
 class TestVars:
@@ -123,7 +125,7 @@ async def test_settings_proto(testapp):
     assert (await client.get("/api/v9/users/@me/settings-proto/2", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/settings-proto/3", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/settings-proto/4", headers=headers)).status_code == 400
-    proto = PreloadedUserSettings(text_and_images=TextAndImagesSettings(render_spoilers=RenderSpoilers(value="ALWAYS")))
+    proto = PreloadedUserSettings(text_and_images=TextAndImagesSettings(render_spoilers=StringValue(value="ALWAYS")))
     proto = proto.SerializeToString()
     proto = b64encode(proto).decode("utf8")
     assert (await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers, json={"settings": proto})).status_code == 200
