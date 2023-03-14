@@ -229,6 +229,16 @@ CREATE TABLE `channels` (
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
+DROP TABLE IF EXISTS `threads_metadata`;
+CREATE TABLE `threads_metadata` (
+  `channel_id` bigint NOT NULL,
+  `archived` bool NOT NULL DEFAULT false,
+  `archive_timestamp` bigint NOT NULL,
+  `auto_archive_duration` bigint NOT NULL,
+  `locked` bool NOT NULL DEFAULT false,
+  FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
 DROP TABLE IF EXISTS `hidden_dm_channels`;
 CREATE TABLE `hidden_dm_channels` (
   `user_id` bigint NOT NULL,
