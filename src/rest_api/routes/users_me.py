@@ -143,13 +143,11 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
         proto.ParseFromString(_b64decode(data.settings.encode("utf8")))
     except ValueError:
         raise InvalidDataErr(400, Errors.make(50104))
-    settings_old = await user.settings
-    settings = UserSettings(user.id)
-    settings.from_proto(proto)
-    await getCore().setSettingsDiff(settings_old, settings)
-    user._uSettings = None
     settings = await user.settings
-    proto = _b64encode(settings.to_proto().SerializeToString()).decode("utf8")
+    new_settings = settings.copy()
+    new_settings.from_proto(proto)
+    await getCore().setSettingsDiff(settings, new_settings)
+    proto = _b64encode(new_settings.to_proto().SerializeToString()).decode("utf8")
     await getCore().sendSettingsProtoUpdateEvent(user.id, proto, 1)
     return c_json({"settings": proto})
 
