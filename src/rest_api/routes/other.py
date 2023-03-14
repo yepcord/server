@@ -140,6 +140,11 @@ async def api_gateway():
     return c_json("{\"url\": \"wss://gateway.yepcord.ml\"}")
 
 
+@other.get("/api/v9/activities/guilds/<int:guild_id>/shelf")
+async def api_activities_shelf(guild_id):
+    return c_json("\"activity_bundle_items\": []")
+
+
 # OAuth
 
 

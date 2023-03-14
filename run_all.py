@@ -58,6 +58,7 @@ processes = [
     Process("IMT", file="main.py", wd="src/pubsub"),
     Process("HttpApi", app="src.rest_api.main:app", port=8000),
     Process("Gateway", app="src.gateway.main:app", port=8001),
+    Process("VoiceGateway", app="src.voice_gateway.main:app", port=8099),
     Process("CDN", app="src.cdn.main:app", port=8003),
     Process("RemoteAuth", app="src.remote_auth.main:app", port=8002),
 ]

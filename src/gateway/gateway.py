@@ -586,6 +586,19 @@ class Gateway:
             members = await self.core.getGuildMembersGw(GuildId(guild_id), query, limit)
             presences = []  # TODO: add presences
             await cl.esend(GuildMembersChunkEvent(members, presences, guild_id))
+        elif op == GatewayOp.VOICE_STATE:
+            d = data["d"]
+            if not (channel_id := d.get("channel_id", 0)): return
+            if not (cl := await self.getClientFromSocket(ws)): return
+            self_mute = bool(d.get("self_mute"))
+            self_deaf = bool(d.get("self_deaf"))
+            guild_id = int(d.get("guild_id", 0))
+
+            print(f"Connecting to voice with session_id={cl.sid}")
+
+            await cl.esend(VoiceStateUpdate(self.core, cl.id, cl.sid, channel_id, guild_id, self_mute=self_mute, self_deaf=self_deaf))
+            await cl.esend(VoiceServerUpdate(guild_id, channel_id))
+
         else:
             print("-"*16)
             print(f"  Unknown op code: {op}")

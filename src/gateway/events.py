@@ -2,6 +2,7 @@ from base64 import b64encode
 from time import time
 from typing import List
 
+from ..yepcord.classes.guild import GuildId
 from ..yepcord.classes.user import GuildMember
 from ..yepcord.config import Config
 from ..yepcord.snowflake import Snowflake
@@ -819,3 +820,55 @@ class ScheduledEventUserRemoveEvent(ScheduledEventUserAddEvent):
 
 class GuildScheduledEventDeleteEvent(GuildScheduledEventCreateEvent):
     NAME = "GUILD_SCHEDULED_EVENT_DELETE"
+
+class VoiceStateUpdate(DispatchEvent):
+    NAME = "VOICE_STATE_UPDATE"
+
+    def __init__(self, core, user_id, session_id, channel_id, guild_id, **kwargs):
+        self.core = core
+        self.user_id = user_id
+        self.session_id = session_id
+        self.channel_id = channel_id
+        self.guild_id = guild_id
+        self.kwargs = kwargs
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id),
+                "channel_id": str(self.channel_id),
+                "deaf": False,
+                "mute": False,
+                "session_id": self.session_id,
+                **self.kwargs
+            }
+        }
+        if self.guild_id:
+            data["d"]["guild_id"] = str(self.guild_id)
+            data["d"]["member"] = await (await self.core.getGuildMember(GuildId(self.guild_id), self.user_id)).json
+        return data
+
+class VoiceServerUpdate(DispatchEvent):
+    NAME = "VOICE_SERVER_UPDATE"
+
+    def __init__(self, guild_id, channel_id):
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "token": "idk_token",
+                "endpoint": "127.0.0.1:8099"
+            }
+        }
+        if self.guild_id:
+            data["d"]["guild_id"] = str(self.guild_id)
+        if self.channel_id:
+            data["d"]["channel_id"] = str(self.channel_id)
+
+        return data
