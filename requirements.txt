@@ -21,3 +21,4 @@ bcrypt==4.0.1
 quart-schema==0.15.0
 PyMySQL~=1.0.2
 pydantic~=1.10.5
+types-protobuf~=4.22.0.0
