@@ -592,7 +592,8 @@ class Gateway:
             if not (cl := await self.getClientFromSocket(ws)): return
             self_mute = bool(d.get("self_mute"))
             self_deaf = bool(d.get("self_deaf"))
-            guild_id = int(d.get("guild_id", 0))
+            guild_id = d.get("guild_id", 0)
+            guild_id = int(guild_id) if guild_id is not None else None
 
             print(f"Connecting to voice with session_id={cl.sid}")
 
