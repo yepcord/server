@@ -1,7 +1,5 @@
-import traceback
 from json import dumps as jdumps
 from time import time
-from aiofiles import open as aopen
 
 from quart import Quart, request, Response
 from quart.globals import request_ctx
