@@ -1,6 +1,7 @@
 from json import dumps as jdumps
+from time import time
 
-from quart import Quart, request
+from quart import Quart, request, Response
 from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
@@ -70,14 +71,14 @@ async def before_serving():
 
 
 @app.errorhandler(YDataError)
-async def ydataerror_handler(e):
-    if isinstance(e, EmbedErr):
-        return c_json(e.error, 400)
-    elif isinstance(e, InvalidDataErr):
-        return c_json(e.error, e.code)
-    elif isinstance(e, MfaRequiredErr):
-        ticket = b64encode(jdumps([e.uid, "login"]))
-        ticket += f".{e.sid}.{e.sig}"
+async def ydataerror_handler(err: YDataError):
+    if isinstance(err, EmbedErr):
+        return c_json(err.error, 400)
+    elif isinstance(err, InvalidDataErr):
+        return c_json(err.error, err.code)
+    elif isinstance(err, MfaRequiredErr):
+        ticket = b64encode(jdumps([err.uid, "login"]))
+        ticket += f".{err.sid}.{err.sig}"
         return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
 
 
@@ -88,12 +89,41 @@ async def handle_validation_error(error: RequestSchemaValidationError):
 
 
 @app.after_request
-async def set_cors_headers(response):
+async def set_cors_headers(response: Response) -> Response:
     response.headers['Server'] = "YEPcord"
     response.headers['Access-Control-Allow-Origin'] = "*"
     response.headers['Access-Control-Allow-Headers'] = "*"
     response.headers['Access-Control-Allow-Methods'] = "*"
     response.headers['Content-Security-Policy'] = "connect-src *;"
+    return response
+
+
+TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8")
+@app.after_request
+async def generate_test(response: Response) -> Response:
+    if request.method == "OPTIONS" or response.status_code == 501 or not Config["GENERATE_TESTS"]:
+        return response
+    path = request.path.replace("/", "_").replace("-", "").replace("@", "")+"_"+str(int(time()*1000))[-4:]
+    test_code = "@pt.mark.asyncio\n" \
+                f"async def test_{path}(testapp):\n" \
+                "    client = (await testapp).test_client()\n" \
+                "    headers = " + \
+                ("{\"Authorization\": TestVars.get(\"token\")}" if request.headers.get("Authorization") else "{}") + \
+                "\n%CODE%\n\n"
+
+    tests = []
+    json = ""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and await request.json:
+        json = f", json={await request.json}"
+    tests.append(f"resp = await client.{request.method.lower()}(\"{request.path}\", headers=headers{json})")
+    tests.append(f"assert resp.status_code == {response.status_code}") # Check status code
+    if response.status_code == 200 and response.headers["Content-Type"] == "application/json" and await response.json:
+        tests.append(f"assert (await resp.get_json() == {await response.json})") # Check response json
+    tests = [f"    {test}" for test in tests] # Add indentations
+    tests = "\n".join(tests)
+    test_code = test_code.replace("%CODE%", tests)
+    TESTS_FILE.write(test_code)
+    TESTS_FILE.flush()
     return response
 
 
