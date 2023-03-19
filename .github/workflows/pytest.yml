@@ -42,7 +42,7 @@ jobs:
 
       - name: Run test suite for core
         run: |
-          pytest tests/test_core.py
+          pytest --cov-report=xml --cov-append --cov=src/yepcord --disable-warnings tests/test_core.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -58,7 +58,7 @@ jobs:
 
       - name: Run test suite for http
         run: |
-          pytest --cov-report=xml --cov=src/rest_api tests/test_http.py
+          pytest --cov-report=xml --cov-append --cov=src/rest_api --disable-warnings tests/test_http.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
