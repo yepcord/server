@@ -313,6 +313,7 @@ class MessageCreate(BaseModel):
     @validator("content")
     def validate_content(cls, value: Optional[str]):
         if value is not None:
+            value = value.strip()
             if len(value) > 2000:
                 raise InvalidDataErr(400, Errors.make(50035, {"content": {"code": "BASE_TYPE_BAD_LENGTH", "message":
                     "Must be between 1 and 2000 in length."}}))

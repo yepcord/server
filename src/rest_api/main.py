@@ -29,10 +29,10 @@ class YEPcord(Quart):
 
     async def dispatch_request(self, request_context=None):
         request_ = (request_context or request_ctx).request
-        if request_.routing_exception is not None:
+        if request_.routing_exception is not None: # pragma: no cover
             self.raise_routing_exception(request_)
 
-        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options:
+        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options: # pragma: no cover
             return await self.make_default_options_response()
 
         handler = self.view_functions[request_.url_rule.endpoint]
@@ -100,7 +100,7 @@ async def set_cors_headers(response: Response) -> Response:
 
 TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8")
 @app.after_request
-async def generate_test(response: Response) -> Response:
+async def generate_test(response: Response) -> Response: # pragma: no cover
     if request.method == "OPTIONS" or response.status_code == 501 or not Config["GENERATE_TESTS"]:
         return response
     path = request.path.replace("/", "_").replace("-", "").replace("@", "")+"_"+str(int(time()*1000))[-4:]
@@ -157,6 +157,7 @@ async def other_api_endpoints(path):
     return "Not Implemented!", 501
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
+    # Deprecated
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8000, reload=True, use_colors=False)

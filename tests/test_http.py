@@ -1,13 +1,16 @@
 from asyncio import get_event_loop
 from base64 import b64encode
+from os import environ
 
 import pytest as pt
 from google.protobuf.wrappers_pb2 import StringValue
 
 from src.rest_api.main import app
+from src.yepcord.config import Config
 from src.yepcord.enums import ChannelType, StickerType
 from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings
-from src.yepcord.utils import getImage
+from src.yepcord.utils import getImage, b64decode
+from tests.utils import generateEmailVerificationToken
 from tests.yep_image import YEP_IMAGE
 
 
@@ -570,12 +573,28 @@ async def test_edit_webhook(testapp):
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
     webhook_id = TestVars.get("webhook_id")
     resp = await client.patch(f"/api/v9/webhooks/{webhook_id}", headers=headers,
-                              json={'channel_id': channel_id, 'name': 'Test webhook'})
+                              json={'channel_id': channel_id, 'name': 'Test webhook', "avatar": YEP_IMAGE})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["channel_id"] == channel_id
     assert json["name"] == "Test webhook"
     assert json["guild_id"] == guild_id
+    assert len(json["avatar"]) == 32
+
+@pt.mark.asyncio
+async def test_get_webhook(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    guild_id = str(TestVars.get("guild_id"))
+    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
+    webhook_id = TestVars.get("webhook_id")
+    resp = await client.get(f"/api/v9/webhooks/{webhook_id}", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["channel_id"] == channel_id
+    assert json["name"] == "Test webhook"
+    assert json["guild_id"] == guild_id
+    assert len(json["avatar"]) == 32
 
 @pt.mark.asyncio
 async def test_post_webhook_message(testapp):
@@ -730,3 +749,123 @@ async def test_get_channel_invites(testapp):
     assert json[0]["max_age"] == 604800
     assert json[0]["max_uses"] == 0
     assert json[0]["uses"] == 0
+
+@pt.mark.asyncio
+async def test_edit_user_data(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    resp = await client.patch("/api/v9/users/@me", headers=headers,
+                              json={'email': 'test_changed@yepcord.ml', 'discriminator': '9999', 'new_password': 'test_passw0rd_changed',
+                                    'password': 'test_passw0rd', 'avatar': YEP_IMAGE})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["email"] == 'test_changed@yepcord.ml'
+    assert json["discriminator"] == '9999'
+    assert len(json["avatar"]) == 32
+    assert json["verified"] == False
+
+@pt.mark.asyncio
+async def test_verify_email(testapp):
+    client = (await testapp).test_client()
+    headers = {}
+    user_id = TestVars.get("data")["id"]
+
+    token = generateEmailVerificationToken(int(user_id), "test_changed@yepcord.ml", b64decode(Config("KEY")))
+
+    resp = await client.post("/api/v9/auth/verify", headers=headers, json={'token': token})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["token"]
+    assert json["user_id"] == str(user_id)
+
+@pt.mark.asyncio
+async def test_get_my_profile(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    user_id = str(TestVars.get("data")["id"])
+    guild_id = str(TestVars.get("guild_id"))
+    resp = await client.get(f"/api/v9/users/@me/profile?with_mutual_guilds=true&mutual_friends_count=true&guild_id={guild_id}", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["user"]["id"] == user_id
+    assert json["guild_member_profile"]["guild_id"] == guild_id
+    assert json["guild_member"]["user"]["id"] == user_id
+
+@pt.mark.asyncio
+async def test_hypesquad_change_house(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    resp = await client.post("/api/v9/hypesquad/online", headers=headers, json={'house_id': 1})
+    assert resp.status_code == 204
+    resp = await client.post("/api/v9/hypesquad/online", headers=headers, json={'house_id': 2})
+    assert resp.status_code == 204
+    resp = await client.post("/api/v9/hypesquad/online", headers=headers, json={'house_id': 3})
+    assert resp.status_code == 204
+
+    resp = await client.post("/api/v9/hypesquad/online", headers=headers, json={'house_id': 4})
+    assert resp.status_code == 400
+
+@pt.mark.asyncio
+async def test_messages_replying_1(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    user_id = str(TestVars.get("data")["id"])
+    guild_id = str(TestVars.get("guild_id"))
+    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
+    resp = await client.post(f"/api/v9/channels/{channel_id}/messages", headers=headers,
+                             json={'content': ' test ', 'nonce': '1087430130973802496', 'tts': False})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["channel_id"] == channel_id
+    assert json["author"]["id"] == user_id
+    assert json["content"] == "test"
+    assert json["edit_timestamp"] is None
+    assert json["embeds"] == []
+    assert json["pinned"] == False
+    assert json["type"] == 0
+    assert json["nonce"] == "1087430130973802496"
+    assert json["guild_id"] == guild_id
+    TestVars.set("message_id", json["id"])
+
+@pt.mark.asyncio
+async def test_messages_replying_2(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    user_id = str(TestVars.get("data")["id"])
+    guild_id = str(TestVars.get("guild_id"))
+    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0][ "id"]
+    message_id = TestVars.get("message_id")
+    resp = await client.post(f"/api/v9/channels/{channel_id}/messages", headers=headers,
+                             json={'content': 'test reply', 'nonce': '1087430157817348096', 'tts': False,
+                                   'message_reference': {'message_id': message_id}})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["channel_id"] == channel_id
+    assert json["author"]["id"] == user_id
+    assert json["content"] == "test reply"
+    assert json["message_reference"]["message_id"] == message_id
+    assert json["message_reference"]["guild_id"] == guild_id
+    assert json["message_reference"]["channel_id"] == channel_id
+    assert json["referenced_message"]["id"] == message_id
+
+@pt.mark.asyncio
+async def test_message_editing(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
+    message_id = TestVars.get("message_id")
+    resp = await client.patch(f"/api/v9/channels/{channel_id}/messages/{message_id}", headers=headers,
+                              json={'content': 'test edited'})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["content"] == "test edited"
+
+@pt.mark.asyncio
+async def test_message_deleting(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
+    message_id = TestVars.get("message_id")
+    resp = await client.delete(f"/api/v9/channels/{channel_id}/messages/{message_id}", headers=headers)
+    assert resp.status_code == 204
+
