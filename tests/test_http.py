@@ -924,8 +924,26 @@ async def test_mfa_view_backup_codes(testapp):
     check_codes(backup_codes_new, user_id)
 
 @pt.mark.asyncio
+async def test_login_with_mfa(testapp):
+    client: TestClientType = (await testapp).test_client()
+    resp = await client.post('/api/v9/auth/login',
+                             json={"login": "test_changed@yepcord.ml", "password": "test_passw0rd_changed"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["token"] is None
+    assert json["mfa"] == True
+    assert (ticket := json["ticket"])
+
+    mfa = MFA("a" * 16, 0)
+    resp = await client.post('/api/v9/auth/mfa/totp',
+                                 json={"ticket": ticket, "code": mfa.getCode()})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["token"]
+
+@pt.mark.asyncio
 async def test_disable_mfa(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     mfa = MFA("a"*16, 0)
     resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
@@ -933,3 +951,31 @@ async def test_disable_mfa(testapp):
     json = await resp.get_json()
     assert json["token"]
     TestVars.set("token", json["token"])
+
+@pt.mark.asyncio
+async def test_gifs_trending(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    resp = await client.get("/api/v9/gifs/trending", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["categories"]
+
+    resp = await client.get("/api/v9/gifs/trending-gifs", headers=headers)
+    assert resp.status_code == 200
+
+    resp = await client.post("/api/v9/gifs/select", headers=headers)
+    assert resp.status_code == 204
+
+@pt.mark.asyncio
+async def test_gifs_search_suggest(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    resp = await client.get("/api/v9/gifs/search?q=cat", headers=headers)
+    assert resp.status_code == 200
+    assert len(await resp.get_json()) > 0
+
+    resp = await client.get("/api/v9/gifs/suggest?q=cat&limit=5", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert 0 < len(json) <= 5

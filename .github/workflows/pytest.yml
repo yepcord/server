@@ -65,6 +65,7 @@ jobs:
           DB_PASS: ${{ secrets.DB_PASS }}
           DB_NAME: yepcord_test
           KEY: ${{ secrets.KEY }}
+          TENOR_KEY: ${{ secrets.TENOR_KEY }}
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3

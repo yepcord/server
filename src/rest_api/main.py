@@ -106,7 +106,7 @@ async def generate_test(response: Response) -> Response: # pragma: no cover
     path = request.path.replace("/", "_").replace("-", "").replace("@", "")+"_"+str(int(time()*1000))[-4:]
     test_code = "@pt.mark.asyncio\n" \
                 f"async def test_{path}(testapp):\n" \
-                "    client = (await testapp).test_client()\n" \
+                "    client: TestClientType = (await testapp).test_client()\n" \
                 "    headers = " + \
                 ("{\"Authorization\": TestVars.get(\"token\")}" if request.headers.get("Authorization") else "{}") + \
                 "\n%CODE%\n\n"
