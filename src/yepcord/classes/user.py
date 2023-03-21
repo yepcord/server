@@ -350,7 +350,7 @@ class UserData(Model):
             "nsfw_allowed": self.nsfw_allowed,
             "mfa_enabled": settings.mfa,
             "email": user.email,
-            "verified": True,
+            "verified": user.verified,
             "phone": self.phone
         }
 
