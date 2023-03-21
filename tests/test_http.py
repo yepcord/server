@@ -1,18 +1,19 @@
 from asyncio import get_event_loop
 from base64 import b64encode
-from os import environ
 
 import pytest as pt
 from google.protobuf.wrappers_pb2 import StringValue
 
 from src.rest_api.main import app
 from src.yepcord.config import Config
+from src.yepcord.ctx import getCore, Ctx
 from src.yepcord.enums import ChannelType, StickerType
 from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings
-from src.yepcord.utils import getImage, b64decode
-from tests.utils import generateEmailVerificationToken
+from src.yepcord.utils import getImage, b64decode, MFA
+from tests.utils import generateEmailVerificationToken, generateMfaVerificationKey
 from tests.yep_image import YEP_IMAGE
 
+TestClientType = app.test_client_class
 
 class TestVars:
     _vars = {}
@@ -39,13 +40,13 @@ async def _test_app():
 
 @pt.mark.asyncio
 async def test_login_fail(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.post('/api/v9/auth/login', json={"login": "test@yepcord.ml", "password": "test_passw0rd"})
     assert response.status_code == 400
 
 @pt.mark.asyncio
 async def test_register(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.post('/api/v9/auth/register', json={
         "username": "TestUser",
         "email": "test@yepcord.ml",
@@ -59,7 +60,7 @@ async def test_register(testapp):
 
 @pt.mark.asyncio
 async def test_resend_verification_email(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.post('/api/v9/auth/verify/resend', headers={
         "Authorization": TestVars.get("token")
     })
@@ -67,7 +68,7 @@ async def test_resend_verification_email(testapp):
 
 @pt.mark.asyncio
 async def test_getme_success(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.get("/api/v9/users/@me", headers={
         "Authorization": TestVars.get("token")
     })
@@ -75,7 +76,7 @@ async def test_getme_success(testapp):
 
 @pt.mark.asyncio
 async def test_logout(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.post('/api/v9/auth/logout', headers={
         "Authorization": TestVars.get("token")
     })
@@ -83,7 +84,7 @@ async def test_logout(testapp):
 
 @pt.mark.asyncio
 async def test_getme_fail(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.get("/api/v9/users/@me", headers={
         "Authorization": TestVars.get("token")
     })
@@ -91,7 +92,7 @@ async def test_getme_fail(testapp):
 
 @pt.mark.asyncio
 async def test_login_success(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.post('/api/v9/auth/login', json={"login": "test@yepcord.ml", "password": "test_passw0rd"})
     assert response.status_code == 200
     j = await response.get_json()
@@ -100,7 +101,7 @@ async def test_login_success(testapp):
 
 @pt.mark.asyncio
 async def test_change_username(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.patch("/api/v9/users/@me", json={"username": "YepCordTest", "password": "test_passw0rd"}, headers={
         "Authorization": TestVars.get("token")
     })
@@ -116,7 +117,7 @@ async def test_change_username(testapp):
 @pt.mark.asyncio
 async def test_settings(testapp):
     headers = {"Authorization": TestVars.get("token")}
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     assert (await client.get("/api/v9/users/@me/connections", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/settings", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/consent", headers=headers)).status_code == 200
@@ -126,7 +127,7 @@ async def test_settings(testapp):
 @pt.mark.asyncio
 async def test_settings_proto(testapp):
     headers = {"Authorization": TestVars.get("token")}
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     assert (await client.get("/api/v9/users/@me/settings-proto/1", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/settings-proto/2", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/settings-proto/3", headers=headers)).status_code == 200
@@ -138,7 +139,7 @@ async def test_settings_proto(testapp):
 
 @pt.mark.asyncio
 async def test_register_other_user(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     response = await client.post('/api/v9/auth/register', json={
         "username": "TestUser",
         "email": "user@yepcord.ml",
@@ -161,7 +162,7 @@ async def test_relationships(testapp):
     headers_u2 = {"Authorization": TestVars.get("token_u2")}
     data = TestVars.get("data")
     data2 = TestVars.get("data_u2")
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
 
     response = await client.get('/api/v9/users/@me/relationships', headers=headers)
     assert response.status_code == 200
@@ -186,7 +187,7 @@ async def test_relationships(testapp):
 
 @pt.mark.asyncio
 async def test_create_guild(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     resp = await client.post("/api/v9/guilds", headers=headers, json={'name': 'Test Guild', 'icon': None})
     assert resp.status_code == 200
@@ -202,7 +203,7 @@ async def test_create_guild(testapp):
 
 @pt.mark.asyncio
 async def test_get_messages_in_empty_channel(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"].lower() == "general"][0]["id"]
     resp = await client.get(f"/api/v9/channels/{channel_id}/messages", headers=headers)
@@ -211,7 +212,7 @@ async def test_get_messages_in_empty_channel(testapp):
 
 @pt.mark.asyncio
 async def test_get_subscriptions(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     data = TestVars.get("data")
     guild_id = TestVars.get("guild_id")
@@ -221,7 +222,7 @@ async def test_get_subscriptions(testapp):
 
 @pt.mark.asyncio
 async def test_guild_templates_empty(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     resp = await client.get(f"/api/v9/guilds/{guild_id}/templates", headers=headers)
@@ -230,7 +231,7 @@ async def test_guild_templates_empty(testapp):
 
 @pt.mark.asyncio
 async def test_create_guild_channels(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     parent_id = [channel for channel in TestVars.get("guild_channels") if channel["type"] == ChannelType.GUILD_CATEGORY][0]["id"]
@@ -261,7 +262,7 @@ async def test_create_guild_channels(testapp):
 
 @pt.mark.asyncio
 async def test_change_guild_channels_positions(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     channel_id = \
@@ -271,7 +272,7 @@ async def test_change_guild_channels_positions(testapp):
 
 @pt.mark.asyncio
 async def test_edit_guild(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     resp = await client.patch(f"/api/v9/guilds/{guild_id}", headers=headers, json={
@@ -287,7 +288,7 @@ async def test_edit_guild(testapp):
 
 @pt.mark.asyncio
 async def test_create_role(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     resp = await client.post(f"/api/v9/guilds/{guild_id}/roles", headers=headers, json={'name': 'new role'})
@@ -298,7 +299,7 @@ async def test_create_role(testapp):
 
 @pt.mark.asyncio
 async def test_change_roles_positions(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     role_id = TestVars.get("role_id")
@@ -310,7 +311,7 @@ async def test_change_roles_positions(testapp):
 
 @pt.mark.asyncio
 async def test_edit_role(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     role_id = TestVars.get("role_id")
@@ -325,7 +326,7 @@ async def test_edit_role(testapp):
 
 @pt.mark.asyncio
 async def test_delete_role(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     role_id = TestVars.get("role_id")
@@ -336,7 +337,7 @@ async def test_delete_role(testapp):
 
 @pt.mark.asyncio
 async def test_get_roles_member_counts(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     resp = await client.get(f"/api/v9/guilds/{guild_id}/roles/member-counts", headers=headers)
@@ -345,7 +346,7 @@ async def test_get_roles_member_counts(testapp):
 
 @pt.mark.asyncio
 async def test_get_emojis_empty(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     resp = await client.get(f"/api/v9/guilds/{guild_id}/emojis", headers=headers)
@@ -354,7 +355,7 @@ async def test_get_emojis_empty(testapp):
 
 @pt.mark.asyncio
 async def test_create_emoji(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     resp = await client.post(f"/api/v9/guilds/{guild_id}/emojis", headers=headers, json={'image': YEP_IMAGE, 'name': 'YEP'})
@@ -367,7 +368,7 @@ async def test_create_emoji(testapp):
 
 @pt.mark.asyncio
 async def test_get_emojis(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     emoji_id = TestVars.get("emoji_id")
@@ -384,7 +385,7 @@ async def test_get_emojis(testapp):
 
 @pt.mark.asyncio
 async def test_edit_emoji_name(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     emoji_id = TestVars.get("emoji_id")
@@ -397,7 +398,7 @@ async def test_edit_emoji_name(testapp):
 
 @pt.mark.asyncio
 async def test_emoji_delete(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     emoji_id = TestVars.get("emoji_id")
@@ -410,7 +411,7 @@ async def test_emoji_delete(testapp):
 
 @pt.mark.asyncio
 async def test_edit_channel(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     channel = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_voice_channel"][0]
@@ -426,7 +427,7 @@ async def test_edit_channel(testapp):
 
 @pt.mark.asyncio
 async def test_delete_channel(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = TestVars.get("guild_id")
     channel = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_voice_channel"][0]
@@ -442,7 +443,7 @@ async def test_delete_channel(testapp):
 
 @pt.mark.asyncio
 async def test_set_channel_permissions(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
@@ -462,7 +463,7 @@ async def test_set_channel_permissions(testapp):
 
 @pt.mark.asyncio
 async def test_get_stickers_empty(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     resp = await client.get(f"/api/v9/guilds/{guild_id}/stickers", headers=headers)
@@ -471,7 +472,7 @@ async def test_get_stickers_empty(testapp):
 
 @pt.mark.asyncio
 async def test_create_sticker(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token"), "Content-Length": "1"}
     guild_id = str(TestVars.get("guild_id"))
     user_id = TestVars.get("data")["id"]
@@ -497,7 +498,7 @@ async def test_create_sticker(testapp):
 
 @pt.mark.asyncio
 async def test_edit_sticker(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     sticker_id = TestVars.get("sticker_id")
@@ -511,7 +512,7 @@ async def test_edit_sticker(testapp):
 
 @pt.mark.asyncio
 async def test_delete_sticker(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     sticker_id = TestVars.get("sticker_id")
@@ -525,7 +526,7 @@ async def test_delete_sticker(testapp):
 
 @pt.mark.asyncio
 async def test_webhooks_empty(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     resp = await client.get(f"/api/v9/guilds/{guild_id}/webhooks", headers=headers)
@@ -534,7 +535,7 @@ async def test_webhooks_empty(testapp):
 
 @pt.mark.asyncio
 async def test_create_webhook(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"].lower() == "general"
@@ -553,7 +554,7 @@ async def test_create_webhook(testapp):
 
 @pt.mark.asyncio
 async def test_get_channel_webhooks(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     channel_id = TestVars.get("webhook_channel_id")
@@ -567,7 +568,7 @@ async def test_get_channel_webhooks(testapp):
 
 @pt.mark.asyncio
 async def test_edit_webhook(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
@@ -583,7 +584,7 @@ async def test_edit_webhook(testapp):
 
 @pt.mark.asyncio
 async def test_get_webhook(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
@@ -598,7 +599,7 @@ async def test_get_webhook(testapp):
 
 @pt.mark.asyncio
 async def test_post_webhook_message(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     webhook_id = TestVars.get("webhook_id")
     guild_id = str(TestVars.get("guild_id"))
@@ -620,7 +621,7 @@ async def test_post_webhook_message(testapp):
 
 @pt.mark.asyncio
 async def test_delete_webhook(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     webhook_id = TestVars.get("webhook_id")
     guild_id = str(TestVars.get("guild_id"))
@@ -635,7 +636,7 @@ async def test_delete_webhook(testapp):
 
 @pt.mark.asyncio
 async def test_get_guild_message(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
     resp = await client.get(f"/api/v9/channels/{channel_id}/messages", headers=headers)
@@ -645,7 +646,7 @@ async def test_get_guild_message(testapp):
 
 @pt.mark.asyncio
 async def test_send_guild_message(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
     guild_id = str(TestVars.get("guild_id"))
@@ -665,7 +666,7 @@ async def test_send_guild_message(testapp):
 
 @pt.mark.asyncio
 async def test_create_guild_template(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     user_id = TestVars.get("data")["id"]
@@ -681,7 +682,7 @@ async def test_create_guild_template(testapp):
 
 @pt.mark.asyncio
 async def test_get_vanity_url_empty(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     resp = await client.get(f"/api/v9/guilds/{guild_id}/vanity-url", headers=headers)
@@ -690,7 +691,7 @@ async def test_get_vanity_url_empty(testapp):
 
 @pt.mark.asyncio
 async def test_get_invites_empty(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     resp = await client.get(f"/api/v9/guilds/{guild_id}/invites", headers=headers)
@@ -698,7 +699,7 @@ async def test_get_invites_empty(testapp):
 
 @pt.mark.asyncio
 async def test_create_invite(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
@@ -716,7 +717,7 @@ async def test_create_invite(testapp):
 
 @pt.mark.asyncio
 async def test_get_guild_invites(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
@@ -734,7 +735,7 @@ async def test_get_guild_invites(testapp):
 
 @pt.mark.asyncio
 async def test_get_channel_invites(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     guild_id = str(TestVars.get("guild_id"))
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
@@ -752,7 +753,7 @@ async def test_get_channel_invites(testapp):
 
 @pt.mark.asyncio
 async def test_edit_user_data(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     resp = await client.patch("/api/v9/users/@me", headers=headers,
                               json={'email': 'test_changed@yepcord.ml', 'discriminator': '9999', 'new_password': 'test_passw0rd_changed',
@@ -766,7 +767,7 @@ async def test_edit_user_data(testapp):
 
 @pt.mark.asyncio
 async def test_verify_email(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {}
     user_id = TestVars.get("data")["id"]
 
@@ -780,7 +781,7 @@ async def test_verify_email(testapp):
 
 @pt.mark.asyncio
 async def test_get_my_profile(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     user_id = str(TestVars.get("data")["id"])
     guild_id = str(TestVars.get("guild_id"))
@@ -793,7 +794,7 @@ async def test_get_my_profile(testapp):
 
 @pt.mark.asyncio
 async def test_hypesquad_change_house(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     resp = await client.post("/api/v9/hypesquad/online", headers=headers, json={'house_id': 1})
     assert resp.status_code == 204
@@ -807,7 +808,7 @@ async def test_hypesquad_change_house(testapp):
 
 @pt.mark.asyncio
 async def test_messages_replying_1(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     user_id = str(TestVars.get("data")["id"])
     guild_id = str(TestVars.get("guild_id"))
@@ -829,7 +830,7 @@ async def test_messages_replying_1(testapp):
 
 @pt.mark.asyncio
 async def test_messages_replying_2(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     user_id = str(TestVars.get("data")["id"])
     guild_id = str(TestVars.get("guild_id"))
@@ -850,7 +851,7 @@ async def test_messages_replying_2(testapp):
 
 @pt.mark.asyncio
 async def test_message_editing(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
     message_id = TestVars.get("message_id")
@@ -862,10 +863,73 @@ async def test_message_editing(testapp):
 
 @pt.mark.asyncio
 async def test_message_deleting(testapp):
-    client = (await testapp).test_client()
+    client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
     message_id = TestVars.get("message_id")
     resp = await client.delete(f"/api/v9/channels/{channel_id}/messages/{message_id}", headers=headers)
     assert resp.status_code == 204
 
+def check_codes(codes: list[dict], user_id: str):
+    assert len(codes) == 10
+    for code in codes:
+        assert len(code["code"]) == 8
+        assert code["user_id"] == user_id
+        assert code["consumed"] == False
+
+@pt.mark.asyncio
+async def test_mfa_enable(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    user_id = str(TestVars.get("data")["id"])
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers, json={'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 400
+
+    secret = "a"*16
+    m = MFA(secret, 0)
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'code': m.getCode(), 'secret': secret, 'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["token"]
+    TestVars.set("token", json["token"])
+
+    check_codes(json["backup_codes"], user_id)
+
+@pt.mark.asyncio
+async def test_mfa_view_backup_codes(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    user_id = str(TestVars.get("data")["id"])
+    resp = await client.post("/api/v9/auth/verify/view-backup-codes-challenge", headers=headers,
+                             json={'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert (nonce := json["nonce"])
+    assert (regenerate_nonce := json["regenerate_nonce"])
+
+    key = generateMfaVerificationKey(nonce, "A"*16, b64decode(Config("KEY")))
+
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': key, 'nonce': nonce, 'regenerate': False})
+    assert resp.status_code == 200
+    backup_codes = (await resp.get_json())["backup_codes"]
+    check_codes(backup_codes, user_id)
+
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': key, 'nonce': regenerate_nonce, 'regenerate': True})
+    assert resp.status_code == 200, await resp.data
+    backup_codes_new = (await resp.get_json())["backup_codes"]
+    assert backup_codes_new != backup_codes
+    check_codes(backup_codes_new, user_id)
+
+@pt.mark.asyncio
+async def test_disable_mfa(testapp):
+    client = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    mfa = MFA("a"*16, 0)
+    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["token"]
+    TestVars.set("token", json["token"])
