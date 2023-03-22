@@ -52,9 +52,11 @@ def getImage(image: Union[str, bytes, BytesIO]) -> Optional[BytesIO]:
         image = BytesIO(_b64decode(image.split(",")[1].encode("utf8")))
     elif not isinstance(image, BytesIO):
         return  # Unknown type
+    image.seek(0)
     mime = from_buffer(image.read(1024), mime=True)
     if not mime.startswith("image/"):
         return  # Not image
+    image.seek(0)
     return image
 
 

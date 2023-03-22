@@ -8,3 +8,5 @@ endpoints.*
 *.db
 .coverage
 /ssl/*.pem
+/tests/generated/*.py
+coverage.xml

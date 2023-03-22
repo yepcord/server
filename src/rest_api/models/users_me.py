@@ -21,7 +21,7 @@ class UserUpdate(BaseModel):
 
     @property
     def to_json(self) -> dict:
-        return self.dict(include={"avatar"})
+        return self.dict(include={"avatar"}, exclude_defaults=True)
 
 
 class UserProfileUpdate(BaseModel):

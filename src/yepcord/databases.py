@@ -516,7 +516,7 @@ class MySqlConnection:
             return User.from_result(self.cur.description, r)
 
     async def validSession(self, session: Session) -> bool:
-        await self. cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{escape_string(session.sig)}";')
+        await self.cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{escape_string(session.sig)}";')
         return bool(await self.cur.fetchone())
 
     async def getUserSettings(self, user: _User) -> Optional[UserSettings]:

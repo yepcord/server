@@ -636,7 +636,7 @@ async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
             raise InvalidDataErr(400, Errors.make(50046))
         data = CreateSticker(**dict(await request.form))
         sticker_b = BytesIO(getattr(file, "getvalue", file.read)())
-        if sticker_b.tell() > 1024 * 512 or not (img := getImage(sticker_b)) or not validImage(img):
+        if sticker_b.getbuffer().nbytes > 1024 * 512 or not (img := getImage(sticker_b)) or not validImage(img):
             raise InvalidDataErr(400, Errors.make(50006))
         sticker_type = getattr(StickerFormat, str(imageType(img)).upper(), StickerFormat.PNG)
         sticker = Sticker(Snowflake.makeId(), guild.id, user.id, data.name, data.tags, StickerType.GUILD, sticker_type,
