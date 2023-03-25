@@ -84,16 +84,25 @@ class Message(_Message, Model):
                 data["mentions"].append(await user.json)
         data["attachments"] = [await attachment.json for attachment in await getCore().getAttachments(self)]
         if self.message_reference:
-            data["message_reference"] = self.message_reference
-            if self.type == MessageType.REPLY:
-                referenced_message = await getCore().getMessage(ChannelId(self.channel_id), int(self.message_reference["message_id"]))
-                referenced_message.message_reference = {}
+            data["message_reference"] = {
+                "message_id": str(self.message_reference["message_id"]),
+                "channel_id": str(self.message_reference["channel_id"]),
+                "guild_id": str(self.message_reference["guild_id"]),
+            }
+            if self.type in (MessageType.REPLY, MessageType.THREAD_STARTER_MESSAGE):
+                referenced_message = await getCore().getMessage(
+                    ChannelId(int(self.message_reference["channel_id"])),
+                    int(self.message_reference["message_id"])
+                )
+                if referenced_message: referenced_message.message_reference = {}
                 data["referenced_message"] = await referenced_message.json if referenced_message else None
         if self.nonce is not None:
             data["nonce"] = self.nonce
         if not Ctx.get("search", False):
             if reactions := await getCore().getMessageReactions(self.id, Ctx.get("user_id", 0)):
                 data["reactions"] = reactions
+        if self.thread and (thread := await getCore().getThread(self.thread)):
+            data["thread"] = await thread.json
         return data
 
     DEFAULTS = {"content": None, "edit_timestamp": None, "embeds": [], "pinned": False,

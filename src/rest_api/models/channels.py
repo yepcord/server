@@ -439,3 +439,10 @@ class GetReactionsQuery(BaseModel):
 class MessageAck(BaseModel):
     manual: bool = False
     mention_count: int = 0
+
+
+class CreateThread(BaseModel):
+    auto_archive_duration: int
+    name: str
+    type: int
+    location: str = "Message"

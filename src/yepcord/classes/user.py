@@ -595,3 +595,27 @@ class GuildMember(_User, Model):
         for role in await self.roles_w_default:
             permissions |= role.permissions
         return permissions
+
+@model
+@dataclass
+class ThreadMember(_User, Model):
+    user_id: int
+    thread_id: int
+    guild_id: int
+    join_timestamp: int
+
+    @property
+    def id(self) -> int:
+        return self.user_id
+
+    @property
+    async def json(self) -> dict:
+        return {
+            "user_id": str(self.user_id),
+            "muted": False,
+            "mute_config": None,
+            "join_timestamp": datetime.fromtimestamp(self.join_timestamp).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+            "id": str(self.thread_id),
+            "guild_id": str(self.guild_id),
+            "flags": 1
+        }

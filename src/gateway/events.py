@@ -819,3 +819,29 @@ class ScheduledEventUserRemoveEvent(ScheduledEventUserAddEvent):
 
 class GuildScheduledEventDeleteEvent(GuildScheduledEventCreateEvent):
     NAME = "GUILD_SCHEDULED_EVENT_DELETE"
+
+class ThreadCreateEvent(DispatchEvent):
+    NAME = "THREAD_CREATE"
+
+    def __init__(self, thread_obj):
+        self.thread_obj = thread_obj
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.thread_obj
+        }
+
+class ThreadMemberUpdateEvent(DispatchEvent):
+    NAME = "THREAD_MEMBER_UPDATE"
+
+    def __init__(self, member_obj):
+        self.member_obj = member_obj
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.member_obj
+        }

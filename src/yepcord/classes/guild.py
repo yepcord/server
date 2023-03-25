@@ -111,7 +111,7 @@ class Guild(_Guild, Model):
             "premium_progress_bar_enabled": bool(self.premium_progress_bar_enabled),
             "nsfw": bool(self.nsfw),
             "nsfw_level": self.nsfw_level,
-            "threads": [],  # TODO
+            "threads": [],
             "guild_scheduled_events": [await event.json for event in await getCore().getScheduledEvents(self)],  # TODO
             "stage_instances": [],  # TODO
             "application_command_counts": {},  # TODO
@@ -122,6 +122,7 @@ class Guild(_Guild, Model):
         if uid := Ctx.get("user_id"):
             joined_at = (await getCore().getGuildMember(self, uid)).joined_at
             data["joined_at"] = Snowflake.toDatetime(joined_at).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+            data["threads"] = [await thread.json for thread in await getCore().getGuildMemberThreads(self, uid)]
         if Ctx.get("with_members"):
             data["members"] = [await member.json for member in await getCore().getGuildMembers(self)]
         if Ctx.get("with_channels"):

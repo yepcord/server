@@ -474,6 +474,18 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(ScheduledEventUserRemoveEvent(user_id, event_id, guild_id))
 
+    async def thread_create(self, users, thread_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(ThreadCreateEvent(thread_obj))
+
+    async def thread_member_update(self, users, member_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(ThreadMemberUpdateEvent(member_obj))
+
 class Gateway:
     def __init__(self, core: Core):
         self.core = core

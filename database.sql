@@ -223,7 +223,6 @@ CREATE TABLE `channels` (
   `parent_id` bigint DEFAULT NULL,
   `rtc_region` text DEFAULT NULL,
   `video_quality_mode` int DEFAULT NULL,
-  `j_thread_metadata` JSON DEFAULT NULL,
   `default_auto_archive` int DEFAULT NULL,
   `flags` int DEFAULT NULL,
   FOREIGN KEY (`guild_id`) REFERENCES `guilds`(`id`) ON DELETE CASCADE
@@ -231,12 +230,21 @@ CREATE TABLE `channels` (
 
 DROP TABLE IF EXISTS `threads_metadata`;
 CREATE TABLE `threads_metadata` (
-  `channel_id` bigint NOT NULL,
+  `thread_id` bigint NOT NULL,
   `archived` bool NOT NULL DEFAULT false,
   `archive_timestamp` bigint NOT NULL,
   `auto_archive_duration` bigint NOT NULL,
   `locked` bool NOT NULL DEFAULT false,
-  FOREIGN KEY (`channel_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
+  FOREIGN KEY (`thread_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+DROP TABLE IF EXISTS `threads_members`;
+CREATE TABLE `threads_members` (
+  `user_id` bigint NOT NULL,
+  `thread_id` bigint NOT NULL,
+  `guild_id` bigint NOT NULL,
+  `join_timestamp` bigint NOT NULL,
+  FOREIGN KEY (`thread_id`) REFERENCES `channels`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 DROP TABLE IF EXISTS `hidden_dm_channels`;

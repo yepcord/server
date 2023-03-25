@@ -1,5 +1,6 @@
 # All 'Channel' classes (ChannelId, Channel, etc.)
 from dataclasses import dataclass
+from datetime import timedelta, datetime
 from typing import Optional
 
 from schema import Or, Use
@@ -8,6 +9,7 @@ from .user import UserId
 from ..ctx import getCore, Ctx
 from ..enums import ChannelType
 from ..model import model, field, Model
+from ..snowflake import Snowflake
 from ..utils import NoneType
 
 
@@ -62,6 +64,8 @@ class Channel(_Channel, Model):
           in recipients field instead of users data.
         :return:
         """
+        if self.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
+            self.last_message_id = await getCore().getLastMessageId(self, Snowflake.makeId(False), 0)
         last_message_id = str(self.last_message_id) if self.last_message_id is not None else self.last_message_id
         if self.type in (ChannelType.DM, ChannelType.GROUP_DM):
             recipients = self.recipients.copy()
@@ -157,6 +161,34 @@ class Channel(_Channel, Model):
                 "guild_id": str(self.guild_id),
                 "nsfw": self.nsfw
             }
+        elif self.type == ChannelType.GUILD_PUBLIC_THREAD:
+            message_count = await getCore().getChannelMessagesCount(self, Snowflake.makeId(False), 0)
+            data = {
+                "id": str(self.id),
+                "guild_id": str(self.guild_id),
+                "parent_id": str(self.parent_id),
+                "owner_id": str(self.owner_id),
+                "type": self.type,
+                "name": self.name,
+                "last_message_id": last_message_id,
+                "thread_metadata": await (await getCore().getThreadMetadata(self)).json,
+                "message_count": message_count,
+                "member_count": await getCore().getThreadMembersCount(self),
+                "rate_limit_per_user": self.rate_limit,
+                "flags": self.flags,
+                "total_message_sent": message_count,
+                "member_ids_preview": [str(member.user_id) for member in await getCore().getThreadMembers(self, 10)]
+            }
+            if uid := Ctx.get("user_id"):
+                member = await getCore().getThreadMember(self, uid)
+                data["member"] = {
+                    "muted": False,
+                    "mute_config": None,
+                    "join_timestamp": datetime.fromtimestamp(member.join_timestamp).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+                    "flags": 1
+                }
+
+            return data
 
 @model
 @dataclass
@@ -176,3 +208,24 @@ class PermissionOverwrite(Model):
             "allow": str(self.allow)
         }
         return data
+
+@model
+@dataclass
+class ThreadMetadata(Model):
+    thread_id: int
+    archived: bool
+    archive_timestamp: int
+    auto_archive_duration: int
+    locked: bool
+
+    @property
+    async def json(self) -> dict:
+        archive_timestamp = Snowflake.toDatetime(self.thread_id)
+        archive_timestamp += timedelta(minutes=self.auto_archive_duration)
+        return {
+            "archived": bool(self.archived),
+            "archive_timestamp": archive_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+            "auto_archive_duration": self.auto_archive_duration,
+            "locked": bool(self.locked),
+            "create_timestamp": Snowflake.toDatetime(self.thread_id).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        }
