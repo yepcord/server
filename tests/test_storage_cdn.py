@@ -236,7 +236,7 @@ async def test_get_event_image(testApp):
     client: TestClientType = (await testApp).test_client()
     event_hash = TestVars.get("event_hash")
 
-    response = await client.get(f"/guild-events/{TestVars.EVENT_ID}/{event_hash}?size=240")
+    response = await client.get(f"/guild-events/{TestVars.EVENT_ID}/{event_hash}?size=241")
     assert response.status_code == 200
     assert response.headers["Content-Type"] == "image/png"
     img = Image.open(BytesIO(await response.data))

@@ -186,6 +186,6 @@ async def get_attachment(channel_id: int, attachment_id: int, name: str):
     return attachment, 200, headers
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8003, reload=True, use_colors=False)
