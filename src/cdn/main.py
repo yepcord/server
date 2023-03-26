@@ -1,5 +1,5 @@
 from quart import Quart
-from quart_schema import validate_querystring
+from quart_schema import validate_querystring, QuartSchema
 
 from src.yepcord.enums import StickerFormat
 from .models import CdnImageSizeQuery
@@ -13,6 +13,7 @@ class YEPcord(Quart):
     pass # Maybe it will be needed in the future
 
 app = YEPcord("YEPcord-Cdn")
+QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
 
@@ -185,6 +186,6 @@ async def get_attachment(channel_id: int, attachment_id: int, name: str):
     return attachment, 200, headers
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8003, reload=True, use_colors=False)

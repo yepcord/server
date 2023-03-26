@@ -10,3 +10,4 @@ endpoints.*
 /ssl/*.pem
 /tests/generated/*.py
 coverage.xml
+tests/files
