@@ -350,7 +350,7 @@ class S3Storage(_Storage):
                     if i == 0:
                         return f.getvalue()
                     else:
-                        image = Image.open(p)
+                        image = Image.open(f)
                         coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
                         data = await coro
                         await s3.upload_fileobj(BytesIO(data), self.bucket, paths[0])
@@ -369,6 +369,7 @@ class S3Storage(_Storage):
     async def uploadAttachment(self, data, attachment):
         async with self._sess.client("s3", **self._args) as s3:
             await s3.upload_fileobj(BytesIO(data), self.bucket, f"attachments/{attachment.channel_id}/{attachment.id}/{attachment.filename}")
+            return len(data)
 
     async def getAttachment(self, channel_id, attachment_id, name):
         async with self._sess.client("s3", **self._args) as s3:
@@ -473,6 +474,7 @@ class FTPStorage(_Storage):
     async def uploadAttachment(self, data, attachment):
         async with self._getClient() as ftp:
             await ftp.s_upload(f"attachments/{attachment.channel_id}/{attachment.id}/{attachment.filename}", data)
+            return len(data)
 
     async def getAttachment(self, channel_id, attachment_id, name):
         async with self._getClient() as ftp:
