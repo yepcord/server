@@ -1,5 +1,5 @@
 from quart import Quart
-from quart_schema import validate_querystring
+from quart_schema import validate_querystring, QuartSchema
 
 from src.yepcord.enums import StickerFormat
 from .models import CdnImageSizeQuery
@@ -13,6 +13,7 @@ class YEPcord(Quart):
     pass # Maybe it will be needed in the future
 
 app = YEPcord("YEPcord-Cdn")
+QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
 

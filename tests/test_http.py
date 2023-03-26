@@ -6,7 +6,6 @@ from google.protobuf.wrappers_pb2 import StringValue
 
 from src.rest_api.main import app
 from src.yepcord.config import Config
-from src.yepcord.ctx import getCore, Ctx
 from src.yepcord.enums import ChannelType, StickerType
 from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings
 from src.yepcord.utils import getImage, b64decode, MFA
@@ -102,9 +101,8 @@ async def test_login_success(testapp):
 @pt.mark.asyncio
 async def test_change_username(testapp):
     client: TestClientType = (await testapp).test_client()
-    response = await client.patch("/api/v9/users/@me", json={"username": "YepCordTest", "password": "test_passw0rd"}, headers={
-        "Authorization": TestVars.get("token")
-    })
+    response = await client.patch("/api/v9/users/@me", json={"username": "YepCordTest", "password": "test_passw0rd"},
+                                  headers={"Authorization": TestVars.get("token")})
     assert response.status_code == 200
     response = await client.get("/api/v9/users/@me", headers={
         "Authorization": TestVars.get("token")
@@ -459,6 +457,16 @@ async def test_set_channel_permissions(testapp):
 
     resp = await client.put(f"/api/v9/channels/{channel_id}/permissions/{guild_id}", headers=headers,
                             json={'id': guild_id, 'type': 0, 'allow': '0', 'deny': '1049600'})
+    assert resp.status_code == 204
+
+@pt.mark.asyncio
+async def test_delete_channel_permission_overwrite(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    guild_id = str(TestVars.get("guild_id"))
+    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]["id"]
+
+    resp = await client.delete(f"/api/v9/channels/{channel_id}/permissions/{guild_id}", headers=headers)
     assert resp.status_code == 204
 
 @pt.mark.asyncio

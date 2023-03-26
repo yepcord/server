@@ -67,6 +67,33 @@ jobs:
           KEY: ${{ secrets.KEY }}
           TENOR_KEY: ${{ secrets.TENOR_KEY }}
 
+      - name: Run test suite for cdn and file storage
+        run: |
+          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --disable-warnings tests/test_storage_cdn.py
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_NAME: yepcord_test
+          KEY: ${{ secrets.KEY }}
+          STORAGE_TYPE: local
+          STORAGE_PATH: tests/files
+
+      - name: Run test suite for cdn and s3 storage
+        run: |
+          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --disable-warnings tests/test_storage_cdn.py
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_NAME: yepcord_test
+          KEY: ${{ secrets.KEY }}
+          STORAGE_TYPE: s3
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_KEYID: ${{ secrets.S3_KEYID }}
+          S3_ACCESSKEY: ${{ secrets.S3_ACCESSKEY }}
+          S3_BUCKET: yepcord-test
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         with:
