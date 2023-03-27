@@ -101,11 +101,11 @@ jobs:
           python -m pip install pyftpdlib
           python -c "exec('''\nfrom pyftpdlib.authorizers import DummyAuthorizer\nfrom pyftpdlib.handlers import FTPHandler\nfrom pyftpdlib.servers import FTPServer\nauthorizer = DummyAuthorizer()\nauthorizer.add_user('root', '123456', 'tests/files/', perm='elradfmwMT')\nhandler = FTPHandler\nhandler.authorizer = authorizer\nserver = FTPServer(('127.0.0.1', 9021), handler)\nserver.serve_forever()\n''')" &
 
-      - name: Wait for MySQL
+      - name: Wait for Ftp server
         run: |
           while ! wget -O /dev/null -q ftp://root:123456@127.0.0.1:9021; do sleep 1; done
 
-      - name: Run test suite for cdn and s3 storage
+      - name: Run test suite for cdn and ftp storage
         run: |
           pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --disable-warnings tests/test_storage_cdn.py
         env:
