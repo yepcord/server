@@ -455,7 +455,7 @@ class FTPStorage(_Storage):
                     if i == 0:
                         return f.getvalue()
                     else:
-                        image = Image.open(p)
+                        image = Image.open(f)
                         coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
                         data = await coro
                         await ftp.s_upload(paths[0], data)
@@ -482,6 +482,9 @@ class FTPStorage(_Storage):
                 return await ftp.s_download(f"attachments/{channel_id}/{attachment_id}/{name}")
             except ClientError as ce:
                 if "(404)" not in str(ce):
+                    raise
+            except StatusCodeError as sce:
+                if "550" not in sce.received_codes:
                     raise
 
 def getStorage() -> _Storage:
