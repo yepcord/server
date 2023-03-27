@@ -71,7 +71,7 @@ jobs:
 
       - name: Run test suite for cdn and file storage
         run: |
-          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --disable-warnings tests/test_storage_cdn.py
+          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -83,7 +83,7 @@ jobs:
 
       - name: Run test suite for cdn and s3 storage
         run: |
-          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --disable-warnings tests/test_storage_cdn.py
+          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -107,7 +107,7 @@ jobs:
 
       - name: Run test suite for cdn and ftp storage
         run: |
-          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --disable-warnings tests/test_storage_cdn.py
+          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
