@@ -8,10 +8,12 @@ from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpda
     RelationshipRequest, PutNote, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, DmChannelCreate, \
     DeleteRequest, GetScheduledEventsQuery
 from ..utils import usingDB, getUser, multipleDecorators, getSession, getGuildWM
-from ...gateway.events import RelationshipAddEvent
+from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
+    UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent
 from ...yepcord.classes.guild import Guild, GuildId
-from ...yepcord.classes.user import User, UserSettings, UserNote, Session, GuildMember
+from ...yepcord.classes.user import User, UserSettings, UserNote, Session, GuildMember, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
+from ...yepcord.enums import RelationshipType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import c_json, execute_after, MFA, validImage, getImage
@@ -64,7 +66,7 @@ async def update_me(data: UserUpdate, user: User):
     if data.json:
         new_userdata.set(**data.to_json)
         await getCore().setUserdataDiff(userdata, new_userdata)
-    await getCore().sendUserUpdateEvent(user.id)
+    await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return c_json(await new_userdata.full_json)
 
 
@@ -80,7 +82,7 @@ async def get_my_profile(data: UserProfileUpdate, user: User):
     userdata = await user.data
     new_userdata = userdata.copy(**data.to_json)
     await getCore().setUserdataDiff(userdata, new_userdata)
-    await getCore().sendUserUpdateEvent(user.id)
+    await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return c_json(await new_userdata.full_json)
 
 
@@ -123,7 +125,7 @@ async def update_settings(data: SettingsUpdate, user: User):
     settings = await user.settings
     new_settings = settings.copy(**data.to_json)
     await getCore().setSettingsDiff(settings, new_settings)
-    await getCore().sendUserUpdateEvent(user.id)
+    await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return c_json(await new_settings.json)
 
 
@@ -149,7 +151,7 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
     new_settings.from_proto(proto)
     await getCore().setSettingsDiff(settings, new_settings)
     proto = _b64encode(new_settings.to_proto().SerializeToString()).decode("utf8")
-    await getCore().sendSettingsProtoUpdateEvent(user.id, proto, 1)
+    await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto, 1), users=[user.id]), 1)
     return c_json({"settings": proto})
 
 
@@ -176,7 +178,7 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
     proto = proto.SerializeToString()
     proto = _b64encode(proto).decode("utf8")
     await getCore().setFrecencySettings(user.id, proto)
-    await getCore().sendSettingsProtoUpdateEvent(user.id, proto, 2)
+    await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto, 2), users=[user.id]), 1)
     return c_json({"settings": proto})
 
 
@@ -225,6 +227,7 @@ async def set_notes(data: PutNote, user: User, target_uid: int):
         raise InvalidDataErr(404, Errors.make(10013))
     if data.note:
         await getCore().putUserNote(UserNote(user.id, target_uid, data.note))
+        await getGw().dispatch(UserNoteUpdateEvent(target_uid, data.note), users=[user.id])
     return "", 204
 
 
@@ -246,7 +249,7 @@ async def enable_mfa(data: MfaEnable, session: Session): # TODO: Check if mfa al
     await getCore().setSettings(UserSettings(session.id, mfa=secret))
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
     await getCore().setBackupCodes(session, codes)
-    await execute_after(getCore().sendUserUpdateEvent(session.id), 1.5)
+    await execute_after(getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id]), 1.5)
     codes = [{"user_id": str(session.id), "code": code, "consumed": False} for code in codes]
     await getCore().logoutUser(session)
     session = await getCore().createSession(session.id)
@@ -267,7 +270,7 @@ async def disable_mfa(data: MfaDisable, session: Session):
             raise InvalidDataErr(400, Errors.make(60008))
     await getCore().setSettings(UserSettings(session.id, mfa=None))
     await getCore().clearBackupCodes(session)
-    await getCore().sendUserUpdateEvent(session.id)
+    await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     await getCore().logoutUser(session)
     session = await getCore().createSession(session.id)
     return c_json({"token": session.token})
@@ -299,17 +302,37 @@ async def get_backup_codes(data: MfaCodesVerification, user: User):
 @users_me.put("/relationships/<int:uid>")
 @multipleDecorators(validate_request(RelationshipPut), usingDB, getUser)
 async def accept_relationship_or_block(data: RelationshipPut, uid: int, user: User):
+    if not (target_user_data := await getCore().getUserData(UserId(uid))):
+        raise InvalidDataErr(404, Errors.make(10013))
     if not data.type:
         await getCore().accRelationship(user, uid)
+        await getGw().dispatch(RelationshipAddEvent(user.id, await user.data, 1), [uid])
+        await getGw().dispatch(RelationshipAddEvent(uid, target_user_data, 1), [user.id])
+        channel = await getCore().getDMChannelOrCreate(user.id, uid)
+        Ctx["with_ids"] = False
+        Ctx["user_id"] = uid
+        await getGw().dispatch(DMChannelCreateEvent(channel), [uid])
+        Ctx["user_id"] = user.id
+        await getGw().dispatch(DMChannelCreateEvent(channel), [user.id])
     elif data.type == 2:
+        if relationship := await getCore().getRelationship(user.id, uid):
+            rel_type_current = relationship.discord_type(user.id)
+            rel_type_target = relationship.discord_type(uid)
+            await getGw().dispatch(RelationshipRemoveEvent(uid, rel_type_current), [user.id])
+            await getGw().dispatch(RelationshipRemoveEvent(user.id, rel_type_target), [uid])
         await getCore().blockUser(user, uid)
+        await getGw().dispatch(RelationshipAddEvent(uid, target_user_data, RelationshipType.BLOCK), [user.id])
     return "", 204
 
 
 @users_me.delete("/relationships/<int:uid>")
 @multipleDecorators(usingDB, getUser)
 async def delete_relationship(uid: int, user: User):
-    await getCore().delRelationship(user, uid)
+    if relationship := await getCore().delRelationship(user, uid):
+        rel_type_current = relationship.discord_type(user.id)
+        rel_type_target = relationship.discord_type(uid)
+        await getGw().dispatch(RelationshipRemoveEvent(uid, rel_type_current), [user.id])
+        await getGw().dispatch(RelationshipRemoveEvent(user.id, rel_type_target), [uid])
     return "", 204
 
 
@@ -325,8 +348,8 @@ async def leave_guild(user: User, guild: Guild, member: GuildMember):
     if member.id == guild.owner_id:
         raise InvalidDataErr(400, Errors.make(50055))
     await getCore().deleteGuildMember(member)
-    await getCore().sendGuildMemberRemoveEvent(guild, await member.user)
-    await getCore().sendGuildDeleteEvent(guild, member)
+    await getGw().dispatch(GuildMemberRemoveEvent(guild.id, await (await user.data).json), users=[user.id])
+    await getGw().dispatch(GuildDeleteEvent(guild.id), users=[member.id])
     return "", 204
 
 
@@ -359,8 +382,8 @@ async def new_dm_channel(data: DmChannelCreate, user: User):
             channel = await getCore().getDMChannelOrCreate(user.id, recipients[0])
         else:
             channel = await getCore().createDMGroupChannel(user, recipients, data.name)
-    await getCore().sendDMChannelCreateEvent(channel)
     Ctx["with_ids"] = False
+    await getGw().dispatch(DMChannelCreateEvent(channel), channel_id=channel.id)
     return c_json(await channel.json)
 
 

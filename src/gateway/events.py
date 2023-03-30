@@ -2,6 +2,7 @@ from base64 import b64encode
 from time import time
 from typing import List
 
+from ..yepcord.classes.guild import Invite
 from ..yepcord.classes.user import GuildMember, UserData
 from ..yepcord.config import Config
 from ..yepcord.snowflake import Snowflake
@@ -159,25 +160,15 @@ class RelationshipAddEvent(DispatchEvent):
 class DMChannelCreateEvent(DispatchEvent):
     NAME = "CHANNEL_CREATE"
 
-    def __init__(self, channel, recipients):
+    def __init__(self, channel):
         self.channel = channel
-        self.recipients = recipients
 
     async def json(self) -> dict:
         j = {
             "t": self.NAME,
             "op": self.OP,
-            "d": {
-                "type": self.channel.type,
-                "recipients": self.recipients,
-                "last_message_id": str(self.channel.last_message_id),
-                "id": str(self.channel.id)
-            }
+            "d": await self.channel.json
         }
-        if self.channel.type == ChannelType.GROUP_DM:
-            j["d"]["owner_id"] = str(self.channel.owner_id)
-            j["d"]["icon"] = self.channel.icon
-            j["d"]["name"] = self.channel.name
         return j
 
 class DMChannelUpdateEvent(DMChannelCreateEvent):
@@ -276,18 +267,18 @@ class MessageCreateEvent(DispatchEvent):
 class TypingEvent(DispatchEvent):
     NAME = "TYPING_START"
 
-    def __init__(self, user, channel):
-        self.user = user
-        self.channel = channel
+    def __init__(self, user_id: int, channel_id: int):
+        self.user_id = user_id
+        self.channel_id = channel_id
 
     async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "user_id": str(self.user),
+                "user_id": str(self.user_id),
                 "timestamp": int(time()),
-                "channel_id": str(self.channel)
+                "channel_id": str(self.channel_id)
             }
         }
 
@@ -297,22 +288,22 @@ class MessageUpdateEvent(MessageCreateEvent):
 class MessageDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE"
 
-    def __init__(self, message, channel, guild):
-        self.message = message
-        self.channel = channel
-        self.guild = guild
+    def __init__(self, message_id: int, channel_id: int, guild_id: int):
+        self.message_id = message_id
+        self.channel_id = channel_id
+        self.guild_id = guild_id
 
     async def json(self) -> dict:
         data = {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "id": str(self.message),
-                "channel_id": str(self.channel)
+                "id": str(self.message_id),
+                "channel_id": str(self.channel_id)
             }
         }
-        if self.guild is not None:
-            data["d"]["guild_id"] = str(self.guild)
+        if self.guild_id is not None:
+            data["d"]["guild_id"] = str(self.guild_id)
         return data
 
 class MessageAckEvent(DispatchEvent):
@@ -570,14 +561,18 @@ class ChannelDeleteEvent(ChannelUpdateEvent):
 class InviteDeleteEvent(DispatchEvent):
     NAME = "INVITE_DELETE"
 
-    def __init__(self, payload):
-        self.payload = payload
+    def __init__(self, invite: Invite):
+        self.invite = invite
 
     async def json(self) -> dict:
         data = {
             "t": self.NAME,
             "op": self.OP,
-            "d": self.payload
+            "d": {
+                "guild_id": str(self.invite.guild_id),
+                "code": self.invite.code,
+                "channel_id": str(self.invite.channel_id)
+            }
         }
         return data
 

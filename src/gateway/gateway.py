@@ -103,270 +103,13 @@ class GatewayEvents:
         self.core = gw.core
         self.clients = gw.clients
 
-    async def relationship_acc(self, current_user, target_user, channel_id):
-        tClient = [u for u in self.clients if u.id == target_user and u.connected]
-        cClient = [u for u in self.clients if u.id == current_user and u.connected]
-        channel = await self.core.getChannel(channel_id)
-        d = await self.core.getUserData(UserId(current_user)) if tClient else None
-        for cl in tClient:
-            await cl.esend(RelationshipAddEvent(current_user, d, 1))
-            recipients = [{
-                "username": d.username,
-                "public_flags": d.public_flags,
-                "id": str(current_user),
-                "discriminator": d.s_discriminator,
-                "avatar_decoration": d.avatar_decoration,
-                "avatar": d.avatar
-            }]
-            await cl.esend(DMChannelCreateEvent(channel, recipients))
-            await self.send(cl, GatewayOp.DISPATCH, t="NOTIFICATION_CENTER_ITEM_CREATE", d={
-                "type": "friend_request_accepted",
-                "other_user": {
-                    "username": d.username,
-                    "public_flags": d.public_flags,
-                    "id": str(current_user),
-                    "discriminator": d.s_discriminator,
-                    "avatar_decoration": d.avatar_decoration,
-                    "avatar": d.avatar
-                },
-                "id": str(current_user),
-                "icon_url": f"https://127.0.0.1:8003/avatars/{current_user}/{d.avatar}.png",
-                "deeplink": f"https://yepcord.ml/users/{current_user}",
-                "body": f"**{d.username}** accepts your friend request",
-                "acked": False
-            })
-        d = await self.core.getUserData(UserId(target_user)) if cClient else None
-        for cl in cClient:
-            await cl.esend(RelationshipAddEvent(target_user, d, 1))
-            recipients = [{
-                "username": d.username,
-                "public_flags": d.public_flags,
-                "id": str(target_user),
-                "discriminator": d.s_discriminator,
-                "avatar_decoration": d.avatar_decoration,
-                "avatar": d.avatar
-            }]
-            await cl.esend(DMChannelCreateEvent(channel, recipients))
-
-    async def relationship_del(self, current_user, target_user, type):
-        cls = [u for u in self.clients if u.id == current_user and u.connected]
-        for cl in cls:
-            await cl.esend(RelationshipRemoveEvent(target_user, type))
-
-    async def user_update(self, user):
-        cls = [u for u in self.clients if u.id == user and u.connected]
-        if not cls:
-            return
-        user = await self.core.getUser(user)
-        data = await user.data
-        settings = await user.settings
-        for cl in cls:
-            await cl.esend(UserUpdateEvent(user, data, settings))
-
-    async def presence_update(self, user, status):
-        user = UserId(user)
+    async def presence_update(self, user_id, status):
+        user = UserId(user_id)
         d = await self.core.getUserData(user)
         users = await self.core.getRelatedUsers(user, only_ids=True)
         clients = [c for c in self.clients if c.id in users and c.connected]
         for cl in clients:
             await cl.esend(PresenceUpdateEvent(user.id, d, status))
-
-    async def message_create(self, users, message_obj):
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        for cl in clients:
-            await cl.esend(MessageCreateEvent(message_obj))
-
-    async def typing(self, user, channel):
-        users = await self.core.getRelatedUsersToChannel(channel)
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        for cl in clients:
-            await cl.esend(TypingEvent(user, channel))
-
-    async def message_delete(self, message, channel, guild):
-        users = await self.core.getRelatedUsersToChannel(channel)
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        for cl in clients:
-            await cl.esend(MessageDeleteEvent(message, channel, guild))
-
-    async def message_update(self, users, message_obj):
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        for cl in clients:
-            await cl.esend(MessageUpdateEvent(message_obj))
-
-    async def message_ack(self, user, data):
-        clients = [c for c in self.clients if c.id == user and c.connected]
-        for cl in clients:
-            await cl.esend(MessageAckEvent(data))
-
-    async def dmchannel_create(self, users, channel_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        channel = await self.core.getChannel(channel_id)
-        rec = [await self.core.getUserData(UserId(u)) for u in channel.recipients]
-        rec = {r.uid: {
-            "username": r.username,
-            "public_flags": r.public_flags,
-            "id": str(r.uid),
-            "discriminator": r.s_discriminator,
-            "avatar_decoration": r.avatar_decoration,
-            "avatar": r.avatar
-        } for r in rec}
-        for cl in clients:
-            r = rec.copy()
-            if cl.id in r:
-                del r[cl.id]
-            r = list(r.values())
-            await cl.esend(DMChannelCreateEvent(channel, r))
-
-    async def dmchannel_update(self, users, channel_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        channel = await self.core.getChannel(channel_id)
-        rec = [await self.core.getUserData(UserId(u)) for u in channel.recipients]
-        rec = {r.uid: {
-            "username": r.username,
-            "public_flags": r.public_flags,
-            "id": str(r.uid),
-            "discriminator": r.s_discriminator,
-            "avatar_decoration": r.avatar_decoration,
-            "avatar": r.avatar
-        } for r in rec}
-        for cl in clients:
-            r = rec.copy()
-            del r[cl.id]
-            r = list(r.values())
-            await cl.esend(DMChannelUpdateEvent(channel, r))
-
-    async def dm_recipient_add(self, users, channel_id, user):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        user = await self.core.getUserData(UserId(user))
-        user = {
-            "username": user.username,
-            "public_flags": user.public_flags,
-            "id": str(user.uid),
-            "discriminator": user.s_discriminator,
-            "avatar_decoration": user.avatar_decoration,
-            "avatar": user.avatar
-        }
-        for cl in clients:
-            await cl.esend(ChannelRecipientAddEvent(channel_id, user))
-
-    async def dm_recipient_remove(self, users, channel_id, user):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        user = await self.core.getUserData(UserId(user))
-        user = {
-            "username": user.username,
-            "public_flags": user.public_flags,
-            "id": str(user.uid),
-            "discriminator": user.s_discriminator,
-            "avatar_decoration": user.avatar_decoration,
-            "avatar": user.avatar
-        }
-        for cl in clients:
-            await cl.esend(ChannelRecipientRemoveEvent(channel_id, user))
-
-    async def dmchannel_delete(self, users, channel):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(DMChannelDeleteEvent(channel))
-
-    async def channel_pins_update(self, users, channel_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        msg = await self.core.getLastPinnedMessage(channel_id)
-        ts = datetime.utcfromtimestamp(msg.extra_data["pinned_at"] if msg else 0).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-        for cl in clients:
-            await cl.esend(ChannelPinsUpdateEvent(channel_id, ts))
-
-    async def reaction_add(self, users, message_id, channel_id, user_id, emoji):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(MessageReactionAddEvent(user_id, message_id, channel_id, emoji))
-
-    async def reaction_remove(self, users, message_id, channel_id, user_id, emoji):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(MessageReactionRemoveEvent(user_id, message_id, channel_id, emoji))
-
-    async def guild_create(self, users, guild_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildCreateEvent(guild_obj))
-
-    async def note_update(self, user, uid, note):
-        if not (clients := [c for c in self.clients if c.id == user and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(UserNoteUpdateEvent(uid, note))
-            
-    async def settings_proto_update(self, user, proto, stype):
-        if not (clients := [c for c in self.clients if c.id == user and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(UserSettingsProtoUpdateEvent(proto, stype))
-
-    async def guild_update(self, users, guild_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildUpdateEvent(guild_obj))
-
-    async def relationship_add(self, current_user, target_user, type):
-        if not (clients := [c for c in self.clients if c.id == current_user and c.connected]):
-            return
-        d = await self.core.getUserData(UserId(target_user))
-        for cl in clients:
-            await cl.esend(RelationshipAddEvent(current_user, d, type))
-
-    async def emojis_update(self, users, guild_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        emojis = await self.core.getEmojis(guild_id)
-        emojis = [await emoji.json for emoji in emojis]
-        for cl in clients:
-            await cl.esend(GuildEmojisUpdate(guild_id, emojis))
-
-    async def channel_update(self, users, channel_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(ChannelUpdateEvent(channel_obj))
-
-    async def channel_create(self, users, channel_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(ChannelCreateEvent(channel_obj))
-
-    async def channel_delete(self, users, channel_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(ChannelDeleteEvent(channel_obj))
-
-    async def invite_delete(self, users, payload):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(InviteDeleteEvent(payload))
-
-    async def guild_delete(self, users, guild_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildDeleteEvent(guild_id))
-
-    async def guild_member_remove(self, users, guild_id, user_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildMemberRemoveEvent(guild_id, user_obj))
 
     async def guild_ban_add(self, users, guild_id, user_obj):
         if not (clients := [c for c in self.clients if c.id in users and c.connected]):
@@ -481,7 +224,7 @@ class Gateway:
 
     async def init(self):
         await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
-        await self.mcl.subscribe("all_events", self.mcl_allEventsCallback)
+        await self.mcl.subscribe("yepcord_events", self.mcl_allEventsCallback)
         await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("channel_events", self.mcl_eventsCallback)
         await self.mcl.subscribe("message_events", self.mcl_eventsCallback)
@@ -497,9 +240,11 @@ class Gateway:
         event = RawDispatchEvent(payload["data"])
         if payload["users"] is not None:
             await self.ev.sendToUsers(event, payload["users"])
-        payload["channel_id"]
-        payload["guild_id"]
-        payload["permissions"]
+        if payload["channel_id"] is not None:
+            # payload["permissions"]
+            await self.ev.sendToUsers(event, await self.core.getRelatedUsersToChannel(payload["channel_id"]))
+        if payload["guild_id"] is not None:
+            await self.ev.sendToUsers(event, await self.core.getGuildMembersIds(payload["guild_id"]))
 
     async def send(self, client: GatewayClient, op: int, **data) -> None:
         r = {"op": op}

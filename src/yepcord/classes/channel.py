@@ -58,8 +58,8 @@ class Channel(_Channel, Model):
         Returns dict object for discord.
         Set Ctx["user_id"] to True when Channel.type is ChannelType.DM or ChannelType.GROUP_DM to remove current user
           id from result.
-        Set Ctx["user_id"] to False when Channel.type is ChannelType.DM or ChannelType.GROUP_DM to return users ids list
-          in recipients field instead of users data.
+        Set Ctx["with_ids"] to False when Channel.type is ChannelType.DM or ChannelType.GROUP_DM to return users data list
+          in recipients field instead of users ids.
         :return:
         """
         last_message_id = str(self.last_message_id) if self.last_message_id is not None else self.last_message_id

@@ -5,8 +5,9 @@ from quart_schema import validate_request
 
 from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmail
 from ..utils import usingDB, getSession, getUser, multipleDecorators
+from ...gateway.events import UserUpdateEvent
 from ...yepcord.classes.user import Session, User
-from ...yepcord.ctx import getCore
+from ...yepcord.ctx import getCore, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.geoip import getLanguageCode
 from ...yepcord.snowflake import Snowflake
@@ -90,5 +91,5 @@ async def verify_email(data: VerifyEmail):
         raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
     user = await getCore().getUserByEmail(email)
     await getCore().verifyEmail(user, data.token)
-    await getCore().sendUserUpdateEvent(user.id)
+    await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return c_json({"token": (await getCore().createSession(user.id)).token, "user_id": str(user.id)})

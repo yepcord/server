@@ -8,6 +8,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10"]
 
     steps:
       - name: Check out repository code
@@ -16,7 +19,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python-version }}
 
       - uses: getong/mariadb-action@v1.1
         with:

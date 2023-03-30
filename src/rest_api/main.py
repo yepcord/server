@@ -5,6 +5,7 @@ from quart import Quart, request, Response
 from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
+from src.yepcord.gateway_dispatcher import GatewayDispatcher
 from .routes.webhooks import webhooks
 from .routes.auth import auth
 from .routes.channels import channels
@@ -53,6 +54,7 @@ app = YEPcord("YEPcord-api")
 QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
+gateway = GatewayDispatcher()
 app.gifs = Gifs(Config("TENOR_KEY"))
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
@@ -68,7 +70,11 @@ async def before_serving():
         autocommit=True
     )
     await core.initMCL()
+    await gateway.init()
 
+@app.errorhandler(500)
+async def h(e):
+    raise e.original_exception
 
 @app.errorhandler(YDataError)
 async def ydataerror_handler(err: YDataError):

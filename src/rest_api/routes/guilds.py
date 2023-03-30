@@ -10,11 +10,13 @@ from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUp
     RolesPositionsChangeList, AddRoleMembers, MemberUpdate, SetVanityUrl, GuildCreateFromTemplate, GuildDelete, \
     GetAuditLogsQuery, CreateSticker, UpdateSticker, CreateEvent, GetScheduledEvent, UpdateScheduledEvent
 from ..utils import usingDB, getUser, multipleDecorators, getGuildWM, getGuildWoM, getGuildTemplate, getRole
+from ...gateway.events import MessageDeleteEvent, GuildUpdateEvent, ChannelUpdateEvent, ChannelCreateEvent, \
+    GuildDeleteEvent, GuildMemberRemoveEvent
 from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role, Sticker, ScheduledEvent
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User, GuildMember, UserId
-from ...yepcord.ctx import getCore, getCDNStorage, Ctx
+from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
 from ...yepcord.enums import GuildPermissions, AuditLogEntryType, StickerType, StickerFormat, ScheduledEventStatus
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
@@ -57,7 +59,7 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
                 setattr(data, ch, None)
     new_guild = guild.copy(**data.dict(exclude_defaults=True))
     await getCore().updateGuildDiff(guild, new_guild)
-    await getCore().sendGuildUpdateEvent(new_guild)
+    await getGw().dispatch(GuildUpdateEvent(await new_guild.json), guild_id=guild.id)
 
     entry = AuditLogEntry.guild_update(guild, new_guild, user)
     await getCore().putAuditLogEntry(entry)
@@ -140,6 +142,7 @@ async def create_guild_emoji(data: EmojiCreate, user: User, guild: Guild, member
         raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
     emoji = Emoji(emoji_id, data.name, user.id, guild.id, animated=emd["animated"])
     await getCore().addEmoji(emoji, guild) # TODO: check if emojis limit exceeded
+    await getGw().sendGuildEmojisUpdateEvent(guild)
     emoji.fill_defaults()
 
     entry = AuditLogEntry.emoji_create(emoji, user)
@@ -160,7 +163,7 @@ async def update_guild_emoji(data: EmojiUpdate, user: User, guild: Guild, member
     new_emoji = emoji.copy(**data.dict(exclude_defaults=True))
 
     await getCore().updateEmojiDiff(emoji, new_emoji)
-    await getCore().sendGuildEmojisUpdatedEvent(guild)
+    await getGw().sendGuildEmojisUpdateEvent(guild)
 
     return c_json(await new_emoji.json)
 
@@ -175,6 +178,7 @@ async def delete_guild_emoji(user: User, guild: Guild, member: GuildMember, emoj
     if emoji.guild_id != guild.id:
         return "", 204
     await getCore().deleteEmoji(emoji, guild)
+    await getGw().sendGuildEmojisUpdateEvent(guild)
 
     entry = AuditLogEntry.emoji_delete(emoji, user)
     await getCore().putAuditLogEntry(entry)
@@ -202,7 +206,7 @@ async def update_channels_positions(user: User, guild: Guild, member: GuildMembe
         change = change.dict(exclude_defaults=True, exclude={"id"})
         new_channel = channel.copy(**change)
         await getCore().updateChannelDiff(channel, new_channel)
-        await getCore().sendChannelUpdateEvent(new_channel)
+        await getGw().dispatch(ChannelUpdateEvent(await new_channel.json), guild_id=channel.guild_id)
     await getCore().setTemplateDirty(guild)
     return "", 204
 
@@ -217,7 +221,7 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
         overwrite = PermissionOverwrite(**overwrite.dict(), channel_id=channel.id, target_id=overwrite.id)
         await getCore().putPermissionOverwrite(overwrite)
 
-    await getCore().sendChannelCreateEvent(channel)
+    await getGw().dispatch(ChannelCreateEvent(await channel.json), guild_id=channel.guild_id)
 
     entry = AuditLogEntry.channel_create(channel, user)
     await getCore().putAuditLogEntry(entry)
@@ -253,8 +257,8 @@ async def kick_member(user: User, guild: Guild, member: GuildMember, uid: int):
         if not await member.perm_checker.canKickOrBan(target_member):
             raise InvalidDataErr(403, Errors.make(50013))
         await getCore().deleteGuildMember(target_member)
-        await getCore().sendGuildMemberRemoveEvent(guild, await target_member.user)
-        await getCore().sendGuildDeleteEvent(guild, target_member)
+        await getGw().dispatch(GuildMemberRemoveEvent(guild.id, await (await target_member.data).json), users=[uid])
+        await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
         entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, target_member.id, AuditLogEntryType.MEMBER_KICK)
         await getCore().putAuditLogEntry(entry)
         await getCore().sendAuditLogEntryCreateEvent(entry)
@@ -273,8 +277,8 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
             await getCore().deleteGuildMember(target_member)
             await getCore().banGuildMember(target_member, reason)
             target_user = await target_member.user
-            await getCore().sendGuildMemberRemoveEvent(guild, target_user)
-            await getCore().sendGuildDeleteEvent(guild, target_member)
+            await getGw().dispatch(GuildMemberRemoveEvent(guild.id, await (await target_user.data).json), users=[uid])
+            await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
             await getCore().sendGuildBanAddEvent(guild, target_user)
             if (delete_message_seconds := data.delete_message_seconds) > 0:
                 after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
@@ -283,7 +287,7 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
                     if len(messages) > 1:
                         await getCore().sendMessageBulkDeleteEvent(guild.id, channel, messages)
                     elif len(messages) == 1:
-                        await getCore().sendMessageDeleteEvent(Message(messages[0], channel, uid))
+                        await getGw().dispatch(MessageDeleteEvent(messages[0], channel, guild.id), channel_id=channel)
 
             entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, target_member.id,
                                   AuditLogEntryType.MEMBER_BAN_ADD, reason=reason)
@@ -539,7 +543,7 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
         invite = Invite(Snowflake.makeId(), guild.system_channel_id, guild.owner_id, int(time()), 0, vanity_code=data.code,
                         guild_id=guild.id)
         await getCore().putInvite(invite)
-    await getCore().sendGuildUpdateEvent(new_guild)
+    await getGw().dispatch(GuildUpdateEvent(await new_guild.json), guild_id=guild.id)
     return c_json({"code": new_guild.vanity_url_code})
 
 
@@ -604,7 +608,7 @@ async def delete_guild(data: GuildDelete, user: User, guild: Guild):
                 raise InvalidDataErr(400, Errors.make(60008))
 
     await getCore().deleteGuild(guild)
-    await getCore().sendGuildDeleteEvent(guild, user)
+    await getGw().dispatch(GuildDeleteEvent(guild.id), users=[user.id])
 
     return "", 204
 

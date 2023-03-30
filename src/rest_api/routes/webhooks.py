@@ -5,9 +5,10 @@ from quart_schema import validate_request, validate_querystring
 
 from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
 from ..utils import usingDB, getUser, multipleDecorators, allowWithoutUser, processMessageData
+from ...gateway.events import MessageCreateEvent
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User
-from ...yepcord.ctx import getCore, getCDNStorage
+from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
@@ -106,7 +107,8 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
 
     message = Message(id=message_id, channel_id=webhook.channel_id, author=0, guild_id=webhook.guild_id,
                       webhook_author=author, type=message_type, **data.to_json())
-    message = await getCore().sendMessage(message)
+    await getCore().sendMessage(message)
+    await getGw().dispatch(MessageCreateEvent(await message.json), channel_id=message.channel_id)
 
     if query_args.wait:
         return c_json(await message.json)

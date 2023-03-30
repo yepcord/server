@@ -3,10 +3,12 @@ from quart_schema import validate_querystring
 
 from ..models.invites import GetInviteQuery
 from ..utils import usingDB, getUser, multipleDecorators, getInvite
+from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelRecipientAddEvent, GuildCreateEvent, \
+    InviteDeleteEvent
 from ...yepcord.classes.guild import Invite, GuildId, AuditLogEntry
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User
-from ...yepcord.ctx import getCore, Ctx
+from ...yepcord.ctx import getCore, Ctx, getGw
 from ...yepcord.enums import ChannelType, GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
@@ -40,11 +42,14 @@ async def use_invite(user: User, invite: Invite):
                 del inv[excl]
         inv["new_member"] = user.id not in channel.recipients
         if inv["new_member"]:
-            msg = Message(id=Snowflake.makeId(), author=channel.owner_id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_ADD, extra_data={"user": user.id})
+            message = Message(id=Snowflake.makeId(), author=channel.owner_id, channel_id=channel.id, content="", type=MessageType.RECIPIENT_ADD, extra_data={"user": user.id})
             await getCore().addUserToGroupDM(channel, user.id)
-            await getCore().sendDMRepicientAddEvent(channel.recipients, channel.id, user.id)
-            await getCore().sendMessage(msg)
-        await getCore().sendDMChannelCreateEvent(channel, users=[user.id])
+            await getGw().dispatch(ChannelRecipientAddEvent(channel.id, await (await user.data).json), users=channel.recipients)
+            await getCore().sendMessage(message)
+            await getGw().dispatch(MessageCreateEvent(await message.json), users=channel.recipients)
+        Ctx["with_ids"] = False
+        Ctx["user_id"] = user.id
+        await getGw().dispatch(DMChannelCreateEvent(channel), users=[user.id])
         await getCore().useInvite(invite)
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
         inv = await invite.json
@@ -57,11 +62,12 @@ async def use_invite(user: User, invite: Invite):
                 raise InvalidDataErr(403, Errors.make(40007))
             inv["new_member"] = True
             await getCore().createGuildMember(guild, user)
-            await getCore().sendGuildCreateEvent(guild, [user.id])
+            await getGw().dispatch(GuildCreateEvent(await guild.json), users=[user.id])
             if guild.system_channel_id:
-                msg = Message(id=Snowflake.makeId(), author=user.id, channel_id=guild.system_channel_id, content="",
+                message = Message(id=Snowflake.makeId(), author=user.id, channel_id=guild.system_channel_id, content="",
                               type=MessageType.USER_JOIN, guild_id=guild.id)
-                await getCore().sendMessage(msg)
+                await getCore().sendMessage(message)
+                await getGw().dispatch(MessageCreateEvent(await message.json), channel_id=message.channel_id)
             await getCore().useInvite(invite)
     return c_json(inv)
 
@@ -73,7 +79,7 @@ async def delete_invite(user: User, invite: Invite):
         member = await getCore().getGuildMember(GuildId(invite.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         await getCore().deleteInvite(invite)
-        await getCore().sendInviteDeleteEvent(invite)
+        await getGw().dispatch(InviteDeleteEvent(invite), guild_id=invite.guild_id)
 
         entry = AuditLogEntry.invite_delete(invite, user)
         await getCore().putAuditLogEntry(entry)
