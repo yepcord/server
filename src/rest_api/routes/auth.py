@@ -1,6 +1,9 @@
-from quart import Blueprint, request, current_app
+from datetime import timedelta
+
+from quart import Blueprint, request
 from json import loads as jloads
 
+from quart_rate_limiter import rate_limit
 from quart_schema import validate_request
 
 from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmail
@@ -15,9 +18,8 @@ from ...yepcord.utils import c_json, LOCALES, b64decode
 # Base path is /api/vX/auth
 auth = Blueprint('auth', __name__)
 
-
 @auth.post("/register")
-@multipleDecorators(validate_request(Register), usingDB)
+@multipleDecorators(rate_limit(5, timedelta(minutes=1)), validate_request(Register), usingDB)
 async def register(data: Register):
     loc = getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
     sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth, loc)
@@ -25,7 +27,7 @@ async def register(data: Register):
 
 
 @auth.post("/login")
-@multipleDecorators(validate_request(Login), usingDB)
+@multipleDecorators(rate_limit(5, timedelta(minutes=1)), validate_request(Login), usingDB)
 async def login(data: Login):
     sess = await getCore().login(data.login, data.password)
     user = await getCore().getUser(sess.uid)

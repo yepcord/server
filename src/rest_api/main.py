@@ -3,6 +3,7 @@ from time import time
 
 from quart import Quart, request, Response
 from quart.globals import request_ctx
+from quart_rate_limiter import RateLimiter, RateLimitExceeded
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
 from .routes.webhooks import webhooks
@@ -49,8 +50,16 @@ class YEPcord(Quart):
             return await self.ensure_async(handler)(**request_.view_args)
 
 
+class YRateLimiter(RateLimiter):
+    async def _before_request(self) -> None:
+        if request.method == "OPTIONS":
+            return
+        await super()._before_request()
+
+
 app = YEPcord("YEPcord-api")
 QuartSchema(app)
+YRateLimiter(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
 app.gifs = Gifs(Config("TENOR_KEY"))
@@ -86,6 +95,15 @@ async def ydataerror_handler(err: YDataError):
 async def handle_validation_error(error: RequestSchemaValidationError):
     pydantic_error = error.validation_error
     return c_json(Errors.from_pydantic(pydantic_error), 400)
+
+
+@app.errorhandler(RateLimitExceeded)
+async def handle_rate_limit(error: RateLimitExceeded):
+    return c_json({
+        "message": "You are being rate limited.",
+        "retry_after": error.retry_after,
+        "global": False
+    }, 429)
 
 
 @app.after_request

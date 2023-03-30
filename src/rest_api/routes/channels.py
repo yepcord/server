@@ -1,9 +1,11 @@
+from datetime import timedelta
 from os import urandom
 from random import choice
 from time import time
 
 from emoji import is_emoji
 from quart import Blueprint, request
+from quart_rate_limiter import rate_limit
 from quart_schema import validate_request, validate_querystring
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
@@ -116,7 +118,7 @@ async def delete_channel(user: User, channel: Channel):
 
 
 @channels.get("/<int:channel>/messages")
-@multipleDecorators(validate_querystring(GetMessagesQuery), usingDB, getUser, getChannel)
+@multipleDecorators(rate_limit(5, timedelta(seconds=5)), validate_querystring(GetMessagesQuery), usingDB, getUser, getChannel)
 async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await getCore().getGuildMember(GuildId(channel.guild_id), user.id)
@@ -127,7 +129,7 @@ async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channe
 
 
 @channels.post("/<int:channel>/messages")
-@multipleDecorators(usingDB, getUser, getChannel)
+@multipleDecorators(rate_limit(5, timedelta(seconds=7)), usingDB, getUser, getChannel)
 async def send_message(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
         oth = channel.recipients.copy()
@@ -182,7 +184,7 @@ async def send_message(user: User, channel: Channel):
 
 
 @channels.delete("/<int:channel>/messages/<int:message>")
-@multipleDecorators(usingDB, getUser, getChannel, getMessage)
+@multipleDecorators(rate_limit(10, timedelta(seconds=5)), usingDB, getUser, getChannel, getMessage)
 async def delete_message(user: User, channel: Channel, message: Message):
     if message.author != user.id:
         if channel.get("guild_id"):
@@ -196,7 +198,7 @@ async def delete_message(user: User, channel: Channel, message: Message):
 
 
 @channels.patch("/<int:channel>/messages/<int:message>")
-@multipleDecorators(validate_request(MessageUpdate), usingDB, getUser, getChannel, getMessage)
+@multipleDecorators(rate_limit(5, timedelta(seconds=5)), validate_request(MessageUpdate), usingDB, getUser, getChannel, getMessage)
 async def edit_message(data: MessageUpdate, user: User, channel: Channel, message: Message):
     if message.author != user.id:
         raise InvalidDataErr(403, Errors.make(50005))
@@ -230,7 +232,7 @@ async def delete_message_ack(user: User, channel: Channel):
 
 
 @channels.post("/<int:channel>/typing")
-@multipleDecorators(usingDB, getUser, getChannel)
+@multipleDecorators(rate_limit(5, timedelta(seconds=10)), usingDB, getUser, getChannel)
 async def send_typing_event(user: User, channel: Channel):
     if channel.get("guild_id"):
         member = await getCore().getGuildMember(GuildId(channel.guild_id), user.id)
