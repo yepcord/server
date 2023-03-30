@@ -1,9 +1,13 @@
+from datetime import datetime, timezone
+from time import mktime
 from typing import Optional, List
 
+from dateutil.parser import parse as dparse
 from pydantic import BaseModel, validator, Field
 
+from .channels import PermissionOverwriteModel
 from ...yepcord.classes.other import BitFlags
-from ...yepcord.enums import SystemChannelFlags, ChannelType
+from ...yepcord.enums import SystemChannelFlags, ChannelType, ScheduledEventEntityType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.utils import getImage, validImage, LOCALES
 
@@ -120,14 +124,16 @@ class TemplateCreate(BaseModel):
         if not value:
             raise InvalidDataErr(400, Errors.make(50035, {
                 "name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
-        if len(value) > 100:
-            value = value[:100]  # TODO: raise exception instead
+        if len(value) > 100 or len(value) < 2:
+            raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 2 and 100 in length."}}))
         return value
 
     @validator("description")
     def validate_description(cls, value: str):
         if len(value) > 120:
-            value = value[:120]  # TODO: raise exception instead
+            raise InvalidDataErr(400, Errors.make(50035, {"description": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 1 and 120 in length."}}))
         return value
 
 
@@ -141,7 +147,8 @@ class TemplateUpdate(TemplateCreate):
             if not value:
                 value = None
             elif len(value) > 100:
-                value = value[:100]  # TODO: raise exception instead
+                raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 2 and 100 in length."}}))
         return value
 
 
@@ -201,7 +208,7 @@ class ChannelCreate(BaseModel):
     rate_limit: Optional[int] = Field(default=None, alias="rate_limit_per_user")
     bitrate: Optional[int] = None
     user_limit: Optional[int] = None
-    #permission_overwrites: List[PermissionOverwriteModel] = []
+    permission_overwrites: List[PermissionOverwriteModel] = Field(default_factory=list)
     parent_id: Optional[int] = None
     #rtc_region: Optional[str] = None
     video_quality_mode: Optional[int] = None
@@ -219,7 +226,7 @@ class ChannelCreate(BaseModel):
 
     @validator("type")
     def validate_type(cls, value: Optional[str]):
-        if value not in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY): # TODO: add other guild channel types
+        if value not in GUILD_CHANNELS:
             value = ChannelType.GUILD_TEXT
         return value
 
@@ -273,6 +280,10 @@ class ChannelCreate(BaseModel):
         elif channel_type == ChannelType.GUILD_VOICE:
             return self.dict(include={"name", "type", "position", "nsfw", "bitrate", "user_limit", "parent_id",
                                       "video_quality_mode"}, exclude_defaults=True)
+        elif channel_type == ChannelType.GUILD_NEWS:
+            return self.dict(
+                include={"name", "type", "position", "topic", "nsfw", "parent_id", "default_auto_archive"},
+                exclude_defaults=True)
 
 
 class BanMember(BaseModel):
@@ -433,4 +444,187 @@ class GetAuditLogsQuery(BaseModel):
     def validate_limit(cls, value: int):
         if value < 0 or value > 50:
             value = 50
+        return value
+
+
+class CreateSticker(BaseModel):
+    name: str
+    description: Optional[str] = None
+    tags: str
+
+    @validator("name")
+    def validate_name(cls, value: str):
+        value = value.strip()
+        if len(value) < 2 or len(value) > 30:
+            raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 2 and 30 in length."}}))
+        return value
+
+    @validator("description")
+    def validate_description(cls, value: Optional[str]):
+        if value is not None:
+            value = value.strip()
+            if len(value) > 100:
+                raise InvalidDataErr(400, Errors.make(50035, {"description": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 0 and 100 in length."}}))
+        return value
+
+    @validator("tags")
+    def validate_tags(cls, value: Optional[str]):
+        value = value.strip()
+        if len(value) < 2 or len(value) > 200:
+            raise InvalidDataErr(400, Errors.make(50035, {"tags": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 2 and 200 in length."}}))
+        return value
+
+
+class UpdateSticker(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[str] = None
+
+    @validator("name")
+    def validate_name(cls, value: str):
+        if value is not None:
+            value = value.strip()
+            if len(value) < 2 or len(value) > 30:
+                raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 2 and 30 in length."}}))
+        return value
+
+    @validator("description")
+    def validate_description(cls, value: Optional[str]):
+        if value is not None:
+            value = value.strip()
+            if len(value) > 100:
+                raise InvalidDataErr(400, Errors.make(50035, {"description": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 0 and 100 in length."}}))
+        return value
+
+    @validator("tags")
+    def validate_tags(cls, value: Optional[str]):
+        if value is not None:
+            value = value.strip()
+            if len(value) < 2 or len(value) > 200:
+                raise InvalidDataErr(400, Errors.make(50035, {"tags": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be between 2 and 200 in length."}}))
+        return value
+
+
+class EventEntityMeta(BaseModel):
+    location: str
+
+
+class CreateEvent(BaseModel):
+    name: str
+    privacy_level: int
+    start: int = Field(alias="scheduled_start_time")
+    entity_type: int
+    end: Optional[int] = Field(alias="scheduled_end_time", default=None)
+    channel_id: Optional[int] = None
+    entity_metadata: Optional[EventEntityMeta] = None
+    description: Optional[str] = None
+    image: Optional[str] = None
+
+    @validator("name")
+    def validate_name(cls, value: str):
+        value = value.strip()
+        if len(value) < 2 or len(value) > 30:
+            raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                "Must be between 2 and 30 in length."}}))
+        return value
+
+    @validator("privacy_level")
+    def validate_privacy_level(cls, value: int):
+        if value != 2:
+            raise InvalidDataErr(400, Errors.make(50035, {"privacy_level": {"code": "BASE_TYPE_CHOICES", "message":
+                "The following values are allowed: (2)."}}))
+        return value
+
+    @validator("start")
+    def validate_start(cls, value: int):
+        if value < datetime.utcnow().timestamp():
+            raise InvalidDataErr(400, Errors.make(50035, {"scheduled_start_time": {"code": "BASE_TYPE_BAD_TIME", "message":
+                "Time should be in future."}}))
+        return value
+
+    @validator("end")
+    def validate_end(cls, value: Optional[int], values: dict):
+        if value is not None:
+            if value < datetime.utcnow().timestamp() or value < values.get("start", value-1):
+                raise InvalidDataErr(400, Errors.make(50035, {"scheduled_end_time": {"code": "BASE_TYPE_BAD_TIME", "message":
+                    "Time should be in future."}}))
+        else:
+            if values["entity_type"] == ScheduledEventEntityType.EXTERNAL:
+                raise InvalidDataErr(400,
+                                     Errors.make(50035, {"scheduled_end_time": {"code": "BASE_TYPE_REQUIRED", "message":
+                                         "Required field."}}))
+        return value
+
+    @validator("entity_type")
+    def validate_entity_type(cls, value: int):
+        if value not in (1, 2, 3):
+            raise InvalidDataErr(400, Errors.make(50035, {"entity_type": {"code": "BASE_TYPE_CHOICES", "message":
+                "The following values are allowed: (1, 2, 3)."}}))
+        return value
+
+    @validator("channel_id")
+    def validate_channel_id(cls, value: Optional[int], values: dict):
+        if not value and values["entity_type"] != ScheduledEventEntityType.EXTERNAL:
+            raise InvalidDataErr(400, Errors.make(50035, {"channel_id": {"code": "BASE_TYPE_REQUIRED", "message":
+                "Required field."}}))
+        return value
+
+    @validator("entity_metadata")
+    def validate_entity_metadata(cls, value: Optional[EventEntityMeta], values: dict):
+        if not value and values["entity_type"] == ScheduledEventEntityType.EXTERNAL:
+            raise InvalidDataErr(400, Errors.make(50035, {"entity_metadata": {"code": "BASE_TYPE_REQUIRED", "message":
+                "Required field."}}))
+        return value
+
+    @validator("description")
+    def validate_description(cls, value: Optional[str]):
+        if value is not None:
+            value = value.strip()
+            if len(value) > 100:
+                raise InvalidDataErr(400, Errors.make(50035, {"name": {"code": "BASE_TYPE_BAD_LENGTH", "message":
+                    "Must be less than 30 in length."}}))
+        return value
+
+    @validator("image")
+    def validate_image(cls, value: Optional[str]):
+        if value:
+            if not (img := getImage(value)) or not validImage(img):
+                raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
+        return value
+
+    def __init__(self, **data):
+        if data.get("scheduled_start_time"):
+            dt = dparse(data["scheduled_start_time"]).replace(tzinfo=timezone.utc).astimezone(tz=None)
+            data["scheduled_start_time"] = mktime(dt.timetuple())
+        if data.get("scheduled_end_time"):
+            dt = dparse(data["scheduled_end_time"]).replace(tzinfo=timezone.utc).astimezone(tz=None)
+            data["scheduled_end_time"] = mktime(dt.timetuple())
+        super().__init__(**data)
+
+
+class GetScheduledEvent(BaseModel):
+    with_user_count: bool = False
+
+
+class UpdateScheduledEvent(CreateEvent):
+    name: Optional[str] = None
+    privacy_level: Optional[int] = None
+    start: Optional[int] = Field(alias="scheduled_start_time", default=None)
+    entity_type: Optional[int] = None
+    status: Optional[int] = None
+    image: Optional[str] = ""
+
+    @validator("channel_id")
+    def validate_channel_id(cls, value: Optional[int], values: dict):
+        if not value and values["entity_type"] != ScheduledEventEntityType.EXTERNAL:
+            raise InvalidDataErr(400, Errors.make(50035, {"channel_id": {"code": "BASE_TYPE_REQUIRED", "message":
+                "Required field."}}))
+        if values["entity_type"] == ScheduledEventEntityType.EXTERNAL:
+            value = None
         return value

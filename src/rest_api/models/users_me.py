@@ -1,5 +1,7 @@
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, Field
 from typing import Optional, List
+
+from ...yepcord.errors import InvalidDataErr, Errors
 
 
 class UserUpdate(BaseModel):
@@ -19,7 +21,7 @@ class UserUpdate(BaseModel):
 
     @property
     def to_json(self) -> dict:
-        return self.dict(include={"avatar"})
+        return self.dict(include={"avatar"}, exclude_defaults=True)
 
 
 class UserProfileUpdate(BaseModel):
@@ -94,6 +96,14 @@ class RelationshipRequest(BaseModel):
     username: str
     discriminator: int
 
+    @validator("discriminator")
+    def validate_discriminator(cls, value: int):
+        if value < 1 or value > 9999:
+            raise InvalidDataErr(400,
+                                 Errors.make(50035,
+                                             {"name": {"code": "BASE_TYPE_BAD_INT", "message": "Must be between 1 and 9999"}}))
+        return value
+
 
 class PutNote(BaseModel):
     note: Optional[str] = None
@@ -122,3 +132,16 @@ class RelationshipPut(BaseModel):
 class DmChannelCreate(BaseModel):
     recipients: List[int]
     name: Optional[str] = None
+
+
+class DeleteRequest(BaseModel):
+    password: str
+
+
+class GetScheduledEventsQuery(BaseModel):
+    guild_ids: list[int] = Field(default_factory=list)
+
+    def __init__(self, **data):
+        if "guild_ids" in data:
+            data["guild_ids"] = data["guild_ids"].split(",")
+        super().__init__(**data)

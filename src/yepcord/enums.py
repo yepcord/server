@@ -4,10 +4,12 @@ class E:
         attrs = [i for i in cls.__dict__.keys() if not i.startswith("__")]
         return {attr: getattr(cls, attr) for attr in attrs}
 
+
 class RelationshipType(E):
     PENDING = 0
     FRIEND = 1
     BLOCK = 2
+
 
 class GatewayOp(E):
     DISPATCH = 0
@@ -26,6 +28,7 @@ class GatewayOp(E):
     # UNKNOWN = 13
     LAZY_REQUEST = 14
 
+
 class ChannelType(E):
     GUILD_TEXT = 0
     DM = 1
@@ -38,6 +41,10 @@ class ChannelType(E):
     GUILD_PRIVATE_THREAD = 12
     GUILD_STAGE_VOICE = 13
     GUILD_DIRECTORY = 14
+
+
+GUILD_CHANNELS = (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY, ChannelType.GUILD_NEWS)
+
 
 class MessageType(E):
     DEFAULT = 0
@@ -209,3 +216,32 @@ class SystemChannelFlags(E):
     SUPPRESS_JOIN_NOTIFICATION_REPLIES = 1 << 3
     SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATIONS = 1 << 4
     SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATION_REPLIES = 1 << 5
+
+
+# https://discord.com/developers/docs/resources/sticker#sticker-object-sticker-types
+class StickerType(E):
+    STANDART = 1
+    GUILD = 2
+
+
+# https://discord.com/developers/docs/resources/sticker#sticker-object-sticker-types
+class StickerFormat(E):
+    PNG = 1
+    APNG = 2
+    LOTTIE = 3
+    GIF = 4
+
+
+# https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-entity-types
+class ScheduledEventEntityType(E):
+    STAGE_INSTANCE = 1
+    VOICE = 2
+    EXTERNAL = 3
+
+
+# https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-status
+class ScheduledEventStatus(E):
+    SCHEDULED = 1
+    ACTIVE = 2
+    COMPLETED = 3
+    CANCELED = 4

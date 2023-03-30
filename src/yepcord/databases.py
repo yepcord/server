@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from json import dumps as jdumps
 from re import sub
 from time import time
@@ -7,11 +8,12 @@ from typing import Optional, List, Tuple, Dict
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
 from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite
-from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook
+from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, Sticker, \
+    ScheduledEvent
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
 from .ctx import Ctx
-from .enums import ChannelType
+from .enums import ChannelType, ScheduledEventStatus, GUILD_CHANNELS
 from .snowflake import Snowflake
 from .utils import json_to_sql
 
@@ -43,7 +45,7 @@ class DBConnection(ABC):
     async def insertSession(self, session: Session) -> None: ...
 
     @abstractmethod
-    async def getUser(self, uid: int) -> Optional[User]: ...
+    async def getUser(self, uid: int, allow_deleted: bool=True) -> Optional[User]: ...
 
     @abstractmethod
     async def validSession(self, session: Session) -> bool: ...
@@ -393,6 +395,57 @@ class DBConnection(ABC):
     @abstractmethod
     async def updateEmojiDiff(self, before: Emoji, after: Emoji) -> None: ...
 
+    @abstractmethod
+    async def getGuildStickers(self, guild: _Guild) -> List[Sticker]: ...
+
+    @abstractmethod
+    async def getSticker(self, sticker_id: int) -> Optional[Sticker]: ...
+
+    @abstractmethod
+    async def putSticker(self, sticker: Sticker) -> None: ...
+
+    @abstractmethod
+    async def updateStickerDiff(self, before: Sticker, after: Sticker) -> None: ...
+
+    @abstractmethod
+    async def deleteSticker(self, sticker: Sticker) -> None: ...
+
+    @abstractmethod
+    async def deleteUser(self, user: User) -> None: ...
+
+    @abstractmethod
+    async def getUserOwnedGuilds(self, user: User) -> List[Guild]: ...
+
+    @abstractmethod
+    async def getUserOwnedGroups(self, user: User) -> List[Channel]: ...
+
+    @abstractmethod
+    async def getScheduledEventUserCount(self, event: ScheduledEvent) -> int: ...
+
+    @abstractmethod
+    async def putScheduledEvent(self, event: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def getScheduledEvent(self, event_id: int) -> Optional[ScheduledEvent]: ...
+
+    @abstractmethod
+    async def getScheduledEvents(self, guild: _Guild) -> List[ScheduledEvent]: ...
+
+    @abstractmethod
+    async def updateScheduledEventDiff(self, before: ScheduledEvent, after: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def subscribeToScheduledEvent(self, user: User, event: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def unsubscribeFromScheduledEvent(self, user: User, event: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def getSubscribedScheduledEventIds(self, user: User, guild_id: int) -> list[int]: ...
+
+    @abstractmethod
+    async def deleteScheduledEvent(self, event: ScheduledEvent) -> None: ...
+
 class MySQL(Database):
     def __init__(self):
         self.pool = None
@@ -454,13 +507,16 @@ class MySqlConnection:
     async def insertSession(self, session: Session) -> None:
         await self.cur.execute(f'INSERT INTO `sessions` VALUES ({session.id}, {session.sid}, "{session.sig}");')
 
-    async def getUser(self, uid: int) -> Optional[User]:
-        await self.cur.execute(f'SELECT * FROM `users` WHERE `id`={uid};')
+    async def getUser(self, uid: int, allow_deleted: bool=True) -> Optional[User]:
+        d = ""
+        if not allow_deleted:
+            d = f" and `deleted`=false"
+        await self.cur.execute(f'SELECT * FROM `users` WHERE `id`={uid}{d};')
         if r := await self.cur.fetchone():
             return User.from_result(self.cur.description, r)
 
     async def validSession(self, session: Session) -> bool:
-        await self. cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{escape_string(session.sig)}";')
+        await self.cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{escape_string(session.sig)}";')
         return bool(await self.cur.fetchone())
 
     async def getUserSettings(self, user: _User) -> Optional[UserSettings]:
@@ -700,10 +756,9 @@ class MySqlConnection:
     async def deleteChannel(self, channel: Channel) -> None:
         if channel.type == ChannelType.GROUP_DM:
             await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id} AND JSON_LENGTH(j_recipients) = 0;")
-        elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+        elif channel.type in GUILD_CHANNELS:
             await self.cur.execute(f"DELETE FROM `channels` WHERE `id`={channel.id};")
         await self.cur.execute(f"DELETE FROM `read_states` WHERE `channel_id`={channel.id};")
-        # TODO: delete all messages in channel
 
     async def deleteMessagesAck(self, channel: Channel, user: User) -> None:
         await self.cur.execute(f"DELETE FROM `read_states` WHERE `uid`={user.id} AND `channel_id`={channel.id};")
@@ -1108,7 +1163,6 @@ class MySqlConnection:
         await self.cur.execute(f'DELETE FROM `guilds` WHERE `id`={guild.id} LIMIT 1;')
 
     async def putWebhook(self, webhook: Webhook) -> None:
-        print(webhook)
         q = json_to_sql(webhook.toJSON(for_db=True), as_tuples=True)
         fields = ", ".join([f"`{f}`" for f, v in q])
         values = ", ".join([f"{v}" for f, v in q])
@@ -1152,3 +1206,132 @@ class MySqlConnection:
         diff = json_to_sql(diff)
         if diff:
             await self.cur.execute(f'UPDATE `emojis` SET {diff} WHERE `id`={before.id};')
+
+    async def getGuildStickers(self, guild: _Guild) -> List[Sticker]:
+        stickers = []
+        await self.cur.execute(f'SELECT * FROM `stickers` WHERE `guild_id`={guild.id};')
+        for r in await self.cur.fetchall():
+            stickers.append(Sticker.from_result(self.cur.description, r))
+        return stickers
+
+    async def getSticker(self, sticker_id: int) -> Optional[Sticker]:
+        await self.cur.execute(f'SELECT * FROM `stickers` WHERE `id`={sticker_id};')
+        if r := await self.cur.fetchone():
+            return Sticker.from_result(self.cur.description, r)
+
+    async def putSticker(self, sticker: Sticker) -> None:
+        q = json_to_sql(sticker.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `stickers` ({fields}) VALUES ({values});')
+
+    async def updateStickerDiff(self, before: Sticker, after: Sticker) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `stickers` SET {diff} WHERE `id`={before.id};')
+
+    async def deleteSticker(self, sticker: Sticker) -> None:
+        await self.cur.execute(f'DELETE FROM `stickers` WHERE `id`={sticker.id} LIMIT 1;')
+
+    async def deleteUser(self, user: User) -> None:
+        await self.cur.execute(f'UPDATE `users` SET `deleted`=true, `email`="", `password`="", `key`="" '
+                               f'WHERE `id`={user.id};')
+        await self.cur.execute(f'UPDATE `userdata` SET `discriminator`=0, `username`="Deleted User", `avatar`=NULL, '
+                               f'`avatar_decoration`=NULL, `public_flags`=0 WHERE `uid`={user.id};')
+
+        await self.cur.execute(f'DELETE FROM `sessions` WHERE `uid`={user.id};')
+        await self.cur.execute(f'DELETE FROM `relationships` WHERE `u1`={user.id} OR `u2`={user.id};')
+        await self.cur.execute(f'DELETE FROM `mfa_codes` WHERE `uid`={user.id};')
+        await self.cur.execute(f'DELETE FROM `guild_members_roles` WHERE `user_id`={user.id};')
+        await self.cur.execute(f'DELETE FROM `guild_members` WHERE `user_id`={user.id};')
+        await self.cur.execute(f'DELETE FROM `settings` WHERE `uid`={user.id};')
+        await self.cur.execute(f'DELETE FROM `frecency_settings` WHERE `uid`={user.id};')
+        await self.cur.execute(f'DELETE FROM `invites` WHERE `inviter`={user.id};')
+        await self.cur.execute(f'DELETE FROM `read_states` WHERE `uid`={user.id};')
+
+    async def getUserOwnedGuilds(self, user: User) -> List[Guild]:
+        guilds = []
+        await self.cur.execute(f'SELECT * FROM `guilds` WHERE `owner_id`={user.id};')
+        for r in await self.cur.fetchall():
+            guilds.append(Guild.from_result(self.cur.description, r))
+        return guilds
+
+    async def getUserOwnedGroups(self, user: User) -> List[Channel]:
+        groups = []
+        await self.cur.execute(f'SELECT * FROM `channels` WHERE `owner_id`={user.id} AND `type`={ChannelType.GROUP_DM};')
+        for r in await self.cur.fetchall():
+            groups.append(Channel.from_result(self.cur.description, r))
+        return groups
+
+    async def getScheduledEventUserCount(self, event: ScheduledEvent) -> int:
+        await self.cur.execute(f'SELECT COUNT(*) as c FROM `guild_events_subscribers` WHERE `event_id`={event.id};')
+        if r := await self.cur.fetchone():
+            return r[0]
+        return 0
+
+    async def putScheduledEvent(self, event: ScheduledEvent) -> None:
+        q = json_to_sql(event.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `guild_events` ({fields}) VALUES ({values});')
+
+    async def _setCanceledOrCompletedEvents(self, event_id: Optional[int]=None, guild: Optional[_Guild]=None) -> None:
+        def _updateStatus(ev: ScheduledEvent) -> ScheduledEvent:
+            new_event = ev.copy()
+            if ev.status == ScheduledEventStatus.SCHEDULED:
+                if not ev.end and ev.start < datetime.utcnow().timestamp() + 1800:
+                    new_event.status = ScheduledEventStatus.CANCELED
+                elif ev.end and ev.end < datetime.utcnow().timestamp():
+                    new_event.status = ScheduledEventStatus.CANCELED
+            elif ev.status == ScheduledEventStatus.ACTIVE:
+                if ev.end and ev.end < datetime.utcnow().timestamp():
+                    new_event.status = ScheduledEventStatus.COMPLETED
+            return new_event
+        if event_id is None and guild is None:
+            return
+        if event_id:
+            event = await self.getScheduledEvent(event_id, _check_status=False)
+            await self.updateScheduledEventDiff(event, _updateStatus(event))
+        if guild:
+            for event in await self.getScheduledEvents(guild, _check_status=False):
+                await self.updateScheduledEventDiff(event, _updateStatus(event))
+
+    async def getScheduledEvent(self, event_id: int, *, _check_status=True) -> Optional[ScheduledEvent]:
+        if _check_status:
+            await self._setCanceledOrCompletedEvents(event_id=event_id)
+        await self.cur.execute(f'SELECT * FROM `guild_events` WHERE `id`={event_id};')
+        if r := await self.cur.fetchone():
+            return ScheduledEvent.from_result(self.cur.description, r)
+
+    async def getScheduledEvents(self, guild: _Guild, *, _check_status=True) -> List[ScheduledEvent]:
+        if _check_status:
+            await self._setCanceledOrCompletedEvents(guild=guild)
+        events = []
+        await self.cur.execute(f'SELECT * FROM `guild_events` WHERE `guild_id`={guild.id} AND `status` NOT IN (3, 4);')
+        for r in await self.cur.fetchall():
+            events.append(ScheduledEvent.from_result(self.cur.description, r))
+        return events
+
+    async def updateScheduledEventDiff(self, before: ScheduledEvent, after: ScheduledEvent) -> None:
+        diff = before.get_diff(after)
+        diff = json_to_sql(diff)
+        if diff:
+            await self.cur.execute(f'UPDATE `guild_events` SET {diff} WHERE `id`={before.id};')
+
+    async def subscribeToScheduledEvent(self, user: User, event: ScheduledEvent) -> None:
+        await self.cur.execute(f'SELECT * FROM `guild_events_subscribers` WHERE `event_id`={event.id} '
+                               f'AND `user_id`={user.id};')
+        if not await self.cur.fetchone():
+            await self.cur.execute(f'INSERT INTO `guild_events_subscribers` VALUES ({event.id}, {user.id}, {event.guild_id});')
+
+    async def unsubscribeFromScheduledEvent(self, user: User, event: ScheduledEvent) -> None:
+        await self.cur.execute(f'DELETE FROM `guild_events_subscribers` WHERE `event_id`={event.id} AND `user_id`={user.id};')
+
+    async def getSubscribedScheduledEventIds(self, user: User, guild_id: int) -> list[int]:
+        await self.cur.execute(f'SELECT `event_id` FROM `guild_events_subscribers` WHERE `user_id`={user.id} AND '
+                               f'`guild_id`={guild_id};')
+        return [r[0] for r in await self.cur.fetchall()]
+
+    async def deleteScheduledEvent(self, event: ScheduledEvent) -> None:
+        await self.cur.execute(f'DELETE FROM `guild_events` WHERE `id`={event.id};')

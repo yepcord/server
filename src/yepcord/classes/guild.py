@@ -8,7 +8,7 @@ from schema import Or, And, Use
 
 from .user import UserId, User, GuildMember
 from ..ctx import getCore, Ctx
-from ..enums import ChannelType, AuditLogEntryType
+from ..enums import ChannelType, AuditLogEntryType, ScheduledEventEntityType
 from ..model import model, Model, field
 from ..snowflake import Snowflake
 from ..utils import NoneType
@@ -77,7 +77,9 @@ class Guild(_Guild, Model):
             "emojis": [
                 await emoji.json for emoji in await getCore().getEmojis(self.id)  # Get json for every emoji in guild
             ],
-            "stickers": [], # TODO
+            "stickers": [
+                await sticker.json for sticker in await getCore().getGuildStickers(self)  # Get json for every sticker in guild
+            ],
             "banner": self.banner,
             "owner_id": str(self.owner_id),
             "application_id": None,  # TODO
@@ -110,11 +112,11 @@ class Guild(_Guild, Model):
             "nsfw": bool(self.nsfw),
             "nsfw_level": self.nsfw_level,
             "threads": [],  # TODO
-            "guild_scheduled_events": [],  # TODO
+            "guild_scheduled_events": [await event.json for event in await getCore().getScheduledEvents(self)],  # TODO
             "stage_instances": [],  # TODO
             "application_command_counts": {},  # TODO
             "large": False,  # TODO
-            "lazy": True,  # TODO
+            "lazy": True,
             "member_count": await getCore().getGuildMemberCount(self),
         }
         if uid := Ctx.get("user_id"):
@@ -131,9 +133,9 @@ class Guild(_Guild, Model):
                 "banner": None, "region": "deprecated", "afk_channel_id": None,
                 "afk_timeout": 300, "verification_level": 0, "default_message_notifications": 0, "mfa_level": 0,
                 "explicit_content_filter": 0, "max_members": 100, "vanity_url_code": None, "system_channel_flags": 0,
-                "preferred_locale": "en-US", "premium_progress_bar_enabled": False, "nsfw": False, "nsfw_level": 0} # TODO: remove or replace with more convenient solution
+                "preferred_locale": "en-US", "premium_progress_bar_enabled": False, "nsfw": False, "nsfw_level": 0}
 
-    def fill_defaults(self):  # TODO: remove or replace with more convenient solution
+    def fill_defaults(self):
         for k, v in self.DEFAULTS.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -186,9 +188,9 @@ class Emoji(Model):
     animated: Optional[bool] = False
     available: Optional[bool] = True
 
-    DEFAULTS = {"roles": [], "require_colons": True, "managed": False, "animated": False, "available": True} # TODO: remove or replace with more convenient solution
+    DEFAULTS = {"roles": [], "require_colons": True, "managed": False, "animated": False, "available": True}
 
-    def fill_defaults(self):  # TODO: remove or replace with more convenient solution
+    def fill_defaults(self):
         for k, v in self.DEFAULTS.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -475,6 +477,7 @@ class AuditLogEntry(Model):
         return  AuditLogEntry(Snowflake.makeId(), member.guild_id, user.id, member.user_id, AuditLogEntryType.MEMBER_UPDATE,
                           changes=cls.get_changes(member, new_member))
 
+
 @model
 @dataclass
 class GuildTemplate(Model):
@@ -596,6 +599,7 @@ class GuildTemplate(Model):
     def code(self) -> str:
         return b64encode(self.id.to_bytes(int_length(self.id), 'big'))
 
+
 @model
 @dataclass
 class Webhook(Model):
@@ -624,4 +628,86 @@ class Webhook(Model):
             "user": await userdata.json
         }
 
+        return data
+
+
+@model
+@dataclass
+class Sticker(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    user_id: int = field()
+    name: str = field()
+    tags: str = field()
+    type: int = field()
+    format: int = field()
+    description: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
+
+    @property
+    async def json(self) -> dict:
+        data = {
+            "id": str(self.id),
+            "name": self.name,
+            "description": self.description,
+            "tags": self.tags,
+            "type": self.type,
+            "format_type": self.format,
+            "guild_id": str(self.guild_id),
+            "available": True,
+            "asset": ""
+        }
+        if Ctx.get("with_user", True):
+            userdata = await getCore().getUserData(UserId(self.user_id))
+            data["user"] = await userdata.json
+        return data
+
+
+@model
+@dataclass
+class ScheduledEvent(Model):
+    id: int = field(id_field=True)
+    guild_id: int = field()
+    creator_id: int = field()
+    name: str = field()
+    start: int = field()
+    privacy_level: int = field()
+    status: int = field()
+    entity_type: int = field()
+    end: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
+    description: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
+    channel_id: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
+    entity_id: Optional[int] = field(default=None, nullable=True, validation=Or(int, NoneType))
+    entity_metadata: Optional[dict] = field(default_factory=dict)
+    image: Optional[str] = field(default=None, nullable=True, validation=Or(str, NoneType))
+
+    @property
+    async def json(self) -> dict:
+        channel_id = str(self.channel_id) if self.channel_id is not None else None
+        entity_id = str(self.entity_id) if self.entity_id is not None else None
+        start_time = datetime.utcfromtimestamp(self.start).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        end_time = None
+        if self.end:
+            end_time = datetime.utcfromtimestamp(self.end).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        data = {
+            "id": str(self.id),
+            "guild_id": str(self.guild_id),
+            "channel_id": str(channel_id),
+            "creator_id": str(self.creator_id),
+            "name": self.name,
+            "description": self.description,
+            "scheduled_start_time": start_time,
+            "scheduled_end_time": end_time,
+            "privacy_level": self.privacy_level,
+            "status": self.status,
+            "entity_type": self.entity_type,
+            "entity_id": entity_id,
+            "image": self.image
+        }
+        if self.entity_type == ScheduledEventEntityType.EXTERNAL:
+            data["entity_metadata"] = self.entity_metadata
+        if Ctx.get("with_user"):
+            creator = await getCore().getUserData(UserId(self.creator_id))
+            data["creator"] = await creator.json
+        if Ctx.get("with_user_count"):
+            data["user_count"] = await getCore().getScheduledEventUserCount(self)
         return data

@@ -8,7 +8,7 @@ from ..utils import usingDB, getUser, multipleDecorators, allowWithoutUser, proc
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User
 from ...yepcord.ctx import getCore, getCDNStorage
-from ...yepcord.enums import GuildPermissions
+from ...yepcord.enums import GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import c_json, validImage, getImage
@@ -83,6 +83,8 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
         raise InvalidDataErr(403, Errors.make(50013))
+    if not (channel := await getCore().getChannel(webhook.channel_id)):
+        raise InvalidDataErr(404, Errors.make(10003))
 
     message_id = Snowflake.makeId()
     data = await request.get_json()
@@ -95,9 +97,15 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
         "discriminator": "0000"
     }
     data = WebhookMessageCreate(**data)
+
+    message_type = MessageType.DEFAULT
+    if data.message_reference:
+        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
+    if data.message_reference:
+        message_type = MessageType.REPLY
+
     message = Message(id=message_id, channel_id=webhook.channel_id, author=0, guild_id=webhook.guild_id,
-                      webhook_author=author, **data.to_json())
-    await message.check()
+                      webhook_author=author, type=message_type, **data.to_json())
     message = await getCore().sendMessage(message)
 
     if query_args.wait:

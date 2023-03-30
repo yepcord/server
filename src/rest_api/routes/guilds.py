@@ -1,22 +1,24 @@
+from io import BytesIO
 from time import time
 
-from quart import Blueprint, request
+from async_timeout import timeout
+from quart import Blueprint, request, current_app
 from quart_schema import validate_request, validate_querystring
 
 from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUpdate, EmojiCreate, EmojiUpdate, \
     ChannelsPositionsChangeList, ChannelCreate, BanMember, RoleCreate, RoleUpdate, \
     RolesPositionsChangeList, AddRoleMembers, MemberUpdate, SetVanityUrl, GuildCreateFromTemplate, GuildDelete, \
-    GetAuditLogsQuery
+    GetAuditLogsQuery, CreateSticker, UpdateSticker, CreateEvent, GetScheduledEvent, UpdateScheduledEvent
 from ..utils import usingDB, getUser, multipleDecorators, getGuildWM, getGuildWoM, getGuildTemplate, getRole
-from ...yepcord.classes.channel import Channel
-from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role
+from ...yepcord.classes.channel import Channel, PermissionOverwrite
+from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role, Sticker, ScheduledEvent
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User, GuildMember, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx
-from ...yepcord.enums import GuildPermissions, AuditLogEntryType
+from ...yepcord.enums import GuildPermissions, AuditLogEntryType, StickerType, StickerFormat, ScheduledEventStatus
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, getImage, b64decode
+from ...yepcord.utils import c_json, getImage, b64decode, validImage, imageType
 
 # Base path is /api/vX/guilds
 guilds = Blueprint('guilds', __name__)
@@ -211,6 +213,10 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
     channel = Channel(Snowflake.makeId(), guild_id=guild.id, **data.to_json(data.type))
     channel = await getCore().createGuildChannel(channel)
+    for overwrite in data.permission_overwrites:
+        overwrite = PermissionOverwrite(**overwrite.dict(), channel_id=channel.id, target_id=overwrite.id)
+        await getCore().putPermissionOverwrite(overwrite)
+
     await getCore().sendChannelCreateEvent(channel)
 
     entry = AuditLogEntry.channel_create(channel, user)
@@ -583,6 +589,7 @@ async def create_from_template(data: GuildCreateFromTemplate, user: User, templa
     Ctx["with_channels"] = True
     return c_json(await guild.json)
 
+
 @guilds.post("/<int:guild>/delete")
 @multipleDecorators(validate_request(GuildDelete), usingDB, getUser, getGuildWoM)
 async def delete_guild(data: GuildDelete, user: User, guild: Guild):
@@ -608,3 +615,195 @@ async def get_guild_webhooks(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
     webhooks = [await webhook.json for webhook in await getCore().getWebhooks(guild)]
     return c_json(webhooks)
+
+
+@guilds.get("/<int:guild>/stickers")
+@multipleDecorators(usingDB, getUser, getGuildWoM)
+async def get_guild_stickers(user: User, guild: Guild):
+    stickers = await getCore().getGuildStickers(guild)
+    stickers = [await sticker.json for sticker in stickers]
+    return c_json(stickers)
+
+
+@guilds.post("/<int:guild>/stickers")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    if request.content_length > 1024 * 512:
+        raise InvalidDataErr(400, Errors.make(50006))
+    async with timeout(current_app.config["BODY_TIMEOUT"]):
+        if not (file := (await request.files).get("file")):
+            raise InvalidDataErr(400, Errors.make(50046))
+        data = CreateSticker(**dict(await request.form))
+        sticker_b = BytesIO(getattr(file, "getvalue", file.read)())
+        if sticker_b.getbuffer().nbytes > 1024 * 512 or not (img := getImage(sticker_b)) or not validImage(img):
+            raise InvalidDataErr(400, Errors.make(50006))
+        sticker_type = getattr(StickerFormat, str(imageType(img)).upper(), StickerFormat.PNG)
+        sticker = Sticker(Snowflake.makeId(), guild.id, user.id, data.name, data.tags, StickerType.GUILD, sticker_type,
+                          data.description)
+        if not await getCDNStorage().setStickerFromBytesIO(sticker.id, img):
+            raise InvalidDataErr(400, Errors.make(50006))
+        await getCore().putSticker(sticker)
+    await getCore().sendGuildStickerUpdateEvent(guild)
+
+    return c_json(await sticker.json)
+
+
+@guilds.patch("/<int:guild>/stickers/<int:sticker>")
+@multipleDecorators(validate_request(UpdateSticker), usingDB, getUser, getGuildWM)
+async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, member: GuildMember, sticker: int):
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    if not (sticker := await getCore().getSticker(sticker)):
+        raise InvalidDataErr(404, Errors.make(10060))
+    if sticker.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10060))
+    new_sticker = sticker.copy(**data.dict(exclude_defaults=True))
+    await getCore().updateStickerDiff(sticker, new_sticker)
+    await getCore().sendGuildStickerUpdateEvent(guild)
+    return c_json(await new_sticker.json)
+
+
+@guilds.delete("/<int:guild>/stickers/<int:sticker>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def delete_guild_sticker(user: User, guild: Guild, member: GuildMember, sticker: int):
+    await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
+    if not (sticker := await getCore().getSticker(sticker)):
+        raise InvalidDataErr(404, Errors.make(10060))
+    if sticker.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10060))
+
+    await getCore().deleteSticker(sticker)
+    await getCore().sendGuildStickerUpdateEvent(guild)
+
+    return "", 204
+
+
+@guilds.post("/<int:guild>/scheduled-events")
+@multipleDecorators(validate_request(CreateEvent), usingDB, getUser, getGuildWM)
+async def create_scheduled_event(data: CreateEvent, user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_EVENTS)
+    event_id = Snowflake.makeId()
+    if (img := data.image) is not None:
+        img = getImage(img)
+        if imageType(img) not in ("png", "jpg", "jpeg"):
+            raise InvalidDataErr(400,
+                                 Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
+        if h := await getCDNStorage().setGuildEventFromBytesIO(event_id, img):
+            img = h
+        data.image = img
+
+    event = ScheduledEvent(event_id, guild.id, user.id, status=1, **data.dict())
+    await getCore().putScheduledEvent(event)
+    await getCore().sendScheduledEventCreateEvent(event)
+
+    await getCore().subscribeToScheduledEvent(user, event)
+    await getCore().sendScheduledEventUserAddEvent(user, event)
+
+    return c_json(await event.json)
+
+
+@guilds.get("/<int:guild>/scheduled-events/<int:event_id>")
+@multipleDecorators(validate_querystring(GetScheduledEvent), usingDB, getUser, getGuildWoM)
+async def get_scheduled_event(query_args: GetScheduledEvent, user: User, guild: Guild, event_id: int):
+    event = await getCore().getScheduledEvent(event_id)
+    if not event or event.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10070))
+
+    if query_args.with_user_count:
+        Ctx["with_user_count"] = True
+
+    return c_json(await event.json)
+
+
+@guilds.get("/<int:guild>/scheduled-events")
+@multipleDecorators(validate_querystring(GetScheduledEvent), usingDB, getUser, getGuildWoM)
+async def get_scheduled_events(query_args: GetScheduledEvent, user: User, guild: Guild):
+    events = await getCore().getScheduledEvents(guild)
+
+    if query_args.with_user_count:
+        Ctx["with_user_count"] = True
+
+    events = [await event.json for event in events]
+    return c_json(events)
+
+
+@guilds.patch("/<int:guild>/scheduled-events/<int:event_id>")
+@multipleDecorators(validate_request(UpdateScheduledEvent), usingDB, getUser, getGuildWM)
+async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: Guild, member: GuildMember, event_id: int):
+    await member.checkPermission(GuildPermissions.MANAGE_EVENTS)
+    event = await getCore().getScheduledEvent(event_id)
+    if not event or event.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10070))
+
+    if (img := data.image) or img is None:
+        if img is not None:
+            img = getImage(img)
+            if imageType(img) not in ("png", "jpg", "jpeg"):
+                raise InvalidDataErr(400,
+                                     Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
+            if h := await getCDNStorage().setGuildEventFromBytesIO(event_id, img):
+                img = h
+        data.image = img
+
+    new_event: ScheduledEvent = event.copy(**data.dict(exclude_defaults=True))
+
+    valid_transition = True
+    if event.status == ScheduledEventStatus.SCHEDULED:
+        if new_event.status not in (ScheduledEventStatus.SCHEDULED, ScheduledEventStatus.ACTIVE, ScheduledEventStatus.CANCELED):
+            valid_transition = False
+    elif (event.status == ScheduledEventStatus.ACTIVE and new_event.status != ScheduledEventStatus.COMPLETED) \
+            and event.status != new_event.status:
+        valid_transition = False
+
+    if not valid_transition:
+        raise InvalidDataErr(400,
+                             Errors.make(50035, {"status": {"code": "TRANSITION_INVALID",
+                                                            "message": "Invalid Guild Scheduled Event Status Transition"}}))
+
+    await getCore().updateScheduledEventDiff(event, new_event)
+    await getCore().sendScheduledEventUpdateEvent(new_event)
+
+    return c_json(await new_event.json)
+
+
+@guilds.put("/<int:guild>/scheduled-events/<int:event_id>/users/@me")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def subscribe_to_scheduled_event(user: User, guild: Guild, member: GuildMember, event_id: int):
+    event = await getCore().getScheduledEvent(event_id)
+    if not event or event.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10070))
+
+    await getCore().subscribeToScheduledEvent(user, event)
+    await getCore().sendScheduledEventUserAddEvent(user, event)
+
+    return c_json({
+        "guild_scheduled_event_id": str(event.id),
+        "user_id": str(user.id) # current user or creator??
+    })
+
+
+@guilds.delete("/<int:guild>/scheduled-events/<int:event_id>/users/@me")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def unsubscribe_from_scheduled_event(user: User, guild: Guild, member: GuildMember, event_id: int):
+    event = await getCore().getScheduledEvent(event_id)
+    if not event or event.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10070))
+
+    await getCore().unsubscribeFromScheduledEvent(user, event)
+    await getCore().sendScheduledEventUserRemoveEvent(user, event)
+
+    return "", 204
+
+
+@guilds.delete("/<int:guild>/scheduled-events/<int:event_id>")
+@multipleDecorators(usingDB, getUser, getGuildWM)
+async def delete_scheduled_event(user: User, guild: Guild, member: GuildMember, event_id: int):
+    await member.checkPermission(GuildPermissions.MANAGE_EVENTS)
+    event = await getCore().getScheduledEvent(event_id)
+    if not event or event.guild_id != guild.id:
+        raise InvalidDataErr(404, Errors.make(10070))
+
+    await getCore().deleteScheduledEvent(event)
+    await getCore().sendScheduledEventDeleteEvent(event)
+
+    return "", 204

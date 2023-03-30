@@ -15,7 +15,7 @@ try:
     from aioftp import Client, StatusCodeError
 
     _SUPPORT_FTP = True
-except ImportError:
+except ImportError: # pragma: no cover
     Client = object
     StatusCodeError = None
     _SUPPORT_FTP = False
@@ -25,7 +25,7 @@ try:
     from botocore.exceptions import ClientError
 
     _SUPPORT_S3 = True
-except ImportError:
+except ImportError: # pragma: no cover
     Session = object
     ClientError = None
     _SUPPORT_S3 = False
@@ -87,11 +87,10 @@ def imageFrames(img) -> int:
     return getattr(img, "n_frames", 1)
 
 class _Storage:
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
-        bytes]:
+    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]: # pragma: no cover
         raise NotImplementedError
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str: # pragma: no cover
         raise NotImplementedError
 
     async def getAvatar(self, uid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
@@ -114,7 +113,14 @@ class _Storage:
         def_size = 256 if anim else 1024
         return await self._getImage(f"guild/{gid}/avatar", uid, avatar_hash, size, fmt, def_size, lambda s: s)
 
-    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
+    async def getSticker(self, sticker_id: int, size: int, fmt: str, animated: bool) -> Optional[bytes]:
+        sticker_hash = "a_sticker" if animated else "sticker"
+        return await self._getImage("sticker", sticker_id, sticker_hash, size, fmt, 320, lambda s: s)
+
+    async def getGuildEvent(self, event_id: int, event_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        return await self._getImage("guild_event", event_id, event_hash, size, fmt, 600, lambda s: int(9 * s / 16))
+
+    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]: # pragma: no cover
         raise NotImplementedError
 
     async def getRoleIcon(self, rid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
@@ -162,7 +168,13 @@ class _Storage:
         size = 256 if a else 1024
         return await self._setImage(f"guild/{gid}/avatar", uid, size, lambda s: s, image)
 
-    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
+    async def setStickerFromBytesIO(self, sticker_id: int, image: BytesIO) -> str:
+        return await self._setImage(f"sticker", sticker_id, 320, lambda s: s, image, def_hash="sticker")
+
+    async def setGuildEventFromBytesIO(self, event_id: int, image: BytesIO) -> str:
+        return await self._setImage(f"guild_event", event_id, 600, lambda s: int(9 * s / 16), image)
+
+    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict: # pragma: no cover
         raise NotImplementedError
 
     async def setRoleIconFromBytesIO(self, rid: int, image: BytesIO) -> str:
@@ -170,10 +182,10 @@ class _Storage:
         size = 256 if a else 1024
         return await self._setImage("role_icon", rid, size, lambda s: s, image)
 
-    async def uploadAttachment(self, data, attachment):
+    async def uploadAttachment(self, data, attachment): # pragma: no cover
         raise NotImplementedError
 
-    async def getAttachment(self, channel_id, attachment_id, name):
+    async def getAttachment(self, channel_id, attachment_id, name): # pragma: no cover
         raise NotImplementedError
 
 class FileStorage(_Storage):
@@ -200,10 +212,13 @@ class FileStorage(_Storage):
                         await f.write(data)
                     return data
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
-        hash = md5()
-        hash.update(image.getvalue())
-        hash = hash.hexdigest()
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
+        if def_hash is not None:
+            hash = def_hash
+        else:
+            hash = md5()
+            hash.update(image.getvalue())
+            hash = hash.hexdigest()
         image = Image.open(image)
         anim = imageFrames(image) > 1
         form = "gif" if anim else "png"
@@ -260,7 +275,7 @@ class FileStorage(_Storage):
 
 class S3Storage(_Storage):
     def __init__(self, endpoint: str, key_id: str, access_key: str, bucket: str):
-        if not _SUPPORT_S3:
+        if not _SUPPORT_S3: # pragma: no cover
             raise RuntimeError("S3 module not found! To use s3 storage type, install dependencies from requirements-s3.txt")
         self.endpoint = endpoint
         self.key_id = key_id
@@ -285,7 +300,7 @@ class S3Storage(_Storage):
                 try:
                     await s3.download_fileobj(self.bucket, p, f)
                 except ClientError as ce:
-                    if "(404)" not in str(ce):
+                    if "(404)" not in str(ce): # pragma: no cover
                         raise
                     continue
                 else:
@@ -298,11 +313,14 @@ class S3Storage(_Storage):
                         await s3.upload_fileobj(BytesIO(data), self.bucket, paths[0])
                         return data
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
         async with self._sess.client("s3", **self._args) as s3:
-            hash = md5()
-            hash.update(image.getvalue())
-            hash = hash.hexdigest()
+            if def_hash is not None:
+                hash = def_hash
+            else:
+                hash = md5()
+                hash.update(image.getvalue())
+                hash = hash.hexdigest()
             image = Image.open(image)
             anim = imageFrames(image) > 1
             form = "gif" if anim else "png"
@@ -324,14 +342,14 @@ class S3Storage(_Storage):
                 try:
                     await s3.download_fileobj(self.bucket, p, f)
                 except ClientError as ce:
-                    if "(404)" not in str(ce):
+                    if "(404)" not in str(ce): # pragma: no cover
                         raise
                     continue
                 else:
                     if i == 0:
                         return f.getvalue()
                     else:
-                        image = Image.open(p)
+                        image = Image.open(f)
                         coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
                         data = await coro
                         await s3.upload_fileobj(BytesIO(data), self.bucket, paths[0])
@@ -350,6 +368,7 @@ class S3Storage(_Storage):
     async def uploadAttachment(self, data, attachment):
         async with self._sess.client("s3", **self._args) as s3:
             await s3.upload_fileobj(BytesIO(data), self.bucket, f"attachments/{attachment.channel_id}/{attachment.id}/{attachment.filename}")
+            return len(data)
 
     async def getAttachment(self, channel_id, attachment_id, name):
         async with self._sess.client("s3", **self._args) as s3:
@@ -364,7 +383,7 @@ class S3Storage(_Storage):
 
 class FTPStorage(_Storage):
     def __init__(self, host: str, user: str, password: str, port: int=21):
-        if not _SUPPORT_FTP:
+        if not _SUPPORT_FTP: # pragma: no cover
             raise RuntimeError("Ftp module not found! To use ftp storage type, install dependencies from requirements-ftp.txt")
         self.host = host
         self.user = user
@@ -386,7 +405,7 @@ class FTPStorage(_Storage):
                 try:
                     f.write(await ftp.s_download(p))
                 except StatusCodeError as sce:
-                    if "550" not in sce.received_codes:
+                    if "550" not in sce.received_codes: # pragma: no cover
                         raise
                     continue
                 else:
@@ -399,11 +418,14 @@ class FTPStorage(_Storage):
                         await ftp.s_upload(paths[0], data)
                         return data
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO) -> str:
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
         async with self._getClient() as ftp:
-            hash = md5()
-            hash.update(image.getvalue())
-            hash = hash.hexdigest()
+            if def_hash is not None:
+                hash = def_hash
+            else:
+                hash = md5()
+                hash.update(image.getvalue())
+                hash = hash.hexdigest()
             image = Image.open(image)
             anim = imageFrames(image) > 1
             form = "gif" if anim else "png"
@@ -425,14 +447,14 @@ class FTPStorage(_Storage):
                 try:
                     f.write(await ftp.s_download(p))
                 except StatusCodeError as sce:
-                    if "550" not in sce.received_codes:
+                    if "550" not in sce.received_codes: # pragma: no cover
                         raise
                     continue
                 else:
                     if i == 0:
                         return f.getvalue()
                     else:
-                        image = Image.open(p)
+                        image = Image.open(f)
                         coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
                         data = await coro
                         await ftp.s_upload(paths[0], data)
@@ -451,27 +473,28 @@ class FTPStorage(_Storage):
     async def uploadAttachment(self, data, attachment):
         async with self._getClient() as ftp:
             await ftp.s_upload(f"attachments/{attachment.channel_id}/{attachment.id}/{attachment.filename}", data)
+            return len(data)
 
     async def getAttachment(self, channel_id, attachment_id, name):
         async with self._getClient() as ftp:
             try:
                 return await ftp.s_download(f"attachments/{channel_id}/{attachment_id}/{name}")
-            except ClientError as ce:
-                if "(404)" not in str(ce):
+            except StatusCodeError as sce:
+                if "550" not in sce.received_codes:
                     raise
 
 def getStorage() -> _Storage:
     storage = Config.get("STORAGE_TYPE", "")
     if storage.lower() == "s3":
         a = (Config.get("S3_ENDPOINT"), Config.get("S3_KEYID"), Config.get("S3_ACCESSKEY"), Config.get("S3_BUCKET"))
-        if None in a:
+        if None in a: # pragma: no cover
             raise Exception(
                 "You must set 'S3_ENDPOINT', 'S3_KEYID', 'S3_ACCESSKEY', 'S3_BUCKET' variables for using s3 storage type."
             )
         return S3Storage(*a)
     elif storage.lower() == "ftp":
         a = (Config.get("FTP_HOST"), Config.get("FTP_USER"), Config.get("FTP_PASSWORD"), int(Config.get("FTP_PORT", 21)))
-        if None in a:
+        if None in a: # pragma: no cover
             raise Exception("You must set 'FTP_HOST', 'FTP_USER', 'FTP_PASSWORD' variables for using ftp storage type.")
         return FTPStorage(*a)
     return FileStorage(Config.get("STORAGE_PATH", "files/"))

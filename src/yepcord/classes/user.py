@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional, List, TYPE_CHECKING
 
+from google.protobuf.wrappers_pb2 import BoolValue, UInt32Value, StringValue, Int32Value
+
 if TYPE_CHECKING:
     from .guild import Role
     from .channel import Channel
@@ -16,12 +18,9 @@ from ..snowflake import Snowflake
 from ..ctx import getCore
 from ..enums import RelationshipType, GuildPermissions
 from ..model import model, field, Model
-from ..proto import AppearanceSettings, Locale, TimezoneOffset, Theme, LocalizationSettings, ShowCurrentGame, \
-    Status, StatusSettings, PrivacySettings, FriendSourceFlags, ViewImageDescriptions, MessageDisplayCompact, \
-    ExpressionSuggestionsEnabled, AnimateStickers, ConvertEmoticons, ViewNsfwGuilds, ExplicitContentFilter, \
-    RenderReactions, RenderEmbeds, InlineEmbedMedia, InlineAttachmentMedia, RenderSpoilers, UseThreadSidebar, \
-    UseRichChatInput, TextAndImagesSettings, StreamNotificationsEnabled, AfkTimeout, VoiceAndVideoSettings, \
-    UserContentSettings, Version, PreloadedUserSettings
+from ..proto import AppearanceSettings, Theme, LocalizationSettings, StatusSettings, PrivacySettings, \
+    TextAndImagesSettings, VoiceAndVideoSettings, UserContentSettings, Versions, PreloadedUserSettings, GuildFolders, \
+    GuildFolder
 from ..utils import b64encode, b64decode, proto_get, NoneType
 
 
@@ -113,8 +112,8 @@ class UserSettings(Model):
     activity_restricted_guild_ids: Optional[list] = field(validation=[Use(int)], db_name="j_activity_restricted_guild_ids", default=None)
     friend_source_flags: Optional[dict] = field(validation={"all": Use(bool), sOptional("mutual_friends"): Use(bool),
                                           sOptional("mutual_guilds"): Use(bool)}, db_name="j_friend_source_flags", default=None)
-    guild_positions: Optional[list] = field(validation=[Use(int)], db_name="j_guild_positions", default=None)
-    guild_folders: Optional[list] = field(validation=[Use(int)], db_name="j_guild_folders", default=None)
+    guild_positions: Optional[list] = field(db_name="j_guild_positions", default=None)
+    guild_folders: Optional[list] = field(db_name="j_guild_folders", default=None)
     restricted_guilds: Optional[list] = field(validation=[Use(int)], db_name="j_restricted_guilds", default=None)
     render_spoilers: Optional[str] = field(validation=And(Use(str), Use(str.upper), lambda s: s in ("ON_CLICK", "IF_MODERATOR", "ALWAYS")), default=None)
     dismissed_contents: Optional[str] = field(validation=And(Use(str), lambda s: len(s) % 2 == 0), excluded=True, default=None)
@@ -175,47 +174,46 @@ class UserSettings(Model):
 
     def to_proto(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
-            versions=Version(client_version=14, data_version=1), # TODO: get data version from database
+            versions=Versions(client_version=14, data_version=1), # TODO: get data version from database
             user_content=UserContentSettings(dismissed_contents=bytes.fromhex(self.dismissed_contents)),
             voice_and_video=VoiceAndVideoSettings(
-                afk_timeout=AfkTimeout(value=self.get("afk_timeout", 600)),
-                stream_notifications_enabled=StreamNotificationsEnabled(
-                    value=bool(self.get("stream_notifications_enabled", True))
-                )
+                afk_timeout=UInt32Value(value=self.get("afk_timeout", 600)),
+                stream_notifications_enabled=BoolValue(value=bool(self.get("stream_notifications_enabled", True)))
             ),
             text_and_images=TextAndImagesSettings(
-                use_rich_chat_input=UseRichChatInput(value=self.get("use_rich_chat_input", True)),
-                use_thread_sidebar=UseThreadSidebar(value=self.get("use_thread_sidebar", True)),
-                render_spoilers=RenderSpoilers(value=self.get("render_spoilers", "ON_CLICK")),
-                inline_attachment_media=InlineAttachmentMedia(value=self.get("inline_attachment_media", True)),
-                inline_embed_media=InlineEmbedMedia(value=self.get("inline_embed_media", True)),
-                render_embeds=RenderEmbeds(value=self.get("render_embeds", True)),
-                render_reactions=RenderReactions(value=self.get("render_reactions", True)),
-                explicit_content_filter=ExplicitContentFilter(value=self.get("explicit_content_filter", True)),
-                view_nsfw_guilds=ViewNsfwGuilds(value=self.get("view_nsfw_guilds", False)),
-                convert_emoticons=ConvertEmoticons(value=self.get("convert_emoticons", True)),
-                animate_stickers=AnimateStickers(value=self.get("animate_stickers", 1)),
-                expression_suggestions_enabled=ExpressionSuggestionsEnabled(value=self.get("expression_suggestions_enabled", True)),
-                message_display_compact=MessageDisplayCompact(value=self.get("message_display_compact", False)),
-                view_image_descriptions=ViewImageDescriptions(value=self.get("view_image_descriptions", False))
+                use_rich_chat_input=BoolValue(value=self.get("use_rich_chat_input", True)),
+                use_thread_sidebar=BoolValue(value=self.get("use_thread_sidebar", True)),
+                render_spoilers=StringValue(value=self.get("render_spoilers", "ON_CLICK")),
+                inline_attachment_media=BoolValue(value=self.get("inline_attachment_media", True)),
+                inline_embed_media=BoolValue(value=self.get("inline_embed_media", True)),
+                render_embeds=BoolValue(value=self.get("render_embeds", True)),
+                render_reactions=BoolValue(value=self.get("render_reactions", True)),
+                explicit_content_filter=UInt32Value(value=self.get("explicit_content_filter", 1)),
+                view_nsfw_guilds=BoolValue(value=self.get("view_nsfw_guilds", False)),
+                convert_emoticons=BoolValue(value=self.get("convert_emoticons", True)),
+                animate_stickers=UInt32Value(value=self.get("animate_stickers", 1)),
+                expression_suggestions_enabled=BoolValue(value=self.get("expression_suggestions_enabled", True)),
+                message_display_compact=BoolValue(value=self.get("message_display_compact", False)),
+                view_image_descriptions=BoolValue(value=self.get("view_image_descriptions", False))
             ),
             privacy=PrivacySettings(
-                friend_source_flags=FriendSourceFlags(value=14),
+                friend_source_flags=UInt32Value(value=14),
                 default_guilds_restricted=self.get("default_guilds_restricted", False),
                 allow_accessibility_detection=self.get("allow_accessibility_detection", False)
             ),
             status=StatusSettings(
-                status=Status(status=self.get("status", "online")),
-                show_current_game=ShowCurrentGame(value=bool(self.get("show_current_game", True)))
+                status=StringValue(value=self.get("status", "online")),
+                show_current_game=BoolValue(value=bool(self.get("show_current_game", True)))
             ),
             localization=LocalizationSettings(
-                locale=Locale(locale_code=self.get("locale", "en_US")),
-                timezone_offset=TimezoneOffset(offset=self.get("timezone_offset", 0))
+                locale=StringValue(value=self.get("locale", "en_US")),
+                timezone_offset=Int32Value(value=self.get("timezone_offset", 0))
             ),
             appearance=AppearanceSettings(
                 theme=Theme.DARK if self.get("theme", "dark") == "dark" else Theme.LIGHT,
                 developer_mode=bool(self.get("developer_mode", False))
-            )
+            ),
+            guild_folders=GuildFolders(folders=[GuildFolder(**folder) for folder in self.guild_folders])
         )
         if d := self.get("friend_source_flags"):
             if d["all"]:
@@ -230,7 +228,7 @@ class UserSettings(Model):
                 proto.privacy.friend_source_flags.value = 0
         return proto
 
-    def from_proto(self, proto):
+    def from_proto(self, proto: PreloadedUserSettings):
         self.set(
             inline_attachment_media=proto_get(proto, "text_and_images.inline_attachment_media.value"),
             show_current_game=proto_get(proto, "status.show_current_game.value"),
@@ -244,7 +242,7 @@ class UserSettings(Model):
             view_nsfw_commands=proto_get(proto, "text_and_images.view_nsfw_commands.value"),
             detect_platform_accounts=proto_get(proto, "privacy.detect_platform_accounts.value"),
             explicit_content_filter=proto_get(proto, "text_and_images.explicit_content_filter.value"),
-            status=proto_get(proto, "status.status.status"),
+            status=proto_get(proto, "status.status.value"),
             default_guilds_restricted=proto_get(proto, "privacy.default_guilds_restricted"),
             theme="dark" if proto_get(proto, "appearance.theme", 1) == 1 else "light",
             allow_accessibility_detection=proto_get(proto, "privacy.allow_accessibility_detection"),
@@ -291,7 +289,15 @@ class UserSettings(Model):
         else:
             self.set(friend_source_flags={"all": False, "mutual_friends": False, "mutual_guilds": False})
         if (p := proto_get(proto, "user_content.dismissed_contents")) is not None:
-            self.set(dismissed_contents=p[:64].hex())
+            self.set(dismissed_contents=p[:128].hex())
+        if guild_folders := proto_get(proto, "guild_folders.folders"):
+            folders = []
+            for folder in guild_folders:
+                folders.append({"guild_ids": list(folder.guild_ids)})
+                if folder_id := proto_get(folder, "id.value"): folders[-1]["id"] = {"value": folder_id}
+                if folder_name := proto_get(folder, "name.value"): folders[-1]["name"] = {"value": folder_name}
+                if folder_color := proto_get(folder, "color.value"): folders[-1]["color"] = {"value": folder_color}
+            self.set(guild_folders=folders)
         self.__post_init__()
         return self
 
@@ -344,7 +350,7 @@ class UserData(Model):
             "nsfw_allowed": self.nsfw_allowed,
             "mfa_enabled": settings.mfa,
             "email": user.email,
-            "verified": True,
+            "verified": user.verified,
             "phone": self.phone
         }
 
@@ -369,6 +375,7 @@ class User(_User, Model):
     password: Optional[str] = None
     key: Optional[str] = None
     verified: Optional[bool] = None
+    deleted: Optional[bool] = None
 
     def __post_init__(self) -> None:
         super().__post_init__()

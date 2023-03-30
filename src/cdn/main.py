@@ -1,6 +1,7 @@
 from quart import Quart
-from quart_schema import validate_querystring
+from quart_schema import validate_querystring, QuartSchema
 
+from src.yepcord.enums import StickerFormat
 from .models import CdnImageSizeQuery
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
@@ -12,6 +13,7 @@ class YEPcord(Quart):
     pass # Maybe it will be needed in the future
 
 app = YEPcord("YEPcord-Cdn")
+QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
 
@@ -138,6 +140,37 @@ async def get_guild_avatar(query_args: CdnImageSizeQuery, guild_id: int, member_
     return avatar, 200, {"Content-Type": f"image/{format}"}
 
 
+@app.get("/stickers/<int:sticker_id>.<string:format>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_sticker(query_args: CdnImageSizeQuery, sticker_id: int, format: str):
+    if format not in ["webp", "png", "gif"]:
+        return b'', 400
+    if query_args.size > 320: query_args.size = 320
+    sticker = await core.getSticker(sticker_id)
+    if not sticker:
+        # If sticker deleted or never existed
+        for animated in (False, True):
+            sticker = await cdn.getSticker(sticker_id, query_args.size, format, animated)
+            if sticker: # If deleted from database, but file found
+                break
+    else:
+        sticker = await cdn.getSticker(sticker_id, query_args.size, format,
+                                       sticker.format in (StickerFormat.APNG, StickerFormat.GIF))
+    if not sticker:
+        return b'', 404
+    return sticker, 200, {"Content-Type": f"image/{format}"}
+
+
+@app.get("/guild-events/<int:event_id>/<string:file_hash>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, file_hash: str):
+    if query_args.size > 600: query_args.size = 600
+    for form in ("png", "jpg"):
+        if event_image := await cdn.getGuildEvent(event_id, file_hash, query_args.size, form):
+            return event_image, 200, {"Content-Type": f"image/{form}"}
+    return b'', 404
+
+
 # Attachments
 
 
@@ -153,6 +186,6 @@ async def get_attachment(channel_id: int, attachment_id: int, name: str):
     return attachment, 200, headers
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8003, reload=True, use_colors=False)

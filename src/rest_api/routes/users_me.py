@@ -1,14 +1,15 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from random import choice
 
-from quart import Blueprint, request
-from quart_schema import validate_request
+from quart import Blueprint
+from quart_schema import validate_request, validate_querystring
 
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, SettingsProtoUpdate, \
-    RelationshipRequest, PutNote, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, DmChannelCreate
+    RelationshipRequest, PutNote, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, DmChannelCreate, \
+    DeleteRequest, GetScheduledEventsQuery
 from ..utils import usingDB, getUser, multipleDecorators, getSession, getGuildWM
 from ...gateway.events import RelationshipAddEvent
-from ...yepcord.classes.guild import Guild
+from ...yepcord.classes.guild import Guild, GuildId
 from ...yepcord.classes.user import User, UserSettings, UserNote, Session, GuildMember
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
@@ -143,13 +144,11 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
         proto.ParseFromString(_b64decode(data.settings.encode("utf8")))
     except ValueError:
         raise InvalidDataErr(400, Errors.make(50104))
-    settings_old = await user.settings
-    settings = UserSettings(user.id)
-    settings.from_proto(proto)
-    await getCore().setSettingsDiff(settings_old, settings)
-    user._uSettings = None
     settings = await user.settings
-    proto = _b64encode(settings.to_proto().SerializeToString()).decode("utf8")
+    new_settings = settings.copy()
+    new_settings.from_proto(proto)
+    await getCore().setSettingsDiff(settings, new_settings)
+    proto = _b64encode(new_settings.to_proto().SerializeToString()).decode("utf8")
     await getCore().sendSettingsProtoUpdateEvent(user.id, proto, 1)
     return c_json({"settings": proto})
 
@@ -212,6 +211,8 @@ async def get_relationships(user: User):
 @users_me.get("/notes/<int:target_uid>")
 @multipleDecorators(usingDB, getUser)
 async def get_notes(user: User, target_uid: int):
+    if not await getCore().getUser(target_uid, False):
+        raise InvalidDataErr(404, Errors.make(10013))
     if not (note := await getCore().getUserNote(user.id, target_uid)):
         raise InvalidDataErr(404, Errors.make(10013))
     return c_json(note.toJSON())
@@ -220,6 +221,8 @@ async def get_notes(user: User, target_uid: int):
 @users_me.put("/notes/<int:target_uid>")
 @multipleDecorators(validate_request(PutNote), usingDB, getUser)
 async def set_notes(data: PutNote, user: User, target_uid: int):
+    if not await getCore().getUser(target_uid, False):
+        raise InvalidDataErr(404, Errors.make(10013))
     if data.note:
         await getCore().putUserNote(UserNote(user.id, target_uid, data.note))
     return "", 204
@@ -338,6 +341,9 @@ async def get_dm_channels(user: User):
 @multipleDecorators(validate_request(DmChannelCreate), usingDB, getUser)
 async def new_dm_channel(data: DmChannelCreate, user: User):
     recipients = data.recipients
+    recipients_users = [await getCore().getUser(recipient) for recipient in recipients]
+    if None in recipients_users:
+        raise InvalidDataErr(400, Errors.make(50033))
     if len(recipients) == 1:
         if int(recipients[0]) == user.id:
             raise InvalidDataErr(400, Errors.make(50007))
@@ -356,3 +362,31 @@ async def new_dm_channel(data: DmChannelCreate, user: User):
     await getCore().sendDMChannelCreateEvent(channel)
     Ctx["with_ids"] = False
     return c_json(await channel.json)
+
+
+@users_me.post("/delete")
+@multipleDecorators(validate_request(DeleteRequest), usingDB, getUser)
+async def delete_user(data: DeleteRequest, user: User):
+    if not await getCore().checkUserPassword(user, data.password):
+        raise InvalidDataErr(400, Errors.make(50018))
+    if await getCore().getUserOwnedGuilds(user) or await getCore().getUserOwnedGroups(user):
+        raise InvalidDataErr(400, Errors.make(40011))
+    await getCore().deleteUser(user)
+    await getCore().sendUserDeleteEvent(user)
+    return "", 204
+
+
+@users_me.get("/scheduled-events")
+@multipleDecorators(validate_querystring(GetScheduledEventsQuery), usingDB, getUser)
+async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
+    events = []
+    for guild_id in query_args.guild_ids[:5]:
+        if not await getCore().getGuildMember(GuildId(guild_id), user.id):
+            raise InvalidDataErr(403, Errors.make(50001))
+        for event_id in await getCore().getSubscribedScheduledEventIds(user, guild_id):
+            events.append({
+                "guild_scheduled_event_id": str(event_id),
+                "user_id": str(user.id)  # current user or creator??
+            })
+
+    return c_json(events)

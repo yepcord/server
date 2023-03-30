@@ -422,11 +422,54 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(WebhooksUpdateEvent(guild_id, channel_id))
 
+    async def stickers_update(self, users, guild_id, stickers):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(StickersUpdateEvent(guild_id, stickers))
+
+    async def user_delete(self, users, user_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(UserDeleteEvent(user_id))
+
+    async def event_create(self, users, event_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildScheduledEventCreateEvent(event_obj))
+
+    async def event_update(self, users, event_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildScheduledEventUpdateEvent(event_obj))
+
+    async def event_delete(self, users, event_obj):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(GuildScheduledEventDeleteEvent(event_obj))
+
+    async def event_user_add(self, users, user_id, event_id, guild_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(ScheduledEventUserAddEvent(user_id, event_id, guild_id))
+
+    async def event_user_remove(self, users, user_id, event_id, guild_id):
+        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
+            return
+        for cl in clients:
+            await cl.esend(ScheduledEventUserRemoveEvent(user_id, event_id, guild_id))
+
     async def sendToUsers(self, event: RawDispatchEvent, users: list[int]) -> None:
         if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
         for cl in clients:
             await cl.esend(event)
+
 
 class Gateway:
     def __init__(self, core: Core):

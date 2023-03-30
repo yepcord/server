@@ -1,6 +1,7 @@
 from json import dumps as jdumps
+from time import time
 
-from quart import Quart, request
+from quart import Quart, request, Response
 from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
@@ -28,10 +29,10 @@ class YEPcord(Quart):
 
     async def dispatch_request(self, request_context=None):
         request_ = (request_context or request_ctx).request
-        if request_.routing_exception is not None:
+        if request_.routing_exception is not None: # pragma: no cover
             self.raise_routing_exception(request_)
 
-        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options:
+        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options: # pragma: no cover
             return await self.make_default_options_response()
 
         handler = self.view_functions[request_.url_rule.endpoint]
@@ -70,14 +71,14 @@ async def before_serving():
 
 
 @app.errorhandler(YDataError)
-async def ydataerror_handler(e):
-    if isinstance(e, EmbedErr):
-        return c_json(e.error, 400)
-    elif isinstance(e, InvalidDataErr):
-        return c_json(e.error, e.code)
-    elif isinstance(e, MfaRequiredErr):
-        ticket = b64encode(jdumps([e.uid, "login"]))
-        ticket += f".{e.sid}.{e.sig}"
+async def ydataerror_handler(err: YDataError):
+    if isinstance(err, EmbedErr):
+        return c_json(err.error, 400)
+    elif isinstance(err, InvalidDataErr):
+        return c_json(err.error, err.code)
+    elif isinstance(err, MfaRequiredErr):
+        ticket = b64encode(jdumps([err.uid, "login"]))
+        ticket += f".{err.sid}.{err.sig}"
         return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
 
 
@@ -88,12 +89,41 @@ async def handle_validation_error(error: RequestSchemaValidationError):
 
 
 @app.after_request
-async def set_cors_headers(response):
+async def set_cors_headers(response: Response) -> Response:
     response.headers['Server'] = "YEPcord"
     response.headers['Access-Control-Allow-Origin'] = "*"
     response.headers['Access-Control-Allow-Headers'] = "*"
     response.headers['Access-Control-Allow-Methods'] = "*"
     response.headers['Content-Security-Policy'] = "connect-src *;"
+    return response
+
+
+TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8")
+@app.after_request
+async def generate_test(response: Response) -> Response: # pragma: no cover
+    if request.method == "OPTIONS" or response.status_code == 501 or not Config["GENERATE_TESTS"]:
+        return response
+    path = request.path.replace("/", "_").replace("-", "").replace("@", "")+"_"+str(int(time()*1000))[-4:]
+    test_code = "@pt.mark.asyncio\n" \
+                f"async def test_{path}(testapp):\n" \
+                "    client: TestClientType = (await testapp).test_client()\n" \
+                "    headers = " + \
+                ("{\"Authorization\": TestVars.get(\"token\")}" if request.headers.get("Authorization") else "{}") + \
+                "\n%CODE%\n\n"
+
+    tests = []
+    json = ""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and await request.json:
+        json = f", json={await request.json}"
+    tests.append(f"resp = await client.{request.method.lower()}(\"{request.path}\", headers=headers{json})")
+    tests.append(f"assert resp.status_code == {response.status_code}") # Check status code
+    if response.status_code == 200 and response.headers["Content-Type"] == "application/json" and await response.json:
+        tests.append(f"assert (await resp.get_json() == {await response.json})") # Check response json
+    tests = [f"    {test}" for test in tests] # Add indentations
+    tests = "\n".join(tests)
+    test_code = test_code.replace("%CODE%", tests)
+    TESTS_FILE.write(test_code)
+    TESTS_FILE.flush()
     return response
 
 
@@ -104,6 +134,7 @@ app.register_blueprint(channels, url_prefix="/api/v9/channels")
 app.register_blueprint(invites, url_prefix="/api/v9/invites")
 app.register_blueprint(guilds, url_prefix="/api/v9/guilds")
 app.register_blueprint(webhooks, url_prefix="/api/v9/webhooks")
+app.register_blueprint(webhooks, url_prefix="/api/webhooks")
 app.register_blueprint(gifs, url_prefix="/api/v9/gifs")
 app.register_blueprint(hypesquad, url_prefix="/api/v9/hypesquad")
 app.register_blueprint(other, url_prefix="/")
@@ -126,6 +157,7 @@ async def other_api_endpoints(path):
     return "Not Implemented!", 501
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
+    # Deprecated
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8000, reload=True, use_colors=False)

@@ -748,3 +748,77 @@ class WebhooksUpdateEvent(DispatchEvent):
             }
         }
         return data
+
+class StickersUpdateEvent(DispatchEvent):
+    NAME = "GUILD_STICKERS_UPDATE"
+
+    def __init__(self, guild_id, stickers):
+        self.guild_id = guild_id
+        self.stickers = stickers
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "guild_id": str(self.guild_id),
+                "stickers": self.stickers
+            }
+        }
+        return data
+
+class UserDeleteEvent(DispatchEvent):
+    NAME = "USER_DELETE"
+
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id)
+            }
+        }
+
+class GuildScheduledEventCreateEvent(DispatchEvent):
+    NAME = "GUILD_SCHEDULED_EVENT_CREATE"
+
+    def __init__(self, event_obj):
+        self.event_obj = event_obj
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": self.event_obj
+        }
+
+class GuildScheduledEventUpdateEvent(GuildScheduledEventCreateEvent):
+    NAME = "GUILD_SCHEDULED_EVENT_UPDATE"
+
+class ScheduledEventUserAddEvent(DispatchEvent):
+    NAME = "GUILD_SCHEDULED_EVENT_USER_ADD"
+
+    def __init__(self, user_id, event_id, guild_id):
+        self.user_id = user_id
+        self.event_id = event_id
+        self.guild_id = guild_id
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id),
+                "guild_scheduled_event_id": str(self.event_id),
+                "guild_id": str(self.guild_id),
+            }
+        }
+
+class ScheduledEventUserRemoveEvent(ScheduledEventUserAddEvent):
+    NAME = "GUILD_SCHEDULED_EVENT_USER_REMOVE"
+
+class GuildScheduledEventDeleteEvent(GuildScheduledEventCreateEvent):
+    NAME = "GUILD_SCHEDULED_EVENT_DELETE"

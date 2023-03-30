@@ -7,15 +7,15 @@ from quart import Blueprint, request
 from quart_schema import validate_request, validate_querystring
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery
+    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck
 from ..utils import usingDB, getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData
 from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import GuildId, AuditLogEntry, Webhook
 from ...yepcord.classes.message import Reaction, SearchFilter, Message
-from ...yepcord.classes.user import User
+from ...yepcord.classes.user import User, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, RelationshipType, AuditLogEntryType, \
-    WebhookType
+    WebhookType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import c_json, getImage, b64encode
@@ -47,7 +47,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
                 new_channel["icon"] = image
         new_channel = channel.copy(**new_channel)
         send_event = getCore().sendDMChannelUpdateEvent
-    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+    elif channel.type in GUILD_CHANNELS:
         member = await getCore().getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
@@ -66,7 +66,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
             message = Message(id=Snowflake.makeId(), channel_id=channel.id, author=user.id,
                               type=MessageType.CHANNEL_ICON_CHANGE, content="")
             await getCore().sendMessage(message)
-    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+    elif channel.type in GUILD_CHANNELS:
         entry = AuditLogEntry.channel_update(channel, new_channel, user)
         await getCore().putAuditLogEntry(entry)
         await getCore().sendAuditLogEntryCreateEvent(entry)
@@ -98,7 +98,7 @@ async def delete_channel(user: User, channel: Channel):
             new_channel.owner_id = choice(channel.recipients)
             await getCore().updateChannelDiff(channel, new_channel)
             await getCore().sendDMChannelUpdateEvent(channel)
-    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY):
+    elif channel.type in GUILD_CHANNELS:
         member = await getCore().getGuildMember(GuildId(channel.guild_id), user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
@@ -145,11 +145,38 @@ async def send_message(user: User, channel: Channel):
     message_id = Snowflake.makeId()
     data = await request.get_json()
     data = await processMessageData(message_id, data, channel.id)
-    if "message_reference" in data and int(data["message_reference"]["channel_id"]) != channel.id: del data["message_reference"]
     data = MessageCreate(**data)
-    message = Message(id=message_id, channel_id=channel.id, author=user.id, **data.to_json(), guild_id=channel.guild_id)
+
+    message_type = MessageType.DEFAULT
+    if data.message_reference:
+        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
+    if data.message_reference:
+        message_type = MessageType.REPLY
+
+    stickers = [await getCore().getSticker(sticker_id) for sticker_id in data.sticker_ids]
+    if not data.content and not data.embeds and not await getCore().getAttachments(Message(message_id, 0, 0)) \
+            and not data.sticker_ids:
+        raise InvalidDataErr(400, Errors.make(50006))
+    stickers_data = {"sticker_items": [], "stickers": []}
+    Ctx["with_user"] = False
+    for sticker in stickers:
+        stickers_data["stickers"].append(await sticker.json)
+        stickers_data["sticker_items"].append({
+            "format_type": sticker.format,
+            "id": str(sticker.id),
+            "name": sticker.name,
+        })
+    message = Message(id=message_id, channel_id=channel.id, author=user.id, **data.to_json(), **stickers_data,
+                      type=message_type, guild_id=channel.guild_id)
+    if channel.type == ChannelType.DM:
+        recipients = channel.recipients.copy()
+        recipients.remove(user.id)
+        other_user = recipients[0]
+        if await getCore().isDmChannelHidden(UserId(other_user), channel):
+            await getCore().unhideDmChannel(UserId(other_user), channel)
+            await getCore().sendDMChannelCreateEvent(channel=channel, users=[other_user])
     message = await getCore().sendMessage(message)
-    if await getCore().delReadStateIfExists(user.id, channel.id):
+    if await getCore().setReadState(user.id, channel.id, 0, message.id):
         await getCore().sendMessageAck(user.id, channel.id, message.id)
     return c_json(await message.json)
 
@@ -182,17 +209,16 @@ async def edit_message(data: MessageUpdate, user: User, channel: Channel, messag
     return c_json(await new_message.json)
 
 @channels.post("/<int:channel>/messages/<int:message>/ack")
-@multipleDecorators(usingDB, getUser, getChannel)
-async def send_message_ack(user: User, channel: Channel, message: Message):
-    data = await request.get_json()
-    if data.get("manual") and (ct := int(data.get("mention_count"))):
-        if isinstance((message := await _getMessage(user, channel, message)), tuple):
-            return message
+@multipleDecorators(validate_request(MessageAck), usingDB, getUser, getChannel)
+async def send_message_ack(data: MessageAck, user: User, channel: Channel, message: int):
+    if data.manual and (ct := data.mention_count):
+        message = await _getMessage(user, channel, message)
         await getCore().setReadState(user.id, channel.id, ct, message.id)
         await getCore().sendMessageAck(user.id, channel.id, message.id, ct, True)
     else:
-        await getCore().delReadStateIfExists(user.id, channel.id)
-        await getCore().sendMessageAck(user.id, channel.id, message.id)
+        ct = len(await getCore().getChannelMessages(channel, 99, channel.last_message_id, message))
+        await getCore().setReadState(user.id, channel.id, ct, message)
+        await getCore().sendMessageAck(user.id, channel.id, message)
     return c_json({"token": None})
 
 
@@ -264,9 +290,11 @@ async def pin_message(user: User, channel: Channel, message: Message):
             channel_id=channel.id,
             type=MessageType.CHANNEL_PINNED_MESSAGE,
             content="",
-            message_reference=message.id,
-            **({} if not channel.guild_id else {"guild_id": channel.guild_id})
+            message_reference={"message_id": str(message.id), "channel_id": str(channel.id)},
+            guild_id=channel.guild_id,
         )
+        if channel.guild_id:
+            msg.message_reference["guild_id"] = str(channel.guild_id)
         await getCore().sendMessage(msg)
     return "", 204
 
