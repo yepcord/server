@@ -6,6 +6,7 @@ from .channels import MessageCreate
 from ...yepcord.utils import getImage, validImage
 
 
+# noinspection PyMethodParameters
 class WebhookUpdate(BaseModel):
     name: Optional[str] = None
     channel_id: Optional[int] = None

@@ -1,10 +1,10 @@
-from quart import Blueprint, request
+from quart import Blueprint
 from quart_schema import validate_querystring
 
 from ..models.invites import GetInviteQuery
 from ..utils import usingDB, getUser, multipleDecorators, getInvite
 from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelRecipientAddEvent, GuildCreateEvent, \
-    InviteDeleteEvent
+    InviteDeleteEvent, GuildAuditLogEntryCreateEvent
 from ...yepcord.classes.guild import Invite, GuildId, AuditLogEntry
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User
@@ -33,6 +33,7 @@ async def get_invite(query_args: GetInviteQuery, invite: Invite):
 @multipleDecorators(usingDB, getUser, getInvite)
 async def use_invite(user: User, invite: Invite):
     channel = await getCore().getChannel(invite.channel_id)
+    inv = None
     if channel.type == ChannelType.GROUP_DM:
         if user.id not in channel.recipients and len(channel.recipients) >= 10:
             raise InvalidDataErr(404, Errors.make(10006))
@@ -51,7 +52,7 @@ async def use_invite(user: User, invite: Invite):
         Ctx["user_id"] = user.id
         await getGw().dispatch(DMChannelCreateEvent(channel), users=[user.id])
         await getCore().useInvite(invite)
-    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE):
+    elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_NEWS):
         inv = await invite.json
         for excl in ["max_age", "max_uses", "created_at"]:  # Remove excluded fields
             if excl in inv:
@@ -83,5 +84,6 @@ async def delete_invite(user: User, invite: Invite):
 
         entry = AuditLogEntry.invite_delete(invite, user)
         await getCore().putAuditLogEntry(entry)
-        await getCore().sendAuditLogEntryCreateEvent(entry)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=invite.guild_id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
     return c_json(await invite.json)

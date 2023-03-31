@@ -59,6 +59,7 @@ class Gateway:
         elif data["op"] == "cancel":
             await self.sendCancel(data["fingerprint"])
 
+    # noinspection PyMethodMayBeStatic
     async def send(self, ws, op, **data):
         r = {"op": op}
         r.update(data)

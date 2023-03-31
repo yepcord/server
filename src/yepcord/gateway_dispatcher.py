@@ -8,7 +8,8 @@ from .classes.guild import Guild
 from .classes.other import Singleton
 from .config import Config
 from .pubsub_client import Broadcaster
-from ..gateway.events import DispatchEvent, ChannelPinsUpdateEvent, MessageAckEvent, GuildEmojisUpdate
+from ..gateway.events import DispatchEvent, ChannelPinsUpdateEvent, MessageAckEvent, GuildEmojisUpdate, \
+    StickersUpdateEvent
 
 
 class GatewayDispatcher(Singleton):
@@ -60,6 +61,11 @@ class GatewayDispatcher(Singleton):
     async def sendGuildEmojisUpdateEvent(self, guild: Guild) -> None:
         emojis = [await emoji.json for emoji in await c.getCore().getEmojis(guild.id)]
         await self.dispatch(GuildEmojisUpdate(guild.id, emojis), guild_id=guild.id)
+
+    async def sendStickersUpdateEvent(self, guild: Guild) -> None:
+        stickers = await c.getCore().getGuildStickers(guild)
+        stickers = [await sticker.json for sticker in stickers]
+        await self.dispatch(StickersUpdateEvent(guild.id, stickers), guild_id=guild.id)
 
 import src.yepcord.ctx as c
 c._getGw = lambda: GatewayDispatcher.getInstance()

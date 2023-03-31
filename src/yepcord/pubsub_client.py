@@ -1,7 +1,6 @@
 from websockets import connect
 from json import loads as jloads, dumps as jdumps
-from asyncio import get_event_loop, gather, sleep as asleep
-from os import urandom
+from asyncio import get_event_loop, sleep as asleep
 
 class Client:
     def __init__(self):

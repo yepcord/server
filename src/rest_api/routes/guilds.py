@@ -11,10 +11,12 @@ from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUp
     GetAuditLogsQuery, CreateSticker, UpdateSticker, CreateEvent, GetScheduledEvent, UpdateScheduledEvent
 from ..utils import usingDB, getUser, multipleDecorators, getGuildWM, getGuildWoM, getGuildTemplate, getRole
 from ...gateway.events import MessageDeleteEvent, GuildUpdateEvent, ChannelUpdateEvent, ChannelCreateEvent, \
-    GuildDeleteEvent, GuildMemberRemoveEvent
+    GuildDeleteEvent, GuildMemberRemoveEvent, GuildBanAddEvent, MessageBulkDeleteEvent, GuildRoleCreateEvent, \
+    GuildRoleUpdateEvent, GuildRoleDeleteEvent, GuildMemberUpdateEvent, GuildBanRemoveEvent, \
+    GuildAuditLogEntryCreateEvent, GuildScheduledEventCreateEvent, GuildScheduledEventUpdateEvent, \
+    GuildScheduledEventDeleteEvent, ScheduledEventUserAddEvent, ScheduledEventUserRemoveEvent
 from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role, Sticker, ScheduledEvent
-from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User, GuildMember, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
 from ...yepcord.enums import GuildPermissions, AuditLogEntryType, StickerType, StickerFormat, ScheduledEventStatus
@@ -63,7 +65,8 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
 
     entry = AuditLogEntry.guild_update(guild, new_guild, user)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     await getCore().setTemplateDirty(guild)
 
@@ -147,7 +150,8 @@ async def create_guild_emoji(data: EmojiCreate, user: User, guild: Guild, member
 
     entry = AuditLogEntry.emoji_create(emoji, user)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     return c_json(await emoji.json)
 
@@ -182,7 +186,8 @@ async def delete_guild_emoji(user: User, guild: Guild, member: GuildMember, emoj
 
     entry = AuditLogEntry.emoji_delete(emoji, user)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     return "", 204
 
@@ -225,7 +230,8 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
 
     entry = AuditLogEntry.channel_create(channel, user)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     await getCore().setTemplateDirty(guild)
 
@@ -261,7 +267,8 @@ async def kick_member(user: User, guild: Guild, member: GuildMember, uid: int):
         await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
         entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, target_member.id, AuditLogEntryType.MEMBER_KICK)
         await getCore().putAuditLogEntry(entry)
-        await getCore().sendAuditLogEntryCreateEvent(entry)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
     return "", 204
 
 
@@ -277,22 +284,25 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
             await getCore().deleteGuildMember(target_member)
             await getCore().banGuildMember(target_member, reason)
             target_user = await target_member.user
-            await getGw().dispatch(GuildMemberRemoveEvent(guild.id, await (await target_user.data).json), users=[uid])
+            target_user_data = await target_user.data
+            await getGw().dispatch(GuildMemberRemoveEvent(guild.id, await target_user_data.json), users=[uid])
             await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
-            await getCore().sendGuildBanAddEvent(guild, target_user)
+            await getGw().dispatch(GuildBanAddEvent(guild.id, await target_user_data.json), guild_id=guild.id,
+                                   permissions=GuildPermissions.BAN_MEMBERS)
             if (delete_message_seconds := data.delete_message_seconds) > 0:
                 after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
                 deleted_messages = await getCore().bulkDeleteGuildMessagesFromBanned(guild, uid, after)
                 for channel, messages in deleted_messages.items():
                     if len(messages) > 1:
-                        await getCore().sendMessageBulkDeleteEvent(guild.id, channel, messages)
+                        await getGw().dispatch(MessageBulkDeleteEvent(guild.id, channel, messages))
                     elif len(messages) == 1:
                         await getGw().dispatch(MessageDeleteEvent(messages[0], channel, guild.id), channel_id=channel)
 
             entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, target_member.id,
                                   AuditLogEntryType.MEMBER_BAN_ADD, reason=reason)
             await getCore().putAuditLogEntry(entry)
-            await getCore().sendAuditLogEntryCreateEvent(entry)
+            await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                                   permissions=GuildPermissions.VIEW_AUDIT_LOG)
     return "", 204
 
 
@@ -309,11 +319,14 @@ async def get_guild_bans(user: User, guild: Guild, member: GuildMember):
 async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: int):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     await getCore().removeGuildBan(guild, user_id)
-    await getCore().sendGuildBanRemoveEvent(guild, user_id)
+    target_user_data = await getCore().getUserData(UserId(user_id))
+    await getGw().dispatch(GuildBanRemoveEvent(guild.id, await target_user_data.json), guild_id=guild.id,
+                           permissions=GuildPermissions.BAN_MEMBERS)
 
     entry = AuditLogEntry(Snowflake.makeId(), guild.id, user.id, user_id, AuditLogEntryType.MEMBER_BAN_REMOVE)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
     return "", 204
 
 
@@ -335,11 +348,13 @@ async def create_role(data: RoleCreate, user: User, guild: Guild, member: GuildM
             data.icon = h
     role = Role(role_id, guild.id, **data.dict())
     await getCore().createGuildRole(role)
-    await getCore().sendGuildRoleCreateEvent(role)
+    await getGw().dispatch(GuildRoleCreateEvent(guild.id, await role.json), guild_id=guild.id,
+                           permissions=GuildPermissions.MANAGE_ROLES)
 
     entry = AuditLogEntry.role_create(role, user)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     await getCore().setTemplateDirty(guild)
 
@@ -360,11 +375,13 @@ async def update_role(data: RoleUpdate, user: User, guild: Guild, member: GuildM
                 data.icon = h
     new_role = role.copy(**data.dict(exclude_defaults=True))
     await getCore().updateRoleDiff(role, new_role)
-    await getCore().sendGuildRoleUpdateEvent(new_role)
+    await getGw().dispatch(GuildRoleUpdateEvent(guild.id, await new_role.json), guild_id=guild.id,
+                           permissions=GuildPermissions.MANAGE_ROLES)
 
     entry = AuditLogEntry.role_update(role, new_role, user)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     await getCore().setTemplateDirty(guild)
 
@@ -397,7 +414,8 @@ async def update_roles_positions(user: User, guild: Guild, member: GuildMember):
         if (old_role := [role for role in roles if role.id == new_role.id][0]).getDiff(new_role) == {}:
             continue
         await getCore().updateRoleDiff(old_role, new_role)
-        await getCore().sendGuildRoleUpdateEvent(new_role)
+        await getGw().dispatch(GuildRoleUpdateEvent(guild.id, await new_role.json), guild_id=guild.id,
+                               permissions=GuildPermissions.MANAGE_ROLES)
     roles = await getCore().getRoles(guild)
     roles = [await role.json for role in roles]
 
@@ -413,11 +431,13 @@ async def delete_role(user: User, guild: Guild, member: GuildMember, role: Role)
     if role.id == role.guild_id:
         raise InvalidDataErr(400, Errors.make(50028))
     await getCore().deleteRole(role)
-    await getCore().sendGuildRoleDeleteEvent(role)
+    await getGw().dispatch(GuildRoleDeleteEvent(guild.id, role.id), guild_id=guild.id,
+                           permissions=GuildPermissions.MANAGE_ROLES)
 
     entry = AuditLogEntry.role_delete(role, user)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     await getCore().setTemplateDirty(guild)
 
@@ -457,7 +477,7 @@ async def add_role_members(data: AddRoleMembers, user: User, guild: Guild, membe
         target_member = await getCore().getGuildMember(guild, member_id)
         if not await getCore().memberHasRole(target_member, role):
             await getCore().addMemberRole(target_member, role)
-            await getCore().sendGuildMemberUpdateEvent(target_member)
+            await getGw().dispatch(GuildMemberUpdateEvent(guild.id, await member.json), guild_id=guild.id)
             members[str(target_member.id)] = await target_member.json
     return c_json(members)
 
@@ -498,11 +518,12 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
                 data.avatar = ""
     new_member = target_member.copy(**data.dict(exclude_defaults=True))
     await getCore().updateMemberDiff(target_member, new_member)
-    await getCore().sendGuildMemberUpdateEvent(new_member)
+    await getGw().dispatch(GuildMemberUpdateEvent(guild.id, await member.json), guild_id=guild.id)
 
     entry = AuditLogEntry.member_update(target_member, new_member, user)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     return c_json(await new_member.json)
 
@@ -648,7 +669,7 @@ async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
         if not await getCDNStorage().setStickerFromBytesIO(sticker.id, img):
             raise InvalidDataErr(400, Errors.make(50006))
         await getCore().putSticker(sticker)
-    await getCore().sendGuildStickerUpdateEvent(guild)
+    await getGw().sendStickersUpdateEvent(guild)
 
     return c_json(await sticker.json)
 
@@ -663,7 +684,7 @@ async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, me
         raise InvalidDataErr(404, Errors.make(10060))
     new_sticker = sticker.copy(**data.dict(exclude_defaults=True))
     await getCore().updateStickerDiff(sticker, new_sticker)
-    await getCore().sendGuildStickerUpdateEvent(guild)
+    await getGw().sendStickersUpdateEvent(guild)
     return c_json(await new_sticker.json)
 
 
@@ -677,7 +698,7 @@ async def delete_guild_sticker(user: User, guild: Guild, member: GuildMember, st
         raise InvalidDataErr(404, Errors.make(10060))
 
     await getCore().deleteSticker(sticker)
-    await getCore().sendGuildStickerUpdateEvent(guild)
+    await getGw().sendStickersUpdateEvent(guild)
 
     return "", 204
 
@@ -698,10 +719,11 @@ async def create_scheduled_event(data: CreateEvent, user: User, guild: Guild, me
 
     event = ScheduledEvent(event_id, guild.id, user.id, status=1, **data.dict())
     await getCore().putScheduledEvent(event)
-    await getCore().sendScheduledEventCreateEvent(event)
+    await getGw().dispatch(GuildScheduledEventCreateEvent(await event.json), guild_id=guild.id)
 
     await getCore().subscribeToScheduledEvent(user, event)
-    await getCore().sendScheduledEventUserAddEvent(user, event)
+    await getGw().dispatch(ScheduledEventUserAddEvent(user.id, event.id, guild.id),
+                           guild_id=guild.id)  # TODO: Replace with list of users subscribed to event
 
     return c_json(await event.json)
 
@@ -765,7 +787,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: 
                                                             "message": "Invalid Guild Scheduled Event Status Transition"}}))
 
     await getCore().updateScheduledEventDiff(event, new_event)
-    await getCore().sendScheduledEventUpdateEvent(new_event)
+    await getGw().dispatch(GuildScheduledEventUpdateEvent(await new_event.json), guild_id=guild.id)
 
     return c_json(await new_event.json)
 
@@ -778,7 +800,8 @@ async def subscribe_to_scheduled_event(user: User, guild: Guild, member: GuildMe
         raise InvalidDataErr(404, Errors.make(10070))
 
     await getCore().subscribeToScheduledEvent(user, event)
-    await getCore().sendScheduledEventUserAddEvent(user, event)
+    await getGw().dispatch(ScheduledEventUserAddEvent(user.id, event_id, guild.id),
+                           guild_id=guild.id)  # TODO: Replace with list of users subscribed to event
 
     return c_json({
         "guild_scheduled_event_id": str(event.id),
@@ -794,7 +817,8 @@ async def unsubscribe_from_scheduled_event(user: User, guild: Guild, member: Gui
         raise InvalidDataErr(404, Errors.make(10070))
 
     await getCore().unsubscribeFromScheduledEvent(user, event)
-    await getCore().sendScheduledEventUserRemoveEvent(user, event)
+    await getGw().dispatch(ScheduledEventUserRemoveEvent(user.id, event_id, guild.id),
+                           guild_id=guild.id) # TODO: Replace with list of users subscribed to event
 
     return "", 204
 
@@ -808,6 +832,6 @@ async def delete_scheduled_event(user: User, guild: Guild, member: GuildMember, 
         raise InvalidDataErr(404, Errors.make(10070))
 
     await getCore().deleteScheduledEvent(event)
-    await getCore().sendScheduledEventDeleteEvent(event)
+    await getGw().dispatch(GuildScheduledEventDeleteEvent(await event.json), guild_id=guild.id)
 
     return "", 204

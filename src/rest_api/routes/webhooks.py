@@ -5,14 +5,14 @@ from quart_schema import validate_request, validate_querystring
 
 from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
 from ..utils import usingDB, getUser, multipleDecorators, allowWithoutUser, processMessageData
-from ...gateway.events import MessageCreateEvent
+from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, validImage, getImage
+from ...yepcord.utils import c_json, getImage
 
 # Base path is /api/vX/webhooks
 webhooks = Blueprint('webhooks', __name__)
@@ -29,7 +29,8 @@ async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token:
                 raise InvalidDataErr(403, Errors.make(50013))
             await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
         await getCore().deleteWebhook(webhook)
-        await getCore().sendWebhooksUpdateEvent(webhook)
+        await getGw().dispatch(WebhooksUpdateEvent(webhook.guild_id, webhook.channel_id), guild_id=webhook.guild_id,
+                               permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
     return "", 204
 
@@ -57,7 +58,8 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
     new_webhook = webhook.copy(**data.dict(exclude_defaults=True))
 
     await getCore().updateWebhookDiff(webhook, new_webhook)
-    await getCore().sendWebhooksUpdateEvent(new_webhook)
+    await getGw().dispatch(WebhooksUpdateEvent(webhook.guild_id, webhook.channel_id), guild_id=webhook.guild_id,
+                           permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
     return c_json(await new_webhook.json)
 

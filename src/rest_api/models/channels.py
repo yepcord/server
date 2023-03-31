@@ -14,6 +14,7 @@ from ...yepcord.errors import EmbedErr, InvalidDataErr, Errors
 from ...yepcord.utils import validImage, getImage
 
 
+# noinspection PyMethodParameters
 class ChannelUpdate(BaseModel):
     icon: Optional[str] = "" # Only for GROUP_DM channel
     owner_id: Optional[int] = Field(default=None, alias="owner") # Only for GROUP_DM channel
@@ -119,6 +120,7 @@ class PermissionOverwriteModel(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class EmbedFooter(BaseModel):
     text: Optional[str] = None
     icon_url: Optional[str] = None
@@ -142,6 +144,7 @@ class EmbedFooter(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class EmbedImage(BaseModel):
     url: Optional[str] = None
     width: Optional[int] = None
@@ -159,6 +162,7 @@ class EmbedImage(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class EmbedAuthor(BaseModel):
     name: Optional[str] = None
     url: Optional[str] = None
@@ -184,6 +188,7 @@ class EmbedAuthor(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class EmbedField(BaseModel):
     name: Optional[str] = None
     value: Optional[str] = None
@@ -203,6 +208,7 @@ class EmbedField(BaseModel):
             raise EmbedErr(makeEmbedError(27, f"fields.value", {"length": "1024"}))
 
 
+# noinspection PyMethodParameters
 class EmbedModel(BaseModel):
     title: str
     type: Optional[str] = None
@@ -302,6 +308,7 @@ class MessageReferenceModel(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class MessageCreate(BaseModel):
     content: Optional[str] = None
     nonce: Optional[str] = None
@@ -364,6 +371,7 @@ class MessageCreate(BaseModel):
         return data
 
 
+# noinspection PyMethodParameters
 class MessageUpdate(BaseModel):
     content: Optional[str] = None
     embeds: List[EmbedModel] = Field(default_factory=list)
@@ -385,6 +393,7 @@ class InviteCreate(BaseModel):
     max_uses: Optional[int] = 0
 
 
+# noinspection PyMethodParameters
 class WebhookCreate(BaseModel):
     name: Optional[str] = None
 
@@ -410,6 +419,7 @@ class SearchQuery(BaseModel):
     content: Optional[str] = None
 
 
+# noinspection PyMethodParameters
 class GetMessagesQuery(BaseModel):
     limit: int = 50
     before: int = 0
@@ -424,6 +434,7 @@ class GetMessagesQuery(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class GetReactionsQuery(BaseModel):
     limit: int = 3
 

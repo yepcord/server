@@ -9,7 +9,7 @@ from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpda
     DeleteRequest, GetScheduledEventsQuery
 from ..utils import usingDB, getUser, multipleDecorators, getSession, getGuildWM
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
-    UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent
+    UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent
 from ...yepcord.classes.guild import Guild, GuildId
 from ...yepcord.classes.user import User, UserSettings, UserNote, Session, GuildMember, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
@@ -395,7 +395,7 @@ async def delete_user(data: DeleteRequest, user: User):
     if await getCore().getUserOwnedGuilds(user) or await getCore().getUserOwnedGroups(user):
         raise InvalidDataErr(400, Errors.make(40011))
     await getCore().deleteUser(user)
-    await getCore().sendUserDeleteEvent(user)
+    await getGw().dispatch(UserDeleteEvent(user.id), users=[user.id])
     return "", 204
 
 

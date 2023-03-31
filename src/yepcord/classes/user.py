@@ -172,6 +172,7 @@ class UserSettings(Model):
             }
         }
 
+    # noinspection PyTypeChecker
     def to_proto(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
             versions=Versions(client_version=14, data_version=1), # TODO: get data version from database

@@ -170,6 +170,10 @@ async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, fi
             return event_image, 200, {"Content-Type": f"image/{form}"}
     return b'', 404
 
+@app.errorhandler(500)
+async def h(e):
+    raise e.original_exception
+
 
 # Attachments
 

@@ -59,7 +59,6 @@ async def _setup_db():
         db=Config("DB_NAME"),
         autocommit=True
     )
-    await core.initMCL()
     return core
 
 @pt.mark.asyncio

@@ -69,7 +69,6 @@ async def before_serving():
         db=Config("DB_NAME"),
         autocommit=True
     )
-    await core.initMCL()
     await gateway.init()
 
 @app.errorhandler(500)

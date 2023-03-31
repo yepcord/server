@@ -1,4 +1,4 @@
-from quart import Blueprint, request, current_app
+from quart import Blueprint, request
 from json import loads as jloads
 
 from quart_schema import validate_request

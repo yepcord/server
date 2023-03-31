@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Optional
 
 from .events import *
@@ -109,103 +108,7 @@ class GatewayEvents:
         users = await self.core.getRelatedUsers(user, only_ids=True)
         clients = [c for c in self.clients if c.id in users and c.connected]
         for cl in clients:
-            await cl.esend(PresenceUpdateEvent(user.id, d, status))
-
-    async def guild_ban_add(self, users, guild_id, user_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildBanAddEvent(guild_id, user_obj))
-
-    async def message_delete_bulk(self, users, guild_id, channel_id, messages):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(MessageBulkDeleteEvent(guild_id, channel_id, messages))
-
-    async def role_create(self, users, guild_id, role_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildRoleCreateEvent(guild_id, role_obj))
-
-    async def role_update(self, users, guild_id, role_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildRoleUpdateEvent(guild_id, role_obj))
-
-    async def role_delete(self, users, guild_id, role_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildRoleDeleteEvent(guild_id, role_id))
-
-    async def member_update(self, users, guild_id, member_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildMemberUpdateEvent(guild_id, member_obj))
-
-    async def guild_ban_remove(self, users, guild_id, user_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildBanRemoveEvent(guild_id, user_obj))
-
-    async def audit_log_entry_create(self, users, entry_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildAuditLogEntryCreateEvent(entry_obj))
-
-    async def webhooks_update(self, users, guild_id, channel_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(WebhooksUpdateEvent(guild_id, channel_id))
-
-    async def stickers_update(self, users, guild_id, stickers):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(StickersUpdateEvent(guild_id, stickers))
-
-    async def user_delete(self, users, user_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(UserDeleteEvent(user_id))
-
-    async def event_create(self, users, event_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildScheduledEventCreateEvent(event_obj))
-
-    async def event_update(self, users, event_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildScheduledEventUpdateEvent(event_obj))
-
-    async def event_delete(self, users, event_obj):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(GuildScheduledEventDeleteEvent(event_obj))
-
-    async def event_user_add(self, users, user_id, event_id, guild_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(ScheduledEventUserAddEvent(user_id, event_id, guild_id))
-
-    async def event_user_remove(self, users, user_id, event_id, guild_id):
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(ScheduledEventUserRemoveEvent(user_id, event_id, guild_id))
+            await cl.esend(PresenceUpdateEvent(d, status))
 
     async def sendToUsers(self, event: RawDispatchEvent, users: list[int]) -> None:
         if not (clients := [c for c in self.clients if c.id in users and c.connected]):
@@ -224,19 +127,9 @@ class Gateway:
 
     async def init(self):
         await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
-        await self.mcl.subscribe("yepcord_events", self.mcl_allEventsCallback)
-        await self.mcl.subscribe("user_events", self.mcl_eventsCallback)
-        await self.mcl.subscribe("channel_events", self.mcl_eventsCallback)
-        await self.mcl.subscribe("message_events", self.mcl_eventsCallback)
-        await self.mcl.subscribe("guild_events", self.mcl_eventsCallback)
+        await self.mcl.subscribe("yepcord_events", self.mcl_yepcordEventsCallback)
 
-    async def mcl_eventsCallback(self, data: dict) -> None:
-        ev = data["e"]
-        func = getattr(self.ev, ev)
-        if func:
-            await func(**data["data"])
-
-    async def mcl_allEventsCallback(self, payload: dict) -> None:
+    async def mcl_yepcordEventsCallback(self, payload: dict) -> None:
         event = RawDispatchEvent(payload["data"])
         if payload["users"] is not None:
             await self.ev.sendToUsers(event, payload["users"])
@@ -244,13 +137,16 @@ class Gateway:
             # payload["permissions"]
             await self.ev.sendToUsers(event, await self.core.getRelatedUsersToChannel(payload["channel_id"]))
         if payload["guild_id"] is not None:
+            # payload["permissions"]
             await self.ev.sendToUsers(event, await self.core.getGuildMembersIds(payload["guild_id"]))
 
+    # noinspection PyMethodMayBeStatic
     async def send(self, client: GatewayClient, op: int, **data) -> None:
         r = {"op": op}
         r.update(data)
         await client.send(r)
 
+    # noinspection PyMethodMayBeStatic
     async def sendws(self, ws, op: int, **data) -> None:
         r = {"op": op}
         r.update(data)
@@ -358,7 +254,7 @@ class Gateway:
         if not [w for w in self.clients if w.id == cl.id and w != cl]:
             await self.ev.presence_update(cl.id, {"status": "offline"})
 
-    async def getFriendsPresences(self, uid: int):
+    async def getFriendsPresences(self, uid: int) -> list[dict]:
         pr = []
         friends = await self.core.getRelationships(UserId(uid))
         friends = [int(u["user_id"]) for u in friends if u["type"] == 1]

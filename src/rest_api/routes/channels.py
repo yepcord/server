@@ -11,7 +11,8 @@ from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, Invit
 from ..utils import usingDB, getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
-    DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent
+    DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
+    GuildAuditLogEntryCreateEvent, WebhooksUpdateEvent
 from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import GuildId, AuditLogEntry, Webhook
 from ...yepcord.classes.message import Reaction, SearchFilter, Message
@@ -74,7 +75,8 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
     elif channel.type in GUILD_CHANNELS:
         entry = AuditLogEntry.channel_update(channel, new_channel, user)
         await getCore().putAuditLogEntry(entry)
-        await getCore().sendAuditLogEntryCreateEvent(entry)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
         await getCore().setTemplateDirty(GuildId(channel.guild_id))
 
@@ -110,7 +112,8 @@ async def delete_channel(user: User, channel: Channel):
 
         entry = AuditLogEntry.channel_delete(channel, user)
         await getCore().putAuditLogEntry(entry)
-        await getCore().sendAuditLogEntryCreateEvent(entry)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
         await getCore().deleteChannel(channel)
         await getGw().dispatch(ChannelDeleteEvent(await channel.json), guild_id=channel.guild_id)
@@ -421,7 +424,8 @@ async def create_invite(data: InviteCreate, user: User, channel: Channel):
     if channel.get("guild_id"):
         entry = AuditLogEntry.invite_create(invite, user)
         await getCore().putAuditLogEntry(entry)
-        await getCore().sendAuditLogEntryCreateEvent(entry)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
     return c_json(await invite.json)
 
 
@@ -464,7 +468,8 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
         options["role_name"] = role.name
     entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id, t, changes=changes, options=options)
     await getCore().putAuditLogEntry(entry)
-    await getCore().sendAuditLogEntryCreateEvent(entry)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     await getCore().setTemplateDirty(GuildId(channel.guild_id))
 
@@ -502,7 +507,8 @@ async def delete_permission_overwrite(user: User, channel: Channel, target_id: i
         entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
                               AuditLogEntryType.CHANNEL_OVERWRITE_DELETE, changes=changes, options=options)
         await getCore().putAuditLogEntry(entry)
-        await getCore().sendAuditLogEntryCreateEvent(entry)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
         await getCore().setTemplateDirty(GuildId(channel.guild_id))
 
@@ -536,7 +542,8 @@ async def create_webhook(data: WebhookCreate, user: User, channel: Channel):
     webhook = Webhook(Snowflake.makeId(), guild.id, channel.id, user.id, WebhookType.INCOMING, data.name,
                       b64encode(urandom(48)), None, None)
     await getCore().putWebhook(webhook)
-    await getCore().sendWebhooksUpdateEvent(webhook)
+    await getGw().dispatch(WebhooksUpdateEvent(webhook.guild_id, webhook.channel_id), guild_id=webhook.guild_id,
+                           permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
     return c_json(await webhook.json)
 
