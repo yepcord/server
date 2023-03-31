@@ -138,7 +138,7 @@ class Gateway:
             await self.ev.sendToUsers(event, await self.core.getRelatedUsersToChannel(payload["channel_id"]))
         if payload["guild_id"] is not None:
             # payload["permissions"]
-            await self.ev.sendToUsers(event, await self.core.getGuildMembersIds(payload["guild_id"]))
+            await self.ev.sendToUsers(event, await self.core.getGuildMembersIds(GuildId(payload["guild_id"])))
 
     # noinspection PyMethodMayBeStatic
     async def send(self, client: GatewayClient, op: int, **data) -> None:
