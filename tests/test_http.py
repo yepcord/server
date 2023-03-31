@@ -829,6 +829,10 @@ async def test_get_my_profile(testapp):
     headers = {"Authorization": TestVars.get("token")}
     user_id = str(TestVars.get("data")["id"])
     guild_id = str(TestVars.get("guild_id"))
+
+    resp = await client.get(f"/api/v9/users/@me/profile?guild_id=invalid_id", headers=headers) # Invalid id
+    assert resp.status_code == 400
+
     resp = await client.get(f"/api/v9/users/@me/profile?with_mutual_guilds=true&mutual_friends_count=true&guild_id={guild_id}", headers=headers)
     assert resp.status_code == 200
     json = await resp.get_json()
@@ -1066,7 +1070,7 @@ async def test_notes(testapp):
     data2 = TestVars.get("data_u2")
     client: TestClientType = (await testapp).test_client()
 
-    response = await client.get(f"/api/v9/users/@me/notes/{data2['id']}", headers=headers) # No note
+    response = await client.get(f"/api/v9/users/@me/notes/{data2['id']}", headers=headers)  # No note
     assert response.status_code == 404
     response = await client.get(f"/api/v9/users/@me/notes/{data2['id'] + '1'}", headers=headers) # No user
     assert response.status_code == 404
@@ -1082,3 +1086,19 @@ async def test_notes(testapp):
     assert response.status_code == 200
     json = await response.get_json()
     assert json["note"] == "test note 123!"
+
+@pt.mark.asyncio
+async def test_unknown_endpoints(testapp):
+    headers = {"Authorization": TestVars.get("token")}
+    client: TestClientType = (await testapp).test_client()
+
+    response = await client.get(f"/api/v9/unknown_endpoint", headers=headers)
+    assert response.status_code == 501
+    response = await client.get(f"/api/v9/unknown_endpoint")
+    assert response.status_code == 501
+    response = await client.get(f"/api/v9/unknown/nested/endpoint")
+    assert response.status_code == 501
+    response = await client.post(f"/api/v9/unknown_endpoint_post")
+    assert response.status_code == 501
+    response = await client.post(f"/api/v9/unknown/nested/endpoint/post")
+    assert response.status_code == 501

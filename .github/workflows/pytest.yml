@@ -123,6 +123,10 @@ jobs:
           FTP_USER: root
           FTP_PASSWORD: 123456
 
+      - name: Print coverage report
+        run: |
+          coverage report
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         with:
