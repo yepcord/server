@@ -699,11 +699,6 @@ class Core(Singleton):
         async with self.db() as db:
             await db.createGuild(guild, roles, channels, members)
         guild.fill_defaults()
-        Ctx["with_members"] = True
-        Ctx["with_channels"] = True
-        await c.getGw().dispatch(GuildCreateEvent(await guild.json), users=[user.id])
-        Ctx["with_members"] = False
-        Ctx["with_channels"] = False
         return guild
 
     async def createGuildFromTemplate(self, guild_id: int, user: User, template: GuildTemplate, name: Optional[str], icon: Optional[str]) -> Guild:
@@ -761,11 +756,6 @@ class Core(Singleton):
             for overwrite in overwrites:
                 await db.putPermissionOverwrite(overwrite)
         guild.fill_defaults()
-        Ctx["with_members"] = True
-        Ctx["with_channels"] = True
-        await c.getGw().dispatch(GuildCreateEvent(await guild.json), users=[user.id])
-        Ctx["with_members"] = False
-        Ctx["with_channels"] = False
         return guild
 
     async def getRole(self, role_id: int) -> Role:

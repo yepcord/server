@@ -1,3 +1,4 @@
+import sys
 from json import dumps as jdumps
 from time import time
 
@@ -6,7 +7,6 @@ from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
 from src.yepcord.gateway_dispatcher import GatewayDispatcher
-from .routes.webhooks import webhooks
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
@@ -16,6 +16,7 @@ from .routes.invites import invites
 from .routes.other import other
 from .routes.users import users
 from .routes.users_me import users_me
+from .routes.webhooks import webhooks
 from ..yepcord.classes.gifs import Gifs
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
@@ -71,9 +72,15 @@ async def before_serving():
     )
     await gateway.init()
 
-@app.errorhandler(500)
-async def h(e):
-    raise e.original_exception
+
+if "pytest" in sys.modules: # pragma: no cover
+    # Raise original exceptions instead of InternalServerError when testing
+    from werkzeug.exceptions import InternalServerError
+
+    @app.errorhandler(500)
+    async def handle_500_for_pytest(error: InternalServerError):
+        raise error.original_exception
+
 
 @app.errorhandler(YDataError)
 async def ydataerror_handler(err: YDataError):

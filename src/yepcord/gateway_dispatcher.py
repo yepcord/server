@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import datetime
 from typing import Optional
 
@@ -27,7 +28,7 @@ class GatewayDispatcher(Singleton):
     async def dispatch(self, event: DispatchEvent, users: Optional[list[int]]=None, channel_id: Optional[int]=None,
                        guild_id: Optional[int]=None, permissions: Optional[list[int]]=None) -> None:
         if not users and not channel_id and not guild_id:
-            assert False, "users/channel_id/guild_id must be provided!"
+            warnings.warn("users/channel_id/guild_id must be provided!")
             return
         await self.bc.broadcast("yepcord_events", {
             "data": await event.json(),

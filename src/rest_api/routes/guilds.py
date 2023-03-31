@@ -14,7 +14,7 @@ from ...gateway.events import MessageDeleteEvent, GuildUpdateEvent, ChannelUpdat
     GuildDeleteEvent, GuildMemberRemoveEvent, GuildBanAddEvent, MessageBulkDeleteEvent, GuildRoleCreateEvent, \
     GuildRoleUpdateEvent, GuildRoleDeleteEvent, GuildMemberUpdateEvent, GuildBanRemoveEvent, \
     GuildAuditLogEntryCreateEvent, GuildScheduledEventCreateEvent, GuildScheduledEventUpdateEvent, \
-    GuildScheduledEventDeleteEvent, ScheduledEventUserAddEvent, ScheduledEventUserRemoveEvent
+    GuildScheduledEventDeleteEvent, ScheduledEventUserAddEvent, ScheduledEventUserRemoveEvent, GuildCreateEvent
 from ...yepcord.classes.channel import Channel, PermissionOverwrite
 from ...yepcord.classes.guild import Guild, Invite, AuditLogEntry, GuildTemplate, Emoji, Role, Sticker, ScheduledEvent
 from ...yepcord.classes.user import User, GuildMember, UserId
@@ -37,7 +37,10 @@ async def create_guild(data: GuildCreate, user: User):
         if h := await getCDNStorage().setGuildIconFromBytesIO(guild_id, img):
             data.icon = h
     guild = await getCore().createGuild(guild_id, user, **data.dict(exclude_defaults=True))
+    Ctx["with_members"] = True
     Ctx["with_channels"] = True
+    await getGw().dispatch(GuildCreateEvent(await guild.json), users=[user.id])
+    Ctx["with_members"] = False
     return c_json(await guild.json)
 
 
@@ -611,7 +614,10 @@ async def create_from_template(data: GuildCreateFromTemplate, user: User, templa
             data.icon = h
 
     guild = await getCore().createGuildFromTemplate(guild_id, user, template, data.name, data.icon)
+    Ctx["with_members"] = True
     Ctx["with_channels"] = True
+    await getGw().dispatch(GuildCreateEvent(await guild.json), users=[user.id])
+    Ctx["with_members"] = False
     return c_json(await guild.json)
 
 

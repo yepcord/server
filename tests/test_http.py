@@ -7,7 +7,8 @@ from google.protobuf.wrappers_pb2 import StringValue
 from src.rest_api.main import app
 from src.yepcord.config import Config
 from src.yepcord.enums import ChannelType, StickerType
-from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings
+from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, FrecencyUserSettings, FavoriteStickers
+from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import getImage, b64decode, MFA
 from tests.utils import generateEmailVerificationToken, generateMfaVerificationKey
 from tests.yep_image import YEP_IMAGE
@@ -15,6 +16,7 @@ from tests.yep_image import YEP_IMAGE
 TestClientType = app.test_client_class
 
 class TestVars:
+    EMAIL_ID = Snowflake.makeId()
     _vars = {}
 
     @staticmethod
@@ -40,15 +42,16 @@ async def _test_app():
 @pt.mark.asyncio
 async def test_login_fail(testapp):
     client: TestClientType = (await testapp).test_client()
-    response = await client.post('/api/v9/auth/login', json={"login": "test@yepcord.ml", "password": "test_passw0rd"})
+    response = await client.post('/api/v9/auth/login', json={"login": f"{TestVars.EMAIL_ID}_test@yepcord.ml",
+                                                             "password": "test_passw0rd"})
     assert response.status_code == 400
 
 @pt.mark.asyncio
 async def test_register(testapp):
     client: TestClientType = (await testapp).test_client()
     response = await client.post('/api/v9/auth/register', json={
-        "username": "TestUser",
-        "email": "test@yepcord.ml",
+        "username": f"TestUser_{TestVars.EMAIL_ID}",
+        "email": f"{TestVars.EMAIL_ID}_test@yepcord.ml",
         "password": "test_passw0rd",
         "date_of_birth": "2000-01-01",
     })
@@ -92,7 +95,7 @@ async def test_getme_fail(testapp):
 @pt.mark.asyncio
 async def test_login_success(testapp):
     client: TestClientType = (await testapp).test_client()
-    response = await client.post('/api/v9/auth/login', json={"login": "test@yepcord.ml", "password": "test_passw0rd"})
+    response = await client.post('/api/v9/auth/login', json={"login": f"{TestVars.EMAIL_ID}_test@yepcord.ml", "password": "test_passw0rd"})
     assert response.status_code == 200
     j = await response.get_json()
     assert "token" in j
@@ -101,7 +104,8 @@ async def test_login_success(testapp):
 @pt.mark.asyncio
 async def test_change_username(testapp):
     client: TestClientType = (await testapp).test_client()
-    response = await client.patch("/api/v9/users/@me", json={"username": "YepCordTest", "password": "test_passw0rd"},
+    response = await client.patch("/api/v9/users/@me",
+                                  json={"username": f"YepCordTest_{TestVars.EMAIL_ID}", "password": "test_passw0rd"},
                                   headers={"Authorization": TestVars.get("token")})
     assert response.status_code == 200
     response = await client.get("/api/v9/users/@me", headers={
@@ -110,7 +114,7 @@ async def test_change_username(testapp):
     assert response.status_code == 200
     j = await response.get_json()
     TestVars.set("data", await response.get_json())
-    assert j["username"] == "YepCordTest"
+    assert j["username"] == f"YepCordTest_{TestVars.EMAIL_ID}"
 
 @pt.mark.asyncio
 async def test_settings(testapp):
@@ -119,7 +123,8 @@ async def test_settings(testapp):
     assert (await client.get("/api/v9/users/@me/connections", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/settings", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/consent", headers=headers)).status_code == 200
-    assert (await client.post("/api/v9/users/@me/consent", headers=headers, json={"grant": ["personalization"], "revoke": []})).status_code == 200
+    assert (await client.post("/api/v9/users/@me/consent", headers=headers,
+                              json={"grant": ["personalization"], "revoke": ["usage_statistics"]})).status_code == 200
     assert (await client.patch("/api/v9/users/@me/settings", headers=headers, json={"afk_timeout": 300})).status_code == 200
 
 @pt.mark.asyncio
@@ -130,17 +135,27 @@ async def test_settings_proto(testapp):
     assert (await client.get("/api/v9/users/@me/settings-proto/2", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/settings-proto/3", headers=headers)).status_code == 200
     assert (await client.get("/api/v9/users/@me/settings-proto/4", headers=headers)).status_code == 400
+
     proto = PreloadedUserSettings(text_and_images=TextAndImagesSettings(render_spoilers=StringValue(value="ALWAYS")))
     proto = proto.SerializeToString()
     proto = b64encode(proto).decode("utf8")
+    assert (await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers, json={"settings": proto})).status_code == 200
+    assert (await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers, json={"settings": ""})).status_code == 400
+    assert (await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers, json={"settings": "1"})).status_code == 400
+
+    proto = FrecencyUserSettings(favorite_stickers=FavoriteStickers(sticker_ids=[1, 2, 3]))
+    proto = proto.SerializeToString()
+    proto = b64encode(proto).decode("utf8")
     assert (await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers, json={"settings": proto})).status_code == 200
+    assert (await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers, json={"settings": ""})).status_code == 400
+    assert (await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers, json={"settings": "1"})).status_code == 400
 
 @pt.mark.asyncio
 async def test_register_other_user(testapp):
     client: TestClientType = (await testapp).test_client()
     response = await client.post('/api/v9/auth/register', json={
-        "username": "TestUser",
-        "email": "user@yepcord.ml",
+        "username": f"TestUser_{TestVars.EMAIL_ID}",
+        "email": f"{TestVars.EMAIL_ID}_user@yepcord.ml",
         "password": "test_passw0rd",
         "date_of_birth": "2000-01-01",
     })
@@ -162,13 +177,22 @@ async def test_relationships(testapp):
     data2 = TestVars.get("data_u2")
     client: TestClientType = (await testapp).test_client()
 
+    response = await client.post('/api/v9/users/@me/relationships', headers=headers,
+                                 json={"username": data["username"], "discriminator": data["discriminator"]})
+    assert response.status_code == 400
+    response = await client.post('/api/v9/users/@me/relationships', headers=headers,
+                                 json={"username": data["username"],
+                                       "discriminator": str((int(data["discriminator"])+1)%10000)})
+    assert response.status_code == 400
+
     response = await client.get('/api/v9/users/@me/relationships', headers=headers)
     assert response.status_code == 200
     assert len(await response.get_json()) == 0
     response = await client.get('/api/v9/users/@me/relationships', headers=headers_u2)
     assert response.status_code == 200
     assert len(await response.get_json()) == 0
-    response = await client.post('/api/v9/users/@me/relationships', headers=headers, json={"username": data2["username"], "discriminator": data2["discriminator"]})
+    response = await client.post('/api/v9/users/@me/relationships', headers=headers,
+                                 json={"username": data2["username"], "discriminator": data2["discriminator"]})
     assert response.status_code == 204
     response = await client.put(f"/api/v9/users/@me/relationships/{data['id']}", headers=headers, json={})
     assert response.status_code == 204
@@ -763,12 +787,18 @@ async def test_get_channel_invites(testapp):
 async def test_edit_user_data(testapp):
     client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
+
     resp = await client.patch("/api/v9/users/@me", headers=headers,
-                              json={'email': 'test_changed@yepcord.ml', 'discriminator': '9999', 'new_password': 'test_passw0rd_changed',
-                                    'password': 'test_passw0rd', 'avatar': YEP_IMAGE})
+                              json={'new_password': 'test_passw0rd_changed', 'password': 'invalid_password'})
+    assert resp.status_code == 400
+
+    resp = await client.patch("/api/v9/users/@me", headers=headers,
+                              json={'email': f"{TestVars.EMAIL_ID}_test_changed@yepcord.ml", 'discriminator': '9999',
+                                    'new_password': 'test_passw0rd_changed', 'password': 'test_passw0rd',
+                                    'avatar': YEP_IMAGE})
     assert resp.status_code == 200
     json = await resp.get_json()
-    assert json["email"] == 'test_changed@yepcord.ml'
+    assert json["email"] == f"{TestVars.EMAIL_ID}_test_changed@yepcord.ml"
     assert json["discriminator"] == '9999'
     assert len(json["avatar"]) == 32
     assert json["verified"] == False
@@ -779,7 +809,13 @@ async def test_verify_email(testapp):
     headers = {}
     user_id = TestVars.get("data")["id"]
 
-    token = generateEmailVerificationToken(int(user_id), "test_changed@yepcord.ml", b64decode(Config("KEY")))
+    token = generateEmailVerificationToken(int(user_id), f"{TestVars.EMAIL_ID}_test_changed@yepcord.ml",
+                                           b64decode(Config("KEY")))
+
+    resp = await client.post("/api/v9/auth/verify", headers=headers, json={"token": ""})
+    assert resp.status_code == 400
+    resp = await client.post("/api/v9/auth/verify", headers=headers, json={'token': "1"})
+    assert resp.status_code == 400
 
     resp = await client.post("/api/v9/auth/verify", headers=headers, json={'token': token})
     assert resp.status_code == 200
@@ -909,6 +945,14 @@ async def test_mfa_view_backup_codes(testapp):
     client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     user_id = str(TestVars.get("data")["id"])
+
+    resp = await client.post("/api/v9/auth/verify/view-backup-codes-challenge", headers=headers,
+                             json={'password': ''})
+    assert resp.status_code == 400
+    resp = await client.post("/api/v9/auth/verify/view-backup-codes-challenge", headers=headers,
+                             json={'password': 'invalid_password'})
+    assert resp.status_code == 400
+
     resp = await client.post("/api/v9/auth/verify/view-backup-codes-challenge", headers=headers,
                              json={'password': 'test_passw0rd_changed'})
     assert resp.status_code == 200
@@ -935,12 +979,27 @@ async def test_mfa_view_backup_codes(testapp):
 async def test_login_with_mfa(testapp):
     client: TestClientType = (await testapp).test_client()
     resp = await client.post('/api/v9/auth/login',
-                             json={"login": "test_changed@yepcord.ml", "password": "test_passw0rd_changed"})
+                             json={"login": f"{TestVars.EMAIL_ID}_test_changed@yepcord.ml", "password": "test_passw0rd_changed"})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"] is None
     assert json["mfa"] == True
     assert (ticket := json["ticket"])
+
+    code = MFA("a" * 16, 0).getCode()
+    invalid_code = (code + str((int(code[-1]) + 1) % 10))[1:] # Codes generated this way will never be equal with original code
+    # It takes last number of code, adds 1 to it, takes modulo of new number (so it's always between 0 and 9),
+    #   adds new number to valid code and cuts first digit (so length of code will always be 6).
+    # Examples: 000001 -> 000012, 111111 -> 111112, 057489 -> 574890, etc.
+
+    resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": "", "code": ""}) # No ticket
+    assert resp.status_code == 400
+    resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": "1", "code": ""}) # No code
+    assert resp.status_code == 400
+    resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": "123", "code": "123456"}) # Invalid ticket
+    assert resp.status_code == 400
+    resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": ticket, "code": invalid_code})  # Invalid code
+    assert resp.status_code == 400
 
     mfa = MFA("a" * 16, 0)
     resp = await client.post('/api/v9/auth/mfa/totp',
@@ -953,6 +1012,10 @@ async def test_login_with_mfa(testapp):
 async def test_disable_mfa(testapp):
     client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
+
+    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': "........"}) # Invalid backup code
+    assert resp.status_code == 400
+
     mfa = MFA("a"*16, 0)
     resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
     assert resp.status_code == 200
@@ -987,3 +1050,35 @@ async def test_gifs_search_suggest(testapp):
     assert resp.status_code == 200
     json = await resp.get_json()
     assert 0 < len(json) <= 5
+
+@pt.mark.asyncio
+async def test_edit_user_banner(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    resp = await client.patch("/api/v9/users/@me/profile", headers=headers, json={'banner': YEP_IMAGE})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["banner"]) == 32
+
+@pt.mark.asyncio
+async def test_notes(testapp):
+    headers = {"Authorization": TestVars.get("token")}
+    data2 = TestVars.get("data_u2")
+    client: TestClientType = (await testapp).test_client()
+
+    response = await client.get(f"/api/v9/users/@me/notes/{data2['id']}", headers=headers) # No note
+    assert response.status_code == 404
+    response = await client.get(f"/api/v9/users/@me/notes/{data2['id'] + '1'}", headers=headers) # No user
+    assert response.status_code == 404
+    response = await client.put(f"/api/v9/users/@me/notes/{data2['id'] + '1'}", headers=headers,
+                                json={"note": "test"}) # No user
+    assert response.status_code == 404
+
+    response = await client.put(f"/api/v9/users/@me/notes/{data2['id']}", headers=headers,
+                                json={"note": "test note 123!"})
+    assert response.status_code == 204
+
+    response = await client.get(f"/api/v9/users/@me/notes/{data2['id']}", headers=headers)  # No note
+    assert response.status_code == 200
+    json = await response.get_json()
+    assert json["note"] == "test note 123!"

@@ -47,7 +47,7 @@ jobs:
 
       - name: Run test suite for core
         run: |
-          pytest --cov-report=xml --cov-append --cov=src/yepcord --disable-warnings tests/test_core.py
+          pytest -x --cov-report=xml --cov-append --cov=src/yepcord --disable-warnings tests/test_core.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -55,15 +55,9 @@ jobs:
           DB_NAME: yepcord_test
           KEY: ${{ secrets.KEY }}
 
-      - name: Reinstall database
-        run: |
-          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} -e "DROP DATABASE IF EXISTS yepcord_test;"
-          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} -e "CREATE DATABASE yepcord_test;"
-          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
-
       - name: Run test suite for http
         run: |
-          pytest --cov-report=xml --cov-append --cov=src/rest_api --disable-warnings tests/test_http.py
+          pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --disable-warnings tests/test_http.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -74,7 +68,7 @@ jobs:
 
       - name: Run test suite for cdn and file storage
         run: |
-          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
+          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -92,7 +86,7 @@ jobs:
 
       - name: Run test suite for cdn and s3 storage
         run: |
-          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
+          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
@@ -116,7 +110,7 @@ jobs:
 
       - name: Run test suite for cdn and ftp storage
         run: |
-          pytest --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
+          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root

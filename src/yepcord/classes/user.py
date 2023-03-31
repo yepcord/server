@@ -27,7 +27,7 @@ from ..utils import b64encode, b64decode, proto_get, NoneType
 class _User:
     id: int
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return isinstance(other, _User) and self.id == other.id
 
     def get(self, item, default=None):
@@ -40,7 +40,7 @@ class UserId(_User):
         self.id = uid
 
 @model
-@dataclass
+@dataclass(eq=False)
 class Session(_User, Model):
     uid: int
     sid: int
@@ -366,7 +366,7 @@ class UserData(Model):
         return dn-db > timedelta(days=18*365+4)
 
 @model
-@dataclass
+@dataclass(eq=False)
 class User(_User, Model):
     id: int = field(id_field=True)
     email: Optional[str] = field(validation=And(
@@ -522,7 +522,7 @@ class PermissionsChecker:
         return True
 
 @model
-@dataclass
+@dataclass(eq=False)
 class GuildMember(_User, Model):
     user_id: int
     guild_id: int

@@ -13,6 +13,7 @@ from src.yepcord.errors import InvalidDataErr, MfaRequiredErr
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import b64decode, b64encode
 
+EMAIL_ID = Snowflake.makeId()
 VARS = {
     "user_id": Snowflake.makeId()
 }
@@ -43,7 +44,7 @@ async def _setup_db():
 @pt.mark.asyncio
 async def test_register_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    session = await testCore.register(VARS["user_id"], "Test Login", "test@yepcord.ml", "test_passw0rd", "2000-01-01")
+    session = await testCore.register(VARS["user_id"], "Test Login", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
     assert session is not None, "Account not registered: maybe you using already used database?"
 
 
@@ -51,7 +52,7 @@ async def test_register_success(testCore: Coroutine[Any, Any, Core]):
 async def test_register_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     try:
-        await testCore.register(VARS["user_id"], "Test Login 2", "test@yepcord.ml", "test_passw0rd", "2000-01-01")
+        await testCore.register(VARS["user_id"], "Test Login 2", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
         assert False, "Account already registered: must raise error!"
     except InvalidDataErr:
         pass  # Ok
@@ -60,7 +61,7 @@ async def test_register_fail(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_login_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    session = await testCore.login("test@yepcord.ml", "test_passw0rd")
+    session = await testCore.login(f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd")
     assert session is not None, "Session not created: ???"
 
 
@@ -68,8 +69,8 @@ async def test_login_success(testCore: Coroutine[Any, Any, Core]):
 async def test_login_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     try:
-        await testCore.login("test@yepcord.ml", "wrong_password")
-        await testCore.login("test123@yepcord.ml", "test_passw0rd")
+        await testCore.login(f"{EMAIL_ID}_test@yepcord.ml", "wrong_password")
+        await testCore.login(f"{EMAIL_ID}_test123@yepcord.ml", "test_passw0rd")
         assert False, "Wrong login or password: must raise Error!"
     except InvalidDataErr:
         pass  # Ok
@@ -206,7 +207,7 @@ async def test_setSettingsDiff_success(testCore: Coroutine[Any, Any, Core]):
 
 def changeUserData(data: UserData) -> None:
     data.birth = "2001-01-01" if data.birth == "2000-01-01" else "2000-01-01"
-    data.username = f"Changed username {randint(0, 1000)}"
+    data.username = f"{EMAIL_ID}_Changed username {randint(0, 1000)}"
     data.discriminator = randint(1, 9999)
     data.bio = f"Test bio text {randint(0, 1000)}"
     data.public_flags = UserFlagsE.STAFF if data.flags == UserFlagsE.PARTNER else UserFlagsE.PARTNER
@@ -272,8 +273,8 @@ async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core])
     testCore = await testCore
 
     # Register 2 users with same nickname
-    session1 = await core.register(VARS["user_id"] + 100000, "Test", "test1@yepcord.ml", "password", "2000-01-01")
-    session2 = await core.register(VARS["user_id"] + 200000, "Test", "test2@yepcord.ml", "password", "2000-01-01")
+    session1 = await core.register(VARS["user_id"] + 100000, "Test", f"{EMAIL_ID}_test1@yepcord.ml", "password", "2000-01-01")
+    session2 = await core.register(VARS["user_id"] + 200000, "Test", f"{EMAIL_ID}_test2@yepcord.ml", "password", "2000-01-01")
     user1 = await core.getUser(session1.id)
     user2 = await core.getUser(session2.id)
     userdata2 = await user2.userdata
@@ -291,9 +292,9 @@ async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core])
 async def test_changeUserName_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     user = await core.getUser(VARS["user_id"])
-    await testCore.changeUserName(user, "UserName")
+    await testCore.changeUserName(user, f"{EMAIL_ID}_UserName")
     userdata = await testCore.getUserData(user)
-    assert userdata.username == "UserName"
+    assert userdata.username == f"{EMAIL_ID}_UserName"
 
 
 @pt.mark.asyncio
