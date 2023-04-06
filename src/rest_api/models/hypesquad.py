@@ -3,6 +3,7 @@ from pydantic import BaseModel, validator
 from ...yepcord.errors import InvalidDataErr, Errors
 
 
+# noinspection PyMethodParameters
 class HypesquadHouseChange(BaseModel):
     house_id: int
 

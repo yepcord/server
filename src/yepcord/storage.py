@@ -38,6 +38,7 @@ class FClient(Client):
                 data += block
         return data
 
+    # noinspection PyShadowingBuiltins
     async def s_upload(self, path: str, data: Union[bytes, BytesIO]) -> None:
         dirs = path.split("/")[:-1]
         for dir in dirs:
@@ -46,8 +47,8 @@ class FClient(Client):
         async with self.upload_stream(path.split("/")[-1]) as stream:
             await stream.write(data if isinstance(data, bytes) else data.getvalue())
 
-async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str):
-    def _resize(img: Image, size: Tuple[int, int], form: str) -> bytes:
+async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str) -> bytes:
+    def _resize() -> bytes:
         orig_size = (img.size[0], img.size[1])
         n_frames = getattr(img, 'n_frames', 1)
 
@@ -65,7 +66,7 @@ async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str):
         frames[0].save(b, format=form, save_all=True, append_images=frames[1:], loop=0)
         return b.getvalue()
     with ThreadPoolExecutor() as pool:
-        res = await gather(get_event_loop().run_in_executor(pool, lambda: _resize(img, size, form)))
+        res = await gather(get_event_loop().run_in_executor(pool, lambda: _resize()))
     return res[0]
 
 async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
@@ -86,6 +87,7 @@ async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
 def imageFrames(img) -> int:
     return getattr(img, "n_frames", 1)
 
+# noinspection PyShadowingBuiltins
 class _Storage:
     async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]: # pragma: no cover
         raise NotImplementedError
@@ -188,6 +190,7 @@ class _Storage:
     async def getAttachment(self, channel_id, attachment_id, name): # pragma: no cover
         raise NotImplementedError
 
+# noinspection PyShadowingBuiltins
 class FileStorage(_Storage):
     def __init__(self, root_path="files/"):
         self.root = root_path
@@ -273,6 +276,7 @@ class FileStorage(_Storage):
         async with aopen(fpath, "rb") as f:
             return await f.read()
 
+# noinspection PyShadowingBuiltins
 class S3Storage(_Storage):
     def __init__(self, endpoint: str, key_id: str, access_key: str, bucket: str):
         if not _SUPPORT_S3: # pragma: no cover
@@ -381,6 +385,7 @@ class S3Storage(_Storage):
             else:
                 return f.getvalue()
 
+# noinspection PyShadowingBuiltins
 class FTPStorage(_Storage):
     def __init__(self, host: str, user: str, password: str, port: int=21):
         if not _SUPPORT_FTP: # pragma: no cover

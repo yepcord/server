@@ -1,11 +1,8 @@
 from asyncio import get_event_loop, sleep as asleep
-from base64 import b64encode as _b64encode, b64decode as _b64decode, b32decode
-from hmac import new as hnew
+from base64 import b64encode as _b64encode, b64decode as _b64decode
 from io import BytesIO
 from json import dumps as jdumps, loads as jloads
 from re import compile as rcompile
-from struct import pack as spack, unpack as sunpack
-from time import time
 from typing import Union, Tuple, Optional
 
 from aiomysql import escape_string
@@ -69,26 +66,6 @@ def imageType(image: BytesIO) -> str:
 def validImage(image: BytesIO) -> bool:
     return imageType(image) in ["png", "webp", "gif", "jpeg",
                                 "jpg"] and image.getbuffer().nbytes < 8 * 1024 * 1024 * 1024
-
-
-class MFA:
-    _re = rcompile(r'^[A-Z0-9]{16}$')
-
-    def __init__(self, key: str, uid: int):
-        self.key = str(key).upper()
-        self.uid = self.id = uid
-
-    def getCode(self) -> str:
-        key = b32decode(self.key.upper() + '=' * ((8 - len(self.key)) % 8))
-        counter = spack('>Q', int(time() / 30))
-        mac = hnew(key, counter, "sha1").digest()
-        offset = mac[-1] & 0x0f
-        binary = sunpack('>L', mac[offset:offset + 4])[0] & 0x7fffffff
-        return str(binary)[-6:].zfill(6)
-
-    @property
-    def valid(self) -> bool:
-        return bool(self._re.match(self.key))
 
 
 async def execute_after(coro, seconds):

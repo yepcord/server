@@ -1,3 +1,5 @@
+import sys
+
 from quart import Quart
 from quart_schema import validate_querystring, QuartSchema
 
@@ -169,6 +171,15 @@ async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, fi
         if event_image := await cdn.getGuildEvent(event_id, file_hash, query_args.size, form):
             return event_image, 200, {"Content-Type": f"image/{form}"}
     return b'', 404
+
+
+if "pytest" in sys.modules: # pragma: no cover
+    # Raise original exceptions instead of InternalServerError when testing
+    from werkzeug.exceptions import InternalServerError
+
+    @app.errorhandler(500)
+    async def handle_500_for_pytest(error: InternalServerError):
+        raise error.original_exception
 
 
 # Attachments

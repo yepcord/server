@@ -59,8 +59,8 @@ class Channel(_Channel, Model):
         Returns dict object for discord.
         Set Ctx["user_id"] to True when Channel.type is ChannelType.DM or ChannelType.GROUP_DM to remove current user
           id from result.
-        Set Ctx["user_id"] to False when Channel.type is ChannelType.DM or ChannelType.GROUP_DM to return users ids list
-          in recipients field instead of users data.
+        Set Ctx["with_ids"] to False when Channel.type is ChannelType.DM or ChannelType.GROUP_DM to return users data list
+          in recipients field instead of users ids.
         :return:
         """
         if self.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):

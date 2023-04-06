@@ -12,6 +12,7 @@ from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.utils import getImage, validImage, LOCALES
 
 
+# noinspection PyMethodParameters
 class GuildCreate(BaseModel):
     name: str
     #region
@@ -30,6 +31,7 @@ class GuildCreate(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class GuildUpdate(BaseModel):
     name: Optional[str] = None
     verification_level: Optional[int] = None
@@ -114,6 +116,7 @@ class GuildUpdate(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class TemplateCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -137,6 +140,7 @@ class TemplateCreate(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class TemplateUpdate(TemplateCreate):
     name: Optional[str] = None
 
@@ -152,6 +156,7 @@ class TemplateUpdate(TemplateCreate):
         return value
 
 
+# noinspection PyMethodParameters
 class EmojiCreate(BaseModel):
     name: str
     image: str
@@ -175,6 +180,7 @@ class EmojiCreate(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class EmojiUpdate(BaseModel):
     name: Optional[str] = None
 
@@ -199,6 +205,7 @@ class ChannelsPositionsChangeList(BaseModel):
     changes: List[ChannelsPositionsChange]
 
 
+# noinspection PyMethodParameters
 class ChannelCreate(BaseModel):
     name: str
     type: Optional[int] = None
@@ -286,6 +293,7 @@ class ChannelCreate(BaseModel):
                 exclude_defaults=True)
 
 
+# noinspection PyMethodParameters
 class BanMember(BaseModel):
     delete_message_seconds: Optional[int] = None
 
@@ -299,6 +307,7 @@ class BanMember(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class RoleCreate(BaseModel):
     name: str = "new role"
     permissions: int = 0
@@ -332,6 +341,7 @@ class RoleCreate(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class RoleUpdate(BaseModel):
     name: Optional[str] = None
     permissions: Optional[int] = None
@@ -370,6 +380,7 @@ class RolesPositionsChange(BaseModel):
     position: Optional[int] = None
 
 
+# noinspection PyMethodParameters
 class RolesPositionsChangeList(BaseModel):
     changes: List[ChannelsPositionsChange]
 
@@ -388,6 +399,7 @@ class AddRoleMembers(BaseModel):
     member_ids: List[int] = Field(default_factory=list)
 
 
+# noinspection PyMethodParameters
 class MemberUpdate(BaseModel):
     nick: Optional[str] = ""
     roles: Optional[List[int]] = None
@@ -416,6 +428,7 @@ class SetVanityUrl(BaseModel):
     code: Optional[str] = None
 
 
+# noinspection PyMethodParameters
 class GuildCreateFromTemplate(BaseModel):
     name: str
     icon: Optional[str] = None
@@ -428,6 +441,7 @@ class GuildCreateFromTemplate(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class GuildDelete(BaseModel):
     code: str = ""
 
@@ -436,6 +450,7 @@ class GuildDelete(BaseModel):
         return value.replace("-", "").replace(" ", "")
 
 
+# noinspection PyMethodParameters
 class GetAuditLogsQuery(BaseModel):
     limit: int = 50
     before: Optional[int] = None
@@ -447,6 +462,7 @@ class GetAuditLogsQuery(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class CreateSticker(BaseModel):
     name: str
     description: Optional[str] = None
@@ -478,6 +494,7 @@ class CreateSticker(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class UpdateSticker(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
@@ -515,6 +532,7 @@ class EventEntityMeta(BaseModel):
     location: str
 
 
+# noinspection PyMethodParameters
 class CreateEvent(BaseModel):
     name: str
     privacy_level: int
@@ -612,6 +630,7 @@ class GetScheduledEvent(BaseModel):
     with_user_count: bool = False
 
 
+# noinspection PyMethodParameters
 class UpdateScheduledEvent(CreateEvent):
     name: Optional[str] = None
     privacy_level: Optional[int] = None
