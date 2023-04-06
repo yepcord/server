@@ -6,9 +6,12 @@ import pytest as pt
 from PIL import Image
 
 from src.cdn.main import app
+from src.yepcord.classes.guild import Emoji, Sticker
 from src.yepcord.classes.message import Attachment
+from src.yepcord.classes.user import User
 from src.yepcord.config import Config
 from src.yepcord.core import Core
+from src.yepcord.enums import StickerFormat, StickerType
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.storage import getStorage
 from src.yepcord.utils import getImage, b64decode
@@ -59,7 +62,6 @@ async def _setup_db():
         db=Config("DB_NAME"),
         autocommit=True
     )
-    await core.initMCL()
     return core
 
 @pt.mark.asyncio
@@ -205,22 +207,32 @@ async def test_get_guild_avatar(testApp):
     assert response.status_code == 404
 
 @pt.mark.asyncio
-async def test_set_sticker():
+async def test_set_sticker(testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
+    await testCore.createGuild(TestVars.GUILD_ID, User(Snowflake.makeId()), "test")
+    await testCore.putSticker(Sticker(TestVars.STICKER_ID, TestVars.GUILD_ID, Snowflake.makeId(), "test",
+                                      "test", StickerType.GUILD, StickerFormat.PNG))
     sticker_hash = await storage.setStickerFromBytesIO(TestVars.STICKER_ID, getImage(YEP_IMAGE))
     assert sticker_hash == "sticker"
 
 @pt.mark.asyncio
-async def test_get_sticker(testApp):
+async def test_get_sticker(testApp, testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
     client: TestClientType = (await testApp).test_client()
 
     response = await client.get(f"/stickers/{TestVars.STICKER_ID}.idk?size=240")
     assert response.status_code == 400
 
-    response = await client.get(f"/stickers/{TestVars.STICKER_ID}.webp?size=240")
-    assert response.status_code == 200
-    assert response.headers["Content-Type"] == "image/webp"
-    img = Image.open(BytesIO(await response.data))
-    assert img.size[0] == 240
+    async def _checkStickerSuccess():
+        response = await client.get(f"/stickers/{TestVars.STICKER_ID}.webp?size=240")
+        assert response.status_code == 200
+        assert response.headers["Content-Type"] == "image/webp"
+        img = Image.open(BytesIO(await response.data))
+        assert img.size[0] == 240
+
+    await _checkStickerSuccess()
+    await testCore.deleteSticker(Sticker(TestVars.STICKER_ID, 0, 0, "", "", 0, 0))
+    await _checkStickerSuccess()
 
     response = await client.get(f"/stickers/{Snowflake.makeId()}.webp?size=240")
     assert response.status_code == 404
@@ -246,22 +258,30 @@ async def test_get_event_image(testApp):
     assert response.status_code == 404
 
 @pt.mark.asyncio
-async def test_set_emoji():
+async def test_set_emoji(testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
+    await testCore.addEmoji(Emoji(TestVars.EMOJI_ID, "test", Snowflake.makeId(), TestVars.GUILD_ID), None)
     emoji_info = await storage.setEmojiFromBytesIO(TestVars.EMOJI_ID, getImage(YEP_IMAGE))
     assert not emoji_info["animated"]
 
 @pt.mark.asyncio
-async def test_get_emoji(testApp):
+async def test_get_emoji(testApp, testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
     client: TestClientType = (await testApp).test_client()
 
     response = await client.get(f"/emojis/{TestVars.EMOJI_ID}.idk?size=240")
     assert response.status_code == 400
 
-    response = await client.get(f"/emojis/{TestVars.EMOJI_ID}.webp?size=240")
-    assert response.status_code == 200
-    assert response.headers["Content-Type"] == "image/webp"
-    img = Image.open(BytesIO(await response.data))
-    assert img.size[0] == 56
+    async def _checkEmojiSuccess():
+        response = await client.get(f"/emojis/{TestVars.EMOJI_ID}.webp?size=240")
+        assert response.status_code == 200
+        assert response.headers["Content-Type"] == "image/webp"
+        img = Image.open(BytesIO(await response.data))
+        assert img.size[0] == 56
+
+    await _checkEmojiSuccess()
+    await testCore.deleteEmoji(Emoji(TestVars.EMOJI_ID, "test", Snowflake.makeId(), TestVars.GUILD_ID), None)
+    await _checkEmojiSuccess()
 
     response = await client.get(f"/emojis/{Snowflake.makeId()}.webp?size=240")
     assert response.status_code == 404

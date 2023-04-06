@@ -1,3 +1,4 @@
+import sys
 from json import dumps as jdumps
 from time import time
 
@@ -5,7 +6,7 @@ from quart import Quart, request, Response
 from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
-from .routes.webhooks import webhooks
+from src.yepcord.gateway_dispatcher import GatewayDispatcher
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
@@ -15,6 +16,7 @@ from .routes.invites import invites
 from .routes.other import other
 from .routes.users import users
 from .routes.users_me import users_me
+from .routes.webhooks import webhooks
 from ..yepcord.classes.gifs import Gifs
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
@@ -53,6 +55,7 @@ app = YEPcord("YEPcord-api")
 QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
+gateway = GatewayDispatcher()
 app.gifs = Gifs(Config("TENOR_KEY"))
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
@@ -67,7 +70,16 @@ async def before_serving():
         db=Config("DB_NAME"),
         autocommit=True
     )
-    await core.initMCL()
+    await gateway.init()
+
+
+if "pytest" in sys.modules: # pragma: no cover
+    # Raise original exceptions instead of InternalServerError when testing
+    from werkzeug.exceptions import InternalServerError
+
+    @app.errorhandler(500)
+    async def handle_500_for_pytest(error: InternalServerError):
+        raise error.original_exception
 
 
 @app.errorhandler(YDataError)

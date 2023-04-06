@@ -1,12 +1,19 @@
+from __future__ import annotations
 from base64 import b64encode
 from time import time
-from typing import List
+from typing import List, TYPE_CHECKING, Union
 
-from ..yepcord.classes.user import GuildMember
 from ..yepcord.config import Config
-from ..yepcord.snowflake import Snowflake
 from ..yepcord.ctx import Ctx
-from ..yepcord.enums import GatewayOp, ChannelType
+from ..yepcord.enums import GatewayOp
+from ..yepcord.snowflake import Snowflake
+
+if TYPE_CHECKING:
+    from ..yepcord.classes.channel import Channel
+    from ..yepcord.classes.guild import Invite
+    from ..yepcord.classes.user import GuildMember, UserData, User, UserSettings
+    from ..yepcord.core import Core
+    from .gateway import GatewayClient, ClientStatus
 
 
 class Event:
@@ -14,11 +21,21 @@ class Event:
 
 class DispatchEvent(Event):
     OP = GatewayOp.DISPATCH
+    NAME: str = ""
+
+    async def json(self) -> dict: ...
+
+class RawDispatchEvent(DispatchEvent):
+    def __init__(self, data: dict):
+        self.data = data
+
+    async def json(self) -> dict:
+        return self.data
 
 class ReadyEvent(DispatchEvent):
     NAME = "READY"
 
-    def __init__(self, user, client, core):
+    def __init__(self, user: User, client: GatewayClient, core: Core):
         self.user = user
         self.client = client
         self.core = core
@@ -106,7 +123,7 @@ class ReadyEvent(DispatchEvent):
 class ReadySupplementalEvent(DispatchEvent):
     NAME = "READY_SUPPLEMENTAL"
 
-    def __init__(self, friends_presences, guilds_ids):
+    def __init__(self, friends_presences: list[dict], guilds_ids: list[int]):
         self.friends_presences = friends_presences
         self.guilds_ids = guilds_ids
 
@@ -128,7 +145,7 @@ class ReadySupplementalEvent(DispatchEvent):
 class RelationshipAddEvent(DispatchEvent):
     NAME = "RELATIONSHIP_ADD"
 
-    def __init__(self, user_id, userdata, type):
+    def __init__(self, user_id: int, userdata: UserData, type: int):
         self.user_id = user_id
         self.userdata = userdata
         self.type = type
@@ -138,14 +155,7 @@ class RelationshipAddEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "user": {
-                    "username": self.userdata.username,
-                    "public_flags": self.userdata.public_flags,
-                    "id": str(self.user_id),
-                    "discriminator": self.userdata.s_discriminator,
-                    "avatar_decoration": self.userdata.avatar_decoration,
-                    "avatar": self.userdata.avatar
-                },
+                "user": await self.userdata.json,
                 "type": self.type,
                 "should_notify": True,
                 "nickname": None,
@@ -156,25 +166,15 @@ class RelationshipAddEvent(DispatchEvent):
 class DMChannelCreateEvent(DispatchEvent):
     NAME = "CHANNEL_CREATE"
 
-    def __init__(self, channel, recipients):
+    def __init__(self, channel: Channel):
         self.channel = channel
-        self.recipients = recipients
 
     async def json(self) -> dict:
         j = {
             "t": self.NAME,
             "op": self.OP,
-            "d": {
-                "type": self.channel.type,
-                "recipients": self.recipients,
-                "last_message_id": str(self.channel.last_message_id),
-                "id": str(self.channel.id)
-            }
+            "d": await self.channel.json
         }
-        if self.channel.type == ChannelType.GROUP_DM:
-            j["d"]["owner_id"] = str(self.channel.owner_id)
-            j["d"]["icon"] = self.channel.icon
-            j["d"]["name"] = self.channel.name
         return j
 
 class DMChannelUpdateEvent(DMChannelCreateEvent):
@@ -183,8 +183,8 @@ class DMChannelUpdateEvent(DMChannelCreateEvent):
 class RelationshipRemoveEvent(DispatchEvent):
     NAME = "RELATIONSHIP_REMOVE"
 
-    def __init__(self, user, type):
-        self.user = user
+    def __init__(self, user_id: int, type: int):
+        self.user_id = user_id
         self.type = type
 
     async def json(self) -> dict:
@@ -193,14 +193,14 @@ class RelationshipRemoveEvent(DispatchEvent):
             "op": self.OP,
             "d": {
                 "type": self.type,
-                "id": str(self.user)
+                "id": str(self.user_id)
             }
         }
 
 class UserUpdateEvent(DispatchEvent):
     NAME = "USER_UPDATE"
 
-    def __init__(self, user, userdata, settings):
+    def __init__(self, user: User, userdata: UserData, settings: UserSettings):
         self.user = user
         self.userdata = userdata
         self.settings = settings
@@ -233,8 +233,7 @@ class UserUpdateEvent(DispatchEvent):
 class PresenceUpdateEvent(DispatchEvent):
     NAME = "PRESENCE_UPDATE"
 
-    def __init__(self, user, userdata, status):
-        self.user = user
+    def __init__(self, userdata: UserData, status: Union[ClientStatus, dict]):
         self.userdata = userdata
         self.status = status
 
@@ -243,13 +242,7 @@ class PresenceUpdateEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "user": {
-                    "username": self.userdata.username,
-                    "public_flags": self.userdata.public_flags,
-                    "id": str(self.user),
-                    "discriminator": self.userdata.s_discriminator,
-                    "avatar": self.userdata.avatar
-                },
+                "user": await self.userdata.json,
                 "status": self.status["status"],
                 "last_modified": self.status.get("last_modified", int(time() * 1000)),
                 "client_status": {} if self.status["status"] == "offline" else {"desktop": self.status["status"]},
@@ -260,31 +253,31 @@ class PresenceUpdateEvent(DispatchEvent):
 class MessageCreateEvent(DispatchEvent):
     NAME = "MESSAGE_CREATE"
 
-    def __init__(self, message):
-        self.message = message
+    def __init__(self, message_obj: dict):
+        self.message_obj = message_obj
 
     async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": self.OP,
-            "d": self.message
+            "d": self.message_obj
         }
 
 class TypingEvent(DispatchEvent):
     NAME = "TYPING_START"
 
-    def __init__(self, user, channel):
-        self.user = user
-        self.channel = channel
+    def __init__(self, user_id: int, channel_id: int):
+        self.user_id = user_id
+        self.channel_id = channel_id
 
     async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "user_id": str(self.user),
+                "user_id": str(self.user_id),
                 "timestamp": int(time()),
-                "channel_id": str(self.channel)
+                "channel_id": str(self.channel_id)
             }
         }
 
@@ -294,28 +287,28 @@ class MessageUpdateEvent(MessageCreateEvent):
 class MessageDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE"
 
-    def __init__(self, message, channel, guild):
-        self.message = message
-        self.channel = channel
-        self.guild = guild
+    def __init__(self, message_id: int, channel_id: int, guild_id: int):
+        self.message_id = message_id
+        self.channel_id = channel_id
+        self.guild_id = guild_id
 
     async def json(self) -> dict:
         data = {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "id": str(self.message),
-                "channel_id": str(self.channel)
+                "id": str(self.message_id),
+                "channel_id": str(self.channel_id)
             }
         }
-        if self.guild is not None:
-            data["d"]["guild_id"] = str(self.guild)
+        if self.guild_id is not None:
+            data["d"]["guild_id"] = str(self.guild_id)
         return data
 
 class MessageAckEvent(DispatchEvent):
     NAME = "MESSAGE_ACK"
 
-    def __init__(self, ack_object):
+    def __init__(self, ack_object: dict):
         self.ack_object = ack_object
 
     async def json(self) -> dict:
@@ -328,16 +321,16 @@ class MessageAckEvent(DispatchEvent):
 class ChannelRecipientAddEvent(DispatchEvent):
     NAME = "CHANNEL_RECIPIENT_ADD"
 
-    def __init__(self, channel_id, user):
+    def __init__(self, channel_id: int, user_obj: dict):
         self.channel_id = channel_id
-        self.user = user
+        self.user_obj = user_obj
 
     async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "user": self.user,
+                "user": self.user_obj,
                 "channel_id": str(self.channel_id)
             }
         }
@@ -348,20 +341,20 @@ class ChannelRecipientRemoveEvent(ChannelRecipientAddEvent):
 class DMChannelDeleteEvent(DispatchEvent):
     NAME = "CHANNEL_DELETE"
 
-    def __init__(self, channel):
-        self.channel = channel
+    def __init__(self, channel_obj: dict):
+        self.channel_obj = channel_obj
 
     async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": self.OP,
-            "d": self.channel
+            "d": self.channel_obj
         }
 
 class ChannelPinsUpdateEvent(DispatchEvent):
     NAME = "CHANNEL_PINS_UPDATE"
 
-    def __init__(self, channel_id, last_pin_timestamp):
+    def __init__(self, channel_id: int, last_pin_timestamp: str):
         self.channel_id = channel_id
         self.last_pin_timestamp = last_pin_timestamp
 
@@ -378,7 +371,7 @@ class ChannelPinsUpdateEvent(DispatchEvent):
 class MessageReactionAddEvent(DispatchEvent):
     NAME = "MESSAGE_REACTION_ADD"
 
-    def __init__(self, user_id, message_id, channel_id, emoji):
+    def __init__(self, user_id: int, message_id: int, channel_id: int, emoji: dict):
         self.user_id = user_id
         self.message_id = message_id
         self.channel_id = channel_id
@@ -402,7 +395,7 @@ class MessageReactionRemoveEvent(MessageReactionAddEvent):
 class GuildCreateEvent(DispatchEvent):
     NAME = "GUILD_CREATE"
 
-    def __init__(self, guild_obj):
+    def __init__(self, guild_obj: dict):
         self.guild_obj = guild_obj
 
     async def json(self) -> dict:
@@ -423,7 +416,7 @@ class GuildUpdateEvent(GuildCreateEvent):
 class GuildDeleteEvent(DispatchEvent):
     NAME = "GUILD_DELETE"
 
-    def __init__(self, guild_id):
+    def __init__(self, guild_id: int):
         self.guild_id = guild_id
 
     async def json(self) -> dict:
@@ -438,7 +431,7 @@ class GuildDeleteEvent(DispatchEvent):
 class GuildMembersListUpdateEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_LIST_UPDATE"
 
-    def __init__(self, members: List[GuildMember], total_members: int, statuses, guild_id):
+    def __init__(self, members: List[GuildMember], total_members: int, statuses: dict, guild_id: int):
         self.members = members
         self.total_members = total_members
         self.statuses = statuses
@@ -493,8 +486,8 @@ class GuildMembersListUpdateEvent(DispatchEvent):
 class UserNoteUpdateEvent(DispatchEvent):
     NAME = "USER_NOTE_UPDATE"
 
-    def __init__(self, uid, note):
-        self.uid = uid
+    def __init__(self, user_id: int, note: str):
+        self.user_id = user_id
         self.note = note
 
     async def json(self) -> dict:
@@ -502,7 +495,7 @@ class UserNoteUpdateEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "id": str(self.uid),
+                "id": str(self.user_id),
                 "note": self.note
             }
         }
@@ -510,7 +503,7 @@ class UserNoteUpdateEvent(DispatchEvent):
 class UserSettingsProtoUpdateEvent(DispatchEvent):
     NAME = "USER_SETTINGS_PROTO_UPDATE"
 
-    def __init__(self, proto, stype):
+    def __init__(self, proto: str, stype: int):
         self.proto = proto
         self.type = stype
 
@@ -530,7 +523,7 @@ class UserSettingsProtoUpdateEvent(DispatchEvent):
 class GuildEmojisUpdate(DispatchEvent):
     NAME = "GUILD_EMOJIS_UPDATE"
 
-    def __init__(self, guild_id, emojis):
+    def __init__(self, guild_id: int, emojis: list[dict]):
         self.guild_id = guild_id
         self.emojis = emojis
 
@@ -547,16 +540,15 @@ class GuildEmojisUpdate(DispatchEvent):
 class ChannelUpdateEvent(DispatchEvent):
     NAME = "CHANNEL_UPDATE"
 
-    def __init__(self, channel):
-        self.channel = channel
+    def __init__(self, channel_obj: dict):
+        self.channel_obj = channel_obj
 
     async def json(self) -> dict:
-        j = {
+        return {
             "t": self.NAME,
             "op": self.OP,
-            "d": self.channel
+            "d": self.channel_obj
         }
-        return j
 
 class ChannelCreateEvent(ChannelUpdateEvent):
     NAME = "CHANNEL_CREATE"
@@ -567,21 +559,25 @@ class ChannelDeleteEvent(ChannelUpdateEvent):
 class InviteDeleteEvent(DispatchEvent):
     NAME = "INVITE_DELETE"
 
-    def __init__(self, payload):
-        self.payload = payload
+    def __init__(self, invite: Invite):
+        self.invite = invite
 
     async def json(self) -> dict:
         data = {
             "t": self.NAME,
             "op": self.OP,
-            "d": self.payload
+            "d": {
+                "guild_id": str(self.invite.guild_id),
+                "code": self.invite.code,
+                "channel_id": str(self.invite.channel_id)
+            }
         }
         return data
 
 class GuildMemberRemoveEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_REMOVE"
 
-    def __init__(self, guild_id, user_obj):
+    def __init__(self, guild_id: int, user_obj: dict):
         self.guild_id = guild_id
         self.user_obj = user_obj
 
@@ -599,7 +595,7 @@ class GuildMemberRemoveEvent(DispatchEvent):
 class GuildBanAddEvent(DispatchEvent):
     NAME = "GUILD_BAN_ADD"
 
-    def __init__(self, guild_id, user_obj):
+    def __init__(self, guild_id: int, user_obj: dict):
         self.guild_id = guild_id
         self.user_obj = user_obj
 
@@ -620,17 +616,17 @@ class GuildBanRemoveEvent(GuildBanAddEvent):
 class MessageBulkDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE_BULK"
 
-    def __init__(self, guild_id, channel_id, messages):
+    def __init__(self, guild_id: int, channel_id: int, message_ids: list[int]):
         self.guild_id = guild_id
         self.channel_id = channel_id
-        self.messages = messages
+        self.message_ids = message_ids
 
     async def json(self) -> dict:
         data = {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "ids": [str(message_id) for message_id in self.messages],
+                "ids": [str(message_id) for message_id in self.message_ids],
                 "guild_id": str(self.guild_id),
                 "channel_id": str(self.channel_id)
             }
@@ -640,7 +636,7 @@ class MessageBulkDeleteEvent(DispatchEvent):
 class GuildRoleCreateEvent(DispatchEvent):
     NAME = "GUILD_ROLE_CREATE"
 
-    def __init__(self, guild_id, role_obj):
+    def __init__(self, guild_id: int, role_obj: dict):
         self.guild_id = guild_id
         self.role_obj = role_obj
 
@@ -661,7 +657,7 @@ class GuildRoleUpdateEvent(GuildRoleCreateEvent):
 class GuildRoleDeleteEvent(DispatchEvent):
     NAME = "GUILD_ROLE_DELETE"
 
-    def __init__(self, guild_id, role_id):
+    def __init__(self, guild_id: int, role_id: int):
         self.guild_id = guild_id
         self.role_id = role_id
 
@@ -679,7 +675,7 @@ class GuildRoleDeleteEvent(DispatchEvent):
 class GuildMemberUpdateEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_UPDATE"
 
-    def __init__(self, guild_id, member_obj):
+    def __init__(self, guild_id: int, member_obj: dict):
         self.guild_id = guild_id
         self.member_obj = member_obj
 
@@ -695,7 +691,7 @@ class GuildMemberUpdateEvent(DispatchEvent):
 class GuildMembersChunkEvent(DispatchEvent):
     NAME = "GUILD_MEMBERS_CHUNK"
 
-    def __init__(self, members: List[GuildMember], presences: List, guild_id: int):
+    def __init__(self, members: List[GuildMember], presences: list, guild_id: int):
         self.members = members
         self.presences = presences
         self.guild_id = guild_id
@@ -717,7 +713,7 @@ class GuildMembersChunkEvent(DispatchEvent):
 class GuildAuditLogEntryCreateEvent(DispatchEvent):
     NAME = "GUILD_AUDIT_LOG_ENTRY_CREATE"
 
-    def __init__(self, entry_obj):
+    def __init__(self, entry_obj: dict):
         self.entry_obj = entry_obj
 
     async def json(self) -> dict:
@@ -731,7 +727,7 @@ class GuildAuditLogEntryCreateEvent(DispatchEvent):
 class WebhooksUpdateEvent(DispatchEvent):
     NAME = "WEBHOOKS_UPDATE"
 
-    def __init__(self, guild_id, channel_id):
+    def __init__(self, guild_id: int, channel_id: int):
         self.guild_id = guild_id
         self.channel_id = channel_id
 
@@ -749,7 +745,7 @@ class WebhooksUpdateEvent(DispatchEvent):
 class StickersUpdateEvent(DispatchEvent):
     NAME = "GUILD_STICKERS_UPDATE"
 
-    def __init__(self, guild_id, stickers):
+    def __init__(self, guild_id: int, stickers: list[dict]):
         self.guild_id = guild_id
         self.stickers = stickers
 
@@ -782,7 +778,7 @@ class UserDeleteEvent(DispatchEvent):
 class GuildScheduledEventCreateEvent(DispatchEvent):
     NAME = "GUILD_SCHEDULED_EVENT_CREATE"
 
-    def __init__(self, event_obj):
+    def __init__(self, event_obj: dict):
         self.event_obj = event_obj
 
     async def json(self) -> dict:
@@ -798,7 +794,7 @@ class GuildScheduledEventUpdateEvent(GuildScheduledEventCreateEvent):
 class ScheduledEventUserAddEvent(DispatchEvent):
     NAME = "GUILD_SCHEDULED_EVENT_USER_ADD"
 
-    def __init__(self, user_id, event_id, guild_id):
+    def __init__(self, user_id: int, event_id: int, guild_id: int):
         self.user_id = user_id
         self.event_id = event_id
         self.guild_id = guild_id

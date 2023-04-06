@@ -4,6 +4,7 @@ from typing import Optional, List
 from ...yepcord.errors import InvalidDataErr, Errors
 
 
+# noinspection PyMethodParameters
 class UserUpdate(BaseModel):
     username: Optional[str] = None
     discriminator: Optional[int] = None
@@ -92,6 +93,7 @@ class SettingsProtoUpdate(BaseModel):
     settings: str
 
 
+# noinspection PyMethodParameters
 class RelationshipRequest(BaseModel):
     username: str
     discriminator: int

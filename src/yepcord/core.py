@@ -16,15 +16,15 @@ from .classes.channel import Channel, PermissionOverwrite, _Channel
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, \
     Sticker, ScheduledEvent
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
-from .classes.other import EmailMsg, Singleton, JWT
+from .classes.other import EmailMsg, Singleton, JWT, MFA
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
 from .config import Config
 from .databases import MySQL
 from .enums import RelationshipType, ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, MfaRequiredErr, Errors
-from .pubsub_client import Broadcaster
 from .snowflake import Snowflake
-from .utils import b64encode, b64decode, MFA, execute_after, int_length, NoneType
+from .utils import b64encode, b64decode, int_length, NoneType
+from ..gateway.events import DMChannelCreateEvent
 
 
 class CDN(Singleton):
@@ -42,25 +42,13 @@ class Core(Singleton):
         self.db = MySQL() if not db else db
         self.pool = None
         self.loop = loop or get_event_loop()
-        self.mcl = Broadcaster("http")
         self._cache = {}
-
-    async def initMCL(self):
-        try:
-            await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
-            self.mcl.set_callback(self.mclCallback)
-        except ConnectionRefusedError:
-            self.mcl.online = False
-            self.mcl.running = True
-        return self
-
-    async def mclCallback(self, data: dict) -> None:
-        ...
 
     async def initDB(self, *db_args, **db_kwargs):
         await self.db.init(*db_args, **db_kwargs)
         return self
 
+    # noinspection PyMethodMayBeStatic
     def prepPassword(self, password: str, uid: int) -> bytes:
         """
         Prepares user password for hashing
@@ -76,9 +64,11 @@ class Core(Singleton):
         password = self.prepPassword(password, uid)
         return hashpw(password, gensalt()).decode("utf8")
 
+    # noinspection PyMethodMayBeStatic
     def generateSessionSignature(self) -> str:
         return b64encode(urandom(32))
 
+    # noinspection PyMethodMayBeStatic
     def generateKey(self) -> str:
         return b64encode(urandom(16))
 
@@ -210,7 +200,6 @@ class Core(Singleton):
     async def reqRelationship(self, tUser: _User, cUser: _User) -> None:
         async with self.db() as db:
             await db.insertRelationShip(Relationship(cUser.id, tUser.id, RelationshipType.PENDING))
-        await self.mcl.broadcast("user_events", {"e": "relationship_req", "data": {"target_user": tUser.id, "current_user": cUser.id}})
 
     async def getRelationships(self, user: _User, with_data=False) -> list:
         async def _d(uid, t):
@@ -283,26 +272,17 @@ class Core(Singleton):
     async def accRelationship(self, user: _User, uid: int) -> None:
         async with self.db() as db:
             await db.updateRelationship(user.id, uid, RelationshipType.FRIEND, RelationshipType.PENDING)
-        channel = await self.getDMChannelOrCreate(user.id, uid)
-        await self.mcl.broadcast("user_events", {"e": "relationship_acc", "data": {"target_user": uid, "current_user": user.id, "channel_id": channel.id}})
 
-    async def delRelationship(self, user: _User, uid: int) -> None:
+    async def delRelationship(self, user: _User, uid: int) -> Optional[Relationship]:
         async with self.db() as db:
             if not (rel := await db.getRelationship(user.id, uid)):
                 return
         if rel.type == RelationshipType.BLOCK:
             if not (rel := await db.getRelationshipEx(user.id, uid)):
                 return
-            async with self.db() as db:
-                await db.delRelationship(rel)
-            await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": user.id, "target_user": uid, "type": rel.type}})
-            return
-        t1 = rel.discord_type(user.id)
-        t2 = rel.discord_type(uid)
         async with self.db() as db:
             await db.delRelationship(rel)
-        await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": user.id, "target_user": uid, "type": t1}})
-        await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": t2}})
+        return rel
 
     async def changeUserPassword(self, user: _User, new_password: str) -> None:
         new_password = self.hashPassword(user.id, new_password)
@@ -313,6 +293,7 @@ class Core(Singleton):
         async with self.db() as db:
             await db.logoutUser(sess)
 
+    # noinspection PyMethodMayBeStatic
     async def getMfa(self, user: User) -> Optional[MFA]:
         settings = await user.settings
         mfa = MFA(settings.get("mfa"), user.id)
@@ -388,9 +369,6 @@ class Core(Singleton):
             await db.useMfaCode(uid, code)
         return True
 
-    async def sendUserUpdateEvent(self, uid):
-        await self.mcl.broadcast("user_events", {"e": "user_update", "data": {"user": uid}})
-
     async def getChannel(self, channel_id: int) -> Optional[Channel]:
         async with self.db() as db:
             if not (channel := await db.getChannel(channel_id)):
@@ -403,7 +381,8 @@ class Core(Singleton):
                 return await self.createDMChannel([u1, u2])
         if await self.isDmChannelHidden(UserId(u1), channel):
             await self.unhideDmChannel(UserId(u1), channel)
-            await self.sendDMChannelCreateEvent(channel=channel, users=[u1])
+            Ctx["with_ids"] = False
+            await c.getGw().dispatch(DMChannelCreateEvent(channel), users=[u1])
         return await self.getLastMessageIdForChannel(channel)
 
     async def getLastMessageIdForChannel(self, channel: Channel) -> Channel:
@@ -440,9 +419,6 @@ class Core(Singleton):
         async with self.db() as db:
             await db.insertMessage(message)
         message.fill_defaults()
-        m = await message.json
-        users = await self.getRelatedUsersToChannel(message.channel_id)
-        await self.mcl.broadcast("message_events", {"e": "message_create", "data": {"users": users, "message_obj": m}})
         async def _addToReadStates():
             async with self.db() as d:
                 d.dontCloseOnAExit()
@@ -460,20 +436,11 @@ class Core(Singleton):
         async with self.db() as db:
             await db.editMessage(before, after)
         after.fill_defaults()
-        m = await after.json
-        users = await self.getRelatedUsersToChannel(after.channel_id)
-        await self.mcl.broadcast("message_events", {"e": "message_update", "data": {"users": users, "message_obj": m}})
         return after
-
-    async def sendMessageDeleteEvent(self, message: Message) -> None:
-        await self.mcl.broadcast("message_events", {"e": "message_delete",
-                                                    "data": {"message": message.id, "channel": message.channel_id,
-                                                             "guild": message.guild_id}})
 
     async def deleteMessage(self, message: Message) -> None:
         async with self.db() as db:
             await db.deleteMessage(message)
-        await self.sendMessageDeleteEvent(message)
 
     async def getRelatedUsersToChannel(self, channel_id: int) -> List[int]:
         channel = await self.getChannel(channel_id)
@@ -481,9 +448,6 @@ class Core(Singleton):
             return channel.recipients
         elif channel.type in GUILD_CHANNELS:
             return [member.user_id for member in await self.getGuildMembers(GuildId(channel.guild_id))]
-
-    async def sendTypingEvent(self, user: _User, channel: Channel) -> None:
-        await self.mcl.broadcast("message_events", {"e": "typing", "data": {"user": user.id, "channel": channel.id}})
 
     async def addMessageToReadStates(self, uid: int, channel_id: int) -> None:
         rs = await self.getReadStates(uid, channel_id)
@@ -515,22 +479,6 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.delReadStateIfExists(uid, channel_id)
 
-    async def sendMessageAck(self, uid: int, channel_id: int, message_id: int, mention_count: int=None, manual: bool=None) -> None:
-        d = {
-            "user": uid,
-            "data": {
-                "version": 1,
-                "message_id": str(message_id),
-                "channel_id": str(channel_id),
-            }
-        }
-        if mention_count:
-            d["data"]["mention_count"] = mention_count
-        if manual:
-            d["data"]["manual"] = True
-            d["data"]["ack_type"] = 0
-        await self.mcl.broadcast("message_events", {"e": "message_ack", "data": d})
-
     async def getUserNote(self, uid: int, target_uid: int) -> Optional[UserNote]:
         async with self.db() as db:
             return await db.getUserNote(uid, target_uid)
@@ -538,7 +486,6 @@ class Core(Singleton):
     async def putUserNote(self, note: UserNote) -> None:
         async with self.db() as db:
             await db.putUserNote(note)
-        await self.mcl.broadcast("user_events", {"e": "note_update", "data": {"user": note.user_id, "uid": note.note_user_id, "note": note.note}})
 
     async def putAttachment(self, attachment: Attachment) -> None:
         async with self.db() as db:
@@ -642,29 +589,6 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.createDMGroupChannel(Snowflake.makeId(), recipients, user.id, name)
 
-    async def sendDMChannelCreateEvent(self, channel: Channel, *, users=None) -> None:
-        if not users:
-            users = await self.getRelatedUsersToChannel(channel.id)
-        await self.mcl.broadcast("channel_events", {"e": "dmchannel_create", "data": {"users": users, "channel_id": channel.id}})
-
-    async def sendDMRepicientAddEvent(self, users: List[int], channel_id: int, uid: int) -> None:
-        await self.mcl.broadcast("channel_events", {"e": "dm_recipient_add", "data": {"users": users, "channel_id": channel_id, "user": uid}})
-
-    async def sendDMRepicientRemoveEvent(self, users: List[int], channel_id: int, uid: int) -> None:
-        await self.mcl.broadcast("channel_events", {"e": "dm_recipient_remove", "data": {"users": users, "channel_id": channel_id, "user": uid}})
-
-    async def sendDMChannelDeleteEvent(self, channel: Channel, users: List[int]) -> None:
-        channel = {
-                "type": channel.type,
-                "owner_id": str(channel.owner_id),
-                "name": channel.name,
-                "last_message_id": str(channel.last_message_id),
-                "id": str(channel.id),
-                "icon": channel.icon,
-                "flags": channel.flags
-            }
-        await self.mcl.broadcast("channel_events", {"e": "dmchannel_delete", "data": {"users": users, "channel": channel}})
-
     async def addUserToGroupDM(self, channel: Channel, uid: int) -> None:
         nChannel = channel.copy()
         nChannel.recipients.append(uid)
@@ -679,10 +603,6 @@ class Core(Singleton):
         async with self.db() as db:
             await db.updateChannelDiff(before, after)
 
-    async def sendDMChannelUpdateEvent(self, channel: Channel) -> None:
-        users = await self.getRelatedUsersToChannel(channel.id)
-        await self.mcl.broadcast("channel_events", {"e": "dmchannel_update", "data": {"users": users, "channel_id": channel.id}})
-
     async def deleteChannel(self, channel: Channel) -> None:
         async with self.db() as db:
             await db.deleteChannel(channel)
@@ -696,8 +616,6 @@ class Core(Singleton):
             if len(await db.getPinnedMessages(message.channel_id)) >= 50:
                 raise InvalidDataErr(400, Errors.make(30003))
             await db.pinMessage(message)
-        users = await self.getRelatedUsersToChannel(message.channel_id)
-        await self.mcl.broadcast("channel_events", {"e": "channel_pins_update", "data": {"users": users, "channel_id": message.channel_id}})
 
     async def getLastPinnedMessage(self, channel_id: int) -> Optional[Message]:
         async with self.db() as db:
@@ -714,22 +632,14 @@ class Core(Singleton):
     async def unpinMessage(self, message: Message) -> None:
         async with self.db() as db:
             await db.unpinMessage(message)
-        users = await self.getRelatedUsersToChannel(message.channel_id)
-        await self.mcl.broadcast("channel_events", {"e": "channel_pins_update", "data": {"users": users, "channel_id": message.channel_id}})
 
     async def addReaction(self, reaction: Reaction, channel: Channel) -> None:
         async with self.db() as db:
             await db.addReaction(reaction)
-        users = await self.getRelatedUsersToChannel(channel.id)
-        emoji = {"id": str(reaction.emoji_id) if reaction.emoji_id is not None else None, "name": reaction.emoji_name}
-        await self.mcl.broadcast("message_events", {"e": "reaction_add", "data": {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
 
     async def removeReaction(self, reaction: Reaction, channel: Channel) -> None:
         async with self.db() as db:
             await db.removeReaction(reaction)
-        users = await self.getRelatedUsersToChannel(channel.id)
-        emoji = {"id": str(reaction.emoji_id) if reaction.emoji_id is not None else None, "name": reaction.emoji_name}
-        await self.mcl.broadcast("message_events", {"e": "reaction_remove", "data": {"users": users, "message_id": reaction.message_id, "channel_id": channel.id, "user_id": reaction.user_id, "emoji": emoji}})
 
     async def getMessageReactions(self, message_id: int, user_id: int) -> list:
         async with self.db() as db:
@@ -772,6 +682,7 @@ class Core(Singleton):
     async def createGuild(self, guild_id: int, user: User, name: str, **kwargs) -> Guild:
         guild = Guild(guild_id, user.id, name, system_channel_id=0, features=[], **kwargs)
         roles = [Role(guild.id, guild.id, "@everyone", permissions=1071698660929)]
+        # noinspection PyListCreation
         channels = []
         channels.append(Channel(Snowflake.makeId(), ChannelType.GUILD_CATEGORY, guild_id=guild.id, name="Text Channels", position=0,
                                 flags=0, rate_limit=0))
@@ -787,11 +698,6 @@ class Core(Singleton):
         async with self.db() as db:
             await db.createGuild(guild, roles, channels, members)
         guild.fill_defaults()
-        Ctx["with_members"] = True
-        Ctx["with_channels"] = True
-        await self.sendGuildCreateEvent(guild, [user.id])
-        Ctx["with_members"] = False
-        Ctx["with_channels"] = False
         return guild
 
     async def createGuildFromTemplate(self, guild_id: int, user: User, template: GuildTemplate, name: Optional[str], icon: Optional[str]) -> Guild:
@@ -849,16 +755,7 @@ class Core(Singleton):
             for overwrite in overwrites:
                 await db.putPermissionOverwrite(overwrite)
         guild.fill_defaults()
-        Ctx["with_members"] = True
-        Ctx["with_channels"] = True
-        await self.sendGuildCreateEvent(guild, [user.id])
-        Ctx["with_members"] = False
-        Ctx["with_channels"] = False
         return guild
-
-    async def sendGuildCreateEvent(self, guild: Guild, users: List[int]) -> None:
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "guild_create", "data": {"users": users, "guild_obj": await guild.json}})
 
     async def getRole(self, role_id: int) -> Role:
         async with self.db() as db:
@@ -892,9 +789,6 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getGuildMemberCount(guild)
 
-    async def sendSettingsProtoUpdateEvent(self, uid: int, proto: str, stype: int) -> None:
-        await execute_after(self.mcl.broadcast("user_events", {"e": "settings_proto_update", "data": {"user": uid, "proto": proto, "stype": stype}}), 1)
-
     async def getGuild(self, guild_id: int) -> Optional[Guild]:
         async with self.db() as db:
             return await db.getGuild(guild_id)
@@ -912,23 +806,14 @@ class Core(Singleton):
             return
         async with self.db() as db:
             await db.insertRelationShip(Relationship(user.id, uid, RelationshipType.BLOCK))
-        if rel and rel.type != RelationshipType.BLOCK:
-            await self.mcl.broadcast("user_events", {"e": "relationship_del", "data": {"current_user": uid, "target_user": user.id, "type": rel.discord_type(uid)}})
-        await self.mcl.broadcast("user_events", {"e": "relationship_add", "data": {"current_user": user.id, "target_user": uid, "type": RelationshipType.BLOCK}})
 
     async def getEmojis(self, guild_id: int) -> List[Emoji]:
         async with self.db() as db:
             return await db.getEmojis(guild_id)
 
-    async def sendGuildEmojisUpdatedEvent(self, guild: Guild) -> None:
-        await self.mcl.broadcast("guild_events", {"e": "emojis_update",
-                                                  "data": {"users": await self.getGuildMembersIds(guild),
-                                                           "guild_id": guild.id}})
-
     async def addEmoji(self, emoji: Emoji, guild: Guild) -> None:
         async with self.db() as db:
             await db.addEmoji(emoji)
-        await self.sendGuildEmojisUpdatedEvent(guild)
 
     async def getEmoji(self, emoji_id: int) -> Optional[Emoji]:
         async with self.db() as db:
@@ -937,7 +822,6 @@ class Core(Singleton):
     async def deleteEmoji(self, emoji: Emoji, guild: Guild) -> None:
         async with self.db() as db:
             await db.deleteEmoji(emoji)
-        await self.sendGuildEmojisUpdatedEvent(guild)
 
     async def getEmojiByReaction(self, reaction: str) -> Optional[Emoji]:
         try:
@@ -952,27 +836,10 @@ class Core(Singleton):
                 return
         return None if emoji.name != name else emoji
 
-    async def sendChannelUpdateEvent(self, channel: Channel) -> None:
-        await self.mcl.broadcast("guild_events", {"e": "channel_update",
-                                                  "data": {"users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
-                                                           "channel_obj": await channel.json}})
-
     async def createGuildChannel(self, channel: Channel) -> Channel:
         async with self.db() as db:
             await db.createGuildChannel(channel)
         return await self.getChannel(channel.id)
-
-    async def sendChannelCreateEvent(self, channel: Channel) -> None:
-        await self.mcl.broadcast("guild_events", {"e": "channel_create",
-                                                  "data": {
-                                                      "users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
-                                                      "channel_obj": await channel.json}})
-
-    async def sendGuildChannelDeleteEvent(self, channel: Channel) -> None:
-        await self.mcl.broadcast("guild_events", {"e": "channel_delete",
-                                                  "data": {
-                                                      "users": await self.getGuildMembersIds(GuildId(channel.guild_id)),
-                                                      "channel_obj": await channel.json}})
 
     async def createGuildMember(self, guild: Guild, user: _User) -> GuildMember:
         member = GuildMember(user.id, guild.id, int(time()))
@@ -988,40 +855,13 @@ class Core(Singleton):
         async with self.db() as db:
             await db.deleteInvite(invite)
 
-    async def sendInviteDeleteEvent(self, invite: Invite) -> None:
-        guild = await self.getGuild(invite.guild_id)
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "invite_delete", "data": {
-                                     "users": [guild.owner_id],
-                                     "payload": {
-                                         "guild_id": str(invite.guild_id),
-                                         "code": invite.code,
-                                         "channel_id": str(invite.channel_id)
-                                     }}})
-
     async def deleteGuildMember(self, member: GuildMember):
         async with self.db() as db:
             await db.deleteGuildMember(member)
 
-    async def sendGuildDeleteEvent(self, guild: Guild, user: _User) -> None:
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "guild_delete", "data": {"users": [user.id], "guild_id": guild.id}})
-
-    async def sendGuildMemberRemoveEvent(self, guild: Guild, user: User) -> None:
-        user_obj = await (await user.userdata).json
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "guild_member_remove", "data": {"users": [user.id], "guild_id": guild.id,
-                                                                       "user_obj": user_obj}})
-
     async def banGuildMember(self, member: GuildMember, reason: str=None) -> None:
         async with self.db() as db:
             await db.banGuildMember(member, reason)
-
-    async def sendGuildBanAddEvent(self, guild: Guild, user: User) -> None:
-        user_obj = await (await user.userdata).json
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "guild_ban_add", "data": {"users": [guild.owner_id], "guild_id": guild.id,
-                                                                       "user_obj": user_obj}})
 
     async def getGuildBan(self, guild: Guild, user_id: int) -> Optional[GuildBan]:
         async with self.db() as db:
@@ -1035,44 +875,17 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.bulkDeleteGuildMessagesFromBanned(guild, user_id, after_id)
 
-    async def sendMessageBulkDeleteEvent(self, guild_id: int, channel_id: int, messages_ids: List[int]) -> None:
-        users = await self.getRelatedUsersToChannel(channel_id)
-        await self.mcl.broadcast("message_events", {"e": "message_delete_bulk", "data": {"users": users,
-                                                                                         "guild_id": guild_id,
-                                                                                         "channel_id": channel_id,
-                                                                                         "messages": messages_ids}})
-
     async def createGuildRole(self, role: Role) -> None:
         async with self.db() as db:
             return await db.createGuildRole(role)
-
-    async def sendGuildRoleCreateEvent(self, role: Role) -> None:
-        await self.mcl.broadcast("guild_events", {"e": "role_create",
-                                                  "data": {
-                                                      "users": await self.getGuildMembersIds(GuildId(role.guild_id)),
-                                                      "guild_id": role.guild_id,
-                                                      "role_obj": await role.json}})
 
     async def updateRoleDiff(self, before: Role, after: Role) -> None:
         async with self.db() as db:
             await db.updateRoleDiff(before, after)
 
-    async def sendGuildRoleUpdateEvent(self, role: Role) -> None:
-        await self.mcl.broadcast("guild_events", {"e": "role_update",
-                                                  "data": {
-                                                      "users": await self.getGuildMembersIds(GuildId(role.guild_id)),
-                                                      "guild_id": role.guild_id,
-                                                      "role_obj": await role.json}})
-
     async def deleteRole(self, role: Role) -> None:
         async with self.db() as db:
             return await db.deleteRole(role)
-
-    async def sendGuildRoleDeleteEvent(self, role: Role) -> None:
-        await self.mcl.broadcast("guild_events", {"e": "role_delete",
-                                                  "data": {
-                                                      "users": await self.getGuildMembersIds(GuildId(role.guild_id)),
-                                                      "guild_id": role.guild_id, "role_id": role.id}})
 
     async def getRolesMemberCounts(self, guild: Guild) -> Dict[int, int]:
         async with self.db() as db:
@@ -1081,13 +894,6 @@ class Core(Singleton):
     async def updateMemberDiff(self, before: GuildMember, after: GuildMember) -> None:
         async with self.db() as db:
             await db.updateMemberDiff(before, after)
-
-    async def sendGuildMemberUpdateEvent(self, member: GuildMember) -> None:
-        await self.mcl.broadcast("guild_events", {"e": "member_update",
-                                                  "data": {
-                                                      "users": await self.getGuildMembersIds(GuildId(member.guild_id)),
-                                                      "guild_id": member.guild_id,
-                                                      "member_obj": await member.json}})
 
     async def getMutualGuilds(self, user: User, currentUser: User) -> List[dict]:
         user_guilds_ids = [guild.id for guild in await self.getUserGuilds(user)]
@@ -1126,12 +932,6 @@ class Core(Singleton):
     async def removeGuildBan(self, guild: Guild, user_id: int) -> None:
         async with self.db() as db:
             await db.removeGuildBan(guild, user_id)
-
-    async def sendGuildBanRemoveEvent(self, guild: Guild, user_id: int) -> None:
-        user_obj = await (await self.getUserData(UserId(user_id))).json
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "guild_ban_remove", "data": {"users": [guild.owner_id], "guild_id": guild.id,
-                                                                       "user_obj": user_obj}})
 
     async def getRolesMemberIds(self, role: Role) -> List[int]:
         async with self.db() as db:
@@ -1185,11 +985,6 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getVanityCodeInvite(code)
 
-    async def sendGuildUpdateEvent(self, guild: Guild) -> None:
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "guild_update", "data": {"users": await self.getGuildMembersIds(guild),
-                                                                "guild_obj": await guild.json}})
-
     async def useInvite(self, invite: Invite) -> None:
         async with self.db() as db:
             if 0 < invite.max_uses <= invite.uses+1:
@@ -1204,12 +999,6 @@ class Core(Singleton):
     async def getAuditLogEntries(self, guild: Guild, limit: int, before: Optional[int]=None) -> List[AuditLogEntry]:
         async with self.db() as db:
             return await db.getAuditLogEntries(guild, limit, before)
-
-    async def sendAuditLogEntryCreateEvent(self, entry: AuditLogEntry) -> None:
-        guild = await self.getGuild(entry.guild_id)
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "audit_log_entry_create", "data": {"users": [guild.owner_id],
-                                                                "entry_obj": await entry.json}})
 
     async def getGuildTemplate(self, guild: _Guild) -> Optional[GuildTemplate]:
         async with self.db() as db:
@@ -1261,13 +1050,6 @@ class Core(Singleton):
         async with self.db() as db:
             return await db.getWebhook(webhook_id)
 
-    async def sendWebhooksUpdateEvent(self, webhook: Webhook) -> None:
-        guild = await self.getGuild(webhook.guild_id)
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "webhooks_update", "data": {"users": [guild.owner_id],
-                                                                   "guild_id": webhook.guild_id,
-                                                                   "channel_id": webhook.channel_id}})
-
     async def hideDmChannel(self, user: _User, channel: Channel) -> None:
         async with self.db() as db:
             await db.hideDmChannel(user, channel)
@@ -1304,14 +1086,6 @@ class Core(Singleton):
         async with self.db() as db:
             await db.deleteSticker(sticker)
 
-    async def sendGuildStickerUpdateEvent(self, guild: _Guild) -> None:
-        stickers = await self.getGuildStickers(guild)
-        stickers = [await sticker.json for sticker in stickers]
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "stickers_update", "data": {"users": await self.getGuildMembersIds(guild),
-                                                                   "stickers": stickers,
-                                                                   "guild_id": guild.id}})
-
     async def getUserOwnedGuilds(self, user: User) -> List[Guild]:
         async with self.db() as db:
             return await db.getUserOwnedGuilds(user)
@@ -1323,10 +1097,6 @@ class Core(Singleton):
     async def deleteUser(self, user: User) -> None:
         async with self.db() as db:
             return await db.deleteUser(user)
-
-    async def sendUserDeleteEvent(self, user: User) -> None:
-        await self.mcl.broadcast("user_events",
-                                 {"e": "user_delete", "data": {"users": [user.id], "user_id": user.id}})
 
     async def getScheduledEventUserCount(self, event: ScheduledEvent) -> int:
         async with self.db() as db:
@@ -1348,17 +1118,6 @@ class Core(Singleton):
         async with self.db() as db:
             await db.updateScheduledEventDiff(before, after)
 
-    async def sendScheduledEventCreateEvent(self, event: ScheduledEvent) -> None:
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "event_create",
-                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
-                                           "event_obj": await event.json}})
-
-    async def sendScheduledEventUpdateEvent(self, event: ScheduledEvent) -> None:
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "event_update", "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
-                                                                   "event_obj": await event.json}})
-
     async def subscribeToScheduledEvent(self, user: User, event: ScheduledEvent) -> None:
         async with self.db() as db:
             await db.subscribeToScheduledEvent(user, event)
@@ -1367,18 +1126,6 @@ class Core(Singleton):
         async with self.db() as db:
             await db.unsubscribeFromScheduledEvent(user, event)
 
-    async def sendScheduledEventUserAddEvent(self, user: User, event: ScheduledEvent) -> None:
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "event_user_add",
-                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
-                                           "user_id": user.id, "event_id": event.id, "guild_id": event.guild_id}})
-
-    async def sendScheduledEventUserRemoveEvent(self, user: User, event: ScheduledEvent) -> None:
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "event_user_remove",
-                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
-                                           "user_id": user.id, "event_id": event.id, "guild_id": event.guild_id}})
-
     async def getSubscribedScheduledEventIds(self, user: User, guild_id: int) -> list[int]:
         async with self.db() as db:
             return await db.getSubscribedScheduledEventIds(user, guild_id)
@@ -1386,12 +1133,6 @@ class Core(Singleton):
     async def deleteScheduledEvent(self, event: ScheduledEvent) -> None:
         async with self.db() as db:
             await db.deleteScheduledEvent(event)
-
-    async def sendScheduledEventDeleteEvent(self, event: ScheduledEvent) -> None:
-        await self.mcl.broadcast("guild_events",
-                                 {"e": "event_delete",
-                                  "data": {"users": await self.getGuildMembersIds(GuildId(event.guild_id)),
-                                           "event_obj": await event.json}})
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()
