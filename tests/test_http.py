@@ -5,11 +5,12 @@ import pytest as pt
 from google.protobuf.wrappers_pb2 import StringValue
 
 from src.rest_api.main import app
+from src.yepcord.classes.other import MFA
 from src.yepcord.config import Config
 from src.yepcord.enums import ChannelType, StickerType
 from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, FrecencyUserSettings, FavoriteStickers
 from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import getImage, b64decode, MFA
+from src.yepcord.utils import getImage, b64decode
 from tests.utils import generateEmailVerificationToken, generateMfaVerificationKey
 from tests.yep_image import YEP_IMAGE
 
@@ -1102,3 +1103,63 @@ async def test_unknown_endpoints(testapp):
     assert response.status_code == 501
     response = await client.post(f"/api/v9/unknown/nested/endpoint/post")
     assert response.status_code == 501
+
+@pt.mark.asyncio
+async def test_channel_get(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    channel = [channel for channel in TestVars.get("guild_channels") if channel["name"] == "test_text_channel"][0]
+    resp = await client.get(f"/api/v9/channels/{channel['id']}", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["id"] == channel["id"]
+    assert json["name"] == channel["name"]
+
+@pt.mark.asyncio
+async def test_create_dm_channel(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    data = TestVars.get("data")
+    data2 = TestVars.get("data_u2")
+    resp = await client.post(f"/api/v9/users/@me/channels", headers=headers, json={"recipients": [data["id"], data2["id"]]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    recipients = [r["id"] for r in json["recipients"]]
+    assert recipients == [data2["id"]]
+    assert json["type"] == ChannelType.DM
+    TestVars.set("dm_channel_id", json["id"])
+
+    resp = await client.post(f"/api/v9/channels/{json['id']}/messages", headers=headers,
+                             json={"content": "test message"})
+    assert resp.status_code == 200
+
+@pt.mark.asyncio
+async def test_create_delete_dm_channels(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    resp = await client.post(f"/api/v9/users/@me/channels", headers=headers, json={"recipients": []})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["recipients"] == []
+    assert json["type"] == ChannelType.GROUP_DM
+
+    resp = await client.delete(f"/api/v9/channels/{json['id']}", headers=headers)
+    assert resp.status_code == 204
+    resp = await client.delete(f"/api/v9/channels/{TestVars.get('dm_channel_id')}", headers=headers)
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/channels/{json['id']}", headers=headers)
+    assert resp.status_code == 404
+    resp = await client.delete(f"/api/v9/channels/{TestVars.get('dm_channel_id')}", headers=headers)
+    assert resp.status_code == 200
+
+    resp = await client.post(f"/api/v9/users/@me/channels", headers=headers, json={"recipients": []})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["recipients"] == []
+    assert json["type"] == ChannelType.GROUP_DM
+    TestVars.get("dmgroup_channel_id", json["id"])
+
+    resp = await client.post(f"/api/v9/channels/{json['id']}/messages", headers=headers,
+                             json={"content": "test message"})
+    assert resp.status_code == 200

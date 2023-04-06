@@ -16,16 +16,15 @@ from .classes.channel import Channel, PermissionOverwrite, _Channel
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, \
     Sticker, ScheduledEvent
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
-from .classes.other import EmailMsg, Singleton, JWT
+from .classes.other import EmailMsg, Singleton, JWT, MFA
 from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
 from .config import Config
 from .databases import MySQL
 from .enums import RelationshipType, ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, MfaRequiredErr, Errors
-from .pubsub_client import Broadcaster
 from .snowflake import Snowflake
-from .utils import b64encode, b64decode, MFA, int_length, NoneType
-from ..gateway.events import DMChannelCreateEvent, GuildCreateEvent
+from .utils import b64encode, b64decode, int_length, NoneType
+from ..gateway.events import DMChannelCreateEvent
 
 
 class CDN(Singleton):

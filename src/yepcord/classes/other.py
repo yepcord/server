@@ -1,7 +1,10 @@
+import re
+from base64 import b32decode
 from email.message import EmailMessage
 from hashlib import sha512
 from hmac import new
 from json import loads, dumps
+from struct import pack, unpack
 from time import time
 from typing import Union, Optional
 from zlib import compressobj, Z_FULL_FLUSH
@@ -60,81 +63,6 @@ class EmailMsg:
         except SMTPConnectError:
             pass # TODO: write warning to log
 
-"""
-class GuildTemplate(DBModel):
-    FIELDS = ("template",)
-    ID_FIELD = "id"
-    DB_FIELDS = {"template": "j_template"}
-    SCHEMA = Schema({
-        "id": int,
-        "updated_at": Or(int, NoneType),
-        "template": {
-           "name": str,
-           "description": Or(str, NoneType),
-           "usage_count": int,
-           "creator_id": Use(int),
-           "creator":{
-              "id": Use(int),
-              "username": str,
-              "avatar": Or(str, NoneType),
-              "avatar_decoration":Or(str, NoneType),
-              "discriminator": Use(int),
-              "public_flags": int
-           },
-           "source_guild_id": Use(int),
-           "serialized_source_guild": {
-              "name": str,
-              "description": Or(str, NoneType),
-              "region": str,
-              "verification_level": int,
-              "default_message_notifications": int,
-              "explicit_content_filter": int,
-              "preferred_locale": str,
-              "afk_timeout": int,
-              "roles":[{
-                    "id": int,
-                    "name": str,
-                    "color": int,
-                    "hoist": bool,
-                    "mentionable": bool,
-                    "permissions": Use(int),
-                    "icon": Or(str, NoneType),
-                    "unicode_emoji": Or(str, NoneType)
-              }],
-              "channels":[{
-                    "id": int,
-                    "type": And(Use(int), lambda i: i in ChannelType.values()),
-                    "name": str,
-                    "position": int,
-                    "topic": Or(str, NoneType),
-                    "bitrate": int,
-                    "user_limit": int,
-                    "nsfw": bool,
-                    "rate_limit_per_user": int,
-                    "parent_id": Or(int, NoneType),
-                    "default_auto_archive_duration": Or(int, NoneType),
-                    "permission_overwrites": [Any], # TODO
-                    "available_tags": Any, # TODO
-                    "template": str,
-                    "default_reaction_emoji": Or(str, NoneType),
-                    "default_thread_rate_limit_per_user": Or(int, NoneType),
-                    "default_sort_order": Any # TODO
-              }],
-              "afk_channel_id": Or(int, NoneType),
-              "system_channel_id": int,
-              "system_channel_flags": int
-           },
-           "is_dirty": Any # TODO
-        }
-    })
-
-    def __init__(self, id, template):
-        self.code = id
-        self.template = template
-
-        self._checkNulls()
-        self.to_typed_json(with_id=True, with_values=True)
-"""
 
 class Singleton:
     _instance = None
@@ -221,3 +149,23 @@ class BitFlags:
             self.value &= ~val
             self.parsedFlags.remove(val)
         return self
+
+
+class MFA:
+    _re = re.compile(r'^[A-Z0-9]{16}$')
+
+    def __init__(self, key: str, uid: int):
+        self.key = str(key).upper()
+        self.uid = self.id = uid
+
+    def getCode(self) -> str:
+        key = b32decode(self.key.upper() + '=' * ((8 - len(self.key)) % 8))
+        counter = pack('>Q', int(time() / 30))
+        mac = new(key, counter, "sha1").digest()
+        offset = mac[-1] & 0x0f
+        binary = unpack('>L', mac[offset:offset + 4])[0] & 0x7fffffff
+        return str(binary)[-6:].zfill(6)
+
+    @property
+    def valid(self) -> bool:
+        return bool(self._re.match(self.key))

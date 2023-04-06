@@ -11,12 +11,13 @@ from ..utils import usingDB, getUser, multipleDecorators, getSession, getGuildWM
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
     UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent
 from ...yepcord.classes.guild import Guild, GuildId
+from ...yepcord.classes.other import MFA
 from ...yepcord.classes.user import User, UserSettings, UserNote, Session, GuildMember, UserId
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
 from ...yepcord.enums import RelationshipType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
-from ...yepcord.utils import c_json, execute_after, MFA, validImage, getImage
+from ...yepcord.utils import c_json, execute_after, validImage, getImage
 
 # Base path is /api/vX/users/@me
 users_me = Blueprint('users_@me', __name__)

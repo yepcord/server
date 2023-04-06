@@ -1,5 +1,4 @@
 import sys
-from os import environ
 
 from quart import Quart
 from quart_schema import validate_querystring, QuartSchema
