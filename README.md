@@ -33,6 +33,7 @@ In production, you must also set `KEY` (random 16 bytes encoded in base64), `DOM
 **Any commit before 10.04.2023 is also covered by this license.**
 
 Copyright (C) 2023 RuslanUC
+
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation version 3 of the
