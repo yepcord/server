@@ -1,3 +1,21 @@
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
 import re
 from base64 import b32decode
 from email.message import EmailMessage
@@ -21,29 +39,6 @@ class ZlibCompressor:
 
     def __call__(self, data):
         return self.cObj.compress(data) + self.cObj.flush(Z_FULL_FLUSH)
-
-#class UserConnection(DBModel): # TODO: implement UserConnection
-#    FIELDS = ("type", "state", "username", "service_uid", "friend_sync", "integrations", "visible",
-#              "verified", "revoked", "show_activity", "two_way_link",)
-#    ID_FIELD = "uid"
-#    DB_FIELDS = {"integrations": "j_integrations"}
-#
-#    def __init__(self, uid, type, state=Null, username=Null, service_uid=Null, friend_sync=Null, integrations=Null,
-#                 visible=Null, verified=Null, revoked=Null, show_activity=Null, two_way_link=Null):
-#        self.uid = uid
-#        self.type = type
-#        self.state = state
-#        self.username = username
-#        self.service_uid = service_uid
-#        self.friend_sync = friend_sync
-#        self.integrations = integrations
-#        self.visible = visible
-#        self.verified = verified
-#        self.revoked = revoked
-#        self.show_activity = show_activity
-#        self.two_way_link = two_way_link
-#
-#        self._checkNulls()
 
 
 class EmailMsg:

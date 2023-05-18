@@ -1,6 +1,10 @@
 # YEPcord server
 Unofficial discord server implementation in python.
 
+# For now I (RuslanUC) don't have enough time to support YepCord (and lately not so much desire due to recent Discord actions). But you can contribute to the development of YepCord by creating a fork, implementing a feature (or fixing a bug, adding tests, etc.) and creating a pull-request.
+
+[![Stand With Ukraine](.github/banner-direct.svg)](https://stand-with-ukraine.pp.ua)
+
 # Setup
 **Requirements:**
  - Python 3.9+
@@ -27,3 +31,22 @@ Unofficial discord server implementation in python.
   python3 run_all.py
   ```
 In production, you must also set `KEY` (random 16 bytes encoded in base64), `DOMAIN` and `PUBLIC_DOMAIN` environment variables.
+
+### License
+
+**Any commit before 10.04.2023 is also covered by this license.**
+
+Copyright (C) 2023 RuslanUC
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation version 3 of the
+License
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see https://www.gnu.org/licenses/agpl-3.0.de.html
