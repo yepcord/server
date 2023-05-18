@@ -1,3 +1,21 @@
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
 from __future__ import annotations
 
 from time import mktime
@@ -14,6 +32,7 @@ from ...yepcord.errors import EmbedErr, InvalidDataErr, Errors
 from ...yepcord.utils import validImage, getImage
 
 
+# noinspection PyMethodParameters
 class ChannelUpdate(BaseModel):
     icon: Optional[str] = "" # Only for GROUP_DM channel
     owner_id: Optional[int] = Field(default=None, alias="owner") # Only for GROUP_DM channel
@@ -119,6 +138,7 @@ class PermissionOverwriteModel(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class EmbedFooter(BaseModel):
     text: Optional[str] = None
     icon_url: Optional[str] = None
@@ -142,6 +162,7 @@ class EmbedFooter(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class EmbedImage(BaseModel):
     url: Optional[str] = None
     width: Optional[int] = None
@@ -159,6 +180,7 @@ class EmbedImage(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class EmbedAuthor(BaseModel):
     name: Optional[str] = None
     url: Optional[str] = None
@@ -184,6 +206,7 @@ class EmbedAuthor(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class EmbedField(BaseModel):
     name: Optional[str] = None
     value: Optional[str] = None
@@ -203,6 +226,7 @@ class EmbedField(BaseModel):
             raise EmbedErr(makeEmbedError(27, f"fields.value", {"length": "1024"}))
 
 
+# noinspection PyMethodParameters
 class EmbedModel(BaseModel):
     title: str
     type: Optional[str] = None
@@ -302,6 +326,7 @@ class MessageReferenceModel(BaseModel):
         return super().dict(*args, **kwargs)
 
 
+# noinspection PyMethodParameters
 class MessageCreate(BaseModel):
     content: Optional[str] = None
     nonce: Optional[str] = None
@@ -313,6 +338,7 @@ class MessageCreate(BaseModel):
     @validator("content")
     def validate_content(cls, value: Optional[str]):
         if value is not None:
+            value = value.strip()
             if len(value) > 2000:
                 raise InvalidDataErr(400, Errors.make(50035, {"content": {"code": "BASE_TYPE_BAD_LENGTH", "message":
                     "Must be between 1 and 2000 in length."}}))
@@ -363,6 +389,7 @@ class MessageCreate(BaseModel):
         return data
 
 
+# noinspection PyMethodParameters
 class MessageUpdate(BaseModel):
     content: Optional[str] = None
     embeds: List[EmbedModel] = Field(default_factory=list)
@@ -384,6 +411,7 @@ class InviteCreate(BaseModel):
     max_uses: Optional[int] = 0
 
 
+# noinspection PyMethodParameters
 class WebhookCreate(BaseModel):
     name: Optional[str] = None
 
@@ -409,6 +437,7 @@ class SearchQuery(BaseModel):
     content: Optional[str] = None
 
 
+# noinspection PyMethodParameters
 class GetMessagesQuery(BaseModel):
     limit: int = 50
     before: int = 0
@@ -423,6 +452,7 @@ class GetMessagesQuery(BaseModel):
         return value
 
 
+# noinspection PyMethodParameters
 class GetReactionsQuery(BaseModel):
     limit: int = 3
 

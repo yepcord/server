@@ -1,3 +1,21 @@
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
 # All 'User' classes (User, Session, UserSettings, etc.)
 from __future__ import annotations
 
@@ -27,7 +45,7 @@ from ..utils import b64encode, b64decode, proto_get, NoneType
 class _User:
     id: int
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return isinstance(other, _User) and self.id == other.id
 
     def get(self, item, default=None):
@@ -40,7 +58,7 @@ class UserId(_User):
         self.id = uid
 
 @model
-@dataclass
+@dataclass(eq=False)
 class Session(_User, Model):
     uid: int
     sid: int
@@ -172,6 +190,7 @@ class UserSettings(Model):
             }
         }
 
+    # noinspection PyTypeChecker
     def to_proto(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
             versions=Versions(client_version=14, data_version=1), # TODO: get data version from database
@@ -350,7 +369,7 @@ class UserData(Model):
             "nsfw_allowed": self.nsfw_allowed,
             "mfa_enabled": settings.mfa,
             "email": user.email,
-            "verified": True,
+            "verified": user.verified,
             "phone": self.phone
         }
 
@@ -365,7 +384,7 @@ class UserData(Model):
         return dn-db > timedelta(days=18*365+4)
 
 @model
-@dataclass
+@dataclass(eq=False)
 class User(_User, Model):
     id: int = field(id_field=True)
     email: Optional[str] = field(validation=And(
@@ -521,7 +540,7 @@ class PermissionsChecker:
         return True
 
 @model
-@dataclass
+@dataclass(eq=False)
 class GuildMember(_User, Model):
     user_id: int
     guild_id: int

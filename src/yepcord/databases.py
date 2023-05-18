@@ -1,3 +1,21 @@
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
 from abc import ABC, abstractmethod
 from datetime import datetime
 from json import dumps as jdumps
@@ -516,7 +534,7 @@ class MySqlConnection:
             return User.from_result(self.cur.description, r)
 
     async def validSession(self, session: Session) -> bool:
-        await self. cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{escape_string(session.sig)}";')
+        await self.cur.execute(f'SELECT `uid` FROM `sessions` WHERE `uid`={session.id} AND `sid`={session.sid} AND `sig`="{escape_string(session.sig)}";')
         return bool(await self.cur.fetchone())
 
     async def getUserSettings(self, user: _User) -> Optional[UserSettings]:

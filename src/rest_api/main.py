@@ -1,10 +1,30 @@
-from json import dumps as jdumps
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
 
-from quart import Quart, request
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
+import sys
+from json import dumps as jdumps
+from time import time
+
+from quart import Quart, request, Response
 from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
-from .routes.webhooks import webhooks
+from src.yepcord.gateway_dispatcher import GatewayDispatcher
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
@@ -14,6 +34,7 @@ from .routes.invites import invites
 from .routes.other import other
 from .routes.users import users
 from .routes.users_me import users_me
+from .routes.webhooks import webhooks
 from ..yepcord.classes.gifs import Gifs
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
@@ -28,10 +49,10 @@ class YEPcord(Quart):
 
     async def dispatch_request(self, request_context=None):
         request_ = (request_context or request_ctx).request
-        if request_.routing_exception is not None:
+        if request_.routing_exception is not None: # pragma: no cover
             self.raise_routing_exception(request_)
 
-        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options:
+        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options: # pragma: no cover
             return await self.make_default_options_response()
 
         handler = self.view_functions[request_.url_rule.endpoint]
@@ -52,6 +73,7 @@ app = YEPcord("YEPcord-api")
 QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
+gateway = GatewayDispatcher()
 app.gifs = Gifs(Config("TENOR_KEY"))
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
@@ -66,18 +88,27 @@ async def before_serving():
         db=Config("DB_NAME"),
         autocommit=True
     )
-    await core.initMCL()
+    await gateway.init()
+
+
+if "pytest" in sys.modules: # pragma: no cover
+    # Raise original exceptions instead of InternalServerError when testing
+    from werkzeug.exceptions import InternalServerError
+
+    @app.errorhandler(500)
+    async def handle_500_for_pytest(error: InternalServerError):
+        raise error.original_exception
 
 
 @app.errorhandler(YDataError)
-async def ydataerror_handler(e):
-    if isinstance(e, EmbedErr):
-        return c_json(e.error, 400)
-    elif isinstance(e, InvalidDataErr):
-        return c_json(e.error, e.code)
-    elif isinstance(e, MfaRequiredErr):
-        ticket = b64encode(jdumps([e.uid, "login"]))
-        ticket += f".{e.sid}.{e.sig}"
+async def ydataerror_handler(err: YDataError):
+    if isinstance(err, EmbedErr):
+        return c_json(err.error, 400)
+    elif isinstance(err, InvalidDataErr):
+        return c_json(err.error, err.code)
+    elif isinstance(err, MfaRequiredErr):
+        ticket = b64encode(jdumps([err.uid, "login"]))
+        ticket += f".{err.sid}.{err.sig}"
         return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
 
 
@@ -88,12 +119,41 @@ async def handle_validation_error(error: RequestSchemaValidationError):
 
 
 @app.after_request
-async def set_cors_headers(response):
+async def set_cors_headers(response: Response) -> Response:
     response.headers['Server'] = "YEPcord"
     response.headers['Access-Control-Allow-Origin'] = "*"
     response.headers['Access-Control-Allow-Headers'] = "*"
     response.headers['Access-Control-Allow-Methods'] = "*"
     response.headers['Content-Security-Policy'] = "connect-src *;"
+    return response
+
+
+TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8")
+@app.after_request
+async def generate_test(response: Response) -> Response: # pragma: no cover
+    if request.method == "OPTIONS" or response.status_code == 501 or not Config["GENERATE_TESTS"]:
+        return response
+    path = request.path.replace("/", "_").replace("-", "").replace("@", "")+"_"+str(int(time()*1000))[-4:]
+    test_code = "@pt.mark.asyncio\n" \
+                f"async def test_{path}(testapp):\n" \
+                "    client: TestClientType = (await testapp).test_client()\n" \
+                "    headers = " + \
+                ("{\"Authorization\": TestVars.get(\"token\")}" if request.headers.get("Authorization") else "{}") + \
+                "\n%CODE%\n\n"
+
+    tests = []
+    json = ""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and await request.json:
+        json = f", json={await request.json}"
+    tests.append(f"resp = await client.{request.method.lower()}(\"{request.path}\", headers=headers{json})")
+    tests.append(f"assert resp.status_code == {response.status_code}") # Check status code
+    if response.status_code == 200 and response.headers["Content-Type"] == "application/json" and await response.json:
+        tests.append(f"assert (await resp.get_json() == {await response.json})") # Check response json
+    tests = [f"    {test}" for test in tests] # Add indentations
+    tests = "\n".join(tests)
+    test_code = test_code.replace("%CODE%", tests)
+    TESTS_FILE.write(test_code)
+    TESTS_FILE.flush()
     return response
 
 
@@ -127,6 +187,7 @@ async def other_api_endpoints(path):
     return "Not Implemented!", 501
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
+    # Deprecated
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8000, reload=True, use_colors=False)

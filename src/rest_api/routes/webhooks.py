@@ -1,3 +1,21 @@
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
 from typing import Optional
 
 from quart import Blueprint, request
@@ -5,13 +23,14 @@ from quart_schema import validate_request, validate_querystring
 
 from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
 from ..utils import usingDB, getUser, multipleDecorators, allowWithoutUser, processMessageData
+from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent
 from ...yepcord.classes.message import Message
 from ...yepcord.classes.user import User
-from ...yepcord.ctx import getCore, getCDNStorage
+from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, validImage, getImage
+from ...yepcord.utils import c_json, getImage
 
 # Base path is /api/vX/webhooks
 webhooks = Blueprint('webhooks', __name__)
@@ -28,7 +47,8 @@ async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token:
                 raise InvalidDataErr(403, Errors.make(50013))
             await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
         await getCore().deleteWebhook(webhook)
-        await getCore().sendWebhooksUpdateEvent(webhook)
+        await getGw().dispatch(WebhooksUpdateEvent(webhook.guild_id, webhook.channel_id), guild_id=webhook.guild_id,
+                               permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
     return "", 204
 
@@ -56,7 +76,8 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
     new_webhook = webhook.copy(**data.dict(exclude_defaults=True))
 
     await getCore().updateWebhookDiff(webhook, new_webhook)
-    await getCore().sendWebhooksUpdateEvent(new_webhook)
+    await getGw().dispatch(WebhooksUpdateEvent(webhook.guild_id, webhook.channel_id), guild_id=webhook.guild_id,
+                           permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
     return c_json(await new_webhook.json)
 
@@ -106,7 +127,8 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
 
     message = Message(id=message_id, channel_id=webhook.channel_id, author=0, guild_id=webhook.guild_id,
                       webhook_author=author, type=message_type, **data.to_json())
-    message = await getCore().sendMessage(message)
+    await getCore().sendMessage(message)
+    await getGw().dispatch(MessageCreateEvent(await message.json), channel_id=message.channel_id)
 
     if query_args.wait:
         return c_json(await message.json)

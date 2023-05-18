@@ -1,5 +1,25 @@
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
+import sys
+
 from quart import Quart
-from quart_schema import validate_querystring
+from quart_schema import validate_querystring, QuartSchema
 
 from src.yepcord.enums import StickerFormat
 from .models import CdnImageSizeQuery
@@ -13,6 +33,7 @@ class YEPcord(Quart):
     pass # Maybe it will be needed in the future
 
 app = YEPcord("YEPcord-Cdn")
+QuartSchema(app)
 core = Core(b64decode(Config("KEY")))
 cdn = CDN(getStorage(), core)
 
@@ -170,6 +191,15 @@ async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, fi
     return b'', 404
 
 
+if "pytest" in sys.modules: # pragma: no cover
+    # Raise original exceptions instead of InternalServerError when testing
+    from werkzeug.exceptions import InternalServerError
+
+    @app.errorhandler(500)
+    async def handle_500_for_pytest(error: InternalServerError):
+        raise error.original_exception
+
+
 # Attachments
 
 
@@ -185,6 +215,6 @@ async def get_attachment(channel_id: int, attachment_id: int, name: str):
     return attachment, 200, headers
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
     from uvicorn import run as urun
     urun('main:app', host="0.0.0.0", port=8003, reload=True, use_colors=False)

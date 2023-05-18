@@ -1,3 +1,21 @@
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
 from asyncio import get_event_loop
 from json import dumps
 from random import randint, choice
@@ -13,6 +31,7 @@ from src.yepcord.errors import InvalidDataErr, MfaRequiredErr
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import b64decode, b64encode
 
+EMAIL_ID = Snowflake.makeId()
 VARS = {
     "user_id": Snowflake.makeId()
 }
@@ -37,14 +56,13 @@ async def _setup_db():
         db=Config("DB_NAME"),
         autocommit=True
     )
-    await core.initMCL()
     return core
 
 
 @pt.mark.asyncio
 async def test_register_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    session = await testCore.register(VARS["user_id"], "Test Login", "test@yepcord.ml", "test_passw0rd", "2000-01-01")
+    session = await testCore.register(VARS["user_id"], "Test Login", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
     assert session is not None, "Account not registered: maybe you using already used database?"
 
 
@@ -52,7 +70,7 @@ async def test_register_success(testCore: Coroutine[Any, Any, Core]):
 async def test_register_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     try:
-        await testCore.register(VARS["user_id"], "Test Login 2", "test@yepcord.ml", "test_passw0rd", "2000-01-01")
+        await testCore.register(VARS["user_id"], "Test Login 2", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
         assert False, "Account already registered: must raise error!"
     except InvalidDataErr:
         pass  # Ok
@@ -61,7 +79,7 @@ async def test_register_fail(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_login_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    session = await testCore.login("test@yepcord.ml", "test_passw0rd")
+    session = await testCore.login(f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd")
     assert session is not None, "Session not created: ???"
 
 
@@ -69,8 +87,8 @@ async def test_login_success(testCore: Coroutine[Any, Any, Core]):
 async def test_login_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     try:
-        await testCore.login("test@yepcord.ml", "wrong_password")
-        await testCore.login("test123@yepcord.ml", "test_passw0rd")
+        await testCore.login(f"{EMAIL_ID}_test@yepcord.ml", "wrong_password")
+        await testCore.login(f"{EMAIL_ID}_test123@yepcord.ml", "test_passw0rd")
         assert False, "Wrong login or password: must raise Error!"
     except InvalidDataErr:
         pass  # Ok
@@ -207,7 +225,7 @@ async def test_setSettingsDiff_success(testCore: Coroutine[Any, Any, Core]):
 
 def changeUserData(data: UserData) -> None:
     data.birth = "2001-01-01" if data.birth == "2000-01-01" else "2000-01-01"
-    data.username = f"Changed username {randint(0, 1000)}"
+    data.username = f"{EMAIL_ID}_Changed username {randint(0, 1000)}"
     data.discriminator = randint(1, 9999)
     data.bio = f"Test bio text {randint(0, 1000)}"
     data.public_flags = UserFlagsE.STAFF if data.flags == UserFlagsE.PARTNER else UserFlagsE.PARTNER
@@ -273,8 +291,8 @@ async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core])
     testCore = await testCore
 
     # Register 2 users with same nickname
-    session1 = await core.register(VARS["user_id"] + 100000, "Test", "test1@yepcord.ml", "password", "2000-01-01")
-    session2 = await core.register(VARS["user_id"] + 200000, "Test", "test2@yepcord.ml", "password", "2000-01-01")
+    session1 = await core.register(VARS["user_id"] + 100000, "Test", f"{EMAIL_ID}_test1@yepcord.ml", "password", "2000-01-01")
+    session2 = await core.register(VARS["user_id"] + 200000, "Test", f"{EMAIL_ID}_test2@yepcord.ml", "password", "2000-01-01")
     user1 = await core.getUser(session1.id)
     user2 = await core.getUser(session2.id)
     userdata2 = await user2.userdata
@@ -292,9 +310,9 @@ async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core])
 async def test_changeUserName_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     user = await core.getUser(VARS["user_id"])
-    await testCore.changeUserName(user, "UserName")
+    await testCore.changeUserName(user, f"{EMAIL_ID}_UserName")
     userdata = await testCore.getUserData(user)
-    assert userdata.username == "UserName"
+    assert userdata.username == f"{EMAIL_ID}_UserName"
 
 
 @pt.mark.asyncio
@@ -579,653 +597,3 @@ async def test_getChannelMessagesCount_success(testCore: Coroutine[Any, Any, Cor
     testCore = await testCore
     channel = await testCore.getChannel(VARS["channel_id"])
     assert await testCore.getChannelMessagesCount(channel, Snowflake.makeId(False), 0) == 0
-
-
-@pt.mark.asyncio
-async def test_getPrivateChannels_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getPrivateChannels_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getChannelMessages_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getChannelMessages_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getMessage_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getMessage_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_editMessage_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_editMessage_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteMessage_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteMessage_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getRelatedUsersToChannel_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getRelatedUsersToChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_addMessageToReadStates_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_addMessageToReadStates_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_setReadState_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_setReadState_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getReadStates_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getReadStates_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getReadStatesJ_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getReadStatesJ_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_delReadStateIfExists_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_delReadStateIfExists_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserNote_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserNote_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_putUserNote_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_putUserNote_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_putAttachment_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_putAttachment_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getAttachment_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getAttachment_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getAttachmentByUUID_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getAttachmentByUUID_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_updateAttachment_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_updateAttachment_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserByChannelId_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserByChannelId_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserByChannel_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserByChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_setFrecencySettingsBytes_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_setFrecencySettingsBytes_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_setFrecencySettings_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_setFrecencySettings_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getFrecencySettings_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getFrecencySettings_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_verifyEmail_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_verifyEmail_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserByEmail_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserByEmail_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_changeUserEmail_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_changeUserEmail_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_mfaNonceToCode_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_mfaNonceToCode_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createDMGroupChannel_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createDMGroupChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_addUserToGroupDM_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_addUserToGroupDM_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_removeUserFromGroupDM_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_removeUserFromGroupDM_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_updateChannelDiff_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_updateChannelDiff_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteChannel_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteMessagesAck_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteMessagesAck_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_pinMessage_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_pinMessage_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getLastPinnedMessage_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getLastPinnedMessage_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getLastPinTimestamp_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getLastPinTimestamp_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getPinnedMessages_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getPinnedMessages_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_unpinMessage_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_unpinMessage_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_addReaction_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_addReaction_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_removeReaction_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_removeReaction_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getMessageReactions_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getMessageReactions_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getReactedUsers_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getReactedUsers_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_searchMessages_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_searchMessages_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createInvite_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createInvite_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getInvite_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getInvite_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createGuild_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createGuild_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getRole_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getRole_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getRoles_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getRoles_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildMember_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildMember_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildMembers_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildMembers_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildMembersIds_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildMembersIds_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildChannels_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildChannels_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserGuilds_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getUserGuilds_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildMemberCount_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildMemberCount_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuild_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuild_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_updateGuildDiff_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_updateGuildDiff_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_blockUser_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_blockUser_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getEmojis_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getEmojis_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_addEmoji_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_addEmoji_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getEmoji_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getEmoji_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteEmoji_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteEmoji_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getEmojiByReaction_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getEmojiByReaction_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createGuildChannel_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createGuildChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createGuildMember_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_createGuildMember_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildInvites_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_getGuildInvites_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteInvite_success(testCore: Coroutine[Any, Any, Core]):
-    ...
-
-
-@pt.mark.asyncio
-async def test_deleteInvite_fail(testCore: Coroutine[Any, Any, Core]):
-    ...
