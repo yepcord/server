@@ -83,7 +83,7 @@ def imageType(image: BytesIO) -> str:
 
 def validImage(image: BytesIO) -> bool:
     return imageType(image) in ["png", "webp", "gif", "jpeg",
-                                "jpg"] and image.getbuffer().nbytes < 8 * 1024 * 1024 * 1024
+                                "jpg"] and image.getbuffer().nbytes < 8 * 1024 * 1024
 
 
 async def execute_after(coro, seconds):
