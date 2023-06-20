@@ -20,6 +20,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
+from time import time
 from typing import Optional, List, TYPE_CHECKING, Dict, Union
 
 from schema import Or, And, Use
@@ -130,7 +131,7 @@ class Guild(_Guild, Model):
             "nsfw": bool(self.nsfw),
             "nsfw_level": self.nsfw_level,
             "threads": [],
-            "guild_scheduled_events": [await event.json for event in await getCore().getScheduledEvents(self)],  # TODO
+            "guild_scheduled_events": [await event.json for event in await getCore().getScheduledEvents(self)],
             "stage_instances": [],  # TODO
             "application_command_counts": {},  # TODO
             "large": False,  # TODO
@@ -146,6 +147,73 @@ class Guild(_Guild, Model):
         if Ctx.get("with_channels"):
             data["channels"] = [await channel.json for channel in await getCore().getGuildChannels(self)]
         return data
+
+    @property
+    async def gw_json(self) -> dict:
+        uid = Ctx.get("user_id")
+        member = await getCore().getGuildMember(self, uid)
+        return {
+            "id": str(self.id),
+            "version": int(time()*1000), # What is this?
+            "threads": [await thread.json for thread in await getCore().getGuildMemberThreads(self, uid)],
+            "stickers": [await sticker.json for sticker in await getCore().getGuildStickers(self)],
+            "stage_instances": [],
+            "roles": [await role.json for role in await getCore().getRoles(self)],
+            "properties": {
+                "afk_timeout": self.afk_timeout,
+                "splash": self.splash,
+                "owner_id": str(self.owner_id),
+                "description": self.description,
+                "id": str(self.id),
+                "discovery_splash": self.discovery_splash,
+                "icon": self.icon,
+                "incidents_data": None, # ???
+                "explicit_content_filter": self.explicit_content_filter,
+                "system_channel_id": str(self.system_channel_id) if self.system_channel_id is not None else None,
+                "default_message_notifications": self.default_message_notifications,
+                "premium_progress_bar_enabled": bool(self.premium_progress_bar_enabled),
+                "public_updates_channel_id": None, # ???
+                "max_members": self.max_members,
+                "nsfw": bool(self.nsfw),
+                "application_id": None,
+                "max_video_channel_users": 0,
+                "verification_level": self.verification_level,
+                "rules_channel_id": None,
+                "afk_channel_id": str(self.afk_channel_id) if self.afk_channel_id is not None else None,
+                "latest_onboarding_question_id": None, # ???
+                "mfa_level": self.mfa_level,
+                "nsfw_level": self.nsfw_level,
+                "safety_alerts_channel_id": None, # ???
+                "premium_tier": 3,
+                "vanity_url_code": self.vanity_url_code,
+                "features": [
+                    "ANIMATED_ICON",
+                    "BANNER",
+                    "INVITE_SPLASH",
+                    "VANITY_URL",
+                    "PREMIUM_TIER_3_OVERRIDE",
+                    "ROLE_ICONS",
+                    *self.features
+                ],
+                "max_stage_video_channel_users": 0,
+                "system_channel_flags": self.system_channel_flags,
+                "name": self.name,
+                "hub_type": None, # ???
+                "preferred_locale": self.preferred_locale,
+                "home_header": None, # ???
+                "banner": self.banner,
+            },
+            "premium_subscription_count": 30,
+            "member_count": await getCore().getGuildMemberCount(self),
+            "lazy": True,
+            "large": False,
+            "joined_at": Snowflake.toDatetime(member.joined_at).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+            "guild_scheduled_events": [await event.json for event in await getCore().getScheduledEvents(self)],
+            "emojis": [await emoji.json for emoji in await getCore().getEmojis(self.id)],
+            "data_mode": "full",
+            "channels": [await channel.json for channel in await getCore().getGuildChannels(self)],
+            "application_command_counts": [],
+        }
 
     DEFAULTS = {"icon": None, "description": None, "splash": None, "discovery_splash": None, "features": [
         "ANIMATED_ICON", "BANNER", "INVITE_SPLASH", "VANITY_URL", "PREMIUM_TIER_3_OVERRIDE", "ROLE_ICONS"],
