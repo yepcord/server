@@ -25,11 +25,12 @@ from typing import Optional, List, Tuple, Dict
 
 from aiomysql import create_pool, escape_string, Cursor, Connection
 
-from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite
+from .classes.channel import Channel, _Channel, ChannelId, PermissionOverwrite, ThreadMetadata
 from .classes.guild import Emoji, Invite, Guild, Role, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, Sticker, \
     ScheduledEvent
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
-from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember
+from .classes.user import Session, UserSettings, UserNote, User, _User, UserData, Relationship, GuildMember, \
+    ThreadMember
 from .ctx import Ctx
 from .enums import ChannelType, ScheduledEventStatus, GUILD_CHANNELS
 from .snowflake import Snowflake
@@ -463,6 +464,30 @@ class DBConnection(ABC):
 
     @abstractmethod
     async def deleteScheduledEvent(self, event: ScheduledEvent) -> None: ...
+
+    @abstractmethod
+    async def putThreadMember(self, member: ThreadMember) -> None: ...
+
+    @abstractmethod
+    async def getThreadMetadata(self, thread: Channel) -> Optional[ThreadMetadata]: ...
+
+    @abstractmethod
+    async def putThreadMetadata(self, metadata: ThreadMetadata) -> None: ...
+
+    @abstractmethod
+    async def getThreadMembersCount(self, thread: Channel) -> int: ...
+
+    @abstractmethod
+    async def getThreadMembers(self, thread: Channel, limit: int = 100) -> list[ThreadMember]: ...
+
+    @abstractmethod
+    async def getGuildMemberThreads(self, guild: Guild, user_id: int) -> list[Channel]: ...
+
+    @abstractmethod
+    async def getThread(self, thread_id: int) -> Optional[Channel]: ...
+
+    @abstractmethod
+    async def getThreadMember(self, thread: Channel, user_id: int) -> Optional[ThreadMember]: ...
 
 class MySQL(Database):
     def __init__(self):
@@ -915,7 +940,7 @@ class MySqlConnection:
 
     async def getGuildChannels(self, guild: Guild) -> List[Channel]:
         channels = []
-        await self.cur.execute(f'SELECT * FROM `channels` WHERE `guild_id`={guild.id};')
+        await self.cur.execute(f'SELECT * FROM `channels` WHERE `guild_id`={guild.id} AND `type` IN (0, 2, 4, 5, 13, 14);')
         for r in await self.cur.fetchall():
             channels.append(Channel.from_result(self.cur.description, r))
         return channels
@@ -1353,3 +1378,52 @@ class MySqlConnection:
 
     async def deleteScheduledEvent(self, event: ScheduledEvent) -> None:
         await self.cur.execute(f'DELETE FROM `guild_events` WHERE `id`={event.id};')
+
+    async def putThreadMember(self, member: ThreadMember) -> None:
+        q = json_to_sql(member.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `threads_members` ({fields}) VALUES ({values});')
+
+    async def putThreadMetadata(self, metadata: ThreadMetadata) -> None:
+        q = json_to_sql(metadata.toJSON(for_db=True), as_tuples=True)
+        fields = ", ".join([f"`{f}`" for f, v in q])
+        values = ", ".join([f"{v}" for f, v in q])
+        await self.cur.execute(f'INSERT INTO `threads_metadata` ({fields}) VALUES ({values});')
+
+    async def getThreadMetadata(self, thread: Channel) -> Optional[ThreadMetadata]:
+        await self.cur.execute(f'SELECT * FROM `threads_metadata` WHERE `thread_id`={thread.id};')
+        if r := await self.cur.fetchone():
+            return ThreadMetadata.from_result(self.cur.description, r)
+
+    async def getThreadMembersCount(self, thread: Channel) -> int:
+        await self.cur.execute(f'SELECT COUNT(*) as c FROM `threads_members` WHERE `thread_id`={thread.id};')
+        if r := await self.cur.fetchone():
+            return r[0]
+        return 0
+
+    async def getThreadMembers(self, thread: Channel, limit: int = 100) -> list[ThreadMember]:
+        members = []
+        await self.cur.execute(f'SELECT * FROM `threads_members` WHERE `thread_id`={thread.id} LIMIT {limit};')
+        for r in await self.cur.fetchall():
+            members.append(ThreadMember.from_result(self.cur.description, r))
+        return members
+
+    async def getGuildMemberThreads(self, guild: Guild, user_id: int) -> list[Channel]:
+        threads = []
+        await self.cur.execute(
+            f'SELECT * FROM `channels` WHERE `guild_id`={guild.id} AND `type` IN (11, 12) AND '
+            f'`id` IN (SELECT `thread_id` FROM `threads_members` WHERE `guild_id`={guild.id} AND `user_id`={user_id});')
+        for r in await self.cur.fetchall():
+            threads.append(Channel.from_result(self.cur.description, r))
+        return threads
+
+    async def getThread(self, thread_id: int) -> Optional[Channel]:
+        await self.cur.execute(f'SELECT * FROM `channels` WHERE `id`={thread_id};')
+        if r := await self.cur.fetchone():
+            return Channel.from_result(self.cur.description, r)
+
+    async def getThreadMember(self, thread: Channel, user_id: int) -> Optional[ThreadMember]:
+        await self.cur.execute(f'SELECT * FROM `threads_members` WHERE `thread_id`={thread.id} AND `user_id`={user_id};')
+        if r := await self.cur.fetchone():
+            return ThreadMember.from_result(self.cur.description, r)

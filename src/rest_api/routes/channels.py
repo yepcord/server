@@ -25,16 +25,16 @@ from quart import Blueprint, request
 from quart_schema import validate_request, validate_querystring
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck
+    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck, CreateThread
 from ..utils import usingDB, getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
-    GuildAuditLogEntryCreateEvent, WebhooksUpdateEvent
-from ...yepcord.classes.channel import Channel, PermissionOverwrite
+    GuildAuditLogEntryCreateEvent, WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent
+from ...yepcord.classes.channel import Channel, PermissionOverwrite, ThreadMetadata
 from ...yepcord.classes.guild import GuildId, AuditLogEntry, Webhook
 from ...yepcord.classes.message import Reaction, SearchFilter, Message
-from ...yepcord.classes.user import User, UserId
+from ...yepcord.classes.user import User, UserId, ThreadMember
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, RelationshipType, AuditLogEntryType, \
     WebhookType, GUILD_CHANNELS
@@ -577,3 +577,34 @@ async def get_channel_webhooks(user: User, channel: Channel):
 
     webhooks = [await webhook.json for webhook in await getCore().getWebhooks(guild)] # TODO: Return webhooks from channels, not from guild
     return c_json(webhooks)
+
+
+@channels.post("/<int:channel>/messages/<int:message>/threads")
+@multipleDecorators(validate_request(CreateThread), usingDB, getUser, getChannel, getMessage)
+async def create_thread(data: CreateThread, user: User, channel: Channel, message: Message):
+    if not channel.get("guild_id"):
+        raise InvalidDataErr(403, Errors.make(50003))
+    guild = await getCore().getGuild(channel.guild_id)
+    member = await getCore().getGuildMember(guild, user.id)
+    await member.checkPermission(GuildPermissions.CREATE_PUBLIC_THREADS, channel=channel)
+
+    thread = Channel(message.id, ChannelType.GUILD_PUBLIC_THREAD, guild.id, name=data.name, owner_id=user.id,
+                     parent_id=channel.id, flags=0)
+    thread_member = ThreadMember(user.id, thread.id, guild.id, int(time()))
+    thread_message = Message(Snowflake.makeId(), thread.id, user.id, content="",
+                             message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": guild.id},
+                             type=MessageType.THREAD_STARTER_MESSAGE)
+    thread_create_message = Message(Snowflake.makeId(), channel.id, user.id, content=thread.name,
+                             message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": guild.id},
+                             type=MessageType.THREAD_CREATED)
+    thread = await getCore().createGuildChannel(thread)
+    await getCore().putThreadMetadata(ThreadMetadata(thread.id, False, 0, data.auto_archive_duration, False))
+    await getCore().putThreadMember(thread_member)
+
+    await getGw().dispatch(ThreadCreateEvent(await thread.json | {"newly_created": True}), guild_id=guild.id)
+    await getGw().dispatch(ThreadMemberUpdateEvent(await thread_member.json), guild_id=guild.id)
+    await getCore().editMessage(message, message.copy(thread=thread.id))
+    await getCore().sendMessage(thread_message)
+    await getCore().sendMessage(thread_create_message)
+
+    return c_json(await thread.json)

@@ -30,12 +30,13 @@ from typing import Optional, Union, List, Tuple, Dict
 
 from bcrypt import hashpw, gensalt, checkpw
 
-from .classes.channel import Channel, PermissionOverwrite, _Channel
+from .classes.channel import Channel, PermissionOverwrite, _Channel, ThreadMetadata
 from .classes.guild import Emoji, Invite, Guild, Role, GuildId, _Guild, GuildBan, AuditLogEntry, GuildTemplate, Webhook, \
     Sticker, ScheduledEvent
 from .classes.message import Message, Attachment, Reaction, SearchFilter, ReadState
 from .classes.other import EmailMsg, Singleton, JWT, MFA
-from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember
+from .classes.user import Session, UserSettings, UserNote, User, UserId, _User, UserData, Relationship, GuildMember, \
+    ThreadMember
 from .config import Config
 from .databases import MySQL
 from .enums import RelationshipType, ChannelType, GUILD_CHANNELS
@@ -466,6 +467,8 @@ class Core(Singleton):
             return channel.recipients
         elif channel.type in GUILD_CHANNELS:
             return [member.user_id for member in await self.getGuildMembers(GuildId(channel.guild_id))]
+        elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
+            return [member.user_id for member in await self.getThreadMembers(channel)]
 
     async def addMessageToReadStates(self, uid: int, channel_id: int) -> None:
         rs = await self.getReadStates(uid, channel_id)
@@ -532,6 +535,8 @@ class Core(Singleton):
                 return await self.getUser(uid)
         elif channel.type in GUILD_CHANNELS:
             return await self.getGuildMember(GuildId(channel.guild_id), uid)
+        elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
+            return await self.getThreadMember(channel, uid)
 
     async def setFrecencySettingsBytes(self, uid: int, proto: bytes) -> None:
         proto = _b64encode(proto).decode("utf8")
@@ -1151,6 +1156,38 @@ class Core(Singleton):
     async def deleteScheduledEvent(self, event: ScheduledEvent) -> None:
         async with self.db() as db:
             await db.deleteScheduledEvent(event)
+
+    async def putThreadMember(self, member: ThreadMember) -> None:
+        async with self.db() as db:
+            await db.putThreadMember(member)
+
+    async def putThreadMetadata(self, metadata: ThreadMetadata) -> None:
+        async with self.db() as db:
+            await db.putThreadMetadata(metadata)
+
+    async def getThreadMetadata(self, thread: Channel) -> Optional[ThreadMetadata]:
+        async with self.db() as db:
+            return await db.getThreadMetadata(thread)
+
+    async def getThreadMembersCount(self, thread: Channel) -> int:
+        async with self.db() as db:
+            return await db.getThreadMembersCount(thread)
+
+    async def getThreadMembers(self, thread: Channel, limit: int=100) -> list[ThreadMember]:
+        async with self.db() as db:
+            return await db.getThreadMembers(thread, limit)
+
+    async def getGuildMemberThreads(self, guild: Guild, user_id: int) -> list[Channel]:
+        async with self.db() as db:
+            return await db.getGuildMemberThreads(guild, user_id)
+
+    async def getThread(self, thread_id: int) -> Optional[Channel]:
+        async with self.db() as db:
+            return await db.getThread(thread_id)
+
+    async def getThreadMember(self, thread: Channel, user_id: int) -> Optional[ThreadMember]:
+        async with self.db() as db:
+            return await db.getThreadMember(thread, user_id)
 
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()

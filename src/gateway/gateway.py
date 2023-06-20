@@ -134,7 +134,6 @@ class GatewayEvents:
         for cl in clients:
             await cl.esend(event)
 
-
 class Gateway:
     def __init__(self, core: Core):
         self.core = core
