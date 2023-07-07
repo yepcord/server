@@ -21,6 +21,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade wheel
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-ftp.txt
+          python -m pip install -r requirements-s3.txt
+          python -m pip install pytest pytest-asyncio pytest-cov
+
       - uses: getong/mariadb-action@v1.1
         with:
           mariadb version: '10.6.4'
@@ -38,14 +46,6 @@ jobs:
           python -m alembic upgrade head
         env:
           DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade wheel
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-ftp.txt
-          python -m pip install -r requirements-s3.txt
-          python -m pip install pytest pytest-asyncio pytest-cov
 
       - name: Run test suite for core
         run: |
