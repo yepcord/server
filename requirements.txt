@@ -26,10 +26,7 @@ Werkzeug~=2.2.2
 -r requirements-ftp.txt
 -r requirements-s3.txt
 
-ormar~=0.12.2
-ormar[mysql]~=0.12.2
-ormar[sqlite]~=0.12.2
-ormar[orjson]~=0.12.2
+ormar[mysql,orjson,sqlite]~=0.12.2
 databases~=0.6.2
 SQLAlchemy~=1.4.41
 alembic~=1.11.1

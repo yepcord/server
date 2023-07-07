@@ -27,8 +27,8 @@ from typing import Optional, Tuple, Union
 from PIL import Image, ImageSequence
 from aiofiles import open as aopen
 
-from .classes.message import Attachment
 from .config import Config
+from .models import Attachment
 
 try:
     from aioftp import Client, StatusCodeError

@@ -21,8 +21,8 @@ from quart_schema import validate_querystring
 
 from ..models.users import UserProfileQuery
 from ..utils import usingDB, getUser, multipleDecorators
-from ...yepcord.classes.user import User
 from ...yepcord.ctx import getCore
+from ...yepcord.models import User
 from ...yepcord.utils import c_json
 
 # Base path is /api/vX/users

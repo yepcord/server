@@ -1136,7 +1136,6 @@ async def test_login_with_mfa(testapp):
     resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": ticket, "code": invalid_code})  # Invalid code
     assert resp.status_code == 400
 
-    print("!!")
     mfa = MFA("a" * 16, 0)
     resp = await client.post('/api/v9/auth/mfa/totp',
                              json={"ticket": ticket, "code": mfa.getCode()})
@@ -1265,7 +1264,6 @@ async def test_create_dm_channel(testapp):
                              json={"recipients": [data["id"], data2["id"]]})
     assert resp.status_code == 200
     json = await resp.get_json()
-    print(json)
     recipients = [r["id"] for r in json["recipients"]]
     assert recipients == [data2["id"]]
     assert json["type"] == ChannelType.DM

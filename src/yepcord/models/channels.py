@@ -337,8 +337,6 @@ class Invite(ormar.Model):
 
         if self.channel.guild:
             guild = self.channel.guild
-            print(guild)
-            print(guild.features)
             data["guild"] = {
                 "id": str(guild.id),
                 "banner": guild.banner,
