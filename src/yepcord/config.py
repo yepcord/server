@@ -18,6 +18,7 @@
 
 from os import environ
 
+
 class _Config:
     _instance = None
 

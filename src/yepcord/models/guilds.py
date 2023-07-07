@@ -16,15 +16,22 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from __future__ import annotations
 from datetime import datetime
-from typing import Optional
+from time import time
+from typing import Optional, Union
 
 import ormar
-from ormar import ReferentialAction
+from ormar import ReferentialAction, QuerySet
+from ormar.relations.relation_proxy import RelationProxy
 
 from . import DefaultMeta, User
 from .channels import Channel
+from ..ctx import getCore
+from ..enums import ScheduledEventEntityType, ChannelType, GuildPermissions
+from ..errors import InvalidDataErr, Errors
 from ..snowflake import Snowflake
+from ..utils import b64encode, int_length, NoneType
 
 
 class Guild(ormar.Model):
@@ -41,12 +48,8 @@ class Guild(ormar.Model):
     discovery_splash: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
     banner: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
     region: str = ormar.String(max_length=64, default="deprecated")
-    #afk_channel: Optional[Channel] = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL, nullable=True,
-    #                                                  default=None, related_name="afk_channel")
-    #system_channel: Optional[Channel] = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL, nullable=True,
-    #                                                     default=None, related_name="system_channel")
-    afk_channel: Optional[int] = ormar.BigInteger(nullable=True, default=None) # TODO: use ForeignKey instead of BigInteger (if that's event possible)
-    system_channel: Optional[int] = ormar.BigInteger(nullable=True, default=None) # TODO: use ForeignKey instead of BigInteger (if that's event possible)
+    afk_channel: Optional[int] = ormar.BigInteger(nullable=True, default=None)
+    system_channel: Optional[int] = ormar.BigInteger(nullable=True, default=None)
     afk_timeout: int = ormar.Integer(default=300)
     verification_level: int = ormar.Integer(default=0)
     default_message_notifications: int = ormar.Integer(default=0)
@@ -59,6 +62,84 @@ class Guild(ormar.Model):
     premium_progress_bar_enabled: bool = ormar.Boolean(default=False)
     nsfw: bool = ormar.Boolean(default=False)
     nsfw_level: int = ormar.Integer(default=0)
+
+    async def ds_json(self, user_id: int, for_gateway: bool=False, with_members: bool=False,
+                      with_channels: bool=False) -> dict:
+        data = {
+            "id": str(self.id),
+            "version": int(time() * 1000),  # What is this?
+            "stickers": [await sticker.ds_json() for sticker in await getCore().getGuildStickers(self)],
+            "stage_instances": [],
+            "roles": [role.ds_json() for role in await getCore().getRoles(self)],
+            "properties": {
+                "afk_timeout": self.afk_timeout,
+                "splash": self.splash,
+                "owner_id": str(self.owner.id),
+                "description": self.description,
+                "id": str(self.id),
+                "discovery_splash": self.discovery_splash,
+                "icon": self.icon,
+                "incidents_data": None,  # ???
+                "explicit_content_filter": self.explicit_content_filter,
+                "system_channel_id": str(self.system_channel) if self.system_channel is not None else None,
+                "default_message_notifications": self.default_message_notifications,
+                "premium_progress_bar_enabled": bool(self.premium_progress_bar_enabled),
+                "public_updates_channel_id": None,  # ???
+                "max_members": self.max_members,
+                "nsfw": bool(self.nsfw),
+                "application_id": None,
+                "max_video_channel_users": 0,
+                "verification_level": self.verification_level,
+                "rules_channel_id": None,
+                "afk_channel_id": str(self.afk_channel) if self.afk_channel is not None else None,
+                "latest_onboarding_question_id": None,  # ???
+                "mfa_level": self.mfa_level,
+                "nsfw_level": self.nsfw_level,
+                "safety_alerts_channel_id": None,  # ???
+                "premium_tier": 3,
+                "vanity_url_code": self.vanity_url_code,
+                "features": [
+                    "ANIMATED_ICON",
+                    "BANNER",
+                    "INVITE_SPLASH",
+                    "VANITY_URL",
+                    "PREMIUM_TIER_3_OVERRIDE",
+                    "ROLE_ICONS",
+                    *self.features
+                ],
+                "max_stage_video_channel_users": 0,
+                "system_channel_flags": self.system_channel_flags,
+                "name": self.name,
+                "hub_type": None,  # ???
+                "preferred_locale": self.preferred_locale,
+                "home_header": None,  # ???
+                "banner": self.banner,
+            },
+            "premium_subscription_count": 30,
+            "member_count": await getCore().getGuildMemberCount(self),
+            "lazy": True,
+            "large": False,
+            "guild_scheduled_events": [await event.ds_json() for event in await getCore().getScheduledEvents(self)],
+            "emojis": [await emoji.ds_json(False) for emoji in await getCore().getEmojis(self.id)],
+            "data_mode": "full",
+            "application_command_counts": [],
+        }
+
+        if not for_gateway:
+            props = data["properties"]
+            del data["properties"]
+            data.update(props)
+
+        if for_gateway or user_id:
+            member = await getCore().getGuildMember(self, user_id)
+            data["joined_at"] = member.joined_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+            data["threads"] = [thread.ds_json() for thread in await getCore().getGuildMemberThreads(self, user_id)]
+        if for_gateway or with_channels:
+            data["channels"] = [await channel.ds_json() for channel in await getCore().getGuildChannels(self)]
+        if with_members:
+            data["members"] = [await member.ds_json() for member in await getCore().getGuildMembers(self)]
+
+        return data
 
 
 class Role(ormar.Model):
@@ -78,6 +159,21 @@ class Role(ormar.Model):
     unicode_emoji: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
     flags: int = ormar.BigInteger(default=0)
 
+    def ds_json(self) -> dict:
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "permissions": str(self.permissions),
+            "position": self.position,
+            "color": self.color,
+            "hoist": bool(self.hoist),
+            "managed": bool(self.managed),
+            "mentionable": bool(self.mentionable),
+            "icon": self.icon,
+            "unicode_emoji": self.unicode_emoji,
+            "flags": self.flags
+        }
+
 
 class GuildMember(ormar.Model):
     class Meta(DefaultMeta):
@@ -92,11 +188,102 @@ class GuildMember(ormar.Model):
     nick: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
     mute: bool = ormar.Boolean(default=False)
     deaf: bool = ormar.Boolean(default=False)
-    roles: Optional[list[Role]] = ormar.ManyToMany(Role)
+    roles: Optional[Union[RelationProxy, QuerySet]] = ormar.ManyToMany(Role)
 
     @property
     def joined_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
+
+    async def ds_json(self) -> dict:
+        userdata = await self.user.userdata
+        return {
+            "avatar": self.avatar,
+            "communication_disabled_until": self.communication_disabled_until,
+            "flags": self.flags,
+            "joined_at": self.joined_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
+            "nick": self.nick,
+            "is_pending": False,  # TODO
+            "pending": False,  # TODO
+            "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "roles": [str(role) for role in await getCore().getMemberRolesIds(self)],
+            "user": userdata.ds_json,
+            "mute": self.mute,
+            "deaf": self.deaf
+        }
+
+    @property
+    def perm_checker(self) -> PermissionsChecker:
+        return PermissionsChecker(self)
+
+    @property
+    async def roles_w_default(self) -> list[Role]:
+        return await getCore().getMemberRoles(self, True)
+
+    @property
+    async def top_role(self) -> Role:
+        roles = await self.roles_w_default
+        return roles[-1]
+
+    async def checkPermission(self, *check_permissions, channel: Optional[Channel] = None) -> None:
+        return await self.perm_checker.check(*check_permissions, channel=channel)
+
+    @property
+    async def permissions(self) -> int:
+        permissions = 0
+        for role in await self.roles_w_default:
+            permissions |= role.permissions
+        return permissions
+
+
+class PermissionsChecker:
+    def __init__(self, member: GuildMember):
+        self.member = member
+
+    async def check(self, *check_permissions, channel: Optional[Channel]=None) -> None:
+        def _check(perms: int, perm: int) -> bool:
+            return (perms & perm) == perm
+        guild = self.member.guild
+        if guild.owner == self.member.user:
+            return
+        permissions = await self.member.permissions
+        if _check(permissions, GuildPermissions.ADMINISTRATOR):
+            return
+        if channel:
+            overwrites = await getCore().getOverwritesForMember(channel, self.member)
+            for overwrite in overwrites:
+                permissions &= ~overwrite.deny
+                permissions |= overwrite.allow
+
+        for permission in check_permissions:
+            if not _check(permissions, permission):
+                raise InvalidDataErr(403, Errors.make(50013))
+
+    async def canKickOrBan(self, target_member: GuildMember) -> bool:
+        if self.member == target_member:
+            return False
+        guild = self.member.guild
+        if target_member.user == guild.owner:
+            return False
+        if self.member.user == guild.owner:
+            return True
+        self_top_role = await self.member.top_role
+        target_top_role = await target_member.top_role
+        if self_top_role.position <= target_top_role.position:
+            return False
+        return True
+
+    async def canChangeRolesPositions(self, roles_changes: dict, current_roles: Optional[list[Role]]=None) -> bool:
+        guild = self.member.guild
+        if self.member.user == guild.owner:
+            return True
+        roles_ids = {role.id: role for role in current_roles}
+        top_role = await self.member.top_role
+        for role_change in roles_changes:
+            role_id = int(role_change["id"])
+            position = role_change["position"]
+            if roles_ids[role_id].position >= top_role.position or position >= top_role.position:
+                return False
+        return True
 
 
 class Emoji(ormar.Model):
@@ -112,6 +299,21 @@ class Emoji(ormar.Model):
     animated: bool = ormar.Boolean(default=False)
     available: bool = ormar.Boolean(default=True)
 
+    async def ds_json(self, with_user: bool=False) -> dict:
+        data = {
+            "name": self.name,
+            "roles": [],
+            "id": str(self.id),
+            "require_colons": bool(self.require_colons),
+            "managed": bool(self.managed),
+            "animated": bool(self.animated),
+            "available": bool(self.available)
+        }
+        if with_user and self.user is not None:
+            userdata = await self.user.data
+            data["user"] = userdata.ds_json
+        return data
+
 
 class GuildBan(ormar.Model):
     class Meta(DefaultMeta):
@@ -121,6 +323,14 @@ class GuildBan(ormar.Model):
     reason: str = ormar.String(max_length=512)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
+
+    async def ds_json(self) -> dict:
+        userdata = await self.user.data
+        data = {
+            "user": userdata.ds_json,
+            "reason": self.reason
+        }
+        return data
 
 
 class Sticker(ormar.Model):
@@ -136,6 +346,23 @@ class Sticker(ormar.Model):
     description: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
     tags: Optional[str] = ormar.String(max_length=64, nullable=True, default=None)
 
+    async def ds_json(self, with_user: bool=True) -> dict:
+        data = {
+            "id": str(self.id),
+            "name": self.name,
+            "description": self.description,
+            "tags": self.tags,
+            "type": self.type,
+            "format_type": self.format,
+            "guild_id": str(self.guild.id),
+            "available": True,
+            "asset": ""
+        }
+        if with_user and self.user is not None:
+            userdata = await self.user.data
+            data["user"] = userdata.ds_json
+        return data
+
 
 class GuildTemplate(ormar.Model):
     class Meta(DefaultMeta):
@@ -148,12 +375,118 @@ class GuildTemplate(ormar.Model):
     usage_count: int = ormar.BigInteger(default=0)
     creator: Optional[User] = ormar.ForeignKey(User, ondelete=ReferentialAction.SET_NULL)
     serialized_guild: dict = ormar.JSON(default={})
-    updated_at: Optional[datetime] = ormar.DateTime()
+    updated_at: Optional[datetime] = ormar.DateTime(nullable=True, default=None)
     is_dirty: bool = ormar.Boolean(default=False)
 
     @property
     def created_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
+
+    @property
+    def code(self) -> str:
+        return b64encode(self.id.to_bytes(int_length(self.id), 'big'))
+
+    async def ds_json(self) -> dict:
+        creator_data = await self.creator.data if self.creator is not None else None
+        updated_at = self.updated_at
+        if updated_at is None:
+            updated_at = self.created_at
+        data = {
+            "code": self.code,
+            "name": self.name,
+            "description": self.description,
+            "usage_count": self.usage_count,
+            "creator_id": str(self.creator.id) if self.creator is not None else None,
+            "creator": creator_data.ds_json if creator_data is not None else None,
+            "created_at": self.created_at.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "updated_at": updated_at.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "source_guild_id": str(self.guild.id),
+            "serialized_source_guild": self.serialized_guild,
+            "is_dirty": self.is_dirty
+        }
+        return data
+
+    @staticmethod
+    async def serialize_guild(guild: Guild) -> dict:
+        replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None}
+        last_replaced_id = 0
+        serialized_roles = []
+        serialized_channels = []
+
+        # Serialize roles
+        roles = await getCore().getRoles(guild)
+        roles.sort(key=lambda r: r.id)
+        for role in roles:
+            replaced_ids[role.id] = last_replaced_id
+            role.id = last_replaced_id
+            last_replaced_id += 1
+            serialized_roles.append({
+                "id": role.id,
+                "name": role.name,
+                "color": role.color,
+                "hoist": role.hoist,
+                "mentionable": role.mentionable,
+                "permissions": str(role.permissions),
+                "icon": None,
+                "unicode_emoji": role.unicode_emoji
+            })
+
+        # Serialize channels
+        channels = await getCore().getGuildChannels(guild)
+        channels.sort(key=lambda ch: (int(ch.type == ChannelType.GUILD_CATEGORY), ch.id), reverse=True)
+        for channel in channels:
+            serialized_permission_overwrites = []
+            for overwrite in await getCore().getPermissionOverwrites(channel):
+                if overwrite.type == 0:  # Overwrite for role
+                    role_id = replaced_ids[overwrite.target_id]
+                    if role_id is None:
+                        continue
+                    overwrite = overwrite.ds_json()
+                    overwrite["id"] = role_id
+                    serialized_permission_overwrites.append(overwrite)
+            replaced_ids[channel.id] = last_replaced_id
+            channel.id = last_replaced_id
+            last_replaced_id += 1
+
+            serialized_channels.append({
+                "id": channel.id,
+                "type": channel.type,
+                "name": channel.name,
+                "position": channel.position,
+                "topic": channel.topic,
+                "bitrate": channel.bitrate,
+                "user_limit": channel.user_limit,
+                "nsfw": channel.nsfw,
+                "rate_limit_per_user": channel.rate_limit,
+                "parent_id": replaced_ids.get(channel.parent.id if channel.parent is not None else None),
+                "default_auto_archive_duration": channel.default_auto_archive,
+                "permission_overwrites": serialized_permission_overwrites,
+                "available_tags": None,  # ???
+                "template": "",  # ???
+                "default_reaction_emoji": None,  # ???
+                "default_thread_rate_limit_per_user": None,  # ???
+                "default_sort_order": None,  # ???
+                "default_forum_layout": None  # ???
+            })
+
+        # Serialize guild
+        data = {
+            "name": guild.name,
+            "description": guild.description,
+            "region": guild.region,
+            "verification_level": guild.verification_level,
+            "default_message_notifications": guild.default_message_notifications,
+            "explicit_content_filter": guild.explicit_content_filter,
+            "preferred_locale": guild.preferred_locale,
+            "afk_timeout": guild.afk_timeout,
+            "roles": serialized_roles,
+            "channels": serialized_channels,
+            "afk_channel_id": replaced_ids.get(guild.afk_channel),
+            "system_channel_id": replaced_ids.get(guild.system_channel),
+            "system_channel_flags": guild.system_channel_flags
+        }
+
+        return data
 
 
 class GuildEvent(ormar.Model):
@@ -174,7 +507,38 @@ class GuildEvent(ormar.Model):
     entity_id: Optional[int] = ormar.BigInteger(nullable=True, default=None)
     entity_metadata: dict = ormar.JSON(default={})
     image: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
-    subscribers: list[GuildMember] = ormar.ManyToMany(GuildMember)
+    subscribers: Optional[Union[RelationProxy, QuerySet]] = ormar.ManyToMany(GuildMember)
+
+    async def ds_json(self, with_user: bool=False, with_user_count: bool=False) -> dict:
+        channel_id = str(self.channel_id) if self.channel_id is not None else None
+        entity_id = str(self.entity_id) if self.entity_id is not None else None
+        start_time = self.start.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        end_time = None
+        if self.end:
+            end_time = self.end.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+        data = {
+            "id": str(self.id),
+            "guild_id": str(self.guild_id),
+            "channel_id": str(channel_id),
+            "creator_id": str(self.creator_id),
+            "name": self.name,
+            "description": self.description,
+            "scheduled_start_time": start_time,
+            "scheduled_end_time": end_time,
+            "privacy_level": self.privacy_level,
+            "status": self.status,
+            "entity_type": self.entity_type,
+            "entity_id": entity_id,
+            "image": self.image
+        }
+        if self.entity_type == ScheduledEventEntityType.EXTERNAL:
+            data["entity_metadata"] = self.entity_metadata
+        if with_user:
+            creator = await self.creator.data
+            data["creator"] = creator.ds_json
+        if with_user_count:
+            data["user_count"] = await getCore().getScheduledEventUserCount(self)
+        return data
 
 
 class AuditLogEntry(ormar.Model):
@@ -189,3 +553,16 @@ class AuditLogEntry(ormar.Model):
     reason: Optional[str] = ormar.String(max_length=512, nullable=True, default=None)
     changes: list = ormar.JSON(default=[])
     options: dict = ormar.JSON(default={})
+
+    def ds_json(self) -> dict:
+        data = {
+            "user_id": str(self.user_id),
+            "target_id": str(self.target_id),
+            "id": str(self.id),
+            "action_type": self.action_type,
+            "guild_id": str(self.guild_id)
+        }
+        if self.changes: data["changes"] = self.changes
+        if self.options: data["options"] = self.options
+        if self.reason: data["reason"] = self.reason
+        return data

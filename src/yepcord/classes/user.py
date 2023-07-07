@@ -462,7 +462,7 @@ class User(_User, Model):
         if mutual_friends_count:
             data["mutual_friends_count"] = 0  # TODO
         if with_mutual_guilds:
-            data["mutual_guilds"] = await getCore().getMutualGuilds(self, other_user)
+            data["mutual_guilds"] = await getCore().getMutualGuildsJ(self, other_user)
 
         return data
 

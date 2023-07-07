@@ -29,6 +29,13 @@ class RelationshipType(E):
     BLOCK = 2
 
 
+class RelTypeDiscord(E):
+    FRIEND = 1
+    BLOCK = 2
+    REQUEST_RECV = 3
+    REQUEST_SENT = 4
+
+
 class GatewayOp(E):
     DISPATCH = 0
     HEARTBEAT = 1

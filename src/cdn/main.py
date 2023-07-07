@@ -21,16 +21,18 @@ import sys
 from quart import Quart
 from quart_schema import validate_querystring, QuartSchema
 
-from src.yepcord.enums import StickerFormat
 from .models import CdnImageSizeQuery
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
+from ..yepcord.enums import StickerFormat
+from ..yepcord.models import database
 from ..yepcord.storage import getStorage
 from ..yepcord.utils import b64decode
 
 
 class YEPcord(Quart):
-    pass # Maybe it will be needed in the future
+    pass  # Maybe it will be needed in the future
+
 
 app = YEPcord("YEPcord-Cdn")
 QuartSchema(app)
@@ -39,16 +41,18 @@ cdn = CDN(getStorage(), core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
+
 @app.before_serving
 async def before_serving():
-    await core.initDB(
-        host=Config("DB_HOST"),
-        port=3306,
-        user=Config("DB_USER"),
-        password=Config("DB_PASS"),
-        db=Config("DB_NAME"),
-        autocommit=True
-    )
+    if not database.is_connected:
+        await database.connect()
+
+
+@app.after_serving
+async def after_serving():
+    if database.is_connected:
+        await database.disconnect()
+
 
 @app.after_request
 async def set_cors_headers(response):

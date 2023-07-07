@@ -33,6 +33,7 @@ def generateEmailVerificationToken(user_id: int, email: str, key: bytes):
     token += f".{sig}"
     return token
 
+
 def generateMfaVerificationKey(nonce: str, mfa_key: str, key: bytes):
     if not (payload := JWT.decode(nonce, key + b64decode(mfa_key))):
         return

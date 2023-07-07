@@ -38,24 +38,17 @@ class UserUpdate(BaseModel):
                 value = None
         return value
 
-    @property
-    def to_json(self) -> dict:
-        return self.dict(include={"avatar"}, exclude_defaults=True)
-
 
 class UserProfileUpdate(BaseModel):
     banner: Optional[str] = ""
     bio: Optional[str] = None
     accent_color: Optional[int] = None
 
-    @property
-    def to_json(self) -> dict:
-        return self.dict(exclude_defaults=True)
-
 
 class ConsentSettingsUpdate(BaseModel):
     grant: List[str]
     revoke: List[str]
+
 
 class SettingsUpdate(BaseModel):
     inline_attachment_media: Optional[bool] = None
@@ -102,10 +95,6 @@ class SettingsUpdate(BaseModel):
     render_spoilers: Optional[str] = None
     dismissed_contents: Optional[str] = None
 
-    @property
-    def to_json(self) -> dict:
-        return self.dict(exclude_defaults=True)
-
 
 class SettingsProtoUpdate(BaseModel):
     settings: str
@@ -119,9 +108,9 @@ class RelationshipRequest(BaseModel):
     @validator("discriminator")
     def validate_discriminator(cls, value: int):
         if value < 1 or value > 9999:
-            raise InvalidDataErr(400,
-                                 Errors.make(50035,
-                                             {"name": {"code": "BASE_TYPE_BAD_INT", "message": "Must be between 1 and 9999"}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"name": {
+                "code": "BASE_TYPE_BAD_INT", "message": "Must be between 1 and 9999"
+            }}))
         return value
 
 

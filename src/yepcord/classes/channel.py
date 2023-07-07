@@ -179,7 +179,7 @@ class Channel(_Channel, Model):
                 "nsfw": self.nsfw
             }
         elif self.type == ChannelType.GUILD_PUBLIC_THREAD:
-            message_count = await getCore().getChannelMessagesCount(self, Snowflake.makeId(False), 0)
+            message_count = await getCore().getChannelMessagesCount(self)
             data = {
                 "id": str(self.id),
                 "guild_id": str(self.guild_id),

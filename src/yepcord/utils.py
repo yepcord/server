@@ -87,15 +87,15 @@ def validImage(image: BytesIO) -> bool:
 
 
 async def execute_after(coro, seconds):
-    async def _wait_exec(coro, seconds):
-        await asleep(seconds)
-        await coro
+    async def _wait_exec(coro_, seconds_):
+        await asleep(seconds_)
+        await coro_
 
     get_event_loop().create_task(_wait_exec(coro, seconds))
 
 
-def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False, for_insert=False) -> Union[
-    str, list, Tuple[str, str]]:
+def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False, for_insert=False) \
+        -> Union[str, list, Tuple[str, str]]:
     if not as_tuples: as_tuples = for_insert
     query = []
     for k, v in json.items():
@@ -136,10 +136,10 @@ def result_to_json(desc: list, result: list) -> dict:
 ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')
 
 
-def proto_get(protoObj, path, default=None):
+def proto_get(proto_obj, path, default=None, output_dict=None, output_name=None):
     path = path.split(".")
     try:
-        o = protoObj
+        o = proto_obj
         for p in path:
             if hasattr(o, "ListFields"):
                 if p not in [f[0].name for f in o.ListFields()] and p != "value":
@@ -147,6 +147,8 @@ def proto_get(protoObj, path, default=None):
             o = getattr(o, p)
     except:
         return default
+    if output_dict is not None and output_name is not None:
+        output_dict[output_name] = o
     return o
 
 

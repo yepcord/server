@@ -20,6 +20,7 @@ from websockets import connect
 from json import loads as jloads, dumps as jdumps
 from asyncio import get_event_loop, sleep as asleep
 
+
 class Client:
     def __init__(self):
         self.ws = None
@@ -69,6 +70,7 @@ class Client:
         if topic in self.topics:
             del self.topics[topic]
             await self.ws.send(jdumps({"t": "unsubscribe", "topic": topic}))
+
 
 class Broadcaster:
     def __init__(self, name):

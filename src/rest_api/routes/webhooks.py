@@ -24,11 +24,10 @@ from quart_schema import validate_request, validate_querystring
 from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
 from ..utils import usingDB, getUser, multipleDecorators, allowWithoutUser, processMessageData
 from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent
-from ...yepcord.classes.message import Message
-from ...yepcord.classes.user import User
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.models import User, Channel, Message
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import c_json, getImage
 
@@ -42,13 +41,13 @@ webhooks = Blueprint('webhooks', __name__)
 async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token: Optional[str]=None):
     if webhook := await getCore().getWebhook(webhook):
         if webhook.token != token:
-            guild = await getCore().getGuild(webhook.guild_id)
+            guild = webhook.channel.guild
             if not (member := await getCore().getGuildMember(guild, user.id)):
                 raise InvalidDataErr(403, Errors.make(50013))
             await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-        await getCore().deleteWebhook(webhook)
-        await getGw().dispatch(WebhooksUpdateEvent(webhook.guild_id, webhook.channel_id), guild_id=webhook.guild_id,
-                               permissions=GuildPermissions.MANAGE_WEBHOOKS)
+        await webhook.delete()
+        await getGw().dispatch(WebhooksUpdateEvent(webhook.channel.guild.id, webhook.channel.id),
+                               guild_id=webhook.channel.guild.id, permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
     return "", 204
 
@@ -59,13 +58,18 @@ async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token:
 async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], webhook: int, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
+    channel = webhook.channel
+    guild = channel.guild
     if webhook.token != token:
-        guild = await getCore().getGuild(webhook.guild_id)
         if not (member := await getCore().getGuildMember(guild, user.id)):
             raise InvalidDataErr(403, Errors.make(50013))
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-    if user.id == 0:
-        if data.channel_id: data.channel_id = None
+    if data.channel_id:
+        if user.id == 0:
+            data.channel_id = None
+        else:
+            channel = await Channel.objects.get_or_none(guild=webhook.channel.guild, id=data.channel_id)
+            if not channel: data.channel_id = None
     if (img := data.avatar) or img is None:
         if img is not None:
             img = getImage(img)
@@ -73,13 +77,16 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
                 img = h
         data.avatar = img
 
-    new_webhook = webhook.copy(**data.dict(exclude_defaults=True))
+    changes = data.dict(exclude_defaults=True)
+    if "channel_id" in changes:
+        changes["channel"] = channel
+        del changes["channel_id"]
 
-    await getCore().updateWebhookDiff(webhook, new_webhook)
-    await getGw().dispatch(WebhooksUpdateEvent(webhook.guild_id, webhook.channel_id), guild_id=webhook.guild_id,
+    await webhook.update(**changes)
+    await getGw().dispatch(WebhooksUpdateEvent(guild.id, webhook.channel.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
-    return c_json(await new_webhook.json)
+    return c_json(await webhook.ds_json())
 
 
 @webhooks.get("/<int:webhook>")
@@ -89,12 +96,12 @@ async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Op
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
-        guild = await getCore().getGuild(webhook.guild_id)
+        guild = webhook.channel.guild
         if not (member := await getCore().getGuildMember(guild, user.id)):
             raise InvalidDataErr(403, Errors.make(50013))
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
-    return c_json(await webhook.json)
+    return c_json(await webhook.ds_json())
 
 
 @webhooks.post("/<int:webhook>/<string:token>")
@@ -104,17 +111,15 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
         raise InvalidDataErr(403, Errors.make(50013))
-    if not (channel := await getCore().getChannel(webhook.channel_id)):
-        raise InvalidDataErr(404, Errors.make(10003))
 
-    message_id = Snowflake.makeId()
+    channel = webhook.channel
     data = await request.get_json()
-    data = await processMessageData(message_id, data, webhook.channel_id)
+    data, attachments = await processMessageData(data, channel)
     author = {
         "bot": True,
         "id": str(webhook.id),
-        "username": data.get("username", None) or webhook.name,
-        "avatar": data.get("avatar", None) or webhook.avatar,
+        "username": data.get("username", webhook.name),
+        "avatar": data.get("avatar", webhook.avatar),
         "discriminator": "0000"
     }
     data = WebhookMessageCreate(**data)
@@ -125,12 +130,32 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
     if data.message_reference:
         message_type = MessageType.REPLY
 
-    message = Message(id=message_id, channel_id=webhook.channel_id, author=0, guild_id=webhook.guild_id,
-                      webhook_author=author, type=message_type, **data.to_json())
+    stickers = [await getCore().getSticker(sticker_id) for sticker_id in data.sticker_ids]
+    if not data.content and not data.embeds and not attachments and not data.sticker_ids:
+        raise InvalidDataErr(400, Errors.make(50006))
+    stickers_data = {"sticker_items": [], "stickers": []}
+    for sticker in stickers:
+        stickers_data["stickers"].append(await sticker.ds_json(False))
+        stickers_data["sticker_items"].append({
+            "format_type": sticker.format,
+            "id": str(sticker.id),
+            "name": sticker.name,
+        })
+
+    data_json = data.to_json()
+    if "sticker_ids" in data_json: del data_json["sticker_ids"]
+
+    message = await Message.objects.create(id=Snowflake.makeId(), channel=webhook.channel, author=None,
+                                           guild=channel.guild, webhook_author=author, type=message_type,
+                                           **stickers_data, **data_json)
+    for attachment in attachments:
+        await attachment.update(message=message)
+
+    message_json = await message.ds_json()
     await getCore().sendMessage(message)
-    await getGw().dispatch(MessageCreateEvent(await message.json), channel_id=message.channel_id)
+    await getGw().dispatch(MessageCreateEvent(message_json), channel_id=channel.id)
 
     if query_args.wait:
-        return c_json(await message.json)
+        return c_json(message_json)
     else:
         return "", 204

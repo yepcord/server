@@ -22,14 +22,11 @@ from time import time
 from typing import List, TYPE_CHECKING, Union
 
 from ..yepcord.config import Config
-from ..yepcord.ctx import Ctx
 from ..yepcord.enums import GatewayOp
 from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:
-    from ..yepcord.classes.channel import Channel
-    from ..yepcord.classes.guild import Invite
-    from ..yepcord.classes.user import GuildMember, UserData, User, UserSettings
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Emoji
     from ..yepcord.core import Core
     from .gateway import GatewayClient, ClientStatus
 
@@ -37,11 +34,13 @@ if TYPE_CHECKING:
 class Event:
     pass
 
+
 class DispatchEvent(Event):
     OP = GatewayOp.DISPATCH
     NAME: str = ""
 
     async def json(self) -> dict: ...
+
 
 class RawDispatchEvent(DispatchEvent):
     def __init__(self, data: dict):
@@ -49,6 +48,7 @@ class RawDispatchEvent(DispatchEvent):
 
     async def json(self) -> dict:
         return self.data
+
 
 class ReadyEvent(DispatchEvent):
     NAME = "READY"
@@ -62,8 +62,6 @@ class ReadyEvent(DispatchEvent):
         userdata = await self.user.userdata
         settings = await self.user.settings
         proto = settings.to_proto()
-        Ctx["user_id"] = self.user.id
-        Ctx["with_channels"] = True
         return {
             "t": self.NAME,
             "op": self.OP,
@@ -92,24 +90,26 @@ class ReadyEvent(DispatchEvent):
                     "flags": 0,
                 },
                 "users": await self.core.getRelatedUsers(self.user),
-                "guilds": [await guild.gw_json for guild in await self.core.getUserGuilds(self.user)],
+                "guilds": [await guild.ds_json(user_id=self.user.id, for_gateway=True, with_channels=True)
+                           for guild in await self.core.getUserGuilds(self.user)],
                 "session_id": self.client.sid,
-                "presences": [], # TODO
+                "presences": [],  # TODO
                 "relationships": await self.core.getRelationships(self.user),
-                "connected_accounts": [], # TODO
+                "connected_accounts": [],  # TODO
                 "consents": {
                     "personalization": {
                         "consented": settings.personalization
                     }
                 },
                 "country_code": "US",
-                "experiments": [], # TODO
+                "experiments": [],  # TODO
                 "friend_suggestion_count": 0,
                 "geo_ordered_rtc_regions": ["yepcord"],
-                "guild_experiments": [], # TODO
-                "guild_join_requests": [], # TODO
-                "merged_members": [], # TODO
-                "private_channels": [await channel.json for channel in await self.core.getPrivateChannels(self.user)],
+                "guild_experiments": [],  # TODO
+                "guild_join_requests": [],  # TODO
+                "merged_members": [],  # TODO
+                "private_channels": [await channel.ds_json(user_id=self.user.id)
+                                     for channel in await self.core.getPrivateChannels(self.user)],
                 "read_state": {
                     "version": 1,
                     "partial": False,
@@ -131,12 +131,13 @@ class ReadyEvent(DispatchEvent):
                 "user_guild_settings": {
                     "version": 0,
                     "partial": False,
-                    "entries": [] # TODO
+                    "entries": []  # TODO
                 },
-                "user_settings": await settings.json,
+                "user_settings": settings.ds_json(),
                 "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
             }
         }
+
 
 class ReadySupplementalEvent(DispatchEvent):
     NAME = "READY_SUPPLEMENTAL"
@@ -146,34 +147,35 @@ class ReadySupplementalEvent(DispatchEvent):
         self.guilds_ids = guilds_ids
 
     async def json(self) -> dict:
-        g = [{"voice_states": [], "id": str(i), "embedded_activities": []} for i in self.guilds_ids] # TODO
+        g = [{"voice_states": [], "id": str(i), "embedded_activities": []} for i in self.guilds_ids]  # TODO
         return {
             "t": self.NAME,
             "op": self.OP,
             "d": {
                 "merged_presences": {
-                    "guilds": [[]], # TODO
+                    "guilds": [[]],  # TODO
                     "friends": self.friends_presences
                 },
-                "merged_members": [[]], # TODO
+                "merged_members": [[]],  # TODO
                 "guilds": g
             }
         }
 
+
 class RelationshipAddEvent(DispatchEvent):
     NAME = "RELATIONSHIP_ADD"
 
-    def __init__(self, user_id: int, userdata: UserData, type: int):
+    def __init__(self, user_id: int, userdata: UserData, type_: int):
         self.user_id = user_id
         self.userdata = userdata
-        self.type = type
+        self.type = type_
 
     async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "user": await self.userdata.json,
+                "user": self.userdata.ds_json,
                 "type": self.type,
                 "should_notify": True,
                 "nickname": None,
@@ -181,29 +183,34 @@ class RelationshipAddEvent(DispatchEvent):
             }
         }
 
+
 class DMChannelCreateEvent(DispatchEvent):
     NAME = "CHANNEL_CREATE"
 
-    def __init__(self, channel: Channel):
+    def __init__(self, channel: Channel, *, channel_json_kwargs: dict=None):
         self.channel = channel
+        self._channel_kwargs = {} if channel_json_kwargs is None else channel_json_kwargs
+        self._channel_kwargs["with_ids"] = False
 
     async def json(self) -> dict:
         j = {
             "t": self.NAME,
             "op": self.OP,
-            "d": await self.channel.json
+            "d": await self.channel.ds_json(**self._channel_kwargs)
         }
         return j
+
 
 class DMChannelUpdateEvent(DMChannelCreateEvent):
     NAME = "CHANNEL_UPDATE"
 
+
 class RelationshipRemoveEvent(DispatchEvent):
     NAME = "RELATIONSHIP_REMOVE"
 
-    def __init__(self, user_id: int, type: int):
+    def __init__(self, user_id: int, type_: int):
         self.user_id = user_id
-        self.type = type
+        self.type = type_
 
     async def json(self) -> dict:
         return {
@@ -214,6 +221,7 @@ class RelationshipRemoveEvent(DispatchEvent):
                 "id": str(self.user_id)
             }
         }
+
 
 class UserUpdateEvent(DispatchEvent):
     NAME = "USER_UPDATE"
@@ -248,6 +256,7 @@ class UserUpdateEvent(DispatchEvent):
             }
         }
 
+
 class PresenceUpdateEvent(DispatchEvent):
     NAME = "PRESENCE_UPDATE"
 
@@ -260,13 +269,14 @@ class PresenceUpdateEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "user": await self.userdata.json,
+                "user": self.userdata.ds_json,
                 "status": self.status["status"],
                 "last_modified": self.status.get("last_modified", int(time() * 1000)),
                 "client_status": {} if self.status["status"] == "offline" else {"desktop": self.status["status"]},
                 "activities": self.status.get("activities", [])
             }
         }
+
 
 class MessageCreateEvent(DispatchEvent):
     NAME = "MESSAGE_CREATE"
@@ -280,6 +290,7 @@ class MessageCreateEvent(DispatchEvent):
             "op": self.OP,
             "d": self.message_obj
         }
+
 
 class TypingEvent(DispatchEvent):
     NAME = "TYPING_START"
@@ -299,8 +310,10 @@ class TypingEvent(DispatchEvent):
             }
         }
 
+
 class MessageUpdateEvent(MessageCreateEvent):
     NAME = "MESSAGE_UPDATE"
+
 
 class MessageDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE"
@@ -323,6 +336,7 @@ class MessageDeleteEvent(DispatchEvent):
             data["d"]["guild_id"] = str(self.guild_id)
         return data
 
+
 class MessageAckEvent(DispatchEvent):
     NAME = "MESSAGE_ACK"
 
@@ -335,6 +349,7 @@ class MessageAckEvent(DispatchEvent):
             "op": self.OP,
             "d": self.ack_object
         }
+
 
 class ChannelRecipientAddEvent(DispatchEvent):
     NAME = "CHANNEL_RECIPIENT_ADD"
@@ -353,8 +368,10 @@ class ChannelRecipientAddEvent(DispatchEvent):
             }
         }
 
+
 class ChannelRecipientRemoveEvent(ChannelRecipientAddEvent):
     NAME = "CHANNEL_RECIPIENT_REMOVE"
+
 
 class DMChannelDeleteEvent(DispatchEvent):
     NAME = "CHANNEL_DELETE"
@@ -368,6 +385,7 @@ class DMChannelDeleteEvent(DispatchEvent):
             "op": self.OP,
             "d": self.channel_obj
         }
+
 
 class ChannelPinsUpdateEvent(DispatchEvent):
     NAME = "CHANNEL_PINS_UPDATE"
@@ -386,6 +404,7 @@ class ChannelPinsUpdateEvent(DispatchEvent):
             }
         }
 
+
 class MessageReactionAddEvent(DispatchEvent):
     NAME = "MESSAGE_REACTION_ADD"
 
@@ -394,6 +413,11 @@ class MessageReactionAddEvent(DispatchEvent):
         self.message_id = message_id
         self.channel_id = channel_id
         self.emoji = emoji
+        if isinstance(emoji["emoji"], Emoji):
+            emoji["emoji_id"] = emoji["emoji"].id
+        else:
+            emoji["emoji_id"] = emoji["emoji"]
+        del emoji["emoji"]
 
     async def json(self) -> dict:
         return {
@@ -407,8 +431,10 @@ class MessageReactionAddEvent(DispatchEvent):
             }
         }
 
+
 class MessageReactionRemoveEvent(MessageReactionAddEvent):
     NAME = "MESSAGE_REACTION_REMOVE"
+
 
 class GuildCreateEvent(DispatchEvent):
     NAME = "GUILD_CREATE"
@@ -428,8 +454,10 @@ class GuildCreateEvent(DispatchEvent):
 
         return data
 
+
 class GuildUpdateEvent(GuildCreateEvent):
     NAME = "GUILD_UPDATE"
+
 
 class GuildDeleteEvent(DispatchEvent):
     NAME = "GUILD_DELETE"
@@ -445,6 +473,7 @@ class GuildDeleteEvent(DispatchEvent):
                 "id": str(self.guild_id)
             }
         }
+
 
 class GuildMembersListUpdateEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_LIST_UPDATE"
@@ -464,17 +493,19 @@ class GuildMembersListUpdateEvent(DispatchEvent):
         groups = [{"id": status, "count": count} for status, count in self.groups.items()]
         items = []
         for mem in self.members:
-            m = await mem.json
+            m = await mem.ds_json()
             m["presence"] = {
                 "user": {"id": str(mem.user_id)},
                 "status": self.statuses[mem.user_id]["status"],
-                "client_status": {} if self.statuses[mem.user_id]["status"] == "offline" else {"desktop": self.statuses[mem.user_id]["status"]},
+                "client_status": {} if self.statuses[mem.user_id]["status"] == "offline" else {
+                    "desktop": self.statuses[mem.user_id]["status"]
+                },
                 "activities": self.statuses[mem.user_id].get("activities", [])
             }
             items.append({"member": m})
         items.sort(key=lambda i: i["member"]["presence"]["status"])
         _ls = None
-        _ins = {}
+        _ins: dict = {}
         _offset = 0
         for idx, i in enumerate(items):
             if (_s := i["member"]["presence"]["status"]) != _ls:
@@ -501,6 +532,7 @@ class GuildMembersListUpdateEvent(DispatchEvent):
             }
         }
 
+
 class UserNoteUpdateEvent(DispatchEvent):
     NAME = "USER_NOTE_UPDATE"
 
@@ -518,12 +550,13 @@ class UserNoteUpdateEvent(DispatchEvent):
             }
         }
 
+
 class UserSettingsProtoUpdateEvent(DispatchEvent):
     NAME = "USER_SETTINGS_PROTO_UPDATE"
 
-    def __init__(self, proto: str, stype: int):
+    def __init__(self, proto: str, type_: int):
         self.proto = proto
-        self.type = stype
+        self.type = type_
 
     async def json(self) -> dict:
         return {
@@ -537,6 +570,7 @@ class UserSettingsProtoUpdateEvent(DispatchEvent):
                 "partial": False
             }
         }
+
 
 class GuildEmojisUpdate(DispatchEvent):
     NAME = "GUILD_EMOJIS_UPDATE"
@@ -555,6 +589,7 @@ class GuildEmojisUpdate(DispatchEvent):
             }
         }
 
+
 class ChannelUpdateEvent(DispatchEvent):
     NAME = "CHANNEL_UPDATE"
 
@@ -568,11 +603,14 @@ class ChannelUpdateEvent(DispatchEvent):
             "d": self.channel_obj
         }
 
+
 class ChannelCreateEvent(ChannelUpdateEvent):
     NAME = "CHANNEL_CREATE"
 
+
 class ChannelDeleteEvent(ChannelUpdateEvent):
     NAME = "CHANNEL_DELETE"
+
 
 class InviteDeleteEvent(DispatchEvent):
     NAME = "INVITE_DELETE"
@@ -585,12 +623,13 @@ class InviteDeleteEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "guild_id": str(self.invite.guild_id),
+                "guild_id": str(self.invite.channel.guild.id) if self.invite.channel.guild is not None else None,
                 "code": self.invite.code,
-                "channel_id": str(self.invite.channel_id)
+                "channel_id": str(self.invite.channel.id)
             }
         }
         return data
+
 
 class GuildMemberRemoveEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_REMOVE"
@@ -610,6 +649,7 @@ class GuildMemberRemoveEvent(DispatchEvent):
         }
         return data
 
+
 class GuildBanAddEvent(DispatchEvent):
     NAME = "GUILD_BAN_ADD"
 
@@ -628,8 +668,10 @@ class GuildBanAddEvent(DispatchEvent):
         }
         return data
 
+
 class GuildBanRemoveEvent(GuildBanAddEvent):
     NAME = "GUILD_BAN_REMOVE"
+
 
 class MessageBulkDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE_BULK"
@@ -651,6 +693,7 @@ class MessageBulkDeleteEvent(DispatchEvent):
         }
         return data
 
+
 class GuildRoleCreateEvent(DispatchEvent):
     NAME = "GUILD_ROLE_CREATE"
 
@@ -669,8 +712,10 @@ class GuildRoleCreateEvent(DispatchEvent):
         }
         return data
 
+
 class GuildRoleUpdateEvent(GuildRoleCreateEvent):
     NAME = "GUILD_ROLE_UPDATE"
+
 
 class GuildRoleDeleteEvent(DispatchEvent):
     NAME = "GUILD_ROLE_DELETE"
@@ -690,6 +735,7 @@ class GuildRoleDeleteEvent(DispatchEvent):
         }
         return data
 
+
 class GuildMemberUpdateEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_UPDATE"
 
@@ -706,6 +752,7 @@ class GuildMemberUpdateEvent(DispatchEvent):
         data["d"]["guild_id"] = str(self.guild_id)
         return data
 
+
 class GuildMembersChunkEvent(DispatchEvent):
     NAME = "GUILD_MEMBERS_CHUNK"
 
@@ -719,7 +766,7 @@ class GuildMembersChunkEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "members": [await member.json for member in self.members],
+                "members": [await member.ds_json() for member in self.members],
                 "presences": self.presences,
                 "chunk_index": 0,
                 "chunk_count": 1,
@@ -727,6 +774,7 @@ class GuildMembersChunkEvent(DispatchEvent):
             }
         }
         return data
+
 
 class GuildAuditLogEntryCreateEvent(DispatchEvent):
     NAME = "GUILD_AUDIT_LOG_ENTRY_CREATE"
@@ -741,6 +789,7 @@ class GuildAuditLogEntryCreateEvent(DispatchEvent):
             "d": self.entry_obj
         }
         return data
+
 
 class WebhooksUpdateEvent(DispatchEvent):
     NAME = "WEBHOOKS_UPDATE"
@@ -760,6 +809,7 @@ class WebhooksUpdateEvent(DispatchEvent):
         }
         return data
 
+
 class StickersUpdateEvent(DispatchEvent):
     NAME = "GUILD_STICKERS_UPDATE"
 
@@ -778,6 +828,7 @@ class StickersUpdateEvent(DispatchEvent):
         }
         return data
 
+
 class UserDeleteEvent(DispatchEvent):
     NAME = "USER_DELETE"
 
@@ -793,6 +844,7 @@ class UserDeleteEvent(DispatchEvent):
             }
         }
 
+
 class GuildScheduledEventCreateEvent(DispatchEvent):
     NAME = "GUILD_SCHEDULED_EVENT_CREATE"
 
@@ -806,8 +858,10 @@ class GuildScheduledEventCreateEvent(DispatchEvent):
             "d": self.event_obj
         }
 
+
 class GuildScheduledEventUpdateEvent(GuildScheduledEventCreateEvent):
     NAME = "GUILD_SCHEDULED_EVENT_UPDATE"
+
 
 class ScheduledEventUserAddEvent(DispatchEvent):
     NAME = "GUILD_SCHEDULED_EVENT_USER_ADD"
@@ -828,11 +882,14 @@ class ScheduledEventUserAddEvent(DispatchEvent):
             }
         }
 
+
 class ScheduledEventUserRemoveEvent(ScheduledEventUserAddEvent):
     NAME = "GUILD_SCHEDULED_EVENT_USER_REMOVE"
 
+
 class GuildScheduledEventDeleteEvent(GuildScheduledEventCreateEvent):
     NAME = "GUILD_SCHEDULED_EVENT_DELETE"
+
 
 class ThreadCreateEvent(DispatchEvent):
     NAME = "THREAD_CREATE"
@@ -846,6 +903,7 @@ class ThreadCreateEvent(DispatchEvent):
             "op": self.OP,
             "d": self.thread_obj
         }
+
 
 class ThreadMemberUpdateEvent(DispatchEvent):
     NAME = "THREAD_MEMBER_UPDATE"

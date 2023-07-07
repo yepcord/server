@@ -18,6 +18,7 @@
 
 from quart import Quart, websocket
 
+from src.yepcord.models import database
 from ..yepcord.config import Config
 from ..yepcord.classes.other import ZlibCompressor
 from ..yepcord.core import Core
@@ -38,15 +39,15 @@ gw = Gateway(core)
 
 @app.before_serving
 async def before_serving():
-    await core.initDB(
-        host=Config("DB_HOST"),
-        port=3306,
-        user=Config("DB_USER"),
-        password=Config("DB_PASS"),
-        db=Config("DB_NAME"),
-        autocommit=True
-    )
+    if not database.is_connected:
+        await database.connect()
     await gw.init()
+
+
+@app.after_serving
+async def after_serving():
+    if database.is_connected:
+        await database.disconnect()
 
 
 @app.after_request
@@ -72,7 +73,7 @@ async def ws_gateway():
         except CancelledError:
             setattr(ws, "ws_connected", False)
             await gw.disconnect(ws)
-            break # TODO: Handle disconnect
+            break  # TODO: Handle disconnect
 
 if __name__ == "__main__":
     from uvicorn import run as urun

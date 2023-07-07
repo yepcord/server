@@ -22,8 +22,7 @@ import warnings
 from datetime import datetime
 from typing import Optional
 
-from .classes.channel import Channel
-from .classes.guild import Guild
+from .models import Channel, Guild
 from .classes.other import Singleton
 from .config import Config
 from .pubsub_client import Broadcaster
@@ -57,7 +56,8 @@ class GatewayDispatcher(Singleton):
             "permissions": permissions,
         })
 
-    async def sendMessageAck(self, uid: int, channel_id: int, message_id: int, mention_count: int=None, manual: bool=None) -> None:
+    async def sendMessageAck(self, uid: int, channel_id: int, message_id: int, mention_count: int=None,
+                             manual: bool=None) -> None:
         ack = {
             "version": 1,
             "message_id": str(message_id),
@@ -72,20 +72,20 @@ class GatewayDispatcher(Singleton):
 
     async def sendPinsUpdateEvent(self, channel: Channel) -> None:
         ts = 0
-        if message := await c.getCore().getLastPinnedMessage(channel.id):
+        if message := await c.getCore().getLastPinnedMessage(channel):
             ts = message.extra_data["pinned_at"]
         ts = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         await self.dispatch(ChannelPinsUpdateEvent(channel.id, ts), channel_id=channel.id)
 
     async def sendGuildEmojisUpdateEvent(self, guild: Guild) -> None:
-        emojis = [await emoji.json for emoji in await c.getCore().getEmojis(guild.id)]
+        emojis = [await emoji.ds_json() for emoji in await c.getCore().getEmojis(guild.id)]
         await self.dispatch(GuildEmojisUpdate(guild.id, emojis), guild_id=guild.id)
 
     async def sendStickersUpdateEvent(self, guild: Guild) -> None:
         stickers = await c.getCore().getGuildStickers(guild)
-        stickers = [await sticker.json for sticker in stickers]
+        stickers = [await sticker.ds_json() for sticker in stickers]
         await self.dispatch(StickersUpdateEvent(guild.id, stickers), guild_id=guild.id)
+
 
 import src.yepcord.ctx as c
 c._getGw = lambda: GatewayDispatcher.getInstance()
-from .ctx import Ctx

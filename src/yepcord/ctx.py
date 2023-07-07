@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from .storage import _Storage
     from .gateway_dispatcher import GatewayDispatcher
 
+
 class _Ctx:
     _CTX = ContextVar("ctx")
     _instance = None
@@ -55,19 +56,26 @@ class _Ctx:
     def __setitem__(self, key, value):
         self.set(key, value)
 
+
 Ctx = _Ctx()
 
+
 def _getCore(): pass
+
 
 def getCore() -> Core:
     return Ctx.get("CORE") or _getCore()
 
+
 def _getCDNStorage(): pass
+
 
 def getCDNStorage() -> _Storage:
     return Ctx.get("STORAGE") or _getCDNStorage()
 
+
 def _getGw(): pass
+
 
 def getGw() -> GatewayDispatcher:
     return Ctx.get("GW") or _getGw()

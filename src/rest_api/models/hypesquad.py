@@ -28,6 +28,7 @@ class HypesquadHouseChange(BaseModel):
     @validator("house_id")
     def validate_house_id(cls, value: int):
         if value not in (1, 2, 3):
-            raise InvalidDataErr(400, Errors.make(50035, {"house_id": {"code": "BASE_TYPE_CHOICES", "message":
-                "The following values are allowed: (1, 2, 3)."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"house_id": {
+                "code": "BASE_TYPE_CHOICES", "message": "The following values are allowed: (1, 2, 3)."
+            }}))
         return value

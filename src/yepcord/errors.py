@@ -22,10 +22,12 @@ from pydantic import ValidationError
 class YDataError(Exception):
     pass
 
+
 class EmbedErr(YDataError):
     def __init__(self, error):
         super().__init__()
         self.error = error
+
 
 class InvalidDataErr(YDataError):
     def __init__(self, code, error):
@@ -33,12 +35,14 @@ class InvalidDataErr(YDataError):
         self.code = code
         self.error = error
 
+
 class MfaRequiredErr(YDataError):
     def __init__(self, uid, sid, sig):
         super().__init__()
         self.uid = uid
         self.sid = sid
         self.sig = sig
+
 
 class _Errors:
     _instance = None

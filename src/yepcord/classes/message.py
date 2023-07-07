@@ -117,7 +117,7 @@ class Message(_Message, Model):
         if self.nonce is not None:
             data["nonce"] = self.nonce
         if not Ctx.get("search", False):
-            if reactions := await getCore().getMessageReactions(self.id, Ctx.get("user_id", 0)):
+            if reactions := await getCore().getMessageReactionsJ(self.id, Ctx.get("user_id", 0)):
                 data["reactions"] = reactions
         if self.thread and (thread := await getCore().getThread(self.thread)):
             data["thread"] = await thread.json
@@ -217,14 +217,8 @@ class SearchFilter(Model):
     }
 
     def __post_init__(self):
-        if self.sort_by == "relevance":
-            self.sort_by = "timestamp"
-            self.sort_order = "desc"
-        if self.sort_by == "timestamp":
-            self.sort_by = "id"
-            self.sort_order = "desc"
-        self.sort_by = self.sort_by or "id"
-        self.sort_order = self.sort_order or "desc"
+        self.sort_by = "id"
+        self.sort_order = "desc"
         super().__post_init__()
 
     def to_sql(self) -> str:
@@ -233,7 +227,7 @@ class SearchFilter(Model):
         if "author_id" in data:
             where.append(f"`author`={data['author_id']}")
         if "mentions" in data:
-            where.append("`content` REGEXP '<@!{0,1}\\\\d{17,}>'")
+            where.append("`content` REGEXP '<@!?\\\\d{17,}>'")
         if "pinned" in data:
             where.append(f"`pinned`={data['pinned']}")
         if "min_id" in data:

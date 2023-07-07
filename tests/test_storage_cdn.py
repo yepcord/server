@@ -72,14 +72,6 @@ async def _test_app():
 
 @pt.fixture(name='testCore')
 async def _setup_db():
-    await core.initDB(
-        host=Config("DB_HOST"),
-        port=3306,
-        user=Config("DB_USER"),
-        password=Config("DB_PASS"),
-        db=Config("DB_NAME"),
-        autocommit=True
-    )
     return core
 
 @pt.mark.asyncio

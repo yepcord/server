@@ -16,14 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from __future__ import annotations
 from typing import Optional
 
 from .events import *
+from ..yepcord.models import Session, User, UserSettings
 from ..yepcord.pubsub_client import Client
 from ..yepcord.enums import GatewayOp
 from ..yepcord.core import Core
-from ..yepcord.classes.user import UserId, Session
-from ..yepcord.classes.guild import GuildId
 from os import urandom
 from json import dumps as jdumps
 
@@ -114,25 +114,26 @@ class ClientStatus:
 
 
 class GatewayEvents:
-    def __init__(self, gw):
+    def __init__(self, gw: Gateway):
         self.gw = gw
         self.send = gw.send
         self.core = gw.core
         self.clients = gw.clients
 
-    async def presence_update(self, user_id, status):
-        user = UserId(user_id)
-        d = await self.core.getUserData(user)
+    async def presence_update(self, user_id: int, status):
+        user = await User.objects.get(id=user_id)
+        userdata = user.data
         users = await self.core.getRelatedUsers(user, only_ids=True)
         clients = [c for c in self.clients if c.id in users and c.connected]
         for cl in clients:
-            await cl.esend(PresenceUpdateEvent(d, status))
+            await cl.esend(PresenceUpdateEvent(userdata, status))
 
     async def sendToUsers(self, event: RawDispatchEvent, users: list[int]) -> None:
         if not (clients := [c for c in self.clients if c.id in users and c.connected]):
             return
         for cl in clients:
             await cl.esend(event)
+
 
 class Gateway:
     def __init__(self, core: Core):
@@ -155,7 +156,8 @@ class Gateway:
             await self.ev.sendToUsers(event, await self.core.getRelatedUsersToChannel(payload["channel_id"]))
         if payload["guild_id"] is not None:
             # payload["permissions"]
-            await self.ev.sendToUsers(event, await self.core.getGuildMembersIds(GuildId(payload["guild_id"])))
+            guild = await self.core.getGuild(payload["guild_id"])
+            await self.ev.sendToUsers(event, await self.core.getGuildMembersIds(guild))
 
     # noinspection PyMethodMayBeStatic
     async def send(self, client: GatewayClient, op: int, **data) -> None:
@@ -178,12 +180,15 @@ class Gateway:
                 return await ws.close(4005)
             if not (token := data["d"]["token"]):
                 return await ws.close(4004)
-            sess = Session.from_token(token)
-            if not sess or not await self.core.validSession(sess):
+            ex_sess = Session.extract_token(token)
+            sess = await Session.objects.select_related("user").get_or_none(
+                user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
+            )
+            if sess is None:
                 return await ws.close(4004)
             cl = GatewayClient(ws, sess.id)
             self.clients.append(cl)
-            settings = await self.core.getUserSettings(UserId(cl.id))
+            settings = await sess.user.settings
             self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
             await self.ev.presence_update(cl.id, st)
             await cl.esend(ReadyEvent(await self.core.getUser(cl.id), cl, self.core))
@@ -197,13 +202,16 @@ class Gateway:
             if not (token := data["d"]["token"]):
                 return await ws.close(4004)
             cl = cl[0]
-            sess = Session.from_token(token)
-            if not sess or not await self.core.validSession(sess):
+            ex_sess = Session.extract_token(token)
+            sess = await Session.objects.select_related("user").get_or_none(
+                user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
+            )
+            if sess is None:
                 return await ws.close(4004)
-            if cl.id != sess.id:
+            if cl.id != sess.user.id:
                 return await ws.close(4004)
             cl.replace(ws)
-            settings = await self.core.getUserSettings(UserId(cl.id))
+            settings = await sess.user.settings
             self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
             await self.ev.presence_update(cl.id, st)
             await self.send(cl, GatewayOp.DISPATCH, t="READY")
@@ -214,7 +222,7 @@ class Gateway:
             d = data["d"]
             if not (cl := await self.getClientFromSocket(ws)): return
             if not (st := self.statuses.get(cl.id)):
-                settings = await self.core.getUserSettings(UserId(cl.id))
+                settings = await UserSettings.objects.get(id=cl.id)
                 self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
             if status := d.get("status"):
                 st.setStatus(status)
@@ -226,7 +234,8 @@ class Gateway:
             if not (guild_id := int(d.get("guild_id"))): return
             if not (cl := await self.getClientFromSocket(ws)): return
             if d.get("members", True):
-                members = await self.core.getGuildMembers(GuildId(guild_id))
+                guild = await self.core.getGuild(guild_id)
+                members = await self.core.getGuildMembers(guild)
                 statuses = {}
                 for member in members:
                     if member.user_id in self.statuses:
@@ -235,7 +244,7 @@ class Gateway:
                         statuses[member.user_id] = ClientStatus(member.user_id, "offline", None)
                 await cl.esend(GuildMembersListUpdateEvent(
                     members,
-                    await self.core.getGuildMemberCount(GuildId(guild_id)),
+                    await self.core.getGuildMemberCount(guild),
                     statuses,
                     guild_id
                 ))
@@ -247,7 +256,8 @@ class Gateway:
             limit = d.get("limit", 100)
             if limit > 100 or limit < 1:
                 limit = 100
-            members = await self.core.getGuildMembersGw(GuildId(guild_id), query, limit)
+            guild = await self.core.getGuild(guild_id)
+            members = await self.core.getGuildMembersGw(guild, query, limit)
             presences = []  # TODO: add presences
             await cl.esend(GuildMembersChunkEvent(members, presences, guild_id))
         else:
@@ -273,7 +283,8 @@ class Gateway:
 
     async def getFriendsPresences(self, uid: int) -> list[dict]:
         pr = []
-        friends = await self.core.getRelationships(UserId(uid))
+        user = await User.objects.get(id=uid)
+        friends = await self.core.getRelationships(user)
         friends = [int(u["user_id"]) for u in friends if u["type"] == 1]
         for friend in friends:
             if status := self.statuses.get(friend):

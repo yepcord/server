@@ -49,6 +49,7 @@ async def api_gifs_search():
     result = [gif.json for gif in search.gifs]
     return c_json(result)
 
+
 @gifs.get("/suggest")
 async def api_gifs_suggest():
     args: dict = {**request.args}
