@@ -364,7 +364,7 @@ async def test_upload_attachment():
     file = getImage(YEP_IMAGE)
     file_size = file.getbuffer().nbytes
 
-    user = await User.objects.get(email="test@yepcord.ml")
+    user = await User.objects.get(email=f"test_{TestVars.STICKER_ID}@yepcord.ml")
     channel = await Channel.objects.create(id=TestVars.CHANNEL_ID, type=ChannelType.GROUP_DM)
     await channel.recipients.add(user)
     message = await Message.objects.create(id=Snowflake.makeId(), channel=channel, author=user)

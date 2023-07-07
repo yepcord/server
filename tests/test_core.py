@@ -234,7 +234,7 @@ async def test_changeUserName_fail(testCore: Coroutine[Any, Any, Core]):
 
     user = await core.getUser(VARS["user_id"])
     try:
-        await testCore.changeUserName(user, "NoDiscriminatorsLeft")
+        await testCore.changeUserName(user, username)
         assert False
     except InvalidDataErr:
         pass  # ok
