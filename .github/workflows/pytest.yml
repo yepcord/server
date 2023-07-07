@@ -35,7 +35,9 @@ jobs:
 
       - name: Setup database
         run: |
-          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
+          alembic upgrade head
+        env:
+          DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
 
       - name: Install dependencies
         run: |
