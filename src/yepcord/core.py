@@ -17,6 +17,7 @@
 """
 
 from asyncio import get_event_loop
+# noinspection PyPackageRequirements
 from contextvars import Context
 from datetime import datetime
 from hashlib import sha256
@@ -57,7 +58,7 @@ class CDN(Singleton):
 
 # noinspection PyMethodMayBeStatic
 class Core(Singleton):
-    def __init__(self, key=None, db=None, loop=None):
+    def __init__(self, key=None, loop=None):
         self.key = key if key and len(key) == 16 and type(key) == bytes else b''
         self.pool = None
         self.loop = loop or get_event_loop()
@@ -247,9 +248,6 @@ class Core(Singleton):
     async def changeUserPassword(self, user: mUser, new_password: str) -> None:
         await user.update(password=self.hashPassword(user.id, new_password))
 
-    async def logoutUser(self, sess: mSession) -> None:
-        await sess.delete()
-
     async def getMfa(self, user: mUser) -> Optional[MFA]:
         settings = await user.settings
         mfa = MFA(settings.mfa, user.id)
@@ -355,9 +353,6 @@ class Core(Singleton):
         channel.last_message_id = await self.getLastMessageId(channel)
         return channel
 
-    async def getLastMessage(self, channel: mChannel) -> mMessage:
-        return await mMessage.objects.filter(channel=channel).max("id")
-
     async def getChannelMessagesCount(self, channel: mChannel) -> int:
         return await mMessage.objects.filter(channel=channel).count()
 
@@ -388,9 +383,6 @@ class Core(Singleton):
                 await read_state.update(count=read_state.count+1)
         Context().run(get_event_loop().create_task, _addToReadStates())
         return message
-
-    async def deleteMessage(self, message: mMessage) -> None:
-        await message.delete()
 
     async def getRelatedUsersToChannel(self, channel: mChannel, ids: bool=True) -> list[Union[int, mUser]]:
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
@@ -439,12 +431,6 @@ class Core(Singleton):
             return await self.getGuildMember(channel.guild, user_id)
         elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
             return await self.getThreadMember(channel, user_id)
-
-    async def setFrecencySettings(self, user: mUser, proto: str) -> None:
-        await mFrecencySettings.objects.get_or_create(user=user, _defaults={"settings": proto})
-
-    async def getFrecencySettings(self, user: mUser) -> str:
-        return (await mFrecencySettings.objects.get(user=user)).settings
 
     async def sendVerificationEmail(self, user: mUser) -> None:
         key = new(self.key, str(user.id).encode('utf-8'), sha256).digest()
@@ -508,15 +494,6 @@ class Core(Singleton):
             await channel.recipients.add(recipient)
         return channel
 
-    async def addUserToGroupDM(self, channel: mChannel, target_user: mUser) -> None:
-        await channel.recipients.add(target_user)
-
-    async def deleteChannel(self, channel: mChannel) -> None:
-        await channel.delete()
-
-    async def deleteMessagesAck(self, channel: mChannel, user: mUser) -> None:
-        await mReadState.objects.delete(user=user, channel=channel)
-
     async def pinMessage(self, message: mMessage) -> None:
         if await mMessage.objects.filter(pinned=True, channel=message.channel).count() >= 50:
             raise InvalidDataErr(400, Errors.make(30003))
@@ -534,9 +511,6 @@ class Core(Singleton):
 
     async def getPinnedMessages(self, channel: mChannel) -> list[mMessage]:
         return await mMessage.objects.filter(pinned=True, channel=channel).all()
-
-    async def unpinMessage(self, message: mMessage) -> None:
-        await message.update(pinned=False)
 
     async def addReaction(self, message: mMessage, user: mUser, emoji: mEmoji, emoji_name: str) -> mReaction:
         return await mReaction.objects.get_or_create(user=user, message=message, emoji=emoji, emoji_name=emoji_name)
@@ -729,9 +703,6 @@ class Core(Singleton):
     async def getEmoji(self, emoji_id: int) -> Optional[mEmoji]:
         return await mEmoji.objects.get_or_none(id=emoji_id)
 
-    async def deleteEmoji(self, emoji: mEmoji) -> None:
-        await emoji.delete()
-
     async def getEmojiByReaction(self, reaction: str) -> Optional[mEmoji]:
         try:
             name, emoji_id = reaction.split(":")
@@ -747,12 +718,6 @@ class Core(Singleton):
     async def getGuildInvites(self, guild: mGuild) -> list[mInvite]:
         return await mInvite.objects.select_related(["channel", "channel__guild", "inviter"])\
             .filter(channel__guild=guild).all()
-
-    async def deleteInvite(self, invite: mInvite) -> None:
-        await invite.delete()
-
-    async def deleteGuildMember(self, member: mGuildMember):
-        await member.delete()
 
     async def banGuildMember(self, member: mGuildMember, reason: str=None) -> None:
         await mGuildBan.objects.create(user=member.user, guild=member.guild, reason=reason)
@@ -778,9 +743,6 @@ class Core(Singleton):
         await mMessage.objects.delete(id__in=messages_ids)
 
         return result
-
-    async def deleteRole(self, role: mRole) -> None:
-        await role.delete()
 
     async def getRolesMemberCounts(self, guild: mGuild) -> dict[int, int]:
         counts = {}
@@ -839,6 +801,7 @@ class Core(Singleton):
         return [member.id for member in role.guildmembers]
 
     async def getGuildMembersGw(self, guild: mGuild, query: str, limit: int) -> list[mGuildMember]:
+        # noinspection PyUnresolvedReferences
         return await mGuildMember.objects.filter(
             (mGuildMember.guild == guild) &
             (mGuildMember.nick.startswith(query) | mGuildMember.user.userdata.username.istartswith(query))
@@ -846,9 +809,6 @@ class Core(Singleton):
 
     async def memberHasRole(self, member: mGuildMember, role: mRole) -> bool:
         return await member.roles.filter(id=role.id).exists()
-
-    async def addMemberRole(self, member: mGuildMember, role: mRole) -> None:
-        await member.roles.add(role)
 
     async def getPermissionOverwrite(self, channel: mChannel, target_id: int) -> Optional[mPermissionOverwrite]:
         return await mPermissionOverwrite.objects.get_or_none(channel=channel, target_id=target_id)
@@ -901,19 +861,10 @@ class Core(Singleton):
     async def getGuildTemplateById(self, template_id: int) -> Optional[mGuildTemplate]:
         return await mGuildTemplate.objects.get_or_none(id=template_id)
 
-    async def deleteGuildTemplate(self, template: mGuildTemplate) -> None:
-        await template.delete()
-
     async def setTemplateDirty(self, guild: mGuild) -> None:
         if not (template := await self.getGuildTemplate(guild)):
             return
         await template.update(is_dirty=True)
-
-    async def deleteGuild(self, guild: mGuild) -> None:
-        await guild.delete()
-
-    async def deleteWebhook(self, webhook: mWebhook) -> None:
-        await webhook.delete()
 
     async def getWebhooks(self, guild: mGuild) -> list[mWebhook]:
         return await mWebhook.objects.filter(channel__guild=guild).all()
@@ -935,9 +886,6 @@ class Core(Singleton):
 
     async def getSticker(self, sticker_id: int) -> Optional[mSticker]:
         return await mSticker.objects.get_or_none(id=sticker_id)
-
-    async def deleteSticker(self, sticker: mSticker) -> None:
-        await sticker.delete()
 
     async def getUserOwnedGuilds(self, user: mUser) -> list[mGuild]:
         return await mGuild.objects.filter(owner=user).all()
@@ -968,14 +916,6 @@ class Core(Singleton):
     async def getScheduledEvents(self, guild: mGuild) -> list[mScheduledEvent]:
         return await mScheduledEvent.objects.filter(guild=guild).all()
 
-    async def subscribeToScheduledEvent(self, user: mUser, event: mScheduledEvent) -> None:
-        member = await self.getGuildMember(event.guild, user.id)
-        await event.subscribers.add(member)
-
-    async def unsubscribeFromScheduledEvent(self, user: mUser, event: mScheduledEvent) -> None:
-        member = await self.getGuildMember(event.guild, user.id)
-        await event.subscribers.remove(member)
-
     async def getSubscribedScheduledEventIds(self, user: mUser, guild_id: int) -> list[int]:
         _user = await mUser.objects.select_related("guildmembers__guildevents")\
             .get(id=user.id, guildmembers__guild__id=guild_id)
@@ -984,9 +924,6 @@ class Core(Singleton):
             for event in member.guildevents:
                 events_ids.append(event.id)
         return events_ids
-
-    async def deleteScheduledEvent(self, event: mScheduledEvent) -> None:
-        await event.delete()
 
     async def getThreadMetadata(self, thread: mChannel) -> Optional[mThreadMetadata]:
         return await mThreadMetadata.objects.get_or_none(channel=thread)
@@ -1000,9 +937,6 @@ class Core(Singleton):
     async def getGuildMemberThreads(self, guild: mGuild, user_id: int) -> list[mChannel]:
         return await mThreadMember.objects.select_related("channel").filter(guild=guild, user__id=user_id).all()
 
-    async def getThread(self, thread_id: int) -> Optional[mChannel]:
-        return await mChannel.objects.get_or_none(id=thread_id)
-
     async def getThreadMember(self, thread: mChannel, user_id: int) -> Optional[mThreadMember]:
         return await mThreadMember.objects.get_or_none(channel=thread, user__id=user_id)
 
@@ -1010,4 +944,3 @@ class Core(Singleton):
 import src.yepcord.ctx as c
 c._getCore = lambda: Core.getInstance()
 c._getCDNStorage = lambda: CDN.getInstance().storage
-from .ctx import Ctx

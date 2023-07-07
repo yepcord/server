@@ -62,6 +62,7 @@ async def set_cors_headers(response):
 
 @app.websocket("/")
 async def ws_gateway():
+    # noinspection PyProtectedMember,PyUnresolvedReferences
     ws = websocket._get_current_object()
     setattr(ws, "zlib", ZlibCompressor() if websocket.args.get("compress") == "zlib-stream" else None)
     setattr(ws, "ws_connected", True)

@@ -83,7 +83,7 @@ async def login_with_mfa(data: MfaLogin):
 @auth.post("/logout")
 @multipleDecorators(usingDB, getSession)
 async def logout(session: Session):
-    await getCore().logoutUser(session)
+    await session.delete()
     return "", 204
 
 
@@ -112,6 +112,7 @@ async def resend_verification_email(user: User):
 async def verify_email(data: VerifyEmail):
     if not data.token:
         raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
+    # noinspection PyPep8
     try:
         email = jloads(b64decode(data.token.split(".")[0]).decode("utf8"))["email"]
     except:

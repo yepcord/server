@@ -564,13 +564,13 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
         return c_json({"code": guild.vanity_url_code})
     if not data.code:
         if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
-            await getCore().deleteInvite(invite)
+            await invite.delete()
         await guild.update(vanity_url_code=None)
     else:
         if await getCore().getVanityCodeInvite(data.code):
             return c_json({"code": guild.vanity_url_code})
         if guild.vanity_url_code and (invite := await getCore().getVanityCodeInvite(guild.vanity_url_code)):
-            await getCore().deleteInvite(invite)
+            await invite.delete()
         await guild.update(vanity_url_code=data.code)
         channel = await getCore().getChannel(guild.system_channel_id) if guild.system_channel_id is not None else None
         if channel is None:

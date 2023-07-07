@@ -45,6 +45,7 @@ class Client:
         await self.ws.send(jdumps({"role": "s"}))
         self.running = True
         while True:
+            # noinspection PyBroadException
             try:
                 data = jloads(await self.ws.recv())
             except:

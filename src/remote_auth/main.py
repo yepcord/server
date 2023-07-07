@@ -47,6 +47,7 @@ async def set_cors_headers(response):
 
 @app.websocket("/")
 async def ws_gateway():
+    # noinspection PyProtectedMember,PyUnresolvedReferences
     ws = websocket._get_current_object()
     setattr(ws, "connected", True)
     await gw.sendHello(ws)

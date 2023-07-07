@@ -153,6 +153,7 @@ def getGuild(with_member):
 
 
 def getRole(f):
+    # noinspection PyUnboundLocalVariable
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (role := kwargs.get("role")) or \

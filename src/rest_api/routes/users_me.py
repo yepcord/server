@@ -338,11 +338,11 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
 @users_me.delete("/relationships/<int:user_id>")
 @multipleDecorators(usingDB, getUser)
 async def delete_relationship(user_id: int, user: User):
-    if relationship := await getCore().delRelationship(user, uid):
+    if relationship := await getCore().delRelationship(user, user_id):
         rel_type_current = relationship.discord_type(user.id)
-        rel_type_target = relationship.discord_type(uid)
-        await getGw().dispatch(RelationshipRemoveEvent(uid, rel_type_current), [user.id])
-        await getGw().dispatch(RelationshipRemoveEvent(user.id, rel_type_target), [uid])
+        rel_type_target = relationship.discord_type(user_id)
+        await getGw().dispatch(RelationshipRemoveEvent(user_id, rel_type_current), [user.id])
+        await getGw().dispatch(RelationshipRemoveEvent(user.id, rel_type_target), [user_id])
     return "", 204
 
 

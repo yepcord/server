@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional, Any
 
 import ormar
+# noinspection PyPackageRequirements
 from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, Int32Value
 from ormar import ReferentialAction
 

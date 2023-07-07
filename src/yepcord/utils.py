@@ -138,6 +138,7 @@ ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')
 
 def proto_get(proto_obj, path, default=None, output_dict=None, output_name=None):
     path = path.split(".")
+    # noinspection PyBroadException
     try:
         o = proto_obj
         for p in path:

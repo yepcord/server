@@ -27,6 +27,7 @@ gifs = Blueprint('gifs', __name__)
 @gifs.get("/trending")
 async def api_gifs_trending_get():
     result = {"gifs": [], "categories": []}
+    # noinspection PyUnresolvedReferences
     for category in await current_app.gifs.categories:
         result["categories"].append(category.json)
         result["categories"][-1]["src"] = result["categories"][-1]["src"][:-4]+".mp4"
@@ -45,6 +46,7 @@ async def api_gifs_select_post():
 
 @gifs.get("/search")
 async def api_gifs_search():
+    # noinspection PyUnresolvedReferences
     search = await current_app.gifs.search(**request.args)
     result = [gif.json for gif in search.gifs]
     return c_json(result)
@@ -54,4 +56,5 @@ async def api_gifs_search():
 async def api_gifs_suggest():
     args: dict = {**request.args}
     if "limit" in args: args["limit"] = int(args["limit"])
+    # noinspection PyUnresolvedReferences
     return await current_app.gifs.suggest(**args)

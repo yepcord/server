@@ -489,6 +489,7 @@ class GuildMembersListUpdateEvent(DispatchEvent):
             self.groups[s["status"]] += 1
         self.guild_id = guild_id
 
+    # noinspection PyShadowingNames
     async def json(self) -> dict:
         groups = [{"id": status, "count": count} for status, count in self.groups.items()]
         items = []

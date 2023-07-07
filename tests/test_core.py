@@ -360,7 +360,7 @@ async def test_logoutUser_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     session = await testCore.createSession(VARS["user_id"])
     assert await Session.objects.get_or_none(id=session.id) is not None
-    await testCore.logoutUser(session)
+    await session.delete()
     assert await Session.objects.get_or_none(id=session.id) is None
 
 
