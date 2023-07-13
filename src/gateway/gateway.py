@@ -122,7 +122,7 @@ class GatewayEvents:
 
     async def presence_update(self, user_id: int, status):
         user = await User.objects.get(id=user_id)
-        userdata = user.data
+        userdata = await user.data
         users = await self.core.getRelatedUsers(user, only_ids=True)
         clients = [c for c in self.clients if c.id in users and c.connected]
         for cl in clients:
@@ -186,7 +186,7 @@ class Gateway:
             )
             if sess is None:
                 return await ws.close(4004)
-            cl = GatewayClient(ws, sess.id)
+            cl = GatewayClient(ws, sess.user.id)
             self.clients.append(cl)
             settings = await sess.user.settings
             self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))

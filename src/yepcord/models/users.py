@@ -304,6 +304,9 @@ class UserSettings(ormar.Model):
             }
         }
 
+    def proto(self) -> UserSettingsProto:
+        return UserSettingsProto(self)
+
 
 class UserSettingsProto:
     def __init__(self, settings: UserSettings):

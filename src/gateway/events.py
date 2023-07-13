@@ -26,7 +26,7 @@ from ..yepcord.enums import GatewayOp
 from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Emoji
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Emoji, UserSettingsProto
     from ..yepcord.core import Core
     from .gateway import GatewayClient, ClientStatus
 
@@ -61,7 +61,7 @@ class ReadyEvent(DispatchEvent):
     async def json(self) -> dict:
         userdata = await self.user.userdata
         settings = await self.user.settings
-        proto = settings.to_proto()
+        proto = settings.proto().get()
         return {
             "t": self.NAME,
             "op": self.OP,

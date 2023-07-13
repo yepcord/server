@@ -213,8 +213,8 @@ class Core(Singleton):
             data = await other_user.data
             users.append(data.ds_json)
         for channel in await self.getPrivateChannels(user, with_hidden=True):
-            await channel.load_all()
-            for recipient in channel.recipients:
+            channel = await mChannel.objects.get(id=channel.id)
+            for recipient in await channel.recipients.all():
                 if recipient.id == user.id: continue
                 if only_ids:
                     if recipient.id in users: continue
@@ -384,11 +384,15 @@ class Core(Singleton):
         Context().run(get_event_loop().create_task, _addToReadStates())
         return message
 
-    async def getRelatedUsersToChannel(self, channel: mChannel, ids: bool=True) -> list[Union[int, mUser]]:
+    async def getRelatedUsersToChannel(self, channel: Union[mChannel, int], ids: bool=True) -> list[Union[int, mUser]]:
+        if isinstance(channel, int):
+            channel = await mChannel.objects.get_or_none(id=channel)
+        if not channel:
+            return []
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
             await channel.load_all()
-            if ids: return [recipient.id for recipient in channel.recipients]
-            return channel.recipients
+            if ids: return [recipient.id for recipient in await channel.recipients.all()]
+            return await channel.recipients.all()
         elif channel.type in GUILD_CHANNELS:
             return [member.user_id for member in await self.getGuildMembers(channel.guild)]
         elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
@@ -402,7 +406,7 @@ class Core(Singleton):
 
     async def getReadStatesJ(self, user: mUser) -> list:
         states = []
-        for st in await mReadState.objects.filter(user=user).all:
+        for st in await mReadState.objects.filter(user=user).all():
             states.append({  # TODO: replace with st.ds_json
                 "mention_count": st.count,
                 "last_pin_timestamp": await self.getLastPinTimestamp(st.channel),
@@ -502,7 +506,7 @@ class Core(Singleton):
 
     async def getLastPinnedMessage(self, channel: mChannel) -> Optional[mMessage]:
         # TODO: order by pinned timestamp
-        return await mMessage.objects.filter(pinned=True, channel=channel).order_by("-id").first()
+        return await mMessage.objects.filter(pinned=True, channel=channel).order_by("-id").get_or_none()
 
     async def getLastPinTimestamp(self, channel: mChannel) -> str:
         last = await self.getLastPinnedMessage(channel)
@@ -681,7 +685,7 @@ class Core(Singleton):
             .exclude(type__in=[ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD]).all()
 
     async def getUserGuilds(self, user: mUser) -> list[mGuild]:
-        return [member.guild for member in await mGuildMember.select_related("guild").filter(user=user).all()]
+        return [member.guild for member in await mGuildMember.objects.select_related("guild").filter(user=user).all()]
 
     async def getGuildMemberCount(self, guild: mGuild) -> int:
         return await mGuildMember.objects.filter(guild=guild).count()

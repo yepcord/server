@@ -9,6 +9,7 @@ assert URL is not None, "Database connect string is not set (set DB_CONNECT_STRI
 database = databases.Database(URL)
 metadata = sqlalchemy.MetaData()
 
+
 class DefaultMeta:
     database = database
     metadata = metadata
