@@ -496,12 +496,12 @@ class GuildMembersListUpdateEvent(DispatchEvent):
         for mem in self.members:
             m = await mem.ds_json()
             m["presence"] = {
-                "user": {"id": str(mem.user_id)},
-                "status": self.statuses[mem.user_id]["status"],
-                "client_status": {} if self.statuses[mem.user_id]["status"] == "offline" else {
-                    "desktop": self.statuses[mem.user_id]["status"]
+                "user": {"id": str(mem.user.id)},
+                "status": self.statuses[mem.user.id]["status"],
+                "client_status": {} if self.statuses[mem.user.id]["status"] == "offline" else {
+                    "desktop": self.statuses[mem.user.id]["status"]
                 },
-                "activities": self.statuses[mem.user_id].get("activities", [])
+                "activities": self.statuses[mem.user.id].get("activities", [])
             }
             items.append({"member": m})
         items.sort(key=lambda i: i["member"]["presence"]["status"])

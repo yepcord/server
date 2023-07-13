@@ -114,6 +114,9 @@ class Guild(ormar.Model):
                 "preferred_locale": self.preferred_locale,
                 "home_header": None,  # ???
                 "banner": self.banner,
+                "region": self.region,
+                "widget_enabled": False,
+                "widget_channel_id": None,
             },
             "premium_subscription_count": 30,
             "member_count": await getCore().getGuildMemberCount(self),

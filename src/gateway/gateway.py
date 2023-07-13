@@ -191,7 +191,7 @@ class Gateway:
             settings = await sess.user.settings
             self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
             await self.ev.presence_update(cl.id, st)
-            await cl.esend(ReadyEvent(await self.core.getUser(cl.id), cl, self.core))
+            await cl.esend(ReadyEvent(sess.user, cl, self.core))
             guild_ids = [guild.id for guild in await self.core.getUserGuilds(sess)]
             await cl.esend(ReadySupplementalEvent(await self.getFriendsPresences(cl.id), guild_ids))
         elif op == GatewayOp.RESUME:
@@ -238,10 +238,10 @@ class Gateway:
                 members = await self.core.getGuildMembers(guild)
                 statuses = {}
                 for member in members:
-                    if member.user_id in self.statuses:
-                        statuses[member.user_id] = self.statuses[member.user_id]
+                    if member.user.id in self.statuses:
+                        statuses[member.user.id] = self.statuses[member.user.id]
                     else:
-                        statuses[member.user_id] = ClientStatus(member.user_id, "offline", None)
+                        statuses[member.user.id] = ClientStatus(member.user.id, "offline", None)
                 await cl.esend(GuildMembersListUpdateEvent(
                     members,
                     await self.core.getGuildMemberCount(guild),

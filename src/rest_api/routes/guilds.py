@@ -511,7 +511,7 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
         roles = [guild_roles[role_id] for role_id in roles if role_id in guild_roles]
         user_top_role = await member.top_role
         for role in roles:
-            if guild_roles[role.id].position >= user_top_role.position and member != guild.owner:
+            if guild_roles[role.id].position >= user_top_role.position and member.user != guild.owner:
                 raise InvalidDataErr(403, Errors.make(50013))
         await getCore().setMemberRolesFromList(target_member, roles)
         data.roles = None

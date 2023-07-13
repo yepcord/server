@@ -223,15 +223,16 @@ async def send_message(user: User, channel: Channel):
 @channels.delete("/<int:channel>/messages/<int:message>")
 @multipleDecorators(usingDB, getUser, getChannel, getMessage)
 async def delete_message(user: User, channel: Channel, message: Message):
-    if message.author != user.id:
+    if message.author != user:
         if channel.type in GUILD_CHANNELS:
             member = await getCore().getGuildMember(channel.guild, user.id)
             await member.checkPermission(GuildPermissions.MANAGE_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                          GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
         else:
             raise InvalidDataErr(403, Errors.make(50003))
+    guild_id = channel.guild.id if channel.guild else None
     await message.delete()
-    await getGw().dispatch(MessageDeleteEvent(message.id, channel.id, channel.guild.id), channel_id=channel.id)
+    await getGw().dispatch(MessageDeleteEvent(message.id, channel.id, guild_id), channel_id=channel.id)
     return "", 204
 
 

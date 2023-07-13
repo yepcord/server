@@ -364,7 +364,9 @@ class Core(Singleton):
         id_filter = {}
         if after: id_filter["id__gt"] = after
         if before: id_filter["id__lt"] = before
-        return await mMessage.objects.filter(channel=channel, **id_filter).limit(limit).all()
+        messages = await mMessage.objects.filter(channel=channel, **id_filter).order_by("-id").limit(limit).all()
+        #messages.sort(key=lambda msg: msg.id, reverse=True)
+        return messages
 
     async def getMessage(self, channel: mChannel, message_id: int) -> Optional[mMessage]:
         if not message_id: return
@@ -377,7 +379,7 @@ class Core(Singleton):
             if message.author.id in users:
                 users.remove(message.author.id)
             for user in users:
-                read_state, _ = await mReadState.objecs.get_or_create(
+                read_state, _ = await mReadState.objects.get_or_create(
                     user=user, channel=message.channel, _defaults={"last_read_id": message.id, "count": 0}
                 )
                 await read_state.update(count=read_state.count+1)
@@ -390,13 +392,12 @@ class Core(Singleton):
         if not channel:
             return []
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
-            await channel.load_all()
             if ids: return [recipient.id for recipient in await channel.recipients.all()]
             return await channel.recipients.all()
         elif channel.type in GUILD_CHANNELS:
-            return [member.user_id for member in await self.getGuildMembers(channel.guild)]
+            return [member.user.id for member in await self.getGuildMembers(channel.guild)]
         elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
-            return [member.user_id for member in await self.getThreadMembers(channel)]
+            return [member.user.id for member in await self.getThreadMembers(channel)]
 
     async def setReadState(self, user: mUser, channel: mChannel, count: int, last: int) -> None:
         read_state, _ = await mReadState.objects.get_or_create(
@@ -411,7 +412,7 @@ class Core(Singleton):
                 "mention_count": st.count,
                 "last_pin_timestamp": await self.getLastPinTimestamp(st.channel),
                 "last_message_id": str(st.last_read_id),
-                "id": str(st.channel_id),
+                "id": str(st.channel.id),
             })
         return states
 
@@ -675,7 +676,7 @@ class Core(Singleton):
         return await mGuildMember.objects.select_related(["user", "guild"]).get_or_none(guild=guild, user__id=user_id)
 
     async def getGuildMembers(self, guild: mGuild) -> list[mGuildMember]:
-        return await mGuildMember.objects.filter(guild=guild).all()
+        return await mGuildMember.objects.select_related("user").filter(guild=guild).all()
 
     async def getGuildMembersIds(self, guild: mGuild) -> list[int]:
         return [member.id for member in await self.getGuildMembers(guild)]
@@ -792,7 +793,7 @@ class Core(Singleton):
     async def getMemberRoles(self, member: mGuildMember, include_default: bool=False) -> list[mRole]:
         roles = await member.roles.all()
         if include_default:
-            roles.append(await mRole.objects.get(guild=member.guild))
+            roles.append(await mRole.objects.get(id=member.guild.id))
 
         roles.sort(key=lambda r: r.position)
         return roles

@@ -151,7 +151,7 @@ class UserData(ormar.Model):
     flags: int = ormar.BigInteger(default=0)
     public_flags: int = ormar.BigInteger(default=0)
     phone: Optional[str] = ormar.String(max_length=32, nullable=True, default=None)
-    bio: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
+    bio: str = ormar.String(max_length=256, default="")
     accent_color: Optional[int] = ormar.BigInteger(nullable=True, default=None)
     avatar: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
     avatar_decoration: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
