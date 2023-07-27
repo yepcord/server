@@ -36,7 +36,7 @@ from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
     ThreadMetadata, AuditLogEntry
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, getImage, b64encode
+from ...yepcord.utils import getImage, b64encode
 
 # Base path is /api/vX/channels
 channels = Blueprint('channels', __name__)
@@ -45,13 +45,14 @@ channels = Blueprint('channels', __name__)
 @channels.get("/<channel>")
 @multipleDecorators(usingDB, getUser, getChannel)
 async def get_channel(user: User, channel: Channel):
-    return c_json(await channel.ds_json())
+    return await channel.ds_json()
 
 
 @channels.patch("/<int:channel>")
 @multipleDecorators(validate_request(ChannelUpdate), usingDB, getUser, getChannel)
 async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
     changed = []
+    changes = {}
     if channel.type == ChannelType.GROUP_DM:
         changes = data.to_json(channel.type)
         if "owner_id" in changes and channel.owner_id != user.id:
@@ -109,7 +110,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
 
         await getCore().setTemplateDirty(channel.guild)
 
-    return c_json(await channel.ds_json())
+    return await channel.ds_json()
 
 
 @channels.delete("/<int:channel>")
@@ -118,7 +119,7 @@ async def delete_channel(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
         await getCore().hideDmChannel(user, channel)
         await getGw().dispatch(DMChannelDeleteEvent(await channel.ds_json()), users=[user.id])
-        return c_json(await channel.ds_json())
+        return await channel.ds_json()
     elif channel.type == ChannelType.GROUP_DM:
         message = Message(id=Snowflake.makeId(), author=user, channel=channel, content="",
                           type=MessageType.RECIPIENT_REMOVE, extra_data={"user": user.id})
@@ -150,7 +151,7 @@ async def delete_channel(user: User, channel: Channel):
 
         await getCore().setTemplateDirty(channel.guild)
 
-        return c_json(await channel.ds_json())
+        return await channel.ds_json()
     return "", 204
 
 
@@ -162,7 +163,7 @@ async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channe
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     messages = await channel.messages(**query_args.dict())
     messages = [await message.ds_json() for message in messages]
-    return c_json(messages)
+    return messages
 
 
 @channels.post("/<int:channel>/messages")
@@ -220,7 +221,7 @@ async def send_message(user: User, channel: Channel):
     await getCore().setReadState(user, channel, 0, message.id)
     await getGw().dispatch(MessageAckEvent({"version_id": 1, "message_id": str(message.id),
                                             "channel_id": str(message.channel.id)}), users=[user.id])
-    return c_json(await message.ds_json())
+    return await message.ds_json()
 
 
 @channels.delete("/<int:channel>/messages/<int:message>")
@@ -250,7 +251,7 @@ async def edit_message(data: MessageUpdate, user: User, channel: Channel, messag
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     await message.update(edit_timestamp=datetime.now(), **data.to_json())
     await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=channel.id)
-    return c_json(await message.ds_json())
+    return await message.ds_json()
 
 
 @channels.post("/<int:channel>/messages/<int:message>/ack")
@@ -265,7 +266,7 @@ async def send_message_ack(data: MessageAck, user: User, channel: Channel, messa
         await getCore().setReadState(user, channel, ct, message)
         await getGw().dispatch(MessageAckEvent({"version_id": 1, "message_id": str(message.id),
                                                 "channel_id": str(channel.id)}), users=[user.id])
-    return c_json({"token": None})
+    return {"token": None}
 
 
 @channels.delete("/<int:channel>/messages/ack")
@@ -444,7 +445,7 @@ async def search_messages(query: SearchQuery, user: User, channel: Channel):
     messages = [[await message.ds_json(search=True)] for message in messages]
     for message in messages:
         message[0]["hit"] = True
-    return c_json({"messages": messages, "total_results": total})
+    return {"messages": messages, "total_results": total}
 
 
 @channels.post("/<int:channel>/invites")
@@ -458,7 +459,7 @@ async def create_invite(data: InviteCreate, user: User, channel: Channel):
         entry = await AuditLogEntry.objects.invite_create(user, invite)
         await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
                                permissions=GuildPermissions.VIEW_AUDIT_LOG)
-    return c_json(await invite.ds_json())
+    return await invite.ds_json()
 
 
 @channels.put("/<int:channel>/permissions/<int:target_id>")
@@ -520,8 +521,7 @@ async def get_channel_invites(user: User, channel: Channel):
         raise InvalidDataErr(403, Errors.make(50001))
     await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
     invites = await getCore().getChannelInvites(channel)
-    invites = [await invite.ds_json() for invite in invites]
-    return c_json(invites)
+    return [await invite.ds_json() for invite in invites]
 
 
 @channels.post("/<int:channel>/webhooks")
@@ -537,7 +537,7 @@ async def create_webhook(data: WebhookCreate, user: User, channel: Channel):
     await getGw().dispatch(WebhooksUpdateEvent(channel.guild.id, channel.id), guild_id=channel.guild.id,
                            permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
-    return c_json(await webhook.ds_json())
+    return await webhook.ds_json()
 
 
 @channels.get("/<int:channel>/webhooks")
@@ -548,8 +548,7 @@ async def get_channel_webhooks(user: User, channel: Channel):
     member = await getCore().getGuildMember(channel.guild, user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
-    webhooks = [await webhook.ds_json() for webhook in await getCore().getChannelWebhooks(channel)]
-    return c_json(webhooks)
+    return [await webhook.ds_json() for webhook in await getCore().getChannelWebhooks(channel)]
 
 
 @channels.post("/<int:channel>/messages/<int:message>/threads")
@@ -582,4 +581,4 @@ async def create_thread(data: CreateThread, user: User, channel: Channel, messag
     await getCore().sendMessage(thread_message)
     await getCore().sendMessage(thread_create_message)
 
-    return c_json(await thread.ds_json())
+    return await thread.ds_json()

@@ -19,11 +19,9 @@
 from asyncio import get_event_loop, sleep as asleep
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from io import BytesIO
-from json import dumps as jdumps, loads as jloads
 from re import compile as rcompile
-from typing import Union, Tuple, Optional
+from typing import Union, Optional
 
-from aiomysql import escape_string
 from magic import from_buffer
 
 
@@ -43,17 +41,6 @@ def b64encode(data: Union[str, bytes]) -> str:
     for search, replace in (('+', '-'), ('/', '_'), ('=', '')):
         data = data.replace(search, replace)
     return data
-
-
-def c_json(json, code=200, headers=None):
-    if headers is None:
-        headers = {}
-    if not isinstance(json, str):
-        json = jdumps(json)
-    h = {'Content-Type': 'application/json'}
-    for k, v in headers.items():
-        h[k] = v
-    return json, code, h
 
 
 def getImage(image: Union[str, bytes, BytesIO]) -> Optional[BytesIO]:
@@ -82,8 +69,7 @@ def imageType(image: BytesIO) -> str:
 
 
 def validImage(image: BytesIO) -> bool:
-    return imageType(image) in ["png", "webp", "gif", "jpeg",
-                                "jpg"] and image.getbuffer().nbytes < 8 * 1024 * 1024
+    return imageType(image) in ["png", "webp", "gif", "jpeg", "jpg"] and image.getbuffer().nbytes < 8 * 1024 * 1024
 
 
 async def execute_after(coro, seconds):
@@ -92,45 +78,6 @@ async def execute_after(coro, seconds):
         await coro_
 
     get_event_loop().create_task(_wait_exec(coro, seconds))
-
-
-def json_to_sql(json: dict, as_list=False, as_tuples=False, is_none=False, for_insert=False) \
-        -> Union[str, list, Tuple[str, str]]:
-    if not as_tuples: as_tuples = for_insert
-    query = []
-    for k, v in json.items():
-        if isinstance(v, str):
-            v = f"\"{escape_string(v)}\""
-        elif isinstance(v, bool):
-            v = "true" if v else "false"
-        elif isinstance(v, (dict, list)):
-            if not k.startswith("j_"):
-                k = f"j_{k}"
-            v = escape_string(jdumps(v))
-            v = f"\"{v}\""
-        elif v is None:
-            v = "IS NULL" if is_none else "NULL"
-        if as_tuples:
-            query.append((k, v))
-        else:
-            query.append(f"`{k}`={v}" if v != "IS NULL" else f"`{k}` {v}")
-    if as_list or as_tuples:
-        if for_insert:
-            return ", ".join([r[0] for r in query]), ", ".join([str(r[1]) for r in query])
-        return query
-    return ", ".join(query)
-
-
-def result_to_json(desc: list, result: list) -> dict:
-    j = {}
-    for idx, value in enumerate(result):
-        name = desc[idx][0]
-        if name.startswith("j_"):
-            name = name[2:]
-            if value:
-                value = jloads(value)
-        j[name] = value
-    return j
 
 
 ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')
@@ -153,7 +100,7 @@ def proto_get(proto_obj, path, default=None, output_dict=None, output_name=None)
     return o
 
 
-def int_length(i: int) -> int:
+def int_size(i: int) -> int:
     # Returns int size in bytes
     return (i.bit_length() + 7) // 8
 

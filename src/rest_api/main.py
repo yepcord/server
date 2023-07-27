@@ -24,8 +24,6 @@ from quart import Quart, request, Response
 from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
-from src.yepcord.gateway_dispatcher import GatewayDispatcher
-from src.yepcord.models import database
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
@@ -41,8 +39,10 @@ from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
 from ..yepcord.ctx import Ctx
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
+from ..yepcord.gateway_dispatcher import GatewayDispatcher
+from ..yepcord.models import database
 from ..yepcord.storage import getStorage
-from ..yepcord.utils import b64decode, b64encode, c_json
+from ..yepcord.utils import b64decode, b64encode
 
 
 class YEPcord(Quart):
@@ -59,15 +59,6 @@ class YEPcord(Quart):
         handler = self.view_functions[request_.url_rule.endpoint]
         Ctx.set("CORE", core)
         Ctx.set("STORAGE", cdn.storage)
-        #if getattr(handler, "__db", None):
-        #    async with core.db() as db:
-        #        db.dontCloseOnAExit()
-        #        Ctx["DB"] = db
-        #        result = await self.ensure_async(handler)(**request_.view_args)
-        #        await db.close()
-        #        return result
-        #else:
-        #    return await self.ensure_async(handler)(**request_.view_args) \
         return await self.ensure_async(handler)(**request_.view_args)
 
 
@@ -98,6 +89,7 @@ if "pytest" in sys.modules:  # pragma: no cover
     # Raise original exceptions instead of InternalServerError when testing
     from werkzeug.exceptions import InternalServerError
 
+
     @app.errorhandler(500)
     async def handle_500_for_pytest(error: InternalServerError):
         raise error.original_exception
@@ -106,19 +98,19 @@ if "pytest" in sys.modules:  # pragma: no cover
 @app.errorhandler(YDataError)
 async def ydataerror_handler(err: YDataError):
     if isinstance(err, EmbedErr):
-        return c_json(err.error, 400)
+        return err.error, 400
     elif isinstance(err, InvalidDataErr):
-        return c_json(err.error, err.code)
+        return err.error, err.code
     elif isinstance(err, MfaRequiredErr):
         ticket = b64encode(jdumps([err.uid, "login"]))
         ticket += f".{err.sid}.{err.sig}"
-        return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
+        return {"token": None, "sms": False, "mfa": True, "ticket": ticket}
 
 
 @app.errorhandler(RequestSchemaValidationError)
 async def handle_validation_error(error: RequestSchemaValidationError):
     pydantic_error = error.validation_error
-    return c_json(Errors.from_pydantic(pydantic_error), 400)
+    return Errors.from_pydantic(pydantic_error), 400
 
 
 @app.after_request
@@ -138,7 +130,7 @@ TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8")
 async def generate_test(response: Response) -> Response:  # pragma: no cover
     if request.method == "OPTIONS" or response.status_code == 501 or not Config["GENERATE_TESTS"]:
         return response
-    path = request.path.replace("/", "_").replace("-", "").replace("@", "")+"_"+str(int(time()*1000))[-4:]
+    path = request.path.replace("/", "_").replace("-", "").replace("@", "") + "_" + str(int(time() * 1000))[-4:]
     test_code = "@pt.mark.asyncio\n" \
                 f"async def test_{path}(testapp):\n" \
                 "    client: TestClientType = (await testapp).test_client()\n" \
@@ -195,4 +187,5 @@ async def other_api_endpoints(path):
 if __name__ == "__main__":  # pragma: no cover
     # Deprecated
     from uvicorn import run as urun
+
     urun('main:app', host="0.0.0.0", port=8000, reload=True, use_colors=False)

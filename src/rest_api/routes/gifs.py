@@ -18,8 +18,6 @@
 
 from quart import Blueprint, request, current_app
 
-from ...yepcord.utils import c_json
-
 # Base path is 
 gifs = Blueprint('gifs', __name__)
 
@@ -31,12 +29,12 @@ async def api_gifs_trending_get():
     for category in await current_app.gifs.categories:
         result["categories"].append(category.json)
         result["categories"][-1]["src"] = result["categories"][-1]["src"][:-4]+".mp4"
-    return c_json(result)
+    return result
 
 
 @gifs.get("/trending-gifs")
 async def api_gifs_trendinggifs_get():
-    return c_json('[]')  # ???
+    return []  # ???
 
 
 @gifs.post("/select")
@@ -48,8 +46,7 @@ async def api_gifs_select_post():
 async def api_gifs_search():
     # noinspection PyUnresolvedReferences
     search = await current_app.gifs.search(**request.args)
-    result = [gif.json for gif in search.gifs]
-    return c_json(result)
+    return [gif.json for gif in search.gifs]
 
 
 @gifs.get("/suggest")

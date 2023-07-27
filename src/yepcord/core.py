@@ -40,7 +40,7 @@ from .models import User, UserData, UserSettings, Session, Relationship, Channel
     PermissionOverwrite, GuildBan, AuditLogEntry, Webhook, HiddenDmChannel, MfaCode, Role, GuildEvent, \
     ThreadMetadata, ThreadMember
 from .snowflake import Snowflake
-from .utils import b64encode, b64decode, int_length, NoneType
+from .utils import b64encode, b64decode, int_size, NoneType
 from ..gateway.events import DMChannelCreateEvent
 
 
@@ -69,7 +69,7 @@ class Core(Singleton):
         :return:
         """
         password = password.encode("utf8")
-        password += uid.to_bytes(int_length(uid), "big")
+        password += uid.to_bytes(int_size(uid), "big")
         return password.replace(b"\x00", b'')
 
     def hashPassword(self, uid: int, password: str) -> str:

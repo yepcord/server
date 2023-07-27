@@ -34,7 +34,7 @@ from ...yepcord.enums import RelationshipType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, GuildMember
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
-from ...yepcord.utils import c_json, execute_after, validImage, getImage
+from ...yepcord.utils import execute_after, validImage, getImage
 
 # Base path is /api/vX/users/@me
 users_me = Blueprint('users_@me', __name__)
@@ -44,7 +44,7 @@ users_me = Blueprint('users_@me', __name__)
 @multipleDecorators(usingDB, getUser)
 async def get_me(user: User):
     userdata = await user.data
-    return c_json(await userdata.ds_json_full())
+    return await userdata.ds_json_full()
 
 
 @users_me.patch("/", strict_slashes=False)
@@ -65,7 +65,7 @@ async def update_me(data: UserUpdate, user: User):
     if discrim:
         if not await getCore().changeUserDiscriminator(user, discrim, bool(username)):
             await userdata.load_all()
-            return c_json(await userdata.ds_json_full())
+            return await userdata.ds_json_full()
         data.discriminator = None
     if data.new_password is not None:
         await getCore().changeUserPassword(user, data.new_password)
@@ -84,7 +84,7 @@ async def update_me(data: UserUpdate, user: User):
     if changes:
         await userdata.update(**changes)
     await getGw().dispatch(UserUpdateEvent(user, userdata, await user.settings), [user.id])
-    return c_json(await userdata.ds_json_full())
+    return await userdata.ds_json_full()
 
 
 @users_me.patch("/profile")
@@ -98,14 +98,14 @@ async def get_my_profile(data: UserProfileUpdate, user: User):
     userdata = await user.data
     await userdata.update(**data.dict(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
-    return c_json(await userdata.ds_json_full())
+    return await userdata.ds_json_full()
 
 
 @users_me.get("/consent")
 @multipleDecorators(usingDB, getUser)
 async def get_consent_settings(user: User):
     settings = await user.settings
-    return c_json(settings.ds_json_consent())
+    return settings.ds_json_consent()
 
 
 @users_me.post("/consent")
@@ -122,14 +122,14 @@ async def update_consent_settings(data: ConsentSettingsUpdate, user: User):
             if revoke not in ALLOWED_SETTINGS: continue
             new_settings[revoke] = False
         await settings.update(**new_settings)
-    return c_json(settings.ds_json_consent())
+    return settings.ds_json_consent()
 
 
 @users_me.get("/settings")
 @multipleDecorators(usingDB, getUser)
 async def get_settings(user: User):
     settings = await user.settings
-    return c_json(settings.ds_json())
+    return settings.ds_json()
 
 
 @users_me.patch("/settings")
@@ -138,14 +138,14 @@ async def update_settings(data: SettingsUpdate, user: User):
     settings = await user.settings
     await settings.update(**data.dict(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
-    return c_json(settings.ds_json())
+    return settings.ds_json()
 
 
 @users_me.get("/settings-proto/1")
 @multipleDecorators(usingDB, getUser)
 async def get_protobuf_settings(user: User):
     proto = UserSettingsProto(await user.settings).get()
-    return c_json({"settings": _b64encode(proto.SerializeToString()).decode("utf8")})
+    return {"settings": _b64encode(proto.SerializeToString()).decode("utf8")}
 
 
 @users_me.patch("/settings-proto/1")
@@ -165,14 +165,14 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
     await settings_proto.update(proto)
     proto = _b64encode(settings_proto.get().SerializeToString()).decode("utf8")
     await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto, 1), users=[user.id]), 1)
-    return c_json({"settings": proto})
+    return {"settings": proto}
 
 
 @users_me.get("/settings-proto/2")
 @multipleDecorators(usingDB, getUser)
 async def get_protobuf_frecency_settings(user: User):
     proto = await FrecencySettings.objects.get_or_none(id=user.id)
-    return c_json({"settings": proto if proto is not None else ""})
+    return {"settings": proto if proto is not None else ""}
 
 
 @users_me.patch("/settings-proto/2")
@@ -193,13 +193,13 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
     proto_string = _b64encode(proto.SerializeToString()).decode("utf8")
     await fsettings.update(settings=proto_string)
     await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto_string, 2), users=[user.id]), 1)
-    return c_json({"settings": proto_string})
+    return {"settings": proto_string}
 
 
 @users_me.get("/connections")
 @multipleDecorators(usingDB, getUser)
 async def get_connections(user: User):  # TODO: add connections
-    return c_json("[]")
+    return []
 
 
 @users_me.post("/relationships")
@@ -221,7 +221,7 @@ async def new_relationship(data: RelationshipRequest, user: User):
 @users_me.get("/relationships")
 @multipleDecorators(usingDB, getUser)
 async def get_relationships(user: User):
-    return c_json(await getCore().getRelationships(user, with_data=True))
+    return await getCore().getRelationships(user, with_data=True)
 
 
 @users_me.get("/notes/<int:target_uid>")
@@ -231,7 +231,7 @@ async def get_notes(user: User, target_uid: int):
         raise InvalidDataErr(404, Errors.make(10013))
     if not (note := await getCore().getUserNote(user, target_user)):
         raise InvalidDataErr(404, Errors.make(10013))
-    return c_json(note.ds_json())
+    return note.ds_json()
 
 
 @users_me.put("/notes/<int:target_uid>")
@@ -266,7 +266,7 @@ async def enable_mfa(data: MfaEnable, session: Session):  # TODO: Check if mfa a
     codes = [{"user_id": str(user.id), "code": code, "consumed": False} for code in codes]
     await session.delete()
     session = await getCore().createSession(user)
-    return c_json({"token": session.token, "backup_codes": codes})
+    return {"token": session.token, "backup_codes": codes}
 
 
 @users_me.post("/mfa/totp/disable")
@@ -287,7 +287,7 @@ async def disable_mfa(data: MfaDisable, session: Session):
     await getGw().dispatch(UserUpdateEvent(user, await user.data, settings), [user.id])
     await session.delete()
     session = await getCore().createSession(user)
-    return c_json({"token": session.token})
+    return {"token": session.token}
 
 
 @users_me.post("/mfa/codes-verification")
@@ -309,7 +309,7 @@ async def get_backup_codes(data: MfaCodesVerification, user: User):
         codes = [{"user_id": str(user.id), "code": code, "consumed": False} for code in codes]
     else:
         codes = [code.ds_json() for code in await getCore().getBackupCodes(user)]
-    return c_json({"backup_codes": codes})
+    return {"backup_codes": codes}
 
 
 @users_me.put("/relationships/<int:user_id>")
@@ -366,8 +366,7 @@ async def leave_guild(user: User, guild: Guild, member: GuildMember):
 @users_me.get("/channels")
 @multipleDecorators(usingDB, getUser)
 async def get_dm_channels(user: User):
-    channels = [await channel.ds_json() for channel in await getCore().getPrivateChannels(user)]
-    return c_json(channels)
+    return [await channel.ds_json() for channel in await getCore().getPrivateChannels(user)]
 
 
 @users_me.post("/channels")
@@ -386,7 +385,7 @@ async def new_dm_channel(data: DmChannelCreate, user: User):
     else:
         channel = await getCore().createDMGroupChannel(user, recipients_users, data.name)
     await getGw().dispatch(DMChannelCreateEvent(channel), channel_id=channel.id)
-    return c_json(await channel.ds_json(with_ids=False, user_id=user.id))
+    return await channel.ds_json(with_ids=False, user_id=user.id)
 
 
 @users_me.post("/delete")
@@ -414,4 +413,4 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
                 "user_id": str(user.id)  # current user or creator??
             })
 
-    return c_json(events)
+    return events

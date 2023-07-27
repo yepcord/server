@@ -33,7 +33,7 @@ from ..proto import PreloadedUserSettings, UserContentSettings, Versions, VoiceA
     PrivacySettings, StatusSettings, LocalizationSettings, AppearanceSettings, Theme, GuildFolders, GuildFolder, \
     FrecencyUserSettings
 from ..snowflake import Snowflake
-from ..utils import b64encode, int_length, b64decode, proto_get
+from ..utils import b64encode, int_size, b64decode, proto_get
 
 
 class User(ormar.Model):
@@ -111,7 +111,7 @@ class Session(ormar.Model):
     @property
     def token(self) -> str:
         return f"{b64encode(str(self.user.id).encode('utf8'))}." \
-               f"{b64encode(int.to_bytes(self.id, int_length(self.id), 'big'))}." \
+               f"{b64encode(int.to_bytes(self.id, int_size(self.id), 'big'))}." \
                f"{self.signature}"
 
     @staticmethod

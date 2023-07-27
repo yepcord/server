@@ -40,7 +40,7 @@ from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Guild, GuildMember, GuildTemplate, Emoji, Channel, PermissionOverwrite, UserData, \
     Role, Invite, Sticker, GuildEvent, AuditLogEntry
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, getImage, b64decode, validImage, imageType
+from ...yepcord.utils import getImage, b64decode, validImage, imageType
 
 # Base path is /api/vX/guilds
 guilds = Blueprint('guilds', __name__)
@@ -58,7 +58,7 @@ async def create_guild(data: GuildCreate, user: User):
     await getGw().dispatch(GuildCreateEvent(
         await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
     ), users=[user.id])
-    return c_json(await guild.ds_json(user_id=user.id, with_members=False, with_channels=True))
+    return await guild.ds_json(user_id=user.id, with_members=False, with_channels=True)
 
 
 @guilds.patch("/<int:guild>")
@@ -91,7 +91,7 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
 
     await getCore().setTemplateDirty(guild)
 
-    return c_json(await guild.ds_json(user_id=user.id))
+    return await guild.ds_json(user_id=user.id)
 
 
 @guilds.get("/<int:guild>/templates")
@@ -101,7 +101,7 @@ async def get_guild_templates(user: User, guild: Guild, member: GuildMember):
     templates = []
     if template := await getCore().getGuildTemplate(guild):
         templates.append(await template.ds_json())
-    return c_json(templates)
+    return templates
 
 
 @guilds.post("/<int:guild>/templates")
@@ -116,7 +116,7 @@ async def create_guild_template(data: TemplateCreate, user: User, guild: Guild, 
         serialized_guild=await GuildTemplate.serialize_guild(guild)
     )
 
-    return c_json(await template.ds_json())
+    return await template.ds_json()
 
 
 @guilds.delete("/<int:guild>/templates/<string:template>")
@@ -124,7 +124,7 @@ async def create_guild_template(data: TemplateCreate, user: User, guild: Guild, 
 async def delete_guild_template(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     await template.delete()
-    return c_json(await template.ds_json())
+    return await template.ds_json()
 
 
 @guilds.put("/<int:guild>/templates/<string:template>")
@@ -134,7 +134,7 @@ async def sync_guild_template(user: User, guild: Guild, member: GuildMember, tem
     if template.is_dirty:
         await template.update(
             serialized_guild=await GuildTemplate.serialize_guild(guild), is_dirty=False, updated_at=datetime.now())
-    return c_json(await template.ds_json())
+    return await template.ds_json()
 
 
 @guilds.patch("/<int:guild>/templates/<string:template>")
@@ -142,15 +142,14 @@ async def sync_guild_template(user: User, guild: Guild, member: GuildMember, tem
 async def update_guild_template(data: TemplateUpdate, user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     await template.update(**data.dict(exclude_defaults=True))
-    return c_json(await template.ds_json())
+    return await template.ds_json()
 
 
 @guilds.get("/<int:guild>/emojis")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def get_guild_emojis(user: User, guild: Guild):
     emojis = await getCore().getEmojis(guild.id)
-    emojis = [await emoji.ds_json(with_user=True) for emoji in emojis]
-    return c_json(emojis)
+    return [await emoji.ds_json(with_user=True) for emoji in emojis]
 
 
 @guilds.post("/<int:guild>/emojis")
@@ -169,7 +168,7 @@ async def create_guild_emoji(data: EmojiCreate, user: User, guild: Guild, member
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    return c_json(await emoji.ds_json())
+    return await emoji.ds_json()
 
 
 @guilds.patch("/<int:guild>/emojis/<int:emoji>")
@@ -182,7 +181,7 @@ async def update_guild_emoji(data: EmojiUpdate, user: User, guild: Guild, member
 
     await getGw().sendGuildEmojisUpdateEvent(guild)
 
-    return c_json(await emoji.ds_json())
+    return await emoji.ds_json()
 
 
 @guilds.delete("/<int:guild>/emojis/<int:emoji>")
@@ -245,7 +244,7 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
 
     await getCore().setTemplateDirty(guild)
 
-    return c_json(await channel.ds_json())
+    return await channel.ds_json()
 
 
 @guilds.get("/<int:guild>/invites")
@@ -254,7 +253,7 @@ async def get_guild_invites(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     invites = await getCore().getGuildInvites(guild)
     invites = [await invite.ds_json() for invite in invites]
-    return c_json(invites)
+    return invites
 
 
 @guilds.get("/<int:guild>/premium/subscriptions")
@@ -262,7 +261,7 @@ async def get_guild_invites(user: User, guild: Guild, member: GuildMember):
 async def get_premium_boosts(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     boosts = [{"ended": False, "user_id": str(guild.owner.id)}]*30
-    return c_json(boosts)
+    return boosts
 
 
 @guilds.delete("/<int:guild>/members/<int:user_id>")
@@ -321,8 +320,7 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def get_guild_bans(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
-    bans = [await ban.ds_json() for ban in await getCore().getGuildBans(guild)]
-    return c_json(bans)
+    return [await ban.ds_json() for ban in await getCore().getGuildBans(guild)]
 
 
 @guilds.delete("/<int:guild>/bans/<int:user_id>")
@@ -344,7 +342,7 @@ async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: i
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def get_guild_integrations(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-    return c_json([])  # TODO
+    return []  # TODO
 
 
 @guilds.post("/<int:guild>/roles")
@@ -366,7 +364,7 @@ async def create_role(data: RoleCreate, user: User, guild: Guild, member: GuildM
 
     await getCore().setTemplateDirty(guild)
 
-    return c_json(role.ds_json())
+    return role.ds_json()
 
 
 @guilds.patch("/<int:guild>/roles/<int:role>")
@@ -392,7 +390,7 @@ async def update_role(data: RoleUpdate, user: User, guild: Guild, member: GuildM
 
     await getCore().setTemplateDirty(guild)
 
-    return c_json(role.ds_json())
+    return role.ds_json()
 
 
 @guilds.patch("/<int:guild>/roles")
@@ -421,12 +419,11 @@ async def update_roles_positions(user: User, guild: Guild, member: GuildMember):
         await role.update(_columns=["position"])
         await getGw().dispatch(GuildRoleUpdateEvent(guild.id, role.ds_json()), guild_id=guild.id,
                                permissions=GuildPermissions.MANAGE_ROLES)
-    roles = await getCore().getRoles(guild)
-    roles = [role.ds_json() for role in roles]
 
     await getCore().setTemplateDirty(guild)
 
-    return c_json(roles)
+    roles = await getCore().getRoles(guild)
+    return [role.ds_json() for role in roles]
 
 
 @guilds.delete("/<int:guild>/roles/<int:role>")
@@ -452,22 +449,20 @@ async def delete_role(user: User, guild: Guild, member: GuildMember, role: Role)
 @multipleDecorators(usingDB, getUser, getGuildWM, getRole)
 async def get_connections_configuration(user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-    return c_json([])  # TODO
+    return []  # TODO
 
 
 @guilds.get("/<int:guild>/roles/member-counts")
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def get_role_member_count(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-    counts = await getCore().getRolesMemberCounts(guild)
-    return c_json(counts)
+    return await getCore().getRolesMemberCounts(guild)
 
 
 @guilds.get("/<int:guild>/roles/<int:role>/member-ids")
 @multipleDecorators(usingDB, getUser, getGuildWoM, getRole)
 async def get_role_members(user: User, guild: Guild, role: Role):
-    members = [str(member_id) for member_id in await getCore().getRoleMemberIds(role)]
-    return c_json(members)
+    return [str(member_id) for member_id in await getCore().getRoleMemberIds(role)]
 
 
 @guilds.patch("/<int:guild>/roles/<int:role>/members")
@@ -484,7 +479,7 @@ async def add_role_members(data: AddRoleMembers, user: User, guild: Guild, membe
             target_member_json = await target_member.ds_json()
             await getGw().dispatch(GuildMemberUpdateEvent(guild.id, target_member_json), guild_id=guild.id)
             members[str(target_member.id)] = target_member_json
-    return c_json(members)
+    return members
 
 
 @guilds.patch("/<int:guild>/members/<string:target_user>")
@@ -528,7 +523,7 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    return c_json(await target_member.ds_json())
+    return await target_member.ds_json()
 
 
 @guilds.get("/<int:guild>/vanity-url")
@@ -541,7 +536,7 @@ async def get_vanity_url(user: User, guild: Guild, member: GuildMember):
     if guild.vanity_url_code:
         if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
             code["uses"]: invite.uses
-    return c_json(code)
+    return code
 
 
 @guilds.patch("/<int:guild>/vanity-url")
@@ -549,16 +544,16 @@ async def get_vanity_url(user: User, guild: Guild, member: GuildMember):
 async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     if data.code is None:
-        return c_json({"code": guild.vanity_url_code})
+        return {"code": guild.vanity_url_code}
     if data.code == guild.vanity_url_code:
-        return c_json({"code": guild.vanity_url_code})
+        return {"code": guild.vanity_url_code}
     if not data.code:
         if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
             await invite.delete()
         await guild.update(vanity_url_code=None)
     else:
         if await getCore().getVanityCodeInvite(data.code):
-            return c_json({"code": guild.vanity_url_code})
+            return {"code": guild.vanity_url_code}
         if guild.vanity_url_code and (invite := await getCore().getVanityCodeInvite(guild.vanity_url_code)):
             await invite.delete()
         await guild.update(vanity_url_code=data.code)
@@ -567,7 +562,7 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
             channel = (await getCore().getGuildChannels(guild))[0]
         await Invite.objects.create(id=Snowflake.makeId(), channel=channel, inviter=guild.owner, vanity_code=data.code)
     await getGw().dispatch(GuildUpdateEvent(await guild.ds_json(user_id=user.id)), guild_id=guild.id)
-    return c_json({"code": guild.vanity_url_code})
+    return {"code": guild.vanity_url_code}
 
 
 @guilds.get("/<int:guild>/audit-logs")
@@ -583,7 +578,7 @@ async def get_audit_logs(query_args: GetAuditLogsQuery, user: User, guild: Guild
                 userdatas[target_id] = data
     userdatas = list(userdatas.values())
 
-    data = {
+    return {
         "application_commands": [],
         "audit_log_entries": [entry.ds_json() for entry in entries],
         "auto_moderation_rules": [],
@@ -593,8 +588,6 @@ async def get_audit_logs(query_args: GetAuditLogsQuery, user: User, guild: Guild
         "users": [userdata.ds_json for userdata in userdatas],
         "webhooks": [],
     }
-
-    return c_json(data)
 
 
 @guilds.post("/templates/<string:template>")
@@ -617,7 +610,8 @@ async def create_from_template(data: GuildCreateFromTemplate, user: User, templa
     await getGw().dispatch(GuildCreateEvent(
         await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
     ), users=[user.id])
-    return c_json(await guild.ds_json(user_id=user.id, with_members=False, with_channels=True))
+
+    return await guild.ds_json(user_id=user.id, with_members=False, with_channels=True)
 
 
 @guilds.post("/<int:guild>/delete")
@@ -643,15 +637,13 @@ async def delete_guild(data: GuildDelete, user: User, guild: Guild):
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def get_guild_webhooks(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-    webhooks = [await webhook.ds_json() for webhook in await getCore().getWebhooks(guild)]
-    return c_json(webhooks)
+    return [await webhook.ds_json() for webhook in await getCore().getWebhooks(guild)]
 
 
 @guilds.get("/<int:guild>/stickers")
 @multipleDecorators(usingDB, getUser, getGuildWoM)
 async def get_guild_stickers(user: User, guild: Guild):
-    stickers = [await sticker.ds_json() for sticker in await getCore().getGuildStickers(guild)]
-    return c_json(stickers)
+    return [await sticker.ds_json() for sticker in await getCore().getGuildStickers(guild)]
 
 
 @guilds.post("/<int:guild>/stickers")
@@ -680,7 +672,7 @@ async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
 
     await getGw().sendStickersUpdateEvent(guild)
 
-    return c_json(await sticker.ds_json())
+    return await sticker.ds_json()
 
 
 @guilds.patch("/<int:guild>/stickers/<int:sticker_id>")
@@ -691,7 +683,7 @@ async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, me
         raise InvalidDataErr(404, Errors.make(10060))
     await sticker.update(**data.dict(exclude_defaults=True))
     await getGw().sendStickersUpdateEvent(guild)
-    return c_json(await sticker.ds_json())
+    return await sticker.ds_json()
 
 
 @guilds.delete("/<int:guild>/stickers/<int:sticker_id>")
@@ -729,7 +721,7 @@ async def create_scheduled_event(data: CreateEvent, user: User, guild: Guild, me
     # TODO: Replace with list of users subscribed to event
     await getGw().dispatch(ScheduledEventUserAddEvent(user.id, event.id, guild.id), guild_id=guild.id)
 
-    return c_json(await event.ds_json())
+    return await event.ds_json()
 
 
 @guilds.get("/<int:guild>/scheduled-events/<int:event_id>")
@@ -738,16 +730,14 @@ async def get_scheduled_event(query_args: GetScheduledEvent, user: User, guild: 
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
         raise InvalidDataErr(404, Errors.make(10070))
 
-    return c_json(await event.ds_json(with_user_count=query_args.with_user_count))
+    return await event.ds_json(with_user_count=query_args.with_user_count)
 
 
 @guilds.get("/<int:guild>/scheduled-events")
 @multipleDecorators(validate_querystring(GetScheduledEvent), usingDB, getUser, getGuildWoM)
 async def get_scheduled_events(query_args: GetScheduledEvent, user: User, guild: Guild):
     events = await getCore().getGuildEvents(guild)
-
-    events = [await event.ds_json(with_user_count=query_args.with_user_count) for event in events]
-    return c_json(events)
+    return [await event.ds_json(with_user_count=query_args.with_user_count) for event in events]
 
 
 @guilds.patch("/<int:guild>/scheduled-events/<int:event_id>")
@@ -787,7 +777,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: 
     event_json = await event.ds_json()
     await getGw().dispatch(GuildScheduledEventUpdateEvent(event_json), guild_id=guild.id)
 
-    return c_json(event_json)
+    return event_json
 
 
 @guilds.put("/<int:guild>/scheduled-events/<int:event_id>/users/@me")
@@ -800,10 +790,10 @@ async def subscribe_to_scheduled_event(user: User, guild: Guild, member: GuildMe
     await getGw().dispatch(ScheduledEventUserAddEvent(user.id, event_id, guild.id),
                            guild_id=guild.id)  # TODO: Replace with list of users subscribed to event
 
-    return c_json({
+    return {
         "guild_scheduled_event_id": str(event.id),
         "user_id": str(user.id)  # current user or creator??
-    })
+    }
 
 
 @guilds.delete("/<int:guild>/scheduled-events/<int:event_id>/users/@me")

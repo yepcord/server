@@ -31,7 +31,7 @@ from ..ctx import getCore
 from ..enums import ScheduledEventEntityType, ChannelType, GuildPermissions, AuditLogEntryType
 from ..errors import InvalidDataErr, Errors
 from ..snowflake import Snowflake
-from ..utils import b64encode, int_length, NoneType
+from ..utils import b64encode, int_size, NoneType
 
 
 class Guild(ormar.Model):
@@ -387,7 +387,7 @@ class GuildTemplate(ormar.Model):
 
     @property
     def code(self) -> str:
-        return b64encode(self.id.to_bytes(int_length(self.id), 'big'))
+        return b64encode(self.id.to_bytes(int_size(self.id), 'big'))
 
     async def ds_json(self) -> dict:
         creator_data = await self.creator.data if self.creator is not None else None

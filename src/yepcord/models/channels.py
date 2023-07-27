@@ -22,7 +22,7 @@ from typing import Optional, ForwardRef, Union
 from ormar.relations.relation_proxy import RelationProxy
 from typing_extensions import TYPE_CHECKING
 
-from ..utils import b64encode, int_length
+from ..utils import b64encode, int_size
 
 if TYPE_CHECKING:
     from . import Message
@@ -300,7 +300,7 @@ class Invite(ormar.Model):
 
     @property
     def code(self) -> str:
-        return b64encode(self.id.to_bytes(int_length(self.id), 'big'))
+        return b64encode(self.id.to_bytes(int_size(self.id), 'big'))
 
     async def ds_json(self, with_counts: bool=False) -> dict:
         userdata = await self.inviter.data

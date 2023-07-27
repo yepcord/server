@@ -29,7 +29,7 @@ from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.geoip import getLanguageCode
 from ...yepcord.models import Session, User
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, LOCALES, b64decode
+from ...yepcord.utils import LOCALES, b64decode
 
 # Base path is /api/vX/auth
 auth = Blueprint('auth', __name__)
@@ -41,7 +41,7 @@ async def register(data: Register):
     loc = getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
     sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth,
                                     loc)
-    return c_json({"token": sess.token})
+    return {"token": sess.token}
 
 
 @auth.post("/login")
@@ -50,11 +50,11 @@ async def login(data: Login):
     sess = await getCore().login(data.login, data.password)
     user = sess.user
     sett = await user.settings
-    return c_json({
+    return {
         "token": sess.token,
         "user_settings": {"locale": sett.locale, "theme": sett.theme},
         "user_id": str(user.id)
-    })
+    }
 
 
 @auth.post("/mfa/totp")
@@ -73,11 +73,11 @@ async def login_with_mfa(data: MfaLogin):
             raise InvalidDataErr(400, Errors.make(60008))
     sess = await getCore().createSession(user.id)
     sett = await user.settings
-    return c_json({
+    return {
         "token": sess.token,
         "user_settings": {"locale": sett.locale, "theme": sett.theme},
         "user_id": str(user.id)
-    })
+    }
 
 
 @auth.post("/logout")
@@ -96,7 +96,7 @@ async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User)
         raise InvalidDataErr(400, Errors.make(50018))
     nonce = await getCore().generateUserMfaNonce(user)
     await getCore().sendMfaChallengeEmail(user, nonce[0])
-    return c_json({"nonce": nonce[0], "regenerate_nonce": nonce[1]})
+    return {"nonce": nonce[0], "regenerate_nonce": nonce[1]}
 
 
 @auth.post("/verify/resend")
@@ -120,4 +120,4 @@ async def verify_email(data: VerifyEmail):
     user = await getCore().getUserByEmail(email)
     await getCore().verifyEmail(user, data.token)
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
-    return c_json({"token": (await getCore().createSession(user.id)).token, "user_id": str(user.id)})
+    return {"token": (await getCore().createSession(user.id)).token, "user_id": str(user.id)}

@@ -1,9 +1,10 @@
-from subprocess import Popen, PIPE as sPIPE, STDOUT as sSTDOUT
+from subprocess import Popen, PIPE, STDOUT
 from os import environ
 from time import sleep
 from threading import Thread
 
 environ["PYTHONUNBUFFERED"] = "1"
+
 
 class Process:
     def __init__(self, name, app=None, port=None, file=None, wd=".", *, disable_logs=False):
@@ -19,7 +20,7 @@ class Process:
         self.astarted = False
 
     def _run(self, cmd):
-        self._process = Popen(cmd.split(" "), stdout=sPIPE, stdin=sPIPE, cwd=self.wd, stderr=sSTDOUT)
+        self._process = Popen(cmd.split(" "), stdout=PIPE, stdin=PIPE, cwd=self.wd, stderr=STDOUT)
         out = ""
         while self._process.poll() is None:
             try:
@@ -40,8 +41,9 @@ class Process:
         if not self.app:
             cmd = f"python -u {self.file}"
         else:
-            cmd = f"python -u -m uvicorn {self.app} --forwarded-allow-ips='*' --ssl-keyfile=ssl/key.pem --ssl-certfile=ssl/cert.pem --reload --reload-dir src --host 0.0.0.0" + (f" --port {self.port}" if self.port else "")
-        self.running = True
+            cmd = f"python -u -m uvicorn {self.app} --forwarded-allow-ips='*' --ssl-keyfile=ssl/key.pem " \
+                  f"--ssl-certfile=ssl/cert.pem --reload --reload-dir src --host 0.0.0.0" + \
+                  (f" --port {self.port}" if self.port else "")
         Thread(target=self._run, args=(cmd,)).start()
 
     def stop(self, kill=False):
@@ -53,6 +55,7 @@ class Process:
         self._process.terminate()
         sleep(5)
         self.stop(True)
+
 
 processes = [
     Process("IMT", file="main.py", wd="src/pubsub"),
@@ -72,6 +75,7 @@ skip_logs = [
     "WatchGodReload detected file change in",
     "Application startup complete"
 ]
+
 
 def main():
     for p in processes:

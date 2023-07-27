@@ -28,7 +28,6 @@ from ...yepcord.enums import ChannelType, GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import Invite, User, Message, GuildMember
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json
 
 # Base path is /api/vX/invites
 invites = Blueprint('invites', __name__)
@@ -41,7 +40,7 @@ async def get_invite(query_args: GetInviteQuery, invite: Invite):
     for excl in ["max_age", "created_at"]:  # Remove excluded fields
         if excl in invite:
             del invite[excl]
-    return c_json(invite)
+    return invite
 
 
 @invites.post("/<string:invite>")
@@ -92,7 +91,7 @@ async def use_invite(user: User, invite: Invite):
                 await getCore().sendMessage(message)
                 await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel_id=sys_channel.id)
             await getCore().useInvite(invite)
-    return c_json(inv)
+    return inv
 
 
 @invites.delete("/<string:invite>")
@@ -108,4 +107,4 @@ async def delete_invite(user: User, invite: Invite):
         #await getCore().putAuditLogEntry(entry)
         #await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=invite.guild_id,
         #                       permissions=GuildPermissions.VIEW_AUDIT_LOG)
-    return c_json(await invite.ds_json())
+    return await invite.ds_json()

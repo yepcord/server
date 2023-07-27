@@ -29,7 +29,7 @@ from ...yepcord.enums import GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, getImage
+from ...yepcord.utils import getImage
 
 # Base path is /api/vX/webhooks
 webhooks = Blueprint('webhooks', __name__)
@@ -86,7 +86,7 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
     await getGw().dispatch(WebhooksUpdateEvent(guild.id, webhook.channel.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
-    return c_json(await webhook.ds_json())
+    return await webhook.ds_json()
 
 
 @webhooks.get("/<int:webhook>")
@@ -101,7 +101,7 @@ async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Op
             raise InvalidDataErr(403, Errors.make(50013))
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
-    return c_json(await webhook.ds_json())
+    return await webhook.ds_json()
 
 
 @webhooks.post("/<int:webhook>/<string:token>")
@@ -156,6 +156,6 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
     await getGw().dispatch(MessageCreateEvent(message_json), channel_id=channel.id)
 
     if query_args.wait:
-        return c_json(message_json)
+        return message_json
     else:
         return "", 204
