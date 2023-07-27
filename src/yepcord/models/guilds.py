@@ -26,9 +26,9 @@ from ormar import ReferentialAction, QuerySet
 from ormar.relations.relation_proxy import RelationProxy
 
 from . import DefaultMeta, User
-from .channels import Channel
+from .channels import Channel, Invite, PermissionOverwrite
 from ..ctx import getCore
-from ..enums import ScheduledEventEntityType, ChannelType, GuildPermissions
+from ..enums import ScheduledEventEntityType, ChannelType, GuildPermissions, AuditLogEntryType
 from ..errors import InvalidDataErr, Errors
 from ..snowflake import Snowflake
 from ..utils import b64encode, int_length, NoneType
@@ -122,7 +122,7 @@ class Guild(ormar.Model):
             "member_count": await getCore().getGuildMemberCount(self),
             "lazy": True,
             "large": False,
-            "guild_scheduled_events": [await event.ds_json() for event in await getCore().getScheduledEvents(self)],
+            "guild_scheduled_events": [await event.ds_json() for event in await getCore().getGuildEvents(self)],
             "emojis": [await emoji.ds_json(False) for emoji in await getCore().getEmojis(self.id)],
             "data_mode": "full",
             "application_command_counts": [],
@@ -540,13 +540,174 @@ class GuildEvent(ormar.Model):
             creator = await self.creator.data
             data["creator"] = creator.ds_json
         if with_user_count:
-            data["user_count"] = await getCore().getScheduledEventUserCount(self)
+            data["user_count"] = await getCore().getGuildEventUserCount(self)
         return data
+
+
+class AuditLogEntryQuerySet(QuerySet):
+    async def channel_create(self, user: User, channel: Channel) -> AuditLogEntry:
+        changes = [
+            {"new_value": channel.name, "key": "name"},
+            {"new_value": channel.type, "key": "type"},
+            {"new_value": [], "key": "permission_overwrites"},
+            {"new_value": channel.nsfw, "key": "nsfw"},
+            {"new_value": channel.rate_limit, "key": "rate_limit_per_user"},
+            {"new_value": channel.flags, "key": "flags"}
+        ]
+        return await self.create(id=Snowflake.makeId(), guild=channel.guild, user=user, target_id=channel.id,
+                                 action_type=AuditLogEntryType.CHANNEL_CREATE, changes=changes)
+
+    async def channel_update(self, user: User, channel: Channel, changes: dict) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=channel.guild, user=user, target_id=channel.id,
+                                 action_type=AuditLogEntryType.CHANNEL_UPDATE, changes=changes)
+
+    async def channel_delete(self, user: User, channel: Channel) -> AuditLogEntry:
+        changes = [
+            {"old_value": channel.name, "key": "name"},
+            {"old_value": channel.type, "key": "type"},
+            {"old_value": [], "key": "permission_overwrites"},
+            {"old_value": channel.nsfw, "key": "nsfw"},
+            {"old_value": channel.rate_limit, "key": "rate_limit_per_user"},
+            {"old_value": channel.flags, "key": "flags"}
+        ]
+        return await self.create(id=Snowflake.makeId(), guild=channel.guild, user=user, target_id=channel.id,
+                                 action_type=AuditLogEntryType.CHANNEL_DELETE, changes=changes)
+
+    async def overwrite_create(self, user: User, overwrite: PermissionOverwrite) -> AuditLogEntry:
+        changes = [
+            {"new_value": str(overwrite.target_id), "key": "id"},
+            {"new_value": str(overwrite.type), "key": "type"},
+            {"new_value": str(overwrite.allow), "key": "allow"},
+            {"new_value": str(overwrite.deny), "key": "deny"}
+        ]
+        options = {
+            "type": str(overwrite.type),
+            "id": str(overwrite.target_id)
+        }
+        if overwrite.type == 0 and (role := await Role.objects.get_or_none(id=overwrite.target_id)) is not None:
+            options["role_name"] = role.name
+        return await self.create(id=Snowflake.makeId(), guild=overwrite.channel.guild, user=user, changes=changes,
+                                 target_id=overwrite.id, action_type=AuditLogEntryType.CHANNEL_OVERWRITE_CREATE,
+                                 options=options)
+
+    async def overwrite_update(self, user: User, old: PermissionOverwrite, new: PermissionOverwrite) -> AuditLogEntry:
+        changes = []
+        if old.allow != new.allow:
+            changes.append({"new_value": str(new.allow), "old_value": str(old.allow), "key": "allow"})
+        if old.deny != new.deny:
+            changes.append({"new_value": str(new.deny), "old_value": str(old.deny), "key": "deny"})
+        options = {
+            "type": str(new.type),
+            "id": str(new.target_id)
+        }
+        if new.type == 0 and (role := await Role.objects.get_or_none(id=new.target_id)) is not None:
+            options["role_name"] = role.name
+        return await self.create(id=Snowflake.makeId(), guild=old.channel.guild, changes=changes, options=options,
+                                 target_id=old.id, action_type=AuditLogEntryType.CHANNEL_OVERWRITE_UPDATE, user=user)
+
+    async def overwrite_delete(self, user: User, overwrite: PermissionOverwrite) -> AuditLogEntry:
+        changes = [
+            {"old_value": str(overwrite.target_id), "key": "id"},
+            {"old_value": str(overwrite.type), "key": "type"},
+            {"old_value": str(overwrite.allow), "key": "allow"},
+            {"old_value": str(overwrite.deny), "key": "deny"}
+        ]
+        options = {
+            "type": str(overwrite.type),
+            "id": str(overwrite.target_id)
+        }
+        if overwrite.type == 0 and (role := await Role.objects.get_or_none(id=overwrite.target_id)) is not None:
+            options["role_name"] = role.name
+        return await self.create(id=Snowflake.makeId(), guild=overwrite.channel.guild, user=user, changes=changes,
+                                 target_id=overwrite.id, action_type=AuditLogEntryType.CHANNEL_OVERWRITE_DELETE,
+                                 options=options)
+
+    async def invite_create(self, user: User, invite: Invite) -> AuditLogEntry:
+        changes = [
+            {"new_value": invite.code, "key": "code"},
+            {"new_value": invite.channel.id, "key": "channel_id"},
+            {"new_value": invite.inviter.id, "key": "inviter_id"},
+            {"new_value": invite.uses, "key": "uses"},
+            {"new_value": invite.max_uses, "key": "max_uses"},
+            {"new_value": invite.max_age, "key": "max_age"},
+            {"new_value": False, "key": "temporary"}
+        ]
+        return await self.create(id=Snowflake.makeId(), guild=invite.channel.guild, user=user, target_id=invite.id,
+                                 action_type=AuditLogEntryType.INVITE_CREATE, changes=changes)
+
+    async def invite_delete(self, user: User, invite: Invite) -> AuditLogEntry:
+        changes = [
+            {"old_value": invite.code, "key": "code"},
+            {"old_value": invite.channel.id, "key": "channel_id"},
+            {"old_value": invite.inviter.id, "key": "inviter_id"},
+            {"old_value": invite.uses, "key": "uses"},
+            {"old_value": invite.max_uses, "key": "max_uses"},
+            {"old_value": invite.max_age, "key": "max_age"},
+            {"old_value": False, "key": "temporary"}
+        ]
+        return await self.create(id=Snowflake.makeId(), guild=invite.channel.guild, user=user, target_id=invite.id,
+                                 action_type=AuditLogEntryType.INVITE_DELETE, changes=changes)
+
+    async def guild_update(self, user: User, guild: Guild, changes: dict) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=guild.id,
+                                 action_type=AuditLogEntryType.GUILD_UPDATE, changes=changes)
+
+    async def emoji_create(self, user: User, emoji: Emoji) -> AuditLogEntry:
+        changes = [{"new_value": emoji.name, "key": "name"}]
+        return await self.create(id=Snowflake.makeId(), guild=emoji.guild, user=user, target_id=emoji.id,
+                                 action_type=AuditLogEntryType.EMOJI_CREATE, changes=changes)
+
+    async def emoji_delete(self, user: User, emoji: Emoji) -> AuditLogEntry:
+        changes = [{"old_value": emoji.name, "key": "name"}]
+        return await self.create(id=Snowflake.makeId(), guild=emoji.guild, user=user, target_id=emoji.id,
+                                 action_type=AuditLogEntryType.EMOJI_DELETE, changes=changes)
+
+    async def member_kick(self, user: User, member: GuildMember) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=member.guild, user=user, target_id=member.id,
+                                 action_type=AuditLogEntryType.MEMBER_KICK)
+
+    async def member_ban(self, user: User, member: GuildMember, reason: str = None) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=member.guild, user=user, target_id=member.id,
+                                 action_type=AuditLogEntryType.MEMBER_BAN_ADD, reason=reason)
+
+    async def member_unban(self, user: User, guild: Guild, target_user: User) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=target_user.id,
+                                 action_type=AuditLogEntryType.MEMBER_BAN_REMOVE)
+
+    async def member_update(self, user: User, guild: Guild, member: GuildMember, changes: dict) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=member.id,
+                                 action_type=AuditLogEntryType.MEMBER_UPDATE, changes=changes)
+
+    async def role_create(self, user: User, role: Role) -> AuditLogEntry:
+        changes = [
+            {"new_value": role.name, "key": "name"},
+            {"new_value": role.permissions, "key": "permissions"},
+            {"new_value": role.color, "key": "color"},
+            {"new_value": role.hoist, "key": "hoist"},
+            {"new_value": role.mentionable, "key": "mentionable"}
+        ]
+        return await self.create(id=Snowflake.makeId(), guild=role.guild, user=user, target_id=role.id,
+                                 action_type=AuditLogEntryType.ROLE_CREATE, changes=changes)
+
+    async def role_update(self, user: User, role: Role, changes: dict) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=role.guild, user=user, target_id=role.id,
+                                 action_type=AuditLogEntryType.ROLE_UPDATE, changes=changes)
+
+    async def role_delete(self, user: User, role: Role) -> AuditLogEntry:
+        changes = [
+            {"old_value": role.name, "key": "name"},
+            {"old_value": role.permissions, "key": "permissions"},
+            {"old_value": role.color, "key": "color"},
+            {"old_value": role.hoist, "key": "hoist"},
+            {"old_value": role.mentionable, "key": "mentionable"}
+        ]
+        return await self.create(id=Snowflake.makeId(), guild=role.guild, user=user, target_id=role.id,
+                                 action_type=AuditLogEntryType.ROLE_DELETE, changes=changes)
 
 
 class AuditLogEntry(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = AuditLogEntryQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
@@ -559,11 +720,11 @@ class AuditLogEntry(ormar.Model):
 
     def ds_json(self) -> dict:
         data = {
-            "user_id": str(self.user_id),
+            "user_id": str(self.user.id),
             "target_id": str(self.target_id),
             "id": str(self.id),
             "action_type": self.action_type,
-            "guild_id": str(self.guild_id)
+            "guild_id": str(self.guild.id)
         }
         if self.changes: data["changes"] = self.changes
         if self.options: data["options"] = self.options

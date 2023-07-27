@@ -26,7 +26,7 @@ from ..yepcord.enums import GatewayOp
 from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Emoji, UserSettingsProto
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Emoji
     from ..yepcord.core import Core
     from .gateway import GatewayClient, ClientStatus
 

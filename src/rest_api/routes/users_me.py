@@ -408,7 +408,7 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
     for guild_id in query_args.guild_ids[:5]:
         if not await GuildMember.objects.get_or_none(guild__id=guild_id, user__id=user.id):
             raise InvalidDataErr(403, Errors.make(50001))
-        for event_id in await getCore().getSubscribedScheduledEventIds(user, guild_id):
+        for event_id in await getCore().getSubscribedGuildEventIds(user, guild_id):
             events.append({
                 "guild_scheduled_event_id": str(event_id),
                 "user_id": str(user.id)  # current user or creator??

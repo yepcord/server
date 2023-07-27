@@ -29,12 +29,12 @@ from ..utils import usingDB, getUser, multipleDecorators, getChannel, getMessage
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
-    WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent
+    WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, RelationshipType, WebhookType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
-    ThreadMetadata
+    ThreadMetadata, AuditLogEntry
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import c_json, getImage, b64encode
 
@@ -73,6 +73,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
         Ctx["with_ids"] = False
         await getGw().dispatch(DMChannelUpdateEvent(channel), channel_id=channel.id)
     elif channel.type in GUILD_CHANNELS:
+
         guild = channel.guild
         member = await getCore().getGuildMember(guild, user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
@@ -99,9 +100,12 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
             await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel_id=message.channel.id)
     elif channel.type in GUILD_CHANNELS:
-        #entry = AuditLogEntry.channel_update(channel, new_channel, user)  # TODO: create audit entry
-        #await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
-        #                       permissions=GuildPermissions.VIEW_AUDIT_LOG)
+        if "parent_id" in changes and changes["parent_id"] is not None:
+            changes["parent_id"] = changes["parent"].id
+            del changes["parent"]
+        entry = await AuditLogEntry.objects.channel_update(user, channel, changes)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
         await getCore().setTemplateDirty(channel.guild)
 
@@ -133,10 +137,9 @@ async def delete_channel(user: User, channel: Channel):
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
-        #entry = AuditLogEntry.channel_delete(channel, user)  # TODO: create audit entry
-        #await getCore().putAuditLogEntry(entry)
-        #await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
-        #                       permissions=GuildPermissions.VIEW_AUDIT_LOG)
+        entry = await AuditLogEntry.objects.channel_delete(user, channel)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
         if channel.id == channel.guild.system_channel:
             await channel.guild.update(system_channel=None)
@@ -452,10 +455,9 @@ async def create_invite(data: InviteCreate, user: User, channel: Channel):
         await member.checkPermission(GuildPermissions.CREATE_INSTANT_INVITE)
     invite = await getCore().createInvite(channel, user, **data.dict())
     if channel.guild:
-        pass
-        #entry = AuditLogEntry.invite_create(invite, user)  # TODO: create audit entry
-        #await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
-        #                       permissions=GuildPermissions.VIEW_AUDIT_LOG)
+        entry = await AuditLogEntry.objects.invite_create(user, invite)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
     return c_json(await invite.ds_json())
 
 
@@ -475,31 +477,12 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
         overwrite = await PermissionOverwrite.objects.create(**data.dict(), channel=channel, target_id=target_id)
     await getGw().dispatch(ChannelUpdateEvent(await channel.ds_json()), guild_id=channel.guild.id)
 
-    #if old_overwrite:  # TODO: create audit entry
-    #    t = AuditLogEntryType.CHANNEL_OVERWRITE_UPDATE
-    #    changes = []
-    #    if old_overwrite.allow != overwrite.allow:
-    #        changes.append({"new_value": str(overwrite.allow), "old_value": str(old_overwrite.allow), "key": "allow"})
-    #    if old_overwrite.deny != overwrite.deny:
-    #        changes.append({"new_value": str(overwrite.deny), "old_value": str(old_overwrite.deny), "key": "deny"})
-    #else:
-    #    t = AuditLogEntryType.CHANNEL_OVERWRITE_CREATE
-    #    changes = [
-    #        {"new_value": str(overwrite.target_id), "key": "id"},
-    #        {"new_value": str(overwrite.type), "key": "type"},
-    #        {"new_value": str(overwrite.allow), "key": "allow"},
-    #        {"new_value": str(overwrite.deny), "key": "deny"}
-    #    ]
-    #options = {
-    #    "type": str(overwrite.type),
-    #    "id": str(overwrite.target_id)
-    #}
-    #if overwrite.type == 0:
-    #    role = await getCore().getRole(overwrite.target_id)
-    #    options["role_name"] = role.name
-    #entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id, t, changes=changes, options=options)
-    #await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
-    #                       permissions=GuildPermissions.VIEW_AUDIT_LOG)
+    if old_overwrite:
+        entry = await AuditLogEntry.objects.overwrite_update(user, old_overwrite, overwrite)
+    else:
+        entry = await AuditLogEntry.objects.overwrite_create(user, overwrite)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
     await getCore().setTemplateDirty(channel.guild)
 
@@ -519,24 +502,9 @@ async def delete_permission_overwrite(user: User, channel: Channel, target_id: i
     await getGw().dispatch(ChannelUpdateEvent(await channel.ds_json()), guild_id=channel.guild.id)
 
     if overwrite:
-        #changes = [  # TODO: create audit entry
-        #    {"old_value": str(overwrite.target_id), "key": "id"},
-        #    {"old_value": str(overwrite.type), "key": "type"},
-        #    {"old_value": str(overwrite.allow), "key": "allow"},
-        #    {"old_value": str(overwrite.deny), "key": "deny"}
-        #]
-        #options = {
-        #    "type": str(overwrite.type),
-        #    "id": str(overwrite.target_id)
-        #}
-        #if overwrite.type == 0:
-        #    role = await getCore().getRole(overwrite.target_id)
-        #    options["role_name"] = role.name
-        #entry = AuditLogEntry(Snowflake.makeId(), channel.guild_id, user.id, channel.id,
-        #                      AuditLogEntryType.CHANNEL_OVERWRITE_DELETE, changes=changes, options=options)
-        #await getCore().putAuditLogEntry(entry)
-        #await getGw().dispatch(GuildAuditLogEntryCreateEvent(await entry.json), guild_id=channel.guild_id,
-        #                       permissions=GuildPermissions.VIEW_AUDIT_LOG)
+        entry = await AuditLogEntry.objects.overwrite_delete(user, overwrite)
+        await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
+                               permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
         await getCore().setTemplateDirty(channel.guild)
 
@@ -580,8 +548,8 @@ async def get_channel_webhooks(user: User, channel: Channel):
     member = await getCore().getGuildMember(channel.guild, user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
-    webhooks = [await webhook.ds_json() for webhook in await getCore().getWebhooks(channel.guild)]
-    return c_json(webhooks)  # TODO: Return webhooks from channels, not from guild
+    webhooks = [await webhook.ds_json() for webhook in await getCore().getChannelWebhooks(channel)]
+    return c_json(webhooks)
 
 
 @channels.post("/<int:channel>/messages/<int:message>/threads")
