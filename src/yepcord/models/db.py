@@ -1,10 +1,11 @@
-from os import environ
-
 import databases
 import sqlalchemy
 
-URL = environ.get("DB_CONNECT_STRING")
-assert URL is not None, "Database connect string is not set (set DB_CONNECT_STRING environment variable)."
+from ..config import Config
+
+URL = Config.DB_CONNECT_STRING
+_module = Config.SETTINGS_MODULE.replace(".", "/")+".py"
+assert URL is not None, f"Database connect string is not set (set DB_CONNECT_STRING variable in {_module})."
 
 database = databases.Database(URL)
 metadata = sqlalchemy.MetaData()

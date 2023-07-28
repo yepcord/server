@@ -112,8 +112,9 @@ class Message(ormar.Model):
             data["message_reference"] = {
                 "message_id": str(self.message_reference["message_id"]),
                 "channel_id": str(self.message_reference["channel_id"]),
-                "guild_id": str(self.message_reference["guild_id"]),
             }
+            if "guild_id" in self.message_reference:
+                data["message_reference"]["guild_id"] = str(self.message_reference["guild_id"])
             if self.type in (MessageType.REPLY, MessageType.THREAD_STARTER_MESSAGE):
                 ref_channel = await getCore().getChannel(int(self.message_reference["channel_id"]))
                 ref_message = None
@@ -145,7 +146,7 @@ class Attachment(ormar.Model):
             "filename": self.filename,
             "id": str(self.id),
             "size": self.size,
-            "url": f"https://{Config('CDN_HOST')}/attachments/{self.channel.id}/{self.id}/{self.filename}"
+            "url": f"https://{Config.CDN_HOST}/attachments/{self.channel.id}/{self.id}/{self.filename}"
         }
         if self.content_type:
             data["content_type"] = self.content_type

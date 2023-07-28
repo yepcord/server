@@ -68,7 +68,7 @@ class Gateway:
         self.mcl = Client()
 
     async def init(self):
-        await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
+        await self.mcl.start(f"ws://{Config.PS_ADDRESS}:5050")
         await self.mcl.subscribe("remote_auth", self.mclCallback)
 
     async def mclCallback(self, data):

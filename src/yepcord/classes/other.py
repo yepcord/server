@@ -48,24 +48,11 @@ class EmailMsg:
         self.text = text
 
     async def send(self):
-        mailer = Mailer(Config("MAIL_CONNECT_STRING"))
+        mailer = Mailer(Config.MAIL_CONNECT_STRING)
         try:
             await mailer.send_message(self.to, self.subject, self.text, from_address="no-reply@yepcord.ml")
         except DeliveryError:
             pass
-
-
-class Singleton:
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if not isinstance(cls._instance, cls):
-            cls._instance = super(cls.__class__, cls).__new__(cls)
-        return cls._instance
-
-    @classmethod
-    def getInstance(cls):
-        return cls._instance
 
 
 class JWT:

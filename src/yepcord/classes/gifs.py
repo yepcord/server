@@ -22,7 +22,7 @@ from typing import List
 
 from aiohttp import ClientSession
 
-from .other import Singleton
+from .singleton import Singleton
 
 
 @dataclass

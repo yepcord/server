@@ -922,7 +922,7 @@ async def test_verify_email(testapp):
     user_id = TestVars.get("data")["id"]
 
     token = generateEmailVerificationToken(int(user_id), f"{TestVars.EMAIL_ID}_test_changed@yepcord.ml",
-                                           b64decode(Config("KEY")))
+                                           b64decode(Config.KEY))
 
     resp = await client.post("/api/v9/auth/verify", headers=headers, json={"token": ""})
     assert resp.status_code == 400
@@ -1092,7 +1092,7 @@ async def test_mfa_view_backup_codes(testapp):
     assert (nonce := json["nonce"])
     assert (regenerate_nonce := json["regenerate_nonce"])
 
-    key = generateMfaVerificationKey(nonce, "A" * 16, b64decode(Config("KEY")))
+    key = generateMfaVerificationKey(nonce, "A" * 16, b64decode(Config.KEY))
 
     resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
                              json={'key': key, 'nonce': nonce, 'regenerate': False})
@@ -1274,7 +1274,7 @@ async def test_create_dm_channel(testapp):
 
 
 @pt.mark.asyncio
-async def test_create_delete_dm_channels(testapp):
+async def test_dm_channels(testapp):
     client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     headers_u2 = {"Authorization": TestVars.get("token_u2")}
@@ -1316,6 +1316,26 @@ async def test_create_delete_dm_channels(testapp):
     resp = await client.post(f"/api/v9/channels/{dm_id}/messages", headers=headers,
                              json={"content": "test message"})
     assert resp.status_code == 200
+    json = await resp.get_json()
+
+    resp = await client.post(f"/api/v9/channels/{dm_id}/messages/{json['id']}/ack", headers=headers_u2, json={})
+    assert resp.status_code == 200
+
+    resp = await client.post(f"/api/v9/channels/{dm_id}/messages/{json['id']}/ack", headers=headers_u2, json={
+        "manual": True, "mention_count": 1
+    })
+    assert resp.status_code == 200
+
+    resp = await client.put(f"/api/v9/channels/{dm_id}/pins/{json['id']}", headers=headers_u2)
+    assert resp.status_code == 204
+    resp = await client.get(f"/api/v9/channels/{dm_id}/pins", headers=headers_u2)
+    assert resp.status_code == 200
+    assert len(await resp.get_json()) >= 1
+    resp = await client.delete(f"/api/v9/channels/{dm_id}/pins/{json['id']}", headers=headers_u2)
+    assert resp.status_code == 204
+
+    resp = await client.delete(f"/api/v9/channels/{dm_id}/messages/ack", headers=headers_u2)
+    assert resp.status_code == 204
 
     resp = await client.patch(f"/api/v9/channels/{dm_id}", headers=headers_u2, json={
         "icon": YEP_IMAGE,

@@ -64,10 +64,10 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-api")
 QuartSchema(app)
-core = Core(b64decode(Config("KEY")))
+core = Core(b64decode(Config.KEY))
 cdn = CDN(getStorage(), core)
 gateway = GatewayDispatcher()
-app.gifs = Gifs(Config("TENOR_KEY"))
+app.gifs = Gifs(Config.TENOR_KEY)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
@@ -128,7 +128,7 @@ TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8")
 
 @app.after_request
 async def generate_test(response: Response) -> Response:  # pragma: no cover
-    if request.method == "OPTIONS" or response.status_code == 501 or not Config["GENERATE_TESTS"]:
+    if request.method == "OPTIONS" or response.status_code == 501 or not Config.GENERATE_TESTS:
         return response
     path = request.path.replace("/", "_").replace("-", "").replace("@", "") + "_" + str(int(time() * 1000))[-4:]
     test_code = "@pt.mark.asyncio\n" \

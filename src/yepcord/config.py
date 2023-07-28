@@ -16,46 +16,44 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from __future__ import annotations
+
+import importlib
 from os import environ
 
+from .classes.singleton import Singleton
 
-class _Config:
-    _instance = None
+_module = environ.get("SETTINGS", "src.settings")
+_settings = importlib.import_module(_module)
+_variables = {k: v for k, v in vars(_settings).items() if not k.startswith("__")}
 
-    def_KEY = "8Zw1h9O7nhoT8pb4z/SR4g=="
-    def_DB_HOST = "127.0.0.1"
-    def_DB_USER = "yepcord"
-    def_DB_PASS = ""
-    def_DB_NAME = "yepcord"
-    def_DOMAIN = "127.0.0.1"
-    def_SMTP_HOST = "127.0.0.1"
-    def_SMTP_PORT = 25
-    def_PS_ADDRESS = "127.0.0.1"
+_defaults = {
+    "DB_CONNECT_STRING": "sqlite:///db.sqlite",
+    "MAIL_CONNECT_STRING": "smtp://127.0.0.1:10025?timeout=3",
+    "KEY": "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE=",
+    "PUBLIC_HOST": "127.0.0.1:8080",
+    "GATEWAY_HOST": "127.0.0.1:8001",
+    "CDN_HOST": "127.0.0.1:8003",
+    "STORAGE": {
+        "type": "local",
+        "local": {"path": "files"},
+        "s3": {"key_id": "", "access_key": "", "bucket": "", "endpoint": ""},
+        "ftp": {"host": "", "port": 21, "user": "", "password": ""}
+    },
+    "TENOR_KEY": None,
+    "GENERATE_TESTS": False,
 
-    def __new__(cls, *args, **kwargs):
-        if not isinstance(cls._instance, cls):
-            cls._instance = super(_Config, cls).__new__(cls)
-            cls.def_CLIENT_HOST = f"{cls.def_DOMAIN}:8080"
-            cls.def_API_HOST = f"{cls.def_DOMAIN}:8000"
-            cls.def_GATEWAY_HOST = f"{cls.def_DOMAIN}:8001"
-            cls.def_REMOTEAUTH_HOST = f"{cls.def_DOMAIN}:8002"
-            cls.def_CDN_HOST = f"{cls.def_DOMAIN}:8003"
-            cls.def_MEDIAPROXY_HOST = f"{cls.def_DOMAIN}:8004"
-            cls.def_NETWORKING_HOST = f"{cls.def_DOMAIN}:8005"
-            cls.def_RTCLATENCY_HOST = f"{cls.def_DOMAIN}:8006"
-            cls.def_ACTIVITYAPPLICATION_HOST = f"{cls.def_DOMAIN}:8007"
-        return cls._instance
-
-    def __call__(self, var, default=None):
-        if v := environ.get(var):
-            return v
-        return getattr(self, f"def_{var}", default)
-
-    def __getitem__(self, item):
-        return self(item)
-
-    def get(self, name, default=None):
-        return self(name, default)
+    # Will be removed soon:
+    "PS_ADDRESS": "127.0.0.1"
+}
 
 
-Config = _Config()
+class _Config(Singleton):
+    def update(self, variables: dict) -> _Config:
+        self.__dict__.update(variables)
+        return self
+
+
+Config = (
+    _Config().update(_defaults).update(_variables).update({"SETTINGS_MODULE": environ.get("SETTINGS", "src.settings")})
+)

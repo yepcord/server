@@ -33,7 +33,7 @@ class YEPcord(Quart):
 
 
 app = YEPcord("YEPcord-Gateway")
-core = Core(b64decode(Config("KEY")))
+core = Core(b64decode(Config.KEY))
 gw = Gateway(core)
 
 

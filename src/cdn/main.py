@@ -36,20 +36,20 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-Cdn")
 QuartSchema(app)
-core = Core(b64decode(Config("KEY")))
+core = Core(b64decode(Config.KEY))
 cdn = CDN(getStorage(), core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 
 @app.before_serving
-async def before_serving():
+async def before_serving():  # pragma: no cover
     if not database.is_connected:
         await database.connect()
 
 
 @app.after_serving
-async def after_serving():
+async def after_serving():  # pragma: no cover
     if database.is_connected:
         await database.disconnect()
 

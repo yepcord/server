@@ -263,7 +263,7 @@ async def send_message_ack(data: MessageAck, user: User, channel: Channel, messa
         await getGw().sendMessageAck(user.id, channel.id, message.id, ct, True)
     else:
         ct = len(await getCore().getChannelMessages(channel, 99, channel.last_message_id, message.id))
-        await getCore().setReadState(user, channel, ct, message)
+        await getCore().setReadState(user, channel, ct, message.id)
         await getGw().dispatch(MessageAckEvent({"version_id": 1, "message_id": str(message.id),
                                                 "channel_id": str(channel.id)}), users=[user.id])
     return {"token": None}

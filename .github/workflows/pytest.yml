@@ -45,6 +45,7 @@ jobs:
         run: |
           python -m alembic upgrade head
         env:
+          SETTINGS: src.settings_test
           DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
 
       - name: Run test suite for core
@@ -53,6 +54,7 @@ jobs:
         env:
           DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
+          SETTINGS: src.settings_test
 
       - name: Run test suite for http
         run: |
@@ -61,6 +63,7 @@ jobs:
           DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
           TENOR_KEY: ${{ secrets.TENOR_KEY }}
+          SETTINGS: src.settings_test
 
       - name: Run test suite for cdn and file storage
         run: |
@@ -69,7 +72,7 @@ jobs:
           DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
           STORAGE_TYPE: local
-          STORAGE_PATH: tests/files
+          SETTINGS: src.settings_test
 
       - name: Run s3 server
         run: |
@@ -84,10 +87,7 @@ jobs:
           DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
           STORAGE_TYPE: s3
-          S3_ENDPOINT: http://127.0.0.1:10001
-          S3_KEYID: 1
-          S3_ACCESSKEY: 1
-          S3_BUCKET: yepcord-test
+          SETTINGS: src.settings_test
 
       - name: Run ftp server
         run: |
@@ -105,10 +105,7 @@ jobs:
           DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
           STORAGE_TYPE: ftp
-          FTP_HOST: 127.0.0.1
-          FTP_PORT: 9021
-          FTP_USER: root
-          FTP_PASSWORD: 123456
+          SETTINGS: src.settings_test
 
       - name: Print coverage report
         run: |
