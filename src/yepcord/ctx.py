@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+# noinspection PyPackageRequirements
 from contextvars import ContextVar, copy_context
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from .core import Core
     from .storage import _Storage
     from .gateway_dispatcher import GatewayDispatcher
+
 
 class _Ctx:
     _CTX = ContextVar("ctx")
@@ -55,19 +57,26 @@ class _Ctx:
     def __setitem__(self, key, value):
         self.set(key, value)
 
+
 Ctx = _Ctx()
 
+
 def _getCore(): pass
+
 
 def getCore() -> Core:
     return Ctx.get("CORE") or _getCore()
 
+
 def _getCDNStorage(): pass
+
 
 def getCDNStorage() -> _Storage:
     return Ctx.get("STORAGE") or _getCDNStorage()
 
+
 def _getGw(): pass
+
 
 def getGw() -> GatewayDispatcher:
     return Ctx.get("GW") or _getGw()

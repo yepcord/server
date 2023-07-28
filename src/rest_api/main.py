@@ -24,7 +24,6 @@ from quart import Quart, request, Response
 from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
-from src.yepcord.gateway_dispatcher import GatewayDispatcher
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
@@ -40,8 +39,10 @@ from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
 from ..yepcord.ctx import Ctx
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
+from ..yepcord.gateway_dispatcher import GatewayDispatcher
+from ..yepcord.models import database
 from ..yepcord.storage import getStorage
-from ..yepcord.utils import b64decode, b64encode, c_json
+from ..yepcord.utils import b64decode, b64encode
 
 
 class YEPcord(Quart):
@@ -49,24 +50,16 @@ class YEPcord(Quart):
 
     async def dispatch_request(self, request_context=None):
         request_ = (request_context or request_ctx).request
-        if request_.routing_exception is not None: # pragma: no cover
+        if request_.routing_exception is not None:  # pragma: no cover
             self.raise_routing_exception(request_)
 
-        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options: # pragma: no cover
+        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options:  # pragma: no cover
             return await self.make_default_options_response()
 
         handler = self.view_functions[request_.url_rule.endpoint]
         Ctx.set("CORE", core)
         Ctx.set("STORAGE", cdn.storage)
-        if getattr(handler, "__db", None):
-            async with core.db() as db:
-                db.dontCloseOnAExit()
-                Ctx["DB"] = db
-                result = await self.ensure_async(handler)(**request_.view_args)
-                await db.close()
-                return result
-        else:
-            return await self.ensure_async(handler)(**request_.view_args)
+        return await self.ensure_async(handler)(**request_.view_args)
 
 
 app = YEPcord("YEPcord-api")
@@ -78,22 +71,24 @@ app.gifs = Gifs(Config("TENOR_KEY"))
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
+
 @app.before_serving
 async def before_serving():
-    await core.initDB(
-        host=Config("DB_HOST"),
-        port=3306,
-        user=Config("DB_USER"),
-        password=Config("DB_PASS"),
-        db=Config("DB_NAME"),
-        autocommit=True
-    )
+    if not database.is_connected:
+        await database.connect()
     await gateway.init()
 
 
-if "pytest" in sys.modules: # pragma: no cover
+@app.after_serving
+async def after_serving():
+    if database.is_connected:
+        await database.disconnect()
+
+
+if "pytest" in sys.modules:  # pragma: no cover
     # Raise original exceptions instead of InternalServerError when testing
     from werkzeug.exceptions import InternalServerError
+
 
     @app.errorhandler(500)
     async def handle_500_for_pytest(error: InternalServerError):
@@ -103,19 +98,19 @@ if "pytest" in sys.modules: # pragma: no cover
 @app.errorhandler(YDataError)
 async def ydataerror_handler(err: YDataError):
     if isinstance(err, EmbedErr):
-        return c_json(err.error, 400)
+        return err.error, 400
     elif isinstance(err, InvalidDataErr):
-        return c_json(err.error, err.code)
+        return err.error, err.code
     elif isinstance(err, MfaRequiredErr):
         ticket = b64encode(jdumps([err.uid, "login"]))
         ticket += f".{err.sid}.{err.sig}"
-        return c_json({"token": None, "sms": False, "mfa": True, "ticket": ticket})
+        return {"token": None, "sms": False, "mfa": True, "ticket": ticket}
 
 
 @app.errorhandler(RequestSchemaValidationError)
 async def handle_validation_error(error: RequestSchemaValidationError):
     pydantic_error = error.validation_error
-    return c_json(Errors.from_pydantic(pydantic_error), 400)
+    return Errors.from_pydantic(pydantic_error), 400
 
 
 @app.after_request
@@ -129,11 +124,13 @@ async def set_cors_headers(response: Response) -> Response:
 
 
 TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8")
+
+
 @app.after_request
-async def generate_test(response: Response) -> Response: # pragma: no cover
+async def generate_test(response: Response) -> Response:  # pragma: no cover
     if request.method == "OPTIONS" or response.status_code == 501 or not Config["GENERATE_TESTS"]:
         return response
-    path = request.path.replace("/", "_").replace("-", "").replace("@", "")+"_"+str(int(time()*1000))[-4:]
+    path = request.path.replace("/", "_").replace("-", "").replace("@", "") + "_" + str(int(time() * 1000))[-4:]
     test_code = "@pt.mark.asyncio\n" \
                 f"async def test_{path}(testapp):\n" \
                 "    client: TestClientType = (await testapp).test_client()\n" \
@@ -146,10 +143,10 @@ async def generate_test(response: Response) -> Response: # pragma: no cover
     if request.method in ("POST", "PUT", "PATCH", "DELETE") and await request.json:
         json = f", json={await request.json}"
     tests.append(f"resp = await client.{request.method.lower()}(\"{request.path}\", headers=headers{json})")
-    tests.append(f"assert resp.status_code == {response.status_code}") # Check status code
+    tests.append(f"assert resp.status_code == {response.status_code}")  # Check status code
     if response.status_code == 200 and response.headers["Content-Type"] == "application/json" and await response.json:
-        tests.append(f"assert (await resp.get_json() == {await response.json})") # Check response json
-    tests = [f"    {test}" for test in tests] # Add indentations
+        tests.append(f"assert (await resp.get_json() == {await response.json})")  # Check response json
+    tests = [f"    {test}" for test in tests]  # Add indentations
     tests = "\n".join(tests)
     test_code = test_code.replace("%CODE%", tests)
     TESTS_FILE.write(test_code)
@@ -179,7 +176,7 @@ async def other_api_endpoints(path):
     print(f"  Path: /api/v9/{path}")
     print(f"  Method: {request.method}")
     print("  Headers:")
-    for k,v in request.headers.items():
+    for k, v in request.headers.items():
         print(f"    {k}: {v}")
     if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
         print(f"  Data: {await request.get_json()}")
@@ -187,7 +184,8 @@ async def other_api_endpoints(path):
     return "Not Implemented!", 501
 
 
-if __name__ == "__main__": # pragma: no cover
+if __name__ == "__main__":  # pragma: no cover
     # Deprecated
     from uvicorn import run as urun
+
     urun('main:app', host="0.0.0.0", port=8000, reload=True, use_colors=False)

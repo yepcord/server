@@ -16,6 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+
 class E:
     @classmethod
     def values(cls):
@@ -27,6 +28,13 @@ class RelationshipType(E):
     PENDING = 0
     FRIEND = 1
     BLOCK = 2
+
+
+class RelTypeDiscord(E):
+    FRIEND = 1
+    BLOCK = 2
+    REQUEST_RECV = 3
+    REQUEST_SENT = 4
 
 
 class GatewayOp(E):

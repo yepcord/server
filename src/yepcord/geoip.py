@@ -23,11 +23,13 @@ from pickle import load as pload
 with open("other/ip_to_lang.pkl", "rb") as f:
     IP_DB = pload(f)
 
+
 def _ip2int(addr):
     try:
         return unpack("!I", inet_aton(addr))[0]
     except OSError:
         return -1
+
 
 def _search(ip, low=0, high=len(IP_DB)-1, mid=0):
     if high >= low:
@@ -39,6 +41,7 @@ def _search(ip, low=0, high=len(IP_DB)-1, mid=0):
         else:
             return _search(ip, mid + 1, high, mid)
     return mid-1
+
 
 def getLanguageCode(ip, default: str="en-US"):
     if (ip := _ip2int(ip)) == -1:

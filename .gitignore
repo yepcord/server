@@ -1,12 +1,13 @@
 __pycache__
 env*
+!migrations/env.py
 /files
 /.idea
 endpoints.*
 .local
 /rp
 *.db
-.coverage
+*.coverage
 /ssl/*.pem
 /tests/generated/*.py
 coverage.xml

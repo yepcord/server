@@ -16,20 +16,20 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Blueprint, request
 from json import loads as jloads
 
+from quart import Blueprint, request
 from quart_schema import validate_request
 
 from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmail
 from ..utils import usingDB, getSession, getUser, multipleDecorators
 from ...gateway.events import UserUpdateEvent
-from ...yepcord.classes.user import Session, User
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.geoip import getLanguageCode
+from ...yepcord.models import Session, User
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import c_json, LOCALES, b64decode
+from ...yepcord.utils import LOCALES, b64decode
 
 # Base path is /api/vX/auth
 auth = Blueprint('auth', __name__)
@@ -39,17 +39,22 @@ auth = Blueprint('auth', __name__)
 @multipleDecorators(validate_request(Register), usingDB)
 async def register(data: Register):
     loc = getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
-    sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth, loc)
-    return c_json({"token": sess.token})
+    sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth,
+                                    loc)
+    return {"token": sess.token}
 
 
 @auth.post("/login")
 @multipleDecorators(validate_request(Login), usingDB)
 async def login(data: Login):
     sess = await getCore().login(data.login, data.password)
-    user = await getCore().getUser(sess.uid)
+    user = sess.user
     sett = await user.settings
-    return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
+    return {
+        "token": sess.token,
+        "user_settings": {"locale": sett.locale, "theme": sett.theme},
+        "user_id": str(user.id)
+    }
 
 
 @auth.post("/mfa/totp")
@@ -62,19 +67,23 @@ async def login_with_mfa(data: MfaLogin):
     if not (mfa := await getCore().getMfaFromTicket(ticket)):
         raise InvalidDataErr(400, Errors.make(60006))
     code = code.replace("-", "").replace(" ", "")
+    user = await getCore().getUser(mfa.uid)
     if mfa.getCode() != code:
-        if not (len(code) == 8 and await getCore().useMfaCode(mfa.uid, code)):
+        if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
             raise InvalidDataErr(400, Errors.make(60008))
-    sess = await getCore().createSession(mfa.uid)
-    user = await getCore().getUser(sess.uid)
+    sess = await getCore().createSession(user.id)
     sett = await user.settings
-    return c_json({"token": sess.token, "user_settings": {"locale": sett.locale, "theme": sett.theme}, "user_id": str(user.id)})
+    return {
+        "token": sess.token,
+        "user_settings": {"locale": sett.locale, "theme": sett.theme},
+        "user_id": str(user.id)
+    }
 
 
 @auth.post("/logout")
 @multipleDecorators(usingDB, getSession)
 async def logout(session: Session):
-    await getCore().logoutUser(session)
+    await session.delete()
     return "", 204
 
 
@@ -87,7 +96,7 @@ async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User)
         raise InvalidDataErr(400, Errors.make(50018))
     nonce = await getCore().generateUserMfaNonce(user)
     await getCore().sendMfaChallengeEmail(user, nonce[0])
-    return c_json({"nonce": nonce[0], "regenerate_nonce": nonce[1]})
+    return {"nonce": nonce[0], "regenerate_nonce": nonce[1]}
 
 
 @auth.post("/verify/resend")
@@ -103,6 +112,7 @@ async def resend_verification_email(user: User):
 async def verify_email(data: VerifyEmail):
     if not data.token:
         raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
+    # noinspection PyPep8
     try:
         email = jloads(b64decode(data.token.split(".")[0]).decode("utf8"))["email"]
     except:
@@ -110,4 +120,4 @@ async def verify_email(data: VerifyEmail):
     user = await getCore().getUserByEmail(email)
     await getCore().verifyEmail(user, data.token)
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
-    return c_json({"token": (await getCore().createSession(user.id)).token, "user_id": str(user.id)})
+    return {"token": (await getCore().createSession(user.id)).token, "user_id": str(user.id)}

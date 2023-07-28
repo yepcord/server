@@ -21,6 +21,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade wheel
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-ftp.txt
+          python -m pip install -r requirements-s3.txt
+          python -m pip install pytest pytest-asyncio pytest-cov
+
       - uses: getong/mariadb-action@v1.1
         with:
           mariadb version: '10.6.4'
@@ -35,34 +43,22 @@ jobs:
 
       - name: Setup database
         run: |
-          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade wheel
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-ftp.txt
-          python -m pip install -r requirements-s3.txt
-          python -m pip install pytest pytest-asyncio pytest-cov
+          python -m alembic upgrade head
+        env:
+          DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
 
       - name: Run test suite for core
         run: |
           pytest -x --cov-report=xml --cov-append --cov=src/yepcord --disable-warnings tests/test_core.py
         env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
+          DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
 
       - name: Run test suite for http
         run: |
           pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --disable-warnings tests/test_http.py
         env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
+          DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
           TENOR_KEY: ${{ secrets.TENOR_KEY }}
 
@@ -70,10 +66,7 @@ jobs:
         run: |
           pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
+          DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
           STORAGE_TYPE: local
           STORAGE_PATH: tests/files
@@ -88,10 +81,7 @@ jobs:
         run: |
           pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
+          DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
           STORAGE_TYPE: s3
           S3_ENDPOINT: http://127.0.0.1:10001
@@ -112,10 +102,7 @@ jobs:
         run: |
           pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
         env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
+          DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}
           STORAGE_TYPE: ftp
           FTP_HOST: 127.0.0.1

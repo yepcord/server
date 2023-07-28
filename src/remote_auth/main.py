@@ -21,15 +21,19 @@ from .gateway import Gateway
 from json import loads as jloads
 from asyncio import CancelledError
 
+
 class YEPcord(Quart):
-    pass # Maybe it will be needed in the future
+    pass  # Maybe it will be needed in the future
+
 
 app = YEPcord("YEPcord-RAG")
 gw = Gateway()
 
+
 @app.before_serving
 async def before_serving():
     await gw.init()
+
 
 @app.after_request
 async def set_cors_headers(response):
@@ -40,8 +44,10 @@ async def set_cors_headers(response):
     response.headers['Content-Security-Policy'] = "connect-src *;"
     return response
 
+
 @app.websocket("/")
 async def ws_gateway():
+    # noinspection PyProtectedMember,PyUnresolvedReferences
     ws = websocket._get_current_object()
     setattr(ws, "connected", True)
     await gw.sendHello(ws)
@@ -51,7 +57,8 @@ async def ws_gateway():
             await gw.process(ws, jloads(data))
         except CancelledError:
             setattr(ws, "connected", False)
-            pass # TODO: Handle disconnect
+            pass  # TODO: Handle disconnect
+
 
 if __name__ == "__main__":
     from uvicorn import run as urun

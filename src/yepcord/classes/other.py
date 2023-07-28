@@ -18,7 +18,6 @@
 
 import re
 from base64 import b32decode
-from email.message import EmailMessage
 from hashlib import sha512
 from hmac import new
 from json import loads, dumps
@@ -27,7 +26,8 @@ from time import time
 from typing import Union, Optional
 from zlib import compressobj, Z_FULL_FLUSH
 
-from aiosmtplib import send as smtp_send, SMTPConnectError
+from mailers import Mailer
+from mailers.exceptions import DeliveryError
 
 from ..config import Config
 from ..utils import b64decode, b64encode
@@ -48,15 +48,11 @@ class EmailMsg:
         self.text = text
 
     async def send(self):
-        message = EmailMessage()
-        message["From"] = "no-reply@yepcord.ml"
-        message["To"] = self.to
-        message["Subject"] = self.subject
-        message.set_content(self.text)
+        mailer = Mailer(Config("MAIL_CONNECT_STRING"))
         try:
-            await smtp_send(message, hostname=Config('SMTP_HOST'), port=int(Config('SMTP_PORT')))
-        except SMTPConnectError:
-            pass # TODO: write warning to log
+            await mailer.send_message(self.to, self.subject, self.text, from_address="no-reply@yepcord.ml")
+        except DeliveryError:
+            pass
 
 
 class Singleton:

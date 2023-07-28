@@ -30,6 +30,7 @@ from ..yepcord.config import Config
 from ..yepcord.utils import b64encode, b64decode
 from ..yepcord.pubsub_client import Client
 
+
 class GatewayClient:
     def __init__(self, ws, pubkey, fp, nonce):
         self.ws = ws
@@ -59,6 +60,7 @@ class GatewayClient:
                 await self.ws.close(4004)
                 break
             await asleep(5)
+
 
 class Gateway:
     def __init__(self):

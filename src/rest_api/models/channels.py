@@ -25,8 +25,7 @@ from dateutil.parser import parse as dparse
 from pydantic import BaseModel, validator, Field
 
 from ..utils import makeEmbedError
-from ...yepcord.classes.channel import Channel
-from ...yepcord.classes.message import Message
+from ...yepcord.models import Channel, Message
 from ...yepcord.enums import ChannelType
 from ...yepcord.errors import EmbedErr, InvalidDataErr, Errors
 from ...yepcord.utils import validImage, getImage
@@ -34,9 +33,9 @@ from ...yepcord.utils import validImage, getImage
 
 # noinspection PyMethodParameters
 class ChannelUpdate(BaseModel):
-    icon: Optional[str] = "" # Only for GROUP_DM channel
-    owner_id: Optional[int] = Field(default=None, alias="owner") # Only for GROUP_DM channel
-    name: Optional[str] = None # For any channel (except DM)
+    icon: Optional[str] = ""  # Only for GROUP_DM channel
+    owner_id: Optional[int] = Field(default=None, alias="owner")  # Only for GROUP_DM channel
+    name: Optional[str] = None  # For any channel (except DM)
     # For guild channels:
     type: Optional[int] = None
     position: Optional[int] = None
@@ -109,7 +108,7 @@ class ChannelUpdate(BaseModel):
         ALLOWED_DURATIONS = (60, 1440, 4320, 10080)
         if value is not None:
             if value not in ALLOWED_DURATIONS:
-                value = min(ALLOWED_DURATIONS, key=lambda x: abs(x - value)) # Take closest
+                value = min(ALLOWED_DURATIONS, key=lambda x: abs(x - value))  # Take closest
         return value
 
     def to_json(self, channel_type: int) -> dict:
@@ -309,6 +308,7 @@ class EmbedModel(BaseModel):
     def validate_fields(cls, value: List[EmbedField]):
         if len(value) > 25:
             value = value[:25]
+        return value
 
     def dict(self, *args, **kwargs) -> dict:
         kwargs["exclude_defaults"] = True
@@ -340,22 +340,25 @@ class MessageCreate(BaseModel):
         if value is not None:
             value = value.strip()
             if len(value) > 2000:
-                raise InvalidDataErr(400, Errors.make(50035, {"content": {"code": "BASE_TYPE_BAD_LENGTH", "message":
-                    "Must be between 1 and 2000 in length."}}))
+                raise InvalidDataErr(400, Errors.make(50035, {"content": {
+                    "code": "BASE_TYPE_BAD_LENGTH", "message": "Must be between 1 and 2000 in length."
+                }}))
         return value
 
     @validator("embeds")
     def validate_embeds(cls, value: List[EmbedModel]):
         if len(value) > 10:
-            raise InvalidDataErr(400, Errors.make(50035, {"embeds": {"code": "BASE_TYPE_BAD_LENGTH", "message":
-                "Must be between 1 and 10 in length."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"embeds": {
+                "code": "BASE_TYPE_BAD_LENGTH", "message": "Must be between 1 and 10 in length."
+            }}))
         return value
 
     @validator("sticker_ids")
     def validate_sticker_ids(cls, value: List[int]):
         if len(value) > 3:
-            raise InvalidDataErr(400, Errors.make(50035, {"sticker_ids": {"code": "BASE_TYPE_BAD_LENGTH", "message":
-                "Must be between 1 and 3 in length."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"sticker_ids": {
+                "code": "BASE_TYPE_BAD_LENGTH", "message": "Must be between 1 and 3 in length."
+            }}))
         return value
 
     def validate_reply(self, channel: Channel, reply_to_message: Message):
@@ -369,12 +372,12 @@ class MessageCreate(BaseModel):
             if not self.message_reference.channel_id:
                 self.message_reference.channel_id = channel.id
             if not self.message_reference.guild_id:
-                self.message_reference.guild_id = channel.guild_id
+                self.message_reference.guild_id = channel.guild.id
             if self.message_reference.channel_id != channel.id:
                 raise InvalidDataErr(400, Errors.make(50035, {"message_reference": {
                     "_errors": [{"code": "REPLIES_CANNOT_REFERENCE_OTHER_CHANNEL",
                                  "message": "Cannot reply to a message in a different channel"}]}}))
-            if self.message_reference.guild_id != channel.guild_id:
+            if self.message_reference.guild_id != channel.guild.id:
                 raise InvalidDataErr(400, Errors.make(50035, {"message_reference": {
                     "_errors": [{"code": "REPLIES_UNKNOWN_MESSAGE",
                                  "message": "Unknown message"}]}}))
@@ -398,8 +401,9 @@ class MessageUpdate(BaseModel):
     def validate_content(cls, value: Optional[str]):
         if value is not None:
             if len(value) > 2000:
-                raise InvalidDataErr(400, Errors.make(50035, {"content": {"code": "BASE_TYPE_BAD_LENGTH", "message":
-                    "Must be between 1 and 2000 in length."}}))
+                raise InvalidDataErr(400, Errors.make(50035, {"content": {
+                    "code": "BASE_TYPE_BAD_LENGTH", "message": "Must be between 1 and 2000 in length."
+                }}))
         return value
 
     def to_json(self) -> dict:
@@ -426,8 +430,6 @@ class WebhookCreate(BaseModel):
 
 class SearchQuery(BaseModel):
     author_id: Optional[int] = None
-    sort_by: Optional[str] = None
-    sort_order: Optional[str] = None
     mentions: Optional[int] = None
     has: Optional[str] = None
     min_id: Optional[int] = None

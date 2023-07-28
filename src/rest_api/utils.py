@@ -25,8 +25,7 @@ from async_timeout import timeout
 from magic import from_buffer
 from quart import request, current_app
 
-from ..yepcord.classes.message import Attachment
-from ..yepcord.classes.user import Session, User
+from ..yepcord.models import Session, User, Channel, Attachment
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
 from ..yepcord.errors import Errors, InvalidDataErr
 from ..yepcord.snowflake import Snowflake
@@ -40,9 +39,11 @@ def multipleDecorators(*decorators):
         return f
     return _multipleDecorators
 
+
 def usingDB(f):
     setattr(f, "__db", True)
     return f
+
 
 def allowWithoutUser(f):
     @wraps(f)
@@ -52,46 +53,43 @@ def allowWithoutUser(f):
 
     return wrapped
 
+
 def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         try:
-            if not (session := Session.from_token(request.headers.get("Authorization", ""))) \
-                    or not await getCore().validSession(session):
+            if not (session := await Session.from_token(request.headers.get("Authorization", ""))):
                 raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-            if not (user := await getCore().getUser(session.uid)):
-                raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+            user = session.user
         except InvalidDataErr as e:
             if e.code != 401:
                 raise
             if not Ctx.get("allow_without_user"):
                 raise
-            user = User(0)
+            user = User(id=0, email="", password="")
         Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
     return wrapped
 
+
 def getSession(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (session := Session.from_token(request.headers.get("Authorization", ""))):
+        if not (session := await Session.from_token(request.headers.get("Authorization", ""))):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-        if not await getCore().validSession(session):
-            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-        Ctx["user_id"] = session.id
+        Ctx["user_id"] = session.user.id
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
 
+
 def getChannel(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (channel := kwargs.get("channel")):
-            raise InvalidDataErr(404, Errors.make(10003))
         if not (user := kwargs.get("user")):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-        if not (channel := await getCore().getChannel(channel)):
+        if not (channel := kwargs.get("channel")) or not (channel := await getCore().getChannel(channel)):
             raise InvalidDataErr(404, Errors.make(10003))
         if not await getCore().getUserByChannel(channel, user.id):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
@@ -99,16 +97,16 @@ def getChannel(f):
         return await f(*args, **kwargs)
     return wrapped
 
-async def _getMessage(user, channel, message_id):
+
+async def _getMessage(user: User, channel: Channel, message_id: int):
     if not channel:
         raise InvalidDataErr(404, Errors.make(10003))
     if not user:
         raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-    if not message_id:
-        raise InvalidDataErr(404, Errors.make(10008))
-    if not (message := await getCore().getMessage(channel, message_id)):
+    if not message_id or not (message := await getCore().getMessage(channel, message_id)):
         raise InvalidDataErr(404, Errors.make(10008))
     return message
+
 
 def getMessage(f):
     @wraps(f)
@@ -116,6 +114,7 @@ def getMessage(f):
         kwargs["message"] = await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))
         return await f(*args, **kwargs)
     return wrapped
+
 
 def getInvite(f):
     @wraps(f)
@@ -134,15 +133,14 @@ def getInvite(f):
         return await f(*args, **kwargs)
     return wrapped
 
+
 def getGuild(with_member):
     def _getGuild(f):
         @wraps(f)
         async def wrapped(*args, **kwargs):
-            if not (guild := int(kwargs.get("guild"))):
-                raise InvalidDataErr(404, Errors.make(10004))
             if not (user := kwargs.get("user")):
                 raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-            if not (guild := await getCore().getGuild(guild)):
+            if not (guild := int(kwargs.get("guild"))) or not (guild := await getCore().getGuild(guild)):
                 raise InvalidDataErr(404, Errors.make(10004))
             if not (member := await getCore().getGuildMember(guild, user.id)):
                 raise InvalidDataErr(403, Errors.make(50001))
@@ -153,18 +151,20 @@ def getGuild(with_member):
         return wrapped
     return _getGuild
 
+
 def getRole(f):
+    # noinspection PyUnboundLocalVariable
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (role := kwargs.get("role")) or not (guild := kwargs.get("guild")):
-            raise InvalidDataErr(404, Errors.make(10011))
-        if not (role := await getCore().getRole(role)):
-            raise InvalidDataErr(404, Errors.make(10011))
-        if role.guild_id != guild.id:
+        if not (role := kwargs.get("role")) or \
+                not (guild := kwargs.get("guild")) or \
+                not (role := await getCore().getRole(role)) or \
+                role.guild != guild:
             raise InvalidDataErr(404, Errors.make(10011))
         kwargs["role"] = role
         return await f(*args, **kwargs)
     return wrapped
+
 
 def getGuildTemplate(f):
     @wraps(f)
@@ -196,7 +196,8 @@ getGuildWoM = getGuildWithoutMember
 # Idk
 
 
-async def processMessageData(message_id: int, data: Optional[dict], channel_id: int) -> dict:
+async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[dict, list[Attachment]]:
+    attachments = []
     if data is None:  # Multipart request
         if request.content_length > 1024 * 1024 * 100:
             raise InvalidDataErr(400, Errors.make(50006))  # TODO: replace with correct error
@@ -205,8 +206,9 @@ async def processMessageData(message_id: int, data: Optional[dict], channel_id: 
             data = await request.form
             data = jloads(data["payload_json"])
             if len(files) > 10:
-                raise InvalidDataErr(400, Errors.make(50013, {
-                    "files": {"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."}}))
+                raise InvalidDataErr(400, Errors.make(50013, {"files": {
+                    "code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."
+                }}))
             for idx, file in enumerate(files):
                 att = {"filename": None}
                 if idx + 1 <= len(data["attachments"]):
@@ -214,19 +216,24 @@ async def processMessageData(message_id: int, data: Optional[dict], channel_id: 
                 name = att.get("filename") or file.filename or "unknown"
                 get_content = getattr(file, "getvalue", file.read)
                 content = get_content()
-                att = Attachment(Snowflake.makeId(), channel_id, message_id, name, len(content), {})
-                cot = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
-                att.set(content_type=cot)
-                if cot.startswith("image/"):
+                content_type = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
+                metadata = {}
+                if content_type.startswith("image/"):
                     img = Image.open(file)
-                    att.set(metadata={"height": img.height, "width": img.width})
+                    metadata = {"height": img.height, "width": img.width}
                     img.close()
+                att = await Attachment.objects.create(
+                    id=Snowflake.makeId(), channel=channel, message=None, filename=name, size=len(content),
+                    content_type=content_type, metadata=metadata
+                )
                 await getCDNStorage().uploadAttachment(content, att)
-                att.uploaded = True
-                await getCore().putAttachment(att)
-    if not data.get("content") and not data.get("embeds") and not data.get("attachments") and not data.get("sticker_ids"):
+                attachments.append(att)
+    if not data.get("content") and \
+            not data.get("embeds") and \
+            not data.get("attachments") and \
+            not data.get("sticker_ids"):
         raise InvalidDataErr(400, Errors.make(50006))
-    return data
+    return data, attachments
 
 
 def makeEmbedError(code, path=None, replaces=None):

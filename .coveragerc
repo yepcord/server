@@ -1,2 +1,3 @@
 [run]
 omit = src/yepcord/proto.py
+data_file = coverage.coverage
