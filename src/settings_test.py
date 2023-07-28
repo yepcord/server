@@ -1,7 +1,7 @@
 from os import environ as __environ
 
 DB_CONNECT_STRING = __environ.get("DB_CONNECT_STRING")
-KEY = __environ["KEY"]
+KEY = __environ.get("KEY")
 
 STORAGE = {
     "type": __environ.get("STORAGE_TYPE", "local"),
@@ -24,4 +24,4 @@ STORAGE = {
     }
 }
 
-TENOR_KEY = __environ["TENOR_KEY"]
+TENOR_KEY = __environ.get("KEY")
