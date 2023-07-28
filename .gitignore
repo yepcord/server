@@ -7,7 +7,7 @@ endpoints.*
 .local
 /rp
 *.db
-.coverage
+*.coverage
 /ssl/*.pem
 /tests/generated/*.py
 coverage.xml

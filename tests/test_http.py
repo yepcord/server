@@ -164,41 +164,41 @@ async def test_settings(testapp):
     headers = {"Authorization": TestVars.get("token")}
     client: TestClientType = (await testapp).test_client()
     assert (await client.get("/api/v9/users/@me/connections", headers=headers)).status_code == 200
-    assert (await client.get("/api/v9/users/@me/settings", headers=headers)).status_code == 200
-    assert (await client.get("/api/v9/users/@me/consent", headers=headers)).status_code == 200
-    assert (await client.post("/api/v9/users/@me/consent", headers=headers,
-                              json={"grant": ["personalization"], "revoke": ["usage_statistics"]})).status_code == 200
-    assert (await client.patch("/api/v9/users/@me/settings", headers=headers,
-                               json={"afk_timeout": 300})).status_code == 200
+    assert (r := await client.get("/api/v9/users/@me/settings", headers=headers)).status_code == 200
+    assert (r := await client.get("/api/v9/users/@me/consent", headers=headers)).status_code == 200
+    assert (r := await client.post("/api/v9/users/@me/consent", headers=headers,
+                                   json={"grant": ["personalization"], "revoke": ["usage_statistics"]})).status_code == 200
+    assert (r := await client.patch("/api/v9/users/@me/settings", headers=headers,
+                                    json={"afk_timeout": 300})).status_code == 200
 
 
 @pt.mark.asyncio
 async def test_settings_proto(testapp):
     headers = {"Authorization": TestVars.get("token")}
     client: TestClientType = (await testapp).test_client()
-    assert (await client.get("/api/v9/users/@me/settings-proto/1", headers=headers)).status_code == 200
-    assert (await client.get("/api/v9/users/@me/settings-proto/2", headers=headers)).status_code == 200
-    assert (await client.get("/api/v9/users/@me/settings-proto/3", headers=headers)).status_code == 200
-    assert (await client.get("/api/v9/users/@me/settings-proto/4", headers=headers)).status_code == 400
+    assert (r := await client.get("/api/v9/users/@me/settings-proto/1", headers=headers)).status_code == 200
+    assert (r := await client.get("/api/v9/users/@me/settings-proto/2", headers=headers)).status_code == 200
+    assert (r := await client.get("/api/v9/users/@me/settings-proto/3", headers=headers)).status_code == 200
+    assert (r := await client.get("/api/v9/users/@me/settings-proto/4", headers=headers)).status_code == 400
 
     proto = PreloadedUserSettings(text_and_images=TextAndImagesSettings(render_spoilers=StringValue(value="ALWAYS")))
     proto = proto.SerializeToString()
     proto = b64encode(proto).decode("utf8")
-    assert (await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
+    assert (r := await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
                                json={"settings": proto})).status_code == 200
-    assert (await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
+    assert (r := await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
                                json={"settings": ""})).status_code == 400
-    assert (await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
+    assert (r := await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
                                json={"settings": "1"})).status_code == 400
 
     proto = FrecencyUserSettings(favorite_stickers=FavoriteStickers(sticker_ids=[1, 2, 3]))
     proto = proto.SerializeToString()
     proto = b64encode(proto).decode("utf8")
-    assert (await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
+    assert (r := await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
                                json={"settings": proto})).status_code == 200
-    assert (await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
+    assert (r := await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
                                json={"settings": ""})).status_code == 400
-    assert (await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
+    assert (r := await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
                                json={"settings": "1"})).status_code == 400
 
 
@@ -282,8 +282,7 @@ async def test_create_guild(testapp):
 async def test_get_messages_in_empty_channel(testapp):
     client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
-    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"].lower() == "general"][0][
-        "id"]
+    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"].lower() == "general"][0]["id"]
     resp = await client.get(f"/api/v9/channels/{channel_id}/messages", headers=headers)
     assert resp.status_code == 200
     assert await resp.get_json() == []
@@ -1103,7 +1102,7 @@ async def test_mfa_view_backup_codes(testapp):
 
     resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
                              json={'key': key, 'nonce': regenerate_nonce, 'regenerate': True})
-    assert resp.status_code == 200, await resp.data
+    assert resp.status_code == 200
     backup_codes_new = (await resp.get_json())["backup_codes"]
     assert backup_codes_new != backup_codes
     check_codes(backup_codes_new, user_id)
@@ -1278,6 +1277,8 @@ async def test_create_dm_channel(testapp):
 async def test_create_delete_dm_channels(testapp):
     client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
+    headers_u2 = {"Authorization": TestVars.get("token_u2")}
+    data2 = TestVars.get("data_u2")
     resp = await client.post(f"/api/v9/users/@me/channels", headers=headers, json={"recipients": []})
     assert resp.status_code == 200
     json = await resp.get_json()
@@ -1294,13 +1295,58 @@ async def test_create_delete_dm_channels(testapp):
     resp = await client.delete(f"/api/v9/channels/{TestVars.get('dm_channel_id')}", headers=headers)
     assert resp.status_code == 200
 
+    resp = await client.post(f"/api/v9/users/@me/channels", headers=headers, json={"recipients": [Snowflake.makeId()]})
+    assert resp.status_code == 400
+
     resp = await client.post(f"/api/v9/users/@me/channels", headers=headers, json={"recipients": []})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["recipients"] == []
     assert json["type"] == ChannelType.GROUP_DM
-    TestVars.get("dmgroup_channel_id", json["id"])
+    dm_id = json["id"]
+    last_owner_id = json["owner_id"]
+    TestVars.set("dmgroup_channel_id", json["id"])
 
-    resp = await client.post(f"/api/v9/channels/{json['id']}/messages", headers=headers,
+    resp = await client.put(f"/api/v9/channels/{dm_id}/recipients/{Snowflake.makeId()}", headers=headers)
+    assert resp.status_code == 404
+
+    resp = await client.put(f"/api/v9/channels/{dm_id}/recipients/{data2['id']}", headers=headers)
+    assert resp.status_code == 204
+
+    resp = await client.post(f"/api/v9/channels/{dm_id}/messages", headers=headers,
                              json={"content": "test message"})
     assert resp.status_code == 200
+
+    resp = await client.patch(f"/api/v9/channels/{dm_id}", headers=headers_u2, json={
+        "icon": YEP_IMAGE,
+        "name": "test_dm_channel"
+    })
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["name"] == "test_dm_channel"
+    assert json["icon"] is not None
+
+    resp = await client.patch(f"/api/v9/channels/{dm_id}", headers=headers_u2, json={
+        "owner_id": Snowflake.makeId(),
+    })
+    assert resp.status_code == 403
+
+    resp = await client.patch(f"/api/v9/channels/{dm_id}", headers=headers, json={
+        "owner_id": Snowflake.makeId(),
+    })
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["owner_id"] == str(last_owner_id)
+
+    resp = await client.patch(f"/api/v9/channels/{dm_id}", headers=headers, json={
+        "owner_id": data2['id'],
+    })
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["owner_id"] == str(data2["id"])
+
+    resp = await client.delete(f"/api/v9/channels/{dm_id}", headers=headers_u2)
+    assert resp.status_code == 204
+
+    resp = await client.delete(f"/api/v9/channels/{dm_id}", headers=headers)
+    assert resp.status_code == 204

@@ -239,7 +239,7 @@ class UserSettings(ormar.Model):
     timezone_offset: int = ormar.Integer(default=0)
     friend_discovery_flags: int = ormar.Integer(default=0)
     animate_stickers: int = ormar.Integer(default=0)
-    theme: str = ormar.String(max_length=8, default="dark", choices=["dark", "light"])  # TODO: add `choices`
+    theme: str = ormar.String(max_length=8, default="dark", choices=["dark", "light"])
     locale: str = ormar.String(max_length=8, default="en-US")
     mfa: str = ormar.String(max_length=64, nullable=True, default=None)
     render_spoilers: str = ormar.String(max_length=16, default="ON_CLICK")  # TODO: add `choices`

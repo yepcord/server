@@ -55,7 +55,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
     changes = {}
     if channel.type == ChannelType.GROUP_DM:
         changes = data.to_json(channel.type)
-        if "owner_id" in changes and channel.owner_id != user.id:
+        if "owner_id" in changes and channel.owner.id != user.id:
             raise InvalidDataErr(403, Errors.make(50013))
         elif "owner_id" in changes:
             new_owner = await User.objects.get_or_none(id=changes["owner_id"])
@@ -68,8 +68,8 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
                 del changes["icon"]
             else:
                 changes["icon"] = image
-        if changes["icon"] != channel.icon: changed.append("icon")
-        if changes["name"] != channel.name: changed.append("name")
+        if "icon" in changes and changes["icon"] != channel.icon: changed.append("icon")
+        if "name" in changes and changes["name"] != channel.name: changed.append("name")
         await channel.update(**changes)
         Ctx["with_ids"] = False
         await getGw().dispatch(DMChannelUpdateEvent(channel), channel_id=channel.id)
