@@ -24,4 +24,4 @@ STORAGE = {
     }
 }
 
-TENOR_KEY = __environ.get("KEY")
+TENOR_KEY = __environ.get("TENOR_KEY")
