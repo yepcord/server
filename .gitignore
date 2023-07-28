@@ -12,3 +12,4 @@ endpoints.*
 /tests/generated/*.py
 coverage.xml
 tests/files
+settings*_prod.py

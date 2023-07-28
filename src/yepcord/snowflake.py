@@ -21,7 +21,7 @@ from os import getpid
 from random import randint
 from time import time
 
-from .classes.other import Singleton
+from .classes.singleton import Singleton
 
 
 class Snowflake(Singleton):
@@ -30,12 +30,6 @@ class Snowflake(Singleton):
     _INCREMENT = 0
     _WORKER = randint(0, 32)
     _PROCESS = getpid()
-
-    def __init__(self, timestamp: int, worker: int, process: int, increment: int):
-        self.timestamp = self.time = timestamp  # In milliseconds
-        self.worker = worker
-        self.process = process
-        self.increment = increment
 
     @classmethod
     def makeId(cls, increment=True) -> int:

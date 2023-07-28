@@ -115,7 +115,7 @@ class ReadyEvent(DispatchEvent):
                     "partial": False,
                     "entries": await self.core.getReadStatesJ(self.user)
                 },
-                "resume_gateway_url": f"wss://{Config('GATEWAY_HOST')}/",
+                "resume_gateway_url": f"wss://{Config.GATEWAY_HOST}/",
                 "session_type": "normal",
                 "sessions": [{
                     "status": "online",

@@ -18,6 +18,7 @@
 
 from quart import Blueprint
 
+from ...yepcord.config import Config
 from ...yepcord.errors import InvalidDataErr, Errors
 
 # Base path is /
@@ -197,7 +198,7 @@ async def api_users_me_settingsproto_type(t):
 
 @other.get("/api/v9/gateway")
 async def api_gateway():
-    return {"url": "wss://gateway.yepcord.ml"}
+    return {"url": f"wss://{Config.GATEWAY_HOST}"}
 
 
 # OAuth

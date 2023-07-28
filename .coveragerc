@@ -1,3 +1,5 @@
 [run]
-omit = src/yepcord/proto.py
+omit =
+    src/yepcord/proto.py
+    src/settings*.py
 data_file = coverage.coverage

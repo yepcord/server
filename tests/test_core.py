@@ -38,7 +38,7 @@ VARS = {
     "user_id": Snowflake.makeId()
 }
 
-core = Core(b64decode(Config("KEY")))
+core = Core(b64decode(Config.KEY))
 
 
 @pt.fixture
@@ -72,11 +72,8 @@ async def test_register_success(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_register_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    try:
+    with pt.raises(InvalidDataErr):
         await testCore.register(VARS["user_id"], "Test Login 2", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
-        assert False, "Account already registered: must raise error!"
-    except InvalidDataErr:
-        pass  # Ok
 
 
 @pt.mark.asyncio
@@ -89,12 +86,10 @@ async def test_login_success(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_login_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    try:
+    with pt.raises(InvalidDataErr):
         await testCore.login(f"{EMAIL_ID}_test@yepcord.ml", "wrong_password")
+    with pt.raises(InvalidDataErr):
         await testCore.login(f"{EMAIL_ID}_test123@yepcord.ml", "test_passw0rd")
-        assert False, "Wrong login or password: must raise Error!"
-    except InvalidDataErr:
-        pass  # Ok
 
 
 @pt.mark.asyncio
@@ -151,11 +146,8 @@ async def test_getUserProfile_success(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_getUserProfile_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    try:
+    with pt.raises(InvalidDataErr):
         await testCore.getUserProfile(VARS["user_id"] + 1, await User.objects.get(id=VARS["user_id"]))
-        assert False
-    except InvalidDataErr:
-        pass  # Ok
 
 
 @pt.mark.asyncio
@@ -192,11 +184,8 @@ async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core])
 
     # Try to change first user discriminator to second user discriminator
     assert not await testCore.changeUserDiscriminator(user1, userdata2.discriminator, True)
-    try:
+    with pt.raises(InvalidDataErr):
         await testCore.changeUserDiscriminator(user1, userdata2.discriminator, False)
-        assert False
-    except InvalidDataErr:
-        pass
 
 
 @pt.mark.asyncio
@@ -233,11 +222,8 @@ async def test_changeUserName_fail(testCore: Coroutine[Any, Any, Core]):
     )
 
     user = await core.getUser(VARS["user_id"])
-    try:
+    with pt.raises(InvalidDataErr):
         await testCore.changeUserName(user, username)
-        assert False
-    except InvalidDataErr:
-        pass  # ok
 
 
 @pt.mark.asyncio
@@ -277,11 +263,8 @@ async def test_checkRelationShipAvailable_fail(testCore: Coroutine[Any, Any, Cor
     testCore = await testCore
     user1 = await User.objects.get(id=VARS["user_id"] + 100000)
     user2 = await User.objects.get(id=VARS["user_id"] + 200000)
-    try:
+    with pt.raises(InvalidDataErr):
         await testCore.checkRelationShipAvailable(user1, user2)
-        assert False
-    except InvalidDataErr:
-        pass  # Ok
 
 
 @pt.mark.asyncio
@@ -450,11 +433,8 @@ async def test_verifyUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
     await core.verifyUserMfaNonce(user, nonce, False)
     await core.verifyUserMfaNonce(user, regenerate_nonce, True)
     for args in ((nonce, True), (regenerate_nonce, False)):
-        try:
+        with pt.raises(InvalidDataErr):
             await core.verifyUserMfaNonce(user, *args)
-            assert False
-        except InvalidDataErr:
-            pass # Ok
     del VARS["mfa_nonce"]
 
 

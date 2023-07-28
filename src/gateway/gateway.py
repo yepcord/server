@@ -144,7 +144,7 @@ class Gateway:
         self.ev = GatewayEvents(self)
 
     async def init(self):
-        await self.mcl.start(f"ws://{Config('PS_ADDRESS')}:5050")
+        await self.mcl.start(f"ws://{Config.PS_ADDRESS}:5050")
         await self.mcl.subscribe("yepcord_events", self.mcl_yepcordEventsCallback)
 
     async def mcl_yepcordEventsCallback(self, payload: dict) -> None:

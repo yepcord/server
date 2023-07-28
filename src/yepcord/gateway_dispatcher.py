@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Optional
 
 from .models import Channel, Guild
-from .classes.other import Singleton
+from .classes.singleton import Singleton
 from .config import Config
 from .pubsub_client import Broadcaster
 from ..gateway.events import DispatchEvent, ChannelPinsUpdateEvent, MessageAckEvent, GuildEmojisUpdate, \
@@ -36,8 +36,8 @@ class GatewayDispatcher(Singleton):
 
     async def init(self) -> GatewayDispatcher:
         try:
-            await self.bc.start(f"ws://{Config('PS_ADDRESS')}:5050")
-        except ConnectionRefusedError:
+            await self.bc.start(f"ws://{Config.PS_ADDRESS}:5050")
+        except ConnectionRefusedError:  # pragma: no cover
             self.bc.online = False
             self.bc.running = True
         return self

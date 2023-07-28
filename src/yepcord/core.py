@@ -31,7 +31,8 @@ from typing import Optional, Union
 from bcrypt import hashpw, gensalt, checkpw
 from ormar import or_
 
-from .classes.other import EmailMsg, Singleton, JWT, MFA
+from .classes.other import EmailMsg, JWT, MFA
+from .classes.singleton import Singleton
 from .config import Config
 from .enums import RelationshipType, ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, MfaRequiredErr, Errors
@@ -442,7 +443,7 @@ class Core(Singleton):
         sig = b64encode(new(key, f"{user.id}:{user.email}:{t}".encode('utf-8'), sha256).digest())
         token = b64encode(jdumps({"id": user.id, "email": user.email, "time": t}))
         token += f".{sig}"
-        link = f"https://{Config('CLIENT_HOST')}/verify#token={token}"
+        link = f"https://{Config.PUBLIC_HOST}/verify#token={token}"
         await EmailMsg(user.email, "Confirm your e-mail in YEPCord",
                        f"Thank you for signing up for a YEPCord account!\nFirst you need to make sure that you are you!"
                        f" Click to verify your email address:\n{link}").send()

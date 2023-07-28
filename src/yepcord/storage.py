@@ -217,8 +217,8 @@ class _Storage:
 
 # noinspection PyShadowingBuiltins
 class FileStorage(_Storage):
-    def __init__(self, root_path="files/"):
-        self.root = root_path
+    def __init__(self, path="files/"):
+        self.root = path
         makedirs(self.root, exist_ok=True)
 
     async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]:
@@ -520,19 +520,18 @@ class FTPStorage(_Storage):
 
 
 def getStorage() -> _Storage:
-    storage = Config.get("STORAGE_TYPE", "")
-    if storage.lower() == "s3":
-        a = (Config.get("S3_ENDPOINT"), Config.get("S3_KEYID"), Config.get("S3_ACCESSKEY"), Config.get("S3_BUCKET"))
-        if None in a:  # pragma: no cover
+    storage_type = Config.STORAGE["type"]
+    assert storage_type in ("local", "s3", "ftp",), "STORAGE.type must be one of ('local', 's3', 'ftp')"
+    storage = Config.STORAGE[storage_type]
+
+    if storage_type == "s3":
+        if None in storage.values():  # pragma: no cover
             raise Exception(
-                "You must set 'S3_ENDPOINT', 'S3_KEYID', 'S3_ACCESSKEY', 'S3_BUCKET' variables to use s3 storage type."
+                "You must set 'endpoint', 'key_id', 'access_key', 'bucket' variables to use s3 storage type."
             )
-        return S3Storage(*a)
-    elif storage.lower() == "ftp":
-        a = (
-            Config.get("FTP_HOST"), Config.get("FTP_USER"), Config.get("FTP_PASSWORD"), int(Config.get("FTP_PORT", 21))
-        )
-        if None in a:  # pragma: no cover
-            raise Exception("You must set 'FTP_HOST', 'FTP_USER', 'FTP_PASSWORD' variables to use ftp storage type.")
-        return FTPStorage(*a)
-    return FileStorage(Config.get("STORAGE_PATH", "files/"))
+        return S3Storage(**storage)
+    elif storage_type == "ftp":
+        if None in storage.values():  # pragma: no cover
+            raise Exception("You must set 'host', 'port', 'user', 'password' variables to use ftp storage type.")
+        return FTPStorage(**storage)
+    return FileStorage(**storage)

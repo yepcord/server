@@ -36,7 +36,7 @@ from tests.yep_image import YEP_IMAGE
 
 TestClientType = app.test_client_class
 storage = getStorage()
-core = Core(b64decode(Config("KEY")))
+core = Core(b64decode(Config.KEY))
 
 
 class TestVars:
