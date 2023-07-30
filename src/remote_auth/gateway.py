@@ -16,19 +16,19 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from base64 import b64encode as _b64encode, b64decode as _b64decode
-from os import urandom
 from asyncio import sleep as asleep, get_event_loop
-from time import time
+from base64 import b64encode as _b64encode, b64decode as _b64decode
 from hashlib import sha256
+from os import urandom
+from time import time
+
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives.hashes import SHA256
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
-from ..yepcord.config import Config
+from ..yepcord.mq_broker import getBroker
 from ..yepcord.utils import b64encode, b64decode
-from ..yepcord.pubsub_client import Client
 
 
 class GatewayClient:
@@ -65,19 +65,22 @@ class GatewayClient:
 class Gateway:
     def __init__(self):
         self.clients = []
-        self.mcl = Client()
+        self.broker = getBroker()
+        self.broker.handle("yepcord_remote_auth")(self.mq_callback)
 
     async def init(self):
-        await self.mcl.start(f"ws://{Config.PS_ADDRESS}:5050")
-        await self.mcl.subscribe("remote_auth", self.mclCallback)
+        await self.broker.start()
 
-    async def mclCallback(self, data):
-        if data["op"] == "pending_finish":
-            await self.sendPendingFinish(data["fingerprint"], data["userdata"])
-        elif data["op"] == "finish":
-            await self.sendFinish(data["fingerprint"], data["token"])
-        elif data["op"] == "cancel":
-            await self.sendCancel(data["fingerprint"])
+    async def stop(self):
+        await self.broker.close()
+
+    async def mq_callback(self, body: dict):
+        if body["op"] == "pending_finish":
+            await self.sendPendingFinish(body["fingerprint"], body["userdata"])
+        elif body["op"] == "finish":
+            await self.sendFinish(body["fingerprint"], body["token"])
+        elif body["op"] == "cancel":
+            await self.sendCancel(body["fingerprint"])
 
     # noinspection PyMethodMayBeStatic
     async def send(self, ws, op, **data):

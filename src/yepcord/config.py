@@ -42,9 +42,27 @@ _defaults = {
     },
     "TENOR_KEY": None,
     "GENERATE_TESTS": False,
-
-    # Will be removed soon:
-    "PS_ADDRESS": "127.0.0.1"
+    "MESSAGE_BROKER": {
+        "type": "ws",
+        "redis": {
+            "url": "",
+        },
+        "rabbitmq": {
+            "url": "",
+        },
+        "sqs": {
+            "url": "",
+        },
+        "kafka": {
+            "bootstrap_servers": [],
+        },
+        "nats": {
+            "servers": [],
+        },
+        "ws": {
+            "url": "ws://127.0.0.1:5055",
+        },
+    },
 }
 
 

@@ -29,3 +29,4 @@ databases==0.6.2
 SQLAlchemy~=1.4.41
 alembic~=1.11.1
 mailers[smtp]~=3.0.1
+propan[async-redis,async-rabbit]~=0.1.5.15

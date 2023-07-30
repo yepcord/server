@@ -17,15 +17,16 @@
 """
 
 from __future__ import annotations
+
+from json import dumps as jdumps
+from os import urandom
 from typing import Optional
 
 from .events import *
-from ..yepcord.models import Session, User, UserSettings
-from ..yepcord.pubsub_client import Client
-from ..yepcord.enums import GatewayOp
 from ..yepcord.core import Core
-from os import urandom
-from json import dumps as jdumps
+from ..yepcord.enums import GatewayOp
+from ..yepcord.models import Session, User, UserSettings
+from ..yepcord.mq_broker import getBroker
 
 
 class GatewayClient:
@@ -138,25 +139,28 @@ class GatewayEvents:
 class Gateway:
     def __init__(self, core: Core):
         self.core = core
-        self.mcl = Client()
+        self.broker = getBroker()
+        self.broker.handle("yepcord_events")(self.mcl_yepcordEventsCallback)
         self.clients = []
         self.statuses = {}
         self.ev = GatewayEvents(self)
 
     async def init(self):
-        await self.mcl.start(f"ws://{Config.PS_ADDRESS}:5050")
-        await self.mcl.subscribe("yepcord_events", self.mcl_yepcordEventsCallback)
+        await self.broker.start()
 
-    async def mcl_yepcordEventsCallback(self, payload: dict) -> None:
-        event = RawDispatchEvent(payload["data"])
-        if payload["users"] is not None:
-            await self.ev.sendToUsers(event, payload["users"])
-        if payload["channel_id"] is not None:
+    async def stop(self):
+        await self.broker.close()
+
+    async def mcl_yepcordEventsCallback(self, body: dict) -> None:
+        event = RawDispatchEvent(body["data"])
+        if body["users"] is not None:
+            await self.ev.sendToUsers(event, body["users"])
+        if body["channel_id"] is not None:
             # payload["permissions"]
-            await self.ev.sendToUsers(event, await self.core.getRelatedUsersToChannel(payload["channel_id"]))
-        if payload["guild_id"] is not None:
+            await self.ev.sendToUsers(event, await self.core.getRelatedUsersToChannel(body["channel_id"]))
+        if body["guild_id"] is not None:
             # payload["permissions"]
-            guild = await self.core.getGuild(payload["guild_id"])
+            guild = await self.core.getGuild(body["guild_id"])
             await self.ev.sendToUsers(event, await self.core.getGuildMembersIds(guild))
 
     # noinspection PyMethodMayBeStatic

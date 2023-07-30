@@ -1,7 +1,7 @@
-from subprocess import Popen, PIPE, STDOUT
 from os import environ
-from time import sleep
+from subprocess import Popen, PIPE, STDOUT
 from threading import Thread
+from time import sleep
 
 environ["PYTHONUNBUFFERED"] = "1"
 
@@ -41,9 +41,9 @@ class Process:
         if not self.app:
             cmd = f"python -u {self.file}"
         else:
-            cmd = f"python -u -m uvicorn {self.app} --forwarded-allow-ips='*' --ssl-keyfile=ssl/key.pem " \
-                  f"--ssl-certfile=ssl/cert.pem --reload --reload-dir src --host 0.0.0.0" + \
-                  (f" --port {self.port}" if self.port else "")
+            cmd = f"python -u -m uvicorn --reload --reload-dir ./src/ --reload-exclude 'tests/generated/*.py' " \
+                  f"{self.app} --forwarded-allow-ips='*' --ssl-keyfile=ssl/key.pem --ssl-certfile=ssl/cert.pem " \
+                  f"--host 0.0.0.0" + (f" --port {self.port}" if self.port else "")
         Thread(target=self._run, args=(cmd,)).start()
 
     def stop(self, kill=False):
@@ -58,7 +58,6 @@ class Process:
 
 
 processes = [
-    Process("IMT", file="main.py", wd="src/pubsub"),
     Process("HttpApi", app="src.rest_api.main:app", port=8000),
     Process("Gateway", app="src.gateway.main:app", port=8001),
     Process("CDN", app="src.cdn.main:app", port=8003),
@@ -105,6 +104,7 @@ def main():
 
     for p in processes:
         Thread(target=p.stop).start()
+
 
 if __name__ == "__main__":
     main()

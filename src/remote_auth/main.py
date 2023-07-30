@@ -35,6 +35,11 @@ async def before_serving():
     await gw.init()
 
 
+@app.after_serving
+async def after_serving():
+    await gw.stop()
+
+
 @app.after_request
 async def set_cors_headers(response):
     response.headers['Server'] = "YEPcord"

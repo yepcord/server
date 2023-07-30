@@ -83,6 +83,7 @@ async def before_serving():
 async def after_serving():
     if database.is_connected:
         await database.disconnect()
+    await gateway.stop()
 
 
 if "pytest" in sys.modules:  # pragma: no cover
@@ -123,7 +124,7 @@ async def set_cors_headers(response: Response) -> Response:
     return response
 
 
-TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8")
+TESTS_FILE = open(f"tests/generated/{int(time())}.py", "a", encoding="utf8") if Config.GENERATE_TESTS else None
 
 
 @app.after_request

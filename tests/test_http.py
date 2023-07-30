@@ -59,18 +59,18 @@ def event_loop():
 
 @pt.fixture(name='testapp')
 async def _test_app():
-    for func in app.before_serving_funcs:
-        await app.ensure_async(func)()
+    #for func in app.before_serving_funcs:
+    #    await app.ensure_async(func)()
     return app
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db():
-    if not database.is_connected:
-        await database.connect()
+    for func in app.before_serving_funcs:
+        await app.ensure_async(func)()
     yield
-    if database.is_connected:
-        await database.disconnect()
+    for func in app.after_serving_funcs:
+        await app.ensure_async(func)()
 
 
 @pt.mark.asyncio

@@ -24,22 +24,21 @@ from typing import Optional
 
 from .models import Channel, Guild
 from .classes.singleton import Singleton
-from .config import Config
-from .pubsub_client import Broadcaster
+from .mq_broker import getBroker
 from ..gateway.events import DispatchEvent, ChannelPinsUpdateEvent, MessageAckEvent, GuildEmojisUpdate, \
     StickersUpdateEvent
 
 
 class GatewayDispatcher(Singleton):
     def __init__(self):
-        self.bc = Broadcaster("")
+        self.broker = getBroker()
 
     async def init(self) -> GatewayDispatcher:
-        try:
-            await self.bc.start(f"ws://{Config.PS_ADDRESS}:5050")
-        except ConnectionRefusedError:  # pragma: no cover
-            self.bc.online = False
-            self.bc.running = True
+        await self.broker.start()
+        return self
+
+    async def stop(self) -> GatewayDispatcher:
+        await self.broker.close()
         return self
 
     async def dispatch(self, event: DispatchEvent, users: Optional[list[int]]=None, channel_id: Optional[int]=None,
@@ -47,7 +46,7 @@ class GatewayDispatcher(Singleton):
         if not users and not channel_id and not guild_id:
             warnings.warn("users/channel_id/guild_id must be provided!")
             return
-        await self.bc.broadcast("yepcord_events", {
+        await self.broker.publish(channel="yepcord_events", message={
             "data": await event.json(),
             "event": event.NAME,
             "users": users,

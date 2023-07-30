@@ -29,7 +29,7 @@ from .gateway import Gateway
 
 
 class YEPcord(Quart):
-    pass # Maybe it will be needed in the future
+    pass  # Maybe it will be needed in the future
 
 
 app = YEPcord("YEPcord-Gateway")
@@ -48,6 +48,7 @@ async def before_serving():
 async def after_serving():
     if database.is_connected:
         await database.disconnect()
+    await gw.stop()
 
 
 @app.after_request
