@@ -35,3 +35,31 @@ STORAGE = {
 
 # Acquire tenor api key from https://developers.google.com/tenor/guides/quickstart and set this  variable to enable gifs
 TENOR_KEY = None
+
+# Message broker used for communication between the API server and Gateway server. By default, 'ws' type is used
+# (websocket server started on 127.0.0.1 on port 5055) to allow running YEPcord without installing 'external'
+# message broker software. DO NOT use 'ws' type in production!
+MESSAGE_BROKER = {
+    "type": "ws",
+
+    # Mq-specific settings
+    "redis": {
+        "url": "",
+    },
+    "rabbitmq": {
+        "url": "",
+    },
+    "sqs": {
+        "url": "",
+    },
+    "kafka": {
+        "bootstrap_servers": [],
+    },
+    "nats": {
+        "servers": [],
+    },
+
+    "ws": {
+        "url": "ws://127.0.0.1:5055",
+    },
+}

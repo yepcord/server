@@ -18,6 +18,7 @@
 
 from asyncio import get_event_loop
 from base64 import b64encode
+from time import time
 
 import pytest as pt
 import pytest_asyncio
@@ -27,7 +28,6 @@ from src.rest_api.main import app
 from src.yepcord.classes.other import MFA
 from src.yepcord.config import Config
 from src.yepcord.enums import ChannelType, StickerType
-from src.yepcord.models import database
 from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, FrecencyUserSettings, FavoriteStickers
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import getImage, b64decode
@@ -59,18 +59,16 @@ def event_loop():
 
 @pt.fixture(name='testapp')
 async def _test_app():
-    for func in app.before_serving_funcs:
-        await app.ensure_async(func)()
     return app
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db():
-    if not database.is_connected:
-        await database.connect()
+    for func in app.before_serving_funcs:
+        await app.ensure_async(func)()
     yield
-    if database.is_connected:
-        await database.disconnect()
+    for func in app.after_serving_funcs:
+        await app.ensure_async(func)()
 
 
 @pt.mark.asyncio
@@ -167,7 +165,8 @@ async def test_settings(testapp):
     assert (r := await client.get("/api/v9/users/@me/settings", headers=headers)).status_code == 200
     assert (r := await client.get("/api/v9/users/@me/consent", headers=headers)).status_code == 200
     assert (r := await client.post("/api/v9/users/@me/consent", headers=headers,
-                                   json={"grant": ["personalization"], "revoke": ["usage_statistics"]})).status_code == 200
+                                   json={"grant": ["personalization"],
+                                         "revoke": ["usage_statistics"]})).status_code == 200
     assert (r := await client.patch("/api/v9/users/@me/settings", headers=headers,
                                     json={"afk_timeout": 300})).status_code == 200
 
@@ -185,21 +184,21 @@ async def test_settings_proto(testapp):
     proto = proto.SerializeToString()
     proto = b64encode(proto).decode("utf8")
     assert (r := await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
-                               json={"settings": proto})).status_code == 200
+                                    json={"settings": proto})).status_code == 200
     assert (r := await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
-                               json={"settings": ""})).status_code == 400
+                                    json={"settings": ""})).status_code == 400
     assert (r := await client.patch("/api/v9/users/@me/settings-proto/1", headers=headers,
-                               json={"settings": "1"})).status_code == 400
+                                    json={"settings": "1"})).status_code == 400
 
     proto = FrecencyUserSettings(favorite_stickers=FavoriteStickers(sticker_ids=[1, 2, 3]))
     proto = proto.SerializeToString()
     proto = b64encode(proto).decode("utf8")
     assert (r := await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
-                               json={"settings": proto})).status_code == 200
+                                    json={"settings": proto})).status_code == 200
     assert (r := await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
-                               json={"settings": ""})).status_code == 400
+                                    json={"settings": ""})).status_code == 400
     assert (r := await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
-                               json={"settings": "1"})).status_code == 400
+                                    json={"settings": "1"})).status_code == 400
 
 
 @pt.mark.asyncio
@@ -282,7 +281,8 @@ async def test_create_guild(testapp):
 async def test_get_messages_in_empty_channel(testapp):
     client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
-    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"].lower() == "general"][0]["id"]
+    channel_id = [channel for channel in TestVars.get("guild_channels") if channel["name"].lower() == "general"][0][
+        "id"]
     resp = await client.get(f"/api/v9/channels/{channel_id}/messages", headers=headers)
     assert resp.status_code == 200
     assert await resp.get_json() == []
@@ -369,7 +369,7 @@ async def test_edit_guild(testapp):
     assert json["name"] == "Test Guild Renamed"
     assert json["afk_channel_id"] is None
     assert json["afk_timeout"] == 900
-    #assert json["system_channel_id"] == TestVars.get("test_channel_id")
+    # assert json["system_channel_id"] == TestVars.get("test_channel_id")
     assert len(json["icon"]) == 32
 
 
@@ -1121,10 +1121,7 @@ async def test_login_with_mfa(testapp):
     assert (ticket := json["ticket"])
 
     code = MFA("a" * 16, 0).getCode()
-    invalid_code = (code + str((int(code[-1]) + 1) % 10))[1:]  # Codes generated this way will never be equal with original code
-    # It takes last number of code, adds 1 to it, takes modulo of new number (so it's always between 0 and 9),
-    #   adds new number to valid code and cuts first digit (so length of code will always be 6).
-    # Examples: 000001 -> 000012, 111111 -> 111112, 057489 -> 574890, etc.
+    invalid_code = (code + str((int(code[-1]) + 1) % 10))[1:]
 
     resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": "", "code": ""})  # No ticket
     assert resp.status_code == 400
