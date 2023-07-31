@@ -68,7 +68,7 @@ async def login_with_mfa(data: MfaLogin):
         raise InvalidDataErr(400, Errors.make(60006))
     code = code.replace("-", "").replace(" ", "")
     user = await getCore().getUser(mfa.uid)
-    if mfa.getCode() != code:
+    if code not in mfa.getCodes():
         if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
             raise InvalidDataErr(400, Errors.make(60008))
     sess = await getCore().createSession(user.id)

@@ -82,7 +82,7 @@ class JWT:
             return loads(payload)
 
     @staticmethod
-    def encode(payload: dict, secret: Union[str, bytes], expire_timestamp: Union[int, float]=0) -> str:
+    def encode(payload: dict, secret: Union[str, bytes], expire_timestamp: Union[int, float] = 0) -> str:
         if isinstance(secret, str):
             secret = b64decode(secret)
 
@@ -99,6 +99,7 @@ class JWT:
         signature = b64encode(signature)
 
         return f"{header}.{payload}.{signature}"
+
 
 class BitFlags:
     def __init__(self, value: int, cls):
@@ -136,13 +137,18 @@ class MFA:
         self.key = str(key).upper()
         self.uid = self.id = uid
 
-    def getCode(self) -> str:
+    def getCode(self, timestamp: Union[int, float] = None) -> str:
+        if timestamp is None:
+            timestamp = time()
         key = b32decode(self.key.upper() + '=' * ((8 - len(self.key)) % 8))
-        counter = pack('>Q', int(time() / 30))
+        counter = pack('>Q', int(timestamp / 30))
         mac = new(key, counter, "sha1").digest()
         offset = mac[-1] & 0x0f
         binary = unpack('>L', mac[offset:offset + 4])[0] & 0x7fffffff
         return str(binary)[-6:].zfill(6)
+
+    def getCodes(self) -> tuple[str, str]:
+        return self.getCode(time() - 5), self.getCode(time() + 1)
 
     @property
     def valid(self) -> bool:

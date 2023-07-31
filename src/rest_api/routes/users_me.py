@@ -256,7 +256,7 @@ async def enable_mfa(data: MfaEnable, session: Session):  # TODO: Check if mfa a
     mfa = MFA(secret, user.id)
     if not mfa.valid:
         raise InvalidDataErr(400, Errors.make(60005))
-    if not (code := data.code) or mfa.getCode() != code:
+    if not (code := data.code) or code not in mfa.getCodes():
         raise InvalidDataErr(400, Errors.make(60008))
     settings = await user.settings
     await settings.update(mfa=secret)
@@ -278,7 +278,7 @@ async def disable_mfa(data: MfaDisable, session: Session):
     if not (mfa := await getCore().getMfa(user)):
         raise InvalidDataErr(400, Errors.make(50018))
     code = code.replace("-", "").replace(" ", "")
-    if mfa.getCode() != code:
+    if code not in mfa.getCodes():
         if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
             raise InvalidDataErr(400, Errors.make(60008))
     settings = await user.settings
