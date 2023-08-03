@@ -172,59 +172,6 @@ class GatewayClient:
         await self.esend(GuildMembersChunkEvent(members, presences, guild_id))
 
 
-class ClientStatus:
-    def __init__(self, uid, status, activities):
-        self.id = uid
-        self._status = status
-        self._activities = activities
-        self._modified = int(time())
-
-    @property
-    def status(self):
-        return self._status if self._status != "invisible" else "offline"
-
-    @property
-    def activities(self):
-        return self._activities if self.status != "offline" else []
-
-    @property
-    def last_modified(self):
-        return self._modified
-
-    def setStatus(self, status):
-        self._modified = int(time())
-        if status not in ["online", "idle", "offline", "dnd", "invisible"]:
-            return
-        self._status = status
-
-    def setActivities(self, activities):
-        self._modified = int(time())
-        self._activities = activities
-
-    @property
-    def client_status(self):
-        return {"desktop": self.status} if self.status != "offline" else {}
-
-    @staticmethod
-    def custom_status(status):
-        if status is None:
-            return []
-        return [{
-            'name': 'Custom Status',
-            'type': 4,
-            'state': status["text"],
-            'emoji': {'id': None, 'name': status["emoji_name"], 'animated': False} if "emoji_name" in status else {}
-        }]
-
-    def __getitem__(self, item):
-        return getattr(self, item, None)
-
-    def get(self, item, default=None):
-        if hasattr(self, item):
-            return self.__getitem__(item)
-        return default
-
-
 class GatewayEvents:
     def __init__(self, gw: Gateway):
         self.gw = gw

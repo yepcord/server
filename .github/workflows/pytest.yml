@@ -43,6 +43,7 @@ jobs:
 
       - name: Setup database
         run: |
+          python -m alembic revision --autogenerate -m "test"
           python -m alembic upgrade head
         env:
           SETTINGS: src.settings_test

@@ -787,15 +787,27 @@ async def test_send_guild_message(testapp):
     resp = await client.post(f"/api/v9/channels/{channel_id}/typing", headers=headers)
     assert resp.status_code == 204
 
+    nonce = str(Snowflake.makeId())
     resp = await client.post(f"/api/v9/channels/{channel_id}/messages", headers=headers,
-                             json={"content": "test message", 'nonce': '1086700261180702720'})
+                             json={"content": "test message", 'nonce': nonce})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["author"]["id"] == user_id
     assert json["content"] == "test message"
     assert json["type"] == 0
     assert json["guild_id"] == guild_id
-    assert json["nonce"] == '1086700261180702720'
+    assert json["nonce"] == nonce
+
+    nonce = str(Snowflake.makeId())
+    resp = await client.post(f"/api/v9/channels/{channel_id}/messages", headers=headers,
+                             json={"content": "message with emoji 💀", 'nonce': nonce})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["author"]["id"] == user_id
+    assert json["content"] == "message with emoji 💀"
+    assert json["type"] == 0
+    assert json["guild_id"] == guild_id
+    assert json["nonce"] == nonce
 
 
 @pt.mark.asyncio

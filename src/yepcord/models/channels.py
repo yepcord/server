@@ -49,8 +49,8 @@ class Channel(ormar.Model):
     guild: Optional[GuildRef] = ormar.ForeignKey(GuildRef, ondelete=ReferentialAction.CASCADE, nullable=True,
                                                  default=None)
     position: Optional[int] = ormar.Integer(nullable=True, default=None)
-    name: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
-    topic: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
+    name: Optional[str] = ormar.String(max_length=128, nullable=True, default=None, collation="utf8mb4_general_ci")
+    topic: Optional[str] = ormar.String(max_length=128, nullable=True, default=None, collation="utf8mb4_general_ci")
     nsfw: Optional[bool] = ormar.Boolean(nullable=True, default=None)
     bitrate: Optional[int] = ormar.Integer(nullable=True, default=None)
     user_limit: Optional[int] = ormar.Integer(nullable=True, default=None)
@@ -374,7 +374,7 @@ class Webhook(ormar.Model):
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     type: int = ormar.Integer()
-    name: str = ormar.String(max_length=128)
+    name: str = ormar.String(max_length=128, collation="utf8mb4_general_ci")
     channel: Channel = ormar.ForeignKey(Channel, ondelete=ReferentialAction.CASCADE)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     application_id: Optional[int] = ormar.BigInteger(nullable=True, default=None)
