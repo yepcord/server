@@ -63,3 +63,10 @@ MESSAGE_BROKER = {
         "url": "ws://127.0.0.1:5055",
     },
 }
+
+# Redis used for users presences and statuses. If empty, presences will be stored in memory.
+REDIS_URL = ""
+
+# How often gateway clients must send keep-alive packets (also, presences expiration time is this variable times 1.25).
+# Default value is 45 seconds, do not set it too big or too small.
+GATEWAY_KEEP_ALIVE_DELAY = 45

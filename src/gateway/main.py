@@ -67,7 +67,7 @@ async def ws_gateway():
     ws = websocket._get_current_object()
     setattr(ws, "zlib", ZlibCompressor() if websocket.args.get("compress") == "zlib-stream" else None)
     setattr(ws, "ws_connected", True)
-    await gw.sendHello(ws)
+    await gw.add_client(ws)
     while True:
         try:
             data = await ws.receive()

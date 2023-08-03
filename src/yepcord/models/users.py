@@ -25,15 +25,16 @@ import ormar
 # noinspection PyPackageRequirements
 from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, Int32Value
 from ormar import ReferentialAction
+from protobuf_to_dict import protobuf_to_dict
 
 from . import DefaultMeta
 from ..ctx import getCore
 from ..enums import RelationshipType, RelTypeDiscord
 from ..proto import PreloadedUserSettings, UserContentSettings, Versions, VoiceAndVideoSettings, TextAndImagesSettings, \
     PrivacySettings, StatusSettings, LocalizationSettings, AppearanceSettings, Theme, GuildFolders, GuildFolder, \
-    FrecencyUserSettings
+    FrecencyUserSettings, CustomStatus
 from ..snowflake import Snowflake
-from ..utils import b64encode, int_size, b64decode, proto_get
+from ..utils import b64encode, int_size, b64decode, dict_get, freeze, unfreeze
 
 
 class User(ormar.Model):
@@ -346,7 +347,13 @@ class UserSettingsProto:
             ),
             status=StatusSettings(
                 status=StringValue(value=self.status),
-                show_current_game=BoolValue(value=self.show_current_game)
+                show_current_game=BoolValue(value=self.show_current_game),
+                custom_status=CustomStatus(
+                    text=self.custom_status.get("text"),
+                    expires_at_ms=self.custom_status.get("expires_at_ms"),
+                    emoji_id=self.custom_status.get("emoji_id"),
+                    emoji_name=self.custom_status.get("emoji_name"),
+                ) if self.custom_status else None
             ),
             localization=LocalizationSettings(
                 locale=StringValue(value=self.locale),
@@ -372,7 +379,7 @@ class UserSettingsProto:
         return proto
 
     @staticmethod
-    def to_dict(proto: PreloadedUserSettings, changes: dict=None) -> dict:
+    def _to_settings_dict(proto_dict: dict, changes: dict=None) -> dict:
         if changes is None:
             changes = {}
         fields = [
@@ -414,44 +421,54 @@ class UserSettingsProto:
         ]
 
         for proto_path, out_name in fields:
-            proto_get(proto, proto_path, output_dict=changes, output_name=out_name)
+            dict_get(proto_dict, proto_path, output_dict=changes, output_name=out_name)
         return changes
 
-    async def update(self, proto: PreloadedUserSettings) -> None:
-        changes = UserSettingsProto.to_dict(proto)
-        if (theme := proto_get(proto, "appearance.theme", 1)) is not None:
-            changes["theme"] = "dark" if theme == 1 else "light"
-        if (custom_status := proto_get(proto, "status.custom_status")) is not None:
-            cs = {
-                "text": proto_get(custom_status, "text", None),
-                "emoji_id": proto_get(custom_status, "emoji_id", None),
-                "emoji_name": proto_get(custom_status, "emoji_name", None),
-                "expires_at_ms": proto_get(custom_status, "expires_at_ms", None)
+    async def update(self, new_proto: PreloadedUserSettings) -> None:
+        old_settings = freeze(protobuf_to_dict(self.get()))
+        new_settings = freeze(protobuf_to_dict(new_proto))
+        proto_d = unfreeze(new_settings - old_settings)
+
+        changes = UserSettingsProto._to_settings_dict(proto_d)
+        changes["theme"] = "dark" if dict_get(proto_d, "appearance.theme", 1) == 1 else "light"
+        if custom_status := dict_get(proto_d, "status.custom_status"):
+            changes["custom_status"] = {
+                "text": dict_get(custom_status, "text", None),
+                "emoji_id": dict_get(custom_status, "emoji_id", None),
+                "emoji_name": dict_get(custom_status, "emoji_name", None),
+                "expires_at_ms": dict_get(custom_status, "expires_at_ms", None)
             }
-            changes["custom_status"] = cs
-        if (p := proto_get(proto, "privacy.friend_source_flags.value")) is not None:
-            if p == 14:
+        cs = changes.get("custom_status", {})
+        if ("status" in changes and
+                all([val is None for val in (cs.get("text"), cs.get("emoji_id"), cs.get("emoji_name"),)])):
+            changes["custom_status"] = {}
+        if (friend_source_flags := dict_get(proto_d, "privacy.friend_source_flags.value")) is not None:
+            if friend_source_flags == 14:
                 changes["friend_source_flags"] = {"all": True}
-            elif p == 6:
+            elif friend_source_flags == 6:
                 changes["friend_source_flags"] = {"all": False, "mutual_friends": True, "mutual_guilds": True}
-            elif p == 4:
+            elif friend_source_flags == 4:
                 changes["friend_source_flags"] = {"all": False, "mutual_friends": False, "mutual_guilds": True}
-            elif p == 2:
+            elif friend_source_flags == 2:
                 changes["friend_source_flags"] = {"all": False, "mutual_friends": True, "mutual_guilds": False}
             else:
                 changes["friend_source_flags"] = {"all": False, "mutual_friends": False, "mutual_guilds": True}
         else:
             changes["friend_source_flags"] = {"all": False, "mutual_friends": False, "mutual_guilds": False}
-        if (dismissed_contents := proto_get(proto, "user_content.dismissed_contents")) is not None:
+        if (dismissed_contents := dict_get(proto_d, "user_content.dismissed_contents")) is not None:
             changes["dismissed_contents"] = dismissed_contents[:128].hex()
-        if guild_folders := proto_get(proto, "guild_folders.folders"):
+        if guild_folders := dict_get(proto_d, "guild_folders.folders"):
             folders = []
             for folder in guild_folders:
                 folders.append({"guild_ids": list(folder.guild_ids)})
-                if folder_id := proto_get(folder, "id.value"): folders[-1]["id"] = {"value": folder_id}
-                if folder_name := proto_get(folder, "name.value"): folders[-1]["name"] = {"value": folder_name}
-                if folder_color := proto_get(folder, "color.value"): folders[-1]["color"] = {"value": folder_color}
+                if folder_id := dict_get(folder, "id.value"): folders[-1]["id"] = {"value": folder_id}
+                if folder_name := dict_get(folder, "name.value"): folders[-1]["name"] = {"value": folder_name}
+                if folder_color := dict_get(folder, "color.value"): folders[-1]["color"] = {"value": folder_color}
             changes["guild_folders"] = folders
+        changes = freeze(changes)
+        old_settings = freeze(self._settings.dict())
+
+        changes = unfreeze(changes - old_settings)
         await self._settings.update(**changes)
 
 

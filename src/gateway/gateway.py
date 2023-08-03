@@ -19,30 +19,35 @@
 from __future__ import annotations
 
 from json import dumps as jdumps
-from os import urandom
 from typing import Optional
 
 from .events import *
+from .presences import Presences, Presence
+from .utils import require_auth
 from ..yepcord.core import Core
+from ..yepcord.ctx import getCore
 from ..yepcord.enums import GatewayOp
 from ..yepcord.models import Session, User, UserSettings
 from ..yepcord.mq_broker import getBroker
 
 
 class GatewayClient:
-    def __init__(self, ws, uid):
+    def __init__(self, ws, gateway: Gateway):
         self.ws = ws
-        self.id = uid
+        self.gateway = gateway
         self.seq = 0
-        self.sid = urandom(16).hex()
-        self.z = getattr(ws, "zlib", None)
+        self.sid = hex(Snowflake.makeId())[2:]
         self._connected = True
+
+        self.z = getattr(ws, "zlib", None)
+        self.id = self.user_id = None
+        self.cached_presence: Optional[Presence] = None
 
     @property
     def connected(self):
-        return self._connected and getattr(self.ws, "ws_connected", False)
+        return getattr(self.ws, "ws_connected", False)
 
-    async def send(self, data):
+    async def send(self, data: dict):
         self.seq += 1
         data["s"] = self.seq
         if self.z:
@@ -52,13 +57,119 @@ class GatewayClient:
     async def esend(self, event):
         await self.send(await event.json())
 
-    def compress(self, json):
+    def compress(self, json: dict):
         return self.z(jdumps(json).encode("utf8"))
 
     def replace(self, ws):
         self.ws = ws
         self.z = getattr(ws, "zlib", None)
         self._connected = True
+
+    async def handle_IDENTIFY(self, data: dict) -> None:
+        if self.user_id is not None:
+            return await self.ws.close(4005)
+        if not (token := data.get("token")):
+            return await self.ws.close(4004)
+        ex_sess = Session.extract_token(token)
+        session: Session = await Session.objects.select_related("user").get_or_none(
+            user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
+        )
+        if session is None:
+            return await self.ws.close(4004)
+
+        self.id = self.user_id = session.user.id
+
+        settings = await session.user.settings
+        self.cached_presence = await self.gateway.presences.get(self.user_id) or self.cached_presence
+        if self.cached_presence is None:
+            self.cached_presence = Presence(self.user_id, settings.status, settings.custom_status, [])
+
+        await self.gateway.authenticated(self, self.cached_presence)
+        await self.esend(ReadyEvent(session.user, self, getCore()))
+        guild_ids = [guild.id for guild in await getCore().getUserGuilds(session.user)]
+        await self.esend(ReadySupplementalEvent(await self.gateway.getFriendsPresences(self.user_id), guild_ids))
+
+    @require_auth
+    async def handle_RESUME(self, data: dict, new_client: GatewayClient) -> None:
+        if self.connected:
+            await new_client.send({"op": GatewayOp.INV_SESSION})
+            await new_client.send({"op": GatewayOp.RECONNECT})
+            return await new_client.ws.close(4009)
+        if not (token := data.get("token")):
+            return await new_client.ws.close(4004)
+
+        ex_sess = Session.extract_token(token)
+        session = await Session.objects.select_related("user").get_or_none(
+            user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
+        )
+        if session is None or self.user_id.id != session.user.id:
+            return await new_client.ws.close(4004)
+
+        new_client.user_id = new_client.id = self.user_id
+        new_client.cached_presence = self.cached_presence
+        new_client.seq = self.seq
+        new_client.sid = self.sid
+
+        self.gateway.remove_client(self)
+        await self.gateway.authenticated(new_client, new_client.cached_presence)
+
+        await new_client.send({"op": GatewayOp.DISPATCH, "t": "READY"})
+
+    async def handle_HEARTBEAT(self, data: None) -> None:
+        await self.send({"op": GatewayOp.HEARTBEAT_ACK, "t": None, "d": None})
+        await self.gateway.presences.set_or_refresh(self.user_id, self.cached_presence)
+
+    @require_auth
+    async def handle_STATUS(self, data: dict) -> None:
+        self.cached_presence = await self.gateway.presences.get(self.user_id) or self.cached_presence
+        if self.cached_presence is None:
+            settings = await UserSettings.objects.get(id=self.user_id)
+            self.cached_presence = Presence(self.user_id, settings.status, settings.custom_status, [])
+
+        presence = self.cached_presence
+
+        if (status := data.get("status")) and status in ["online", "idle", "offline", "dnd", "invisible"]:
+            presence.status = status
+        if (activities := data.get("activities")) is not None:
+            presence.activities = activities
+
+        await self.gateway.presences.set_or_refresh(self.user_id, presence, overwrite=True)
+        await self.gateway.ev.presence_update(self.user_id, presence)
+
+    @require_auth
+    async def handle_LAZY_REQUEST(self, data: dict) -> None:
+        if not (guild_id := int(data.get("guild_id"))): return
+        if not data.get("members", True): return
+        guild = await getCore().getGuild(guild_id)
+        if not await getCore().getGuildMember(guild, self.user_id): return
+
+        members = await getCore().getGuildMembers(guild)
+        statuses = {}
+        for member in members:
+            if presence := await self.gateway.presences.get(member.user.id):
+                statuses[member.user.id] = presence
+            else:
+                statuses[member.user.id] = Presence(member.user.id, "offline", None)
+        await self.esend(GuildMembersListUpdateEvent(
+            members,
+            await getCore().getGuildMemberCount(guild),
+            statuses,
+            guild_id
+        ))
+
+    @require_auth
+    async def handle_GUILD_MEMBERS(self, data: dict) -> None:
+        if not (guild_id := int(data.get("guild_id")[0])): return
+        guild = await getCore().getGuild(guild_id)
+        if not await getCore().getGuildMember(guild, self.user_id): return
+
+        query = data.get("query", "")
+        limit = data.get("limit", 100)
+        if limit > 100 or limit < 1:
+            limit = 100
+        members = await getCore().getGuildMembersGw(guild, query, limit)
+        presences = []  # TODO: add presences
+        await self.esend(GuildMembersChunkEvent(members, presences, guild_id))
 
 
 class ClientStatus:
@@ -119,21 +230,27 @@ class GatewayEvents:
         self.gw = gw
         self.send = gw.send
         self.core = gw.core
-        self.clients = gw.clients
 
-    async def presence_update(self, user_id: int, status):
+    async def presence_update(self, user_id: int, presence: Presence):
         user = await User.objects.get(id=user_id)
         userdata = await user.data
         users = await self.core.getRelatedUsers(user, only_ids=True)
-        clients = [c for c in self.clients if c.id in users and c.connected]
-        for cl in clients:
-            await cl.esend(PresenceUpdateEvent(userdata, status))
+
+        event = PresenceUpdateEvent(userdata, presence)
+
+        await self.gw.broker.publish(channel="yepcord_events", message={
+            "data": await event.json(),
+            "event": event.NAME,
+            "users": users,
+        })
+        await self.sendToUsers(RawDispatchEventWrapper(event), users)
 
     async def sendToUsers(self, event: RawDispatchEvent, users: list[int]) -> None:
-        if not (clients := [c for c in self.clients if c.id in users and c.connected]):
-            return
-        for cl in clients:
-            await cl.esend(event)
+        for user_id in users:
+            for client in self.gw.clients_by_user_id.get(user_id, set()):
+                if not client.connected:
+                    continue
+                await client.esend(event)
 
 
 class Gateway:
@@ -141,15 +258,20 @@ class Gateway:
         self.core = core
         self.broker = getBroker()
         self.broker.handle("yepcord_events")(self.mcl_yepcordEventsCallback)
-        self.clients = []
-        self.statuses = {}
+        self.clients: set[GatewayClient] = set()
+        self.clients_by_user_id: dict[int, set[GatewayClient]] = {}
+        self.clients_by_session_id: dict[str, GatewayClient] = {}
+        self.clients_by_socket = {}
+        self.presences = Presences(self)
         self.ev = GatewayEvents(self)
 
     async def init(self):
         await self.broker.start()
+        await self.presences.init()
 
     async def stop(self):
         await self.broker.close()
+        await self.presences.close()
 
     async def mcl_yepcordEventsCallback(self, body: dict) -> None:
         event = RawDispatchEvent(body["data"])
@@ -177,134 +299,75 @@ class Gateway:
             return await ws.send(ws.zlib(jdumps(r).encode("utf8")))
         await ws.send_json(r)
 
+    async def add_client(self, ws) -> None:
+        client = GatewayClient(ws, self)
+        self.clients.add(client)
+        self.clients_by_socket[ws] = client
+        await client.send({"op": GatewayOp.HELLO, "t": None, "s": None, "d": {"heartbeat_interval": 45000}})
+
+    async def authenticated(self, client: GatewayClient, presence: Presence) -> None:
+        if client.user_id not in self.clients_by_user_id:
+            self.clients_by_user_id[client.user_id] = set()
+        self.clients_by_user_id[client.user_id].add(client)
+        self.clients_by_session_id[client.sid] = client
+
+        if presence:
+            await self.ev.presence_update(client.user_id, presence)
+            await self.presences.set_or_refresh(client.user_id, presence)
+
+    def remove_client(self, client: GatewayClient) -> None:
+        if client in self.clients:
+            self.clients.remove(client)
+        if client in self.clients_by_user_id.get(client.user_id, set()):
+            self.clients_by_user_id[client.user_id].remove(client)
+
     async def process(self, ws, data):
         op = data["op"]
-        if op == GatewayOp.IDENTIFY:
-            if [w for w in self.clients if w.ws == ws]:
-                return await ws.close(4005)
-            if not (token := data["d"]["token"]):
-                return await ws.close(4004)
-            ex_sess = Session.extract_token(token)
-            sess = await Session.objects.select_related("user").get_or_none(
-                user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
-            )
-            if sess is None:
-                return await ws.close(4004)
-            cl = GatewayClient(ws, sess.user.id)
-            self.clients.append(cl)
-            settings = await sess.user.settings
-            self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
-            await self.ev.presence_update(cl.id, st)
-            await cl.esend(ReadyEvent(sess.user, cl, self.core))
-            guild_ids = [guild.id for guild in await self.core.getUserGuilds(sess)]
-            await cl.esend(ReadySupplementalEvent(await self.getFriendsPresences(cl.id), guild_ids))
-        elif op == GatewayOp.RESUME:
-            if not (cl := [w for w in self.clients if w.sid == data["d"]["session_id"]]):
-                await self.sendws(ws, GatewayOp.INV_SESSION)
-                await self.sendws(ws, GatewayOp.RECONNECT)
+        kwargs = {}
+
+        client = self.clients_by_socket[ws]
+        if op == GatewayOp.RESUME:
+            _client = self.clients_by_session_id.get(data["d"]["session_id"])
+            if _client is None:
+                real_client = self.clients_by_socket[ws]
+                await real_client.send({"op": GatewayOp.INV_SESSION})
+                await real_client.send({"op": GatewayOp.RECONNECT})
                 return await ws.close(4009)
-            if not (token := data["d"]["token"]):
-                return await ws.close(4004)
-            cl = cl[0]
-            ex_sess = Session.extract_token(token)
-            sess = await Session.objects.select_related("user").get_or_none(
-                user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
-            )
-            if sess is None:
-                return await ws.close(4004)
-            if cl.id != sess.user.id:
-                return await ws.close(4004)
-            cl.replace(ws)
-            settings = await sess.user.settings
-            self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
-            await self.ev.presence_update(cl.id, st)
-            await self.send(cl, GatewayOp.DISPATCH, t="READY")
-        elif op == GatewayOp.HEARTBEAT:
-            if not (cl := await self.getClientFromSocket(ws)): return
-            await self.send(cl, GatewayOp.HEARTBEAT_ACK, t=None, d=None)
-        elif op == GatewayOp.STATUS:
-            d = data["d"]
-            if not (cl := await self.getClientFromSocket(ws)): return
-            if not (st := self.statuses.get(cl.id)):
-                settings = await UserSettings.objects.get(id=cl.id)
-                self.statuses[cl.id] = st = ClientStatus(cl.id, settings.status, ClientStatus.custom_status(settings.custom_status))
-            if status := d.get("status"):
-                st.setStatus(status)
-            if activities := d.get("activities"):
-                st.setActivities(activities)
-            await self.ev.presence_update(cl.id, st)
-        elif op == GatewayOp.LAZY_REQUEST:
-            d = data["d"]
-            if not (guild_id := int(d.get("guild_id"))): return
-            if not (cl := await self.getClientFromSocket(ws)): return
-            if d.get("members", True):
-                guild = await self.core.getGuild(guild_id)
-                members = await self.core.getGuildMembers(guild)
-                statuses = {}
-                for member in members:
-                    if member.user.id in self.statuses:
-                        statuses[member.user.id] = self.statuses[member.user.id]
-                    else:
-                        statuses[member.user.id] = ClientStatus(member.user.id, "offline", None)
-                await cl.esend(GuildMembersListUpdateEvent(
-                    members,
-                    await self.core.getGuildMemberCount(guild),
-                    statuses,
-                    guild_id
-                ))
-        elif op == GatewayOp.GUILD_MEMBERS:
-            d = data["d"]
-            if not (guild_id := int(d.get("guild_id")[0])): return
-            if not (cl := await self.getClientFromSocket(ws)): return
-            query = d.get("query", "")
-            limit = d.get("limit", 100)
-            if limit > 100 or limit < 1:
-                limit = 100
-            guild = await self.core.getGuild(guild_id)
-            members = await self.core.getGuildMembersGw(guild, query, limit)
-            presences = []  # TODO: add presences
-            await cl.esend(GuildMembersChunkEvent(members, presences, guild_id))
-        else:
-            print("-"*16)
-            print(f"  Unknown op code: {op}")
-            print(f"  Data: {data}")
+            kwargs["new_client"] = self.clients_by_socket[ws]
+            client = _client
 
-    async def getClientFromSocket(self, ws) -> Optional[GatewayClient]:
-        if cl := [w for w in self.clients if w.ws == ws]:
-            return cl[0]
-        await ws.close(4005)
+        func = getattr(client, f"handle_{GatewayOp.reversed()[op]}", None)
+        if func:
+            return await func(data.get("d"), **kwargs)
 
-    async def sendHello(self, ws):
-        await self.sendws(ws, GatewayOp.HELLO, t=None, s=None, d={"heartbeat_interval": 45000})
+        print("-" * 16)
+        print(f"  Unknown op code: {op}")
+        print(f"  Data: {data}")
 
     async def disconnect(self, ws):
-        if not (cl := [w for w in self.clients if w.ws == ws]):
-            return
-        cl = cl[0]
-        cl._connected = False
-        if not [w for w in self.clients if w.id == cl.id and w != cl]:
-            await self.ev.presence_update(cl.id, {"status": "offline"})
+        client = self.clients_by_socket[ws]
+        client._connected = False
 
     async def getFriendsPresences(self, uid: int) -> list[dict]:
-        pr = []
+        presences = []
         user = await User.objects.get(id=uid)
         friends = await self.core.getRelationships(user)
         friends = [int(u["user_id"]) for u in friends if u["type"] == 1]
         for friend in friends:
-            if status := self.statuses.get(friend):
-                pr.append({
+            if presence := await self.presences.get(friend):
+                presences.append({
                     "user_id": str(friend),
-                    "status": status.status,
-                    "last_modified": status.last_modified,
-                    "client_status": status.client_status,
-                    "activities": status.activities
+                    "status": presence.public_status,
+                    "last_modified": int(time()*1000),
+                    "client_status": {"desktop": presence.public_status} if presence.public_status != "offline" else {},
+                    "activities": presence.activities
                 })
                 continue
-            pr.append({
+            presences.append({
                 "user_id": str(friend),
                 "status": "offline",
                 "last_modified": int(time()),
                 "client_status": {},
                 "activities": []
             })
-        return pr
+        return presences

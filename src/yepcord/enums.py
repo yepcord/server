@@ -23,6 +23,11 @@ class E:
         attrs = [i for i in cls.__dict__.keys() if not i.startswith("__")]
         return {attr: getattr(cls, attr) for attr in attrs}
 
+    @classmethod
+    def reversed(cls):
+        values = cls.values()
+        return {v: k for k, v in values.items()}
+
 
 class RelationshipType(E):
     PENDING = 0
@@ -51,7 +56,7 @@ class GatewayOp(E):
     HELLO = 10
     HEARTBEAT_ACK = 11
     GUILD_SYNC = 12
-    # UNKNOWN = 13
+    UNKNOWN = 13
     LAZY_REQUEST = 14
 
 

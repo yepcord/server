@@ -17,6 +17,7 @@
 """
 
 import asyncio
+import warnings
 from json import dumps, loads
 from typing import Union, Optional, Callable, Coroutine
 
@@ -98,7 +99,7 @@ class WsBroker:
         self._server = WsServer(self._url)
         await self._server.run()
 
-    async def _real_run_client(self) -> None:
+    async def _real_run_client(self) -> None:  # pragma: no cover
         async with connect(self._url) as ws:
             self._connection = ws
             self._run_event.set()
@@ -173,5 +174,8 @@ def getBroker() -> Union[RabbitBroker, RedisBroker, SQSBroker, KafkaBroker, Nats
     broker_type = Config.MESSAGE_BROKER["type"].lower()
     assert broker_type in ("rabbitmq", "redis", "sqs", "kafka", "nats", "ws",), \
         "MESSAGE_BROKER.type must be one of ('rabbitmq', 'redis', 'sqs', 'kafka', 'nats', 'ws')"
+
+    if broker_type == "ws":
+        warnings.warn("'ws' message broker type is used. This message broker type should not be used in production!")
 
     return _brokers[broker_type](**Config.MESSAGE_BROKER[broker_type])

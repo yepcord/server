@@ -810,7 +810,7 @@ class Core(Singleton):
         # noinspection PyUnresolvedReferences
         return await GuildMember.objects.filter(
             (GuildMember.guild == guild) &
-            (GuildMember.nick.startswith(query) | GuildMember.user.userdata.username.istartswith(query))
+            (GuildMember.nick.startswith(query) | GuildMember.user.userdatas.username.istartswith(query))
         ).limit(limit).all()
 
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:

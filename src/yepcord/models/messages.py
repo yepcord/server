@@ -97,7 +97,7 @@ class Message(ormar.Model):
                 if ping.startswith("&"):
                     data["mention_roles"].append(ping[1:])
                     continue
-                if not (member := await getCore().getUserByChannelId(self.channel_id, int(ping))):
+                if not (member := await getCore().getUserByChannelId(self.channel.id, int(ping))):
                     continue
                 if isinstance(member, GuildMember):
                     member = member.user

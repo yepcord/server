@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import importlib
+import warnings
 from os import environ
 
 from .classes.singleton import Singleton
@@ -63,6 +64,8 @@ _defaults = {
             "url": "ws://127.0.0.1:5055",
         },
     },
+    "REDIS_URL": "",
+    "GATEWAY_KEEP_ALIVE_DELAY": 45,
 }
 
 
@@ -75,3 +78,6 @@ class _Config(Singleton):
 Config = (
     _Config().update(_defaults).update(_variables).update({"SETTINGS_MODULE": environ.get("SETTINGS", "src.settings")})
 )
+
+if Config.KEY == _defaults["KEY"]:
+    warnings.warn("It seems like KEY variable is set to default value. It should be changed in production!")

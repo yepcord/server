@@ -15,12 +15,12 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+import traceback
 from asyncio import get_event_loop, sleep as asleep
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from io import BytesIO
 from re import compile as rcompile
-from typing import Union, Optional
+from typing import Union, Optional, Any
 
 from magic import from_buffer
 
@@ -83,21 +83,15 @@ async def execute_after(coro, seconds):
 ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')
 
 
-def proto_get(proto_obj, path, default=None, output_dict=None, output_name=None):
+def dict_get(obj: dict, path: str, default: Any=None, output_dict: dict=None, output_name: str=None):
     path = path.split(".")
-    # noinspection PyBroadException
-    try:
-        o = proto_obj
-        for p in path:
-            if hasattr(o, "ListFields"):
-                if p not in [f[0].name for f in o.ListFields()] and p != "value":
-                    return default
-            o = getattr(o, p)
-    except:
-        return default
+    for p in path:
+        if p not in obj:
+            return default
+        obj = obj[p]
     if output_dict is not None and output_name is not None:
-        output_dict[output_name] = o
-    return o
+        output_dict[output_name] = obj
+    return obj
 
 
 def int_size(i: int) -> int:
@@ -109,3 +103,19 @@ LOCALES = ["bg", "cs", "da", "de", "el", "en-GB", "es-ES", "fi", "fr", "hi", "hr
            "no", "pl", "pt-BR", "ro", "ru", "sv-SE", "th", "tr", "uk", "vi", "zh-CN", "zh-TW", "en-US"]
 
 NoneType = type(None)
+
+
+def freeze(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return frozenset({k: freeze(v) for k, v in obj.items()}.items())
+    if isinstance(obj, list):
+        return frozenset([freeze(v) for v in obj])
+    return obj
+
+
+def unfreeze(obj: Any) -> Any:
+    if isinstance(obj, frozenset):
+        return dict({k: unfreeze(v) for k, v in obj})
+    if isinstance(obj, list):
+        return [unfreeze(v) for v in obj]
+    return obj
