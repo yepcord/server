@@ -22,7 +22,7 @@ types-protobuf==4.23.0.2
 Werkzeug==2.3.6
 -r requirements-ftp.txt
 -r requirements-s3.txt
-git+ssh://git@github.com/wearefair/protobuf-to-dict
+git+https://github.com/wearefair/protobuf-to-dict
 
 # Ormar (with mysql, orjson, sqlite extras):
 #ormar[mysql,orjson,sqlite]~=0.12.2
