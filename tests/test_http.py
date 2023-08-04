@@ -1178,9 +1178,16 @@ async def test_gifs_trending(testapp):
     json = await resp.get_json()
     assert json["categories"]
 
+    resp = await client.get("/api/v9/gifs/trending", headers=headers)
+    assert resp.status_code == 200
+
+    resp = await client.get("/api/v9/gifs/trending-gifs", headers=headers)
+    assert resp.status_code == 200
     resp = await client.get("/api/v9/gifs/trending-gifs", headers=headers)
     assert resp.status_code == 200
 
+    resp = await client.post("/api/v9/gifs/select", headers=headers)
+    assert resp.status_code == 204
     resp = await client.post("/api/v9/gifs/select", headers=headers)
     assert resp.status_code == 204
 
@@ -1193,10 +1200,16 @@ async def test_gifs_search_suggest(testapp):
     assert resp.status_code == 200
     assert len(await resp.get_json()) > 0
 
+    resp = await client.get("/api/v9/gifs/search?q=cat", headers=headers)
+    assert resp.status_code == 200
+
     resp = await client.get("/api/v9/gifs/suggest?q=cat&limit=5", headers=headers)
     assert resp.status_code == 200
     json = await resp.get_json()
     assert 0 < len(json) <= 5
+
+    resp = await client.get("/api/v9/gifs/suggest?q=cat&limit=5", headers=headers)
+    assert resp.status_code == 200
 
 
 @pt.mark.asyncio

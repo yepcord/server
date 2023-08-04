@@ -189,6 +189,9 @@ class GatewayEvents:
             "data": await event.json(),
             "event": event.NAME,
             "users": users,
+            "channel_id": None,
+            "guild_id": None,
+            "permissions": None,
         })
         await self.sendToUsers(RawDispatchEventWrapper(event), users)
 
