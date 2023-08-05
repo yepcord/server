@@ -94,7 +94,7 @@ class User(ormar.Model):
                 data["guild_member_profile"] = {"guild_id": str(guild_id)}
                 data["guild_member"] = await member.ds_json()
         if mutual_friends_count:
-            data["mutual_friends_count"] = 0  # TODO
+            data["mutual_friends_count"] = 0  # TODO: add mutual friends count
         if with_mutual_guilds:
             data["mutual_guilds"] = await getCore().getMutualGuildsJ(self, other_user)
 
@@ -243,9 +243,11 @@ class UserSettings(ormar.Model):
     theme: str = ormar.String(max_length=8, default="dark", choices=["dark", "light"])
     locale: str = ormar.String(max_length=8, default="en-US")
     mfa: str = ormar.String(max_length=64, nullable=True, default=None)
-    render_spoilers: str = ormar.String(max_length=16, default="ON_CLICK")  # TODO: add `choices`
+    render_spoilers: str = ormar.String(max_length=16, default="ON_CLICK",
+                                        choices=["ALWAYS", "ON_CLICK", "IF_MODERATOR"])
     dismissed_contents: str = ormar.String(max_length=64, default="510109000002000080")
-    status: str = ormar.String(max_length=32, default="online")  # TODO: add `choices`
+    status: str = ormar.String(max_length=32, default="online",
+                               choices=["online", "idle", "dnd", "offline", "invisible"])
     custom_status: Optional[dict] = ormar.JSON(nullable=True, default=None)
     activity_restricted_guild_ids: list = ormar.JSON(default=[])
     friend_source_flags: dict = ormar.JSON(default={"all": True})
@@ -318,7 +320,7 @@ class UserSettingsProto:
 
     def get(self) -> PreloadedUserSettings:
         proto = PreloadedUserSettings(
-            versions=Versions(client_version=14, data_version=1),  # TODO: get data version from database
+            versions=Versions(client_version=14, data_version=1),
             user_content=UserContentSettings(dismissed_contents=bytes.fromhex(self.dismissed_contents)),
             voice_and_video=VoiceAndVideoSettings(
                 afk_timeout=UInt32Value(value=self.afk_timeout),

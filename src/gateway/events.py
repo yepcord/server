@@ -19,14 +19,15 @@
 from __future__ import annotations
 from base64 import b64encode
 from time import time
-from typing import List, TYPE_CHECKING, Union
+from typing import List, TYPE_CHECKING
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
 from ..yepcord.snowflake import Snowflake
+from ..yepcord.models import Emoji
 
 if TYPE_CHECKING:
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Emoji
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
     from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence

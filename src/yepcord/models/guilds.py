@@ -207,8 +207,8 @@ class GuildMember(ormar.Model):
             "flags": self.flags,
             "joined_at": self.joined_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
             "nick": self.nick,
-            "is_pending": False,  # TODO
-            "pending": False,  # TODO
+            "is_pending": False,
+            "pending": False,
             "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "roles": [str(role) for role in await getCore().getMemberRolesIds(self)],
             "user": userdata.ds_json,

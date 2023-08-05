@@ -15,12 +15,10 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-import os
 import sys
 from json import dumps as jdumps
 
 from quart import Quart, request, Response
-from quart.globals import request_ctx
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
 from .routes.auth import auth
@@ -36,7 +34,6 @@ from .routes.webhooks import webhooks
 from ..yepcord.classes.gifs import Gifs
 from ..yepcord.config import Config
 from ..yepcord.core import Core, CDN
-from ..yepcord.ctx import Ctx
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.gateway_dispatcher import GatewayDispatcher
 from ..yepcord.models import database
@@ -46,19 +43,6 @@ from ..yepcord.utils import b64decode, b64encode
 
 class YEPcord(Quart):
     gifs: Gifs
-
-    async def dispatch_request(self, request_context=None):
-        request_ = (request_context or request_ctx).request
-        if request_.routing_exception is not None:  # pragma: no cover
-            self.raise_routing_exception(request_)
-
-        if request_.method == "OPTIONS" and request_.url_rule.provide_automatic_options:  # pragma: no cover
-            return await self.make_default_options_response()
-
-        handler = self.view_functions[request_.url_rule.endpoint]
-        Ctx.set("CORE", core)
-        Ctx.set("STORAGE", cdn.storage)
-        return await self.ensure_async(handler)(**request_.view_args)
 
 
 app = YEPcord("YEPcord-api")

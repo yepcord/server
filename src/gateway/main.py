@@ -75,7 +75,7 @@ async def ws_gateway():
         except CancelledError:
             setattr(ws, "ws_connected", False)
             await gw.disconnect(ws)
-            break  # TODO: Handle disconnect
+            raise
 
 if __name__ == "__main__":
     from uvicorn import run as urun

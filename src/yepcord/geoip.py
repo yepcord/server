@@ -20,37 +20,50 @@ from socket import inet_aton
 from struct import unpack
 from pickle import load as pload
 
-with open("other/ip_to_lang.pkl", "rb") as f:
-    IP_DB = pload(f)
+from .classes.singleton import Singleton
 
 
-def _ip2int(addr):
-    try:
-        return unpack("!I", inet_aton(addr))[0]
-    except OSError:
-        return -1
+class IpDatabase(Singleton):
+    _db = []
 
+    def __init__(self):
+        IpDatabase._db = []
 
-def _search(ip, low=0, high=len(IP_DB)-1, mid=0):
-    if high >= low:
-        mid = (high + low) // 2
-        if IP_DB[mid][0] == ip:
-            return mid
-        elif IP_DB[mid][0] > ip:
-            return _search(ip, low, mid - 1, mid)
-        else:
-            return _search(ip, mid + 1, high, mid)
-    return mid-1
+    def _load(self) -> None:
+        with open("other/ip_to_lang.pkl", "rb") as f:
+            IpDatabase._db = pload(f)
 
+    def _ip_to_int(self, address: str) -> int:
+        try:
+            return unpack("!I", inet_aton(address))[0]
+        except OSError:
+            return -1
 
-def getLanguageCode(ip, default: str="en-US"):
-    if (ip := _ip2int(ip)) == -1:
+    def _search(self, ip: int, low=0, high=len(_db)-1, mid=0):
+        if not self._db:
+            self._load()
+
+        if high >= low:
+            mid = (high + low) // 2
+            if self._db[mid][0] == ip:
+                return mid
+            elif self._db[mid][0] > ip:
+                return self._search(ip, low, mid - 1, mid)
+            else:
+                return self._search(ip, mid + 1, high, mid)
+        return mid-1
+
+    def getLanguageCode(self, ip: str, default: str="en-US"):
+        if (ip := self._ip_to_int(ip)) == -1:
+            return default
+        idx = self._search(ip)
+        tidx = len(self._db) - 1 if idx + 1 >= len(self._db) else idx + 1
+        bidx = 0 if idx - 1 < 0 else idx-1
+        ips = self._db[bidx:tidx]
+        for i in ips:
+            if ip in range(i[0], i[1]):
+                return i[2]
         return default
-    idx = _search(ip)
-    tidx = len(IP_DB) - 1 if idx + 1 >= len(IP_DB) else idx + 1
-    bidx = 0 if idx - 1 < 0 else idx-1
-    ips = IP_DB[bidx:tidx]
-    for i in ips:
-        if ip in range(i[0], i[1]):
-            return i[2]
-    return default
+
+
+getLanguageCode = IpDatabase().getLanguageCode

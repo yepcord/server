@@ -406,11 +406,10 @@ class ReadState(ormar.Model):
     last_read_id: int = ormar.BigInteger()
     count: int = ormar.Integer()
 
-    @property
-    def ds_json(self) -> dict:
+    async def ds_json(self) -> dict:
         return {
             "mention_count": self.count,
-            "last_pin_timestamp": ...,
+            "last_pin_timestamp": await getCore().getLastPinTimestamp(self.channel),
             "last_message_id": str(self.last_read_id),
             "id": str(self.channel.id),
         }

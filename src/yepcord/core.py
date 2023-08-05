@@ -407,13 +407,9 @@ class Core(Singleton):
 
     async def getReadStatesJ(self, user: User) -> list:
         states = []
+        st: ReadState
         for st in await ReadState.objects.filter(user=user).all():
-            states.append({  # TODO: replace with st.ds_json
-                "mention_count": st.count,
-                "last_pin_timestamp": await self.getLastPinTimestamp(st.channel),
-                "last_message_id": str(st.last_read_id),
-                "id": str(st.channel.id),
-            })
+            states.append(await st.ds_json())
         return states
 
     async def getUserNote(self, user: User, target: User) -> Optional[UserNote]:
@@ -523,19 +519,22 @@ class Core(Singleton):
     async def removeReaction(self, message: Message, user: User, emoji: Emoji, emoji_name: str) -> None:
         await Reaction.objects.delete(user=user, message=message, emoji=emoji, emoji_name=emoji_name)
 
-    async def getMessageReactionsJ(self, message: Message, user: User) -> list:
+    async def getMessageReactionsJ(self, message: Message, user: Union[User, int]) -> list:
+        if isinstance(user, User):
+            user = user.id
         reactions = []
-        # TODO: test and maybe rewrite whole method
-        # result = await Channel.Meta.database.fetch_all(
-        #    query=f'SELECT `emoji_name` as ename, `emoji` as eid, COUNT(*) AS ecount, (SELECT COUNT(*) > 0 FROM '
-        #          f'`reactions` WHERE `emoji_name`=ename AND (`emoji`=eid OR (`emoji` IS NULL AND eid IS NULL)) '
-        #          f'AND `user_id`=:user_id) as me FROM `reactions` WHERE `message_id`=:message_id GROUP BY '
-        #          f'CONCAT(`emoji_name`, `emoji`) COLLATE utf8mb4_unicode_520_ci;',
-        #    values={"user_id": user.id, "message_id": message.id}
-        # )
-        # for r in result:
-        #    reactions.append(
-        #        {"emoji": {"id": str(r[1]) if r[1] else None, "name": r[0]}, "count": r[2], "me": bool(r[3])})
+        table_name = "reactionss"
+        result = await Channel.Meta.database.fetch_all(
+           query=f'SELECT `emoji_name` as ename, `emoji` as eid, COUNT(*) AS ecount, (SELECT COUNT(*) > 0 FROM '
+                 f'`{table_name}` WHERE `emoji_name`=ename AND (`emoji`=eid OR (`emoji` IS NULL AND eid IS NULL)) '
+                 f'AND `user`=:user_id) as me FROM `{table_name}` WHERE `message`=:message_id GROUP BY '
+                 f'CONCAT(`emoji_name`, `emoji`) COLLATE utf8mb4_unicode_520_ci;',
+           values={"user_id": user, "message_id": message.id}
+        )
+        for r in result:
+            reactions.append(
+               {"emoji": {"id": str(r[1]) if r[1] else None, "name": r[0]}, "count": r[2], "me": bool(r[3])}
+            )
         return reactions
 
     async def getReactedUsersJ(self, message: Message, limit: int, emoji: Emoji, emoji_name: str) -> list[dict]:
