@@ -955,7 +955,10 @@ class Core(Singleton):
         if self.ipdb is None:
             self.ipdb = maxminddb.open_database("other/ip_database.mmdb")
 
-        country_code = (self.ipdb.get(ip) or {"country": {"iso_code": None}})["country"]["iso_code"] or default
+        try:
+            country_code = (self.ipdb.get(ip) or {"country": {"iso_code": None}})["country"]["iso_code"] or default
+        except (ValueError, KeyError):
+            return default
         country_to_language = {
             "UA": "uk", "US": "en-US", "BG": "bg", "CZ": "cs", "DK": "da", "DE": "de", "GR": "el", "GB": "en-GB",
             "ES": "es-ES", "FI": "fi", "FR": "fr", "IN": "hi", "HR": "hr", "HU": "hu", "IT": "it", "JP": "ja",
