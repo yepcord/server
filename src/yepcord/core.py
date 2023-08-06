@@ -15,7 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+import os.path
 from asyncio import get_event_loop
 # noinspection PyPackageRequirements
 from contextvars import Context
@@ -28,6 +28,7 @@ from random import randint
 from time import time
 from typing import Optional, Union
 
+import maxminddb
 from bcrypt import hashpw, gensalt, checkpw
 from ormar import or_
 
@@ -56,11 +57,9 @@ class CDN(Singleton):
 
 # noinspection PyMethodMayBeStatic
 class Core(Singleton):
-    def __init__(self, key=None, loop=None):
-        self.key = key if key and len(key) == 16 and type(key) == bytes else b''
-        self.pool = None
-        self.loop = loop or get_event_loop()
-        self._cache = {}
+    def __init__(self, key=None):
+        self.key = key if key and len(key) >= 16 and type(key) == bytes else urandom(32)
+        self.ipdb = None
 
     def prepPassword(self, password: str, uid: int) -> bytes:
         """
@@ -526,8 +525,8 @@ class Core(Singleton):
         table_name = "reactionss"
         result = await Channel.Meta.database.fetch_all(
            query=f'SELECT `emoji_name` as ename, `emoji` as eid, COUNT(*) AS ecount, (SELECT COUNT(*) > 0 FROM '
-                 f'`{table_name}` WHERE `emoji_name`=ename AND (`emoji`=eid OR (`emoji` IS NULL AND eid IS NULL)) '
-                 f'AND `user`=:user_id) as me FROM `{table_name}` WHERE `message`=:message_id GROUP BY '
+                 f'`reactionss` WHERE `emoji_name`=ename AND (`emoji`=eid OR (`emoji` IS NULL AND eid IS NULL)) '
+                 f'AND `user`=:user_id) as me FROM `reactionss` WHERE `message`=:message_id GROUP BY '
                  f'CONCAT(`emoji_name`, `emoji`) COLLATE utf8mb4_unicode_520_ci;',
            values={"user_id": user, "message_id": message.id}
         )
@@ -949,6 +948,22 @@ class Core(Singleton):
 
     async def getThreadMember(self, thread: Channel, user_id: int) -> Optional[ThreadMember]:
         return await ThreadMember.objects.get_or_none(channel=thread, user__id=user_id)
+
+    def getLanguageCode(self, ip: str, default: str="en-US") -> str:
+        if self.ipdb is None and not os.path.exists("other/ip_database.mmdb"):
+            return default
+        if self.ipdb is None:
+            self.ipdb = maxminddb.open_database("other/ip_database.mmdb")
+
+        country_code = (self.ipdb.get(ip) or {"country": {"iso_code": None}})["country"]["iso_code"] or default
+        country_to_language = {
+            "UA": "uk", "US": "en-US", "BG": "bg", "CZ": "cs", "DK": "da", "DE": "de", "GR": "el", "GB": "en-GB",
+            "ES": "es-ES", "FI": "fi", "FR": "fr", "IN": "hi", "HR": "hr", "HU": "hu", "IT": "it", "JP": "ja",
+            "KR": "ko", "LT": "lt", "NL": "nl", "NO": "no", "PL": "pl", "BR": "pt-BR", "RO": "ro", "RU": "RU",
+            "SE": "sv-SE", "TH": "th", "TR": "tr", "VN": "vi", "CN": "zh-CN", "TW": "zh-TW",
+        }
+
+        return country_to_language.get(country_code, default)
 
 
 import src.yepcord.ctx as c

@@ -1,3 +1,4 @@
+import os.path
 from os import environ
 import click
 
@@ -115,3 +116,27 @@ def run_all(settings: str, host: str, port: int, reload: bool, ssl: bool) -> Non
         kwargs["ssl_keyfile"] = "ssl/key.pem"
 
     uvicorn.run("app:create_yepcord", **kwargs)
+
+
+@app.cli.command(name="download_ipdb")
+@click.option("--url", "-u", help="Url of mmdb file.",
+              default="https://github.com/geoacumen/geoacumen-country/raw/master/Geoacumen-Country.mmdb")
+@click.option("--replace", is_flag=True, help="Replace existing mmdb file.")
+def download_ipdb(url: str, replace: bool) -> None:
+    from wget import download
+
+    if os.path.exists("other/ip_database.mmdb.old"):
+        os.remove("other/ip_database.mmdb.old")
+
+    if os.path.exists("other/ip_database.mmdb") and replace:
+        os.rename("other/ip_database.mmdb", "other/ip_database.mmdb.old")
+    elif os.path.exists("other/ip_database.mmdb") and not replace:
+        return
+
+    try:
+        download(url, out="other/ip_database.mmdb")
+    except Exception as e:
+        print(f"Failed to download ip database: {e.__class__.__name__}: {e}.")
+        if os.path.exists("other/ip_database.mmdb"):
+            os.remove("other/ip_database.mmdb")
+        os.rename("other/ip_database.mmdb.old", "other/ip_database.mmdb")
