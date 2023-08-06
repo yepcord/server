@@ -200,7 +200,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
     attachments = []
     if data is None:  # Multipart request
         if request.content_length > 1024 * 1024 * 100:
-            raise InvalidDataErr(400, Errors.make(50006))
+            raise InvalidDataErr(400, Errors.make(50045))
         async with timeout(current_app.config["BODY_TIMEOUT"]):
             files = list((await request.files).values())
             data = await request.form

@@ -18,7 +18,6 @@
 
 from asyncio import get_event_loop
 from base64 import b64encode
-from time import time
 
 import pytest as pt
 import pytest_asyncio
@@ -1072,14 +1071,33 @@ async def test_mfa_enable(testapp):
                              json={'password': 'test_passw0rd_changed'})
     assert resp.status_code == 400
 
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'password': 'test_passw0rd_invalid'})
+    assert resp.status_code == 400
+
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'code': "111111", 'secret': "abcdef!@#%", 'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 400
+
     secret = "a" * 16
     m = MFA(secret, 0)
+
+    code = m.getCode()
+    invalid_code = (code + str((int(code[-1]) + 1) % 10))[1:]
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'code': invalid_code, 'secret': secret, 'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 400
+
     resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
                              json={'code': m.getCode(), 'secret': secret, 'password': 'test_passw0rd_changed'})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"]
     TestVars.set("token", json["token"])
+    headers = {"Authorization": TestVars.get("token")}
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'code': m.getCode(), 'secret': secret, 'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 404
 
     check_codes(json["backup_codes"], user_id)
 
@@ -1105,6 +1123,16 @@ async def test_mfa_view_backup_codes(testapp):
     assert (regenerate_nonce := json["regenerate_nonce"])
 
     key = generateMfaVerificationKey(nonce, "A" * 16, b64decode(Config.KEY))
+
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': key, 'nonce': "", 'regenerate': False})
+    assert resp.status_code == 400
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': "", 'nonce': "", 'regenerate': False})
+    assert resp.status_code == 400
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': "invalidkey", 'nonce': nonce, 'regenerate': False})
+    assert resp.status_code == 400
 
     resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
                              json={'key': key, 'nonce': nonce, 'regenerate': False})
@@ -1161,12 +1189,20 @@ async def test_disable_mfa(testapp):
                              json={'code': "........"})  # Invalid backup code
     assert resp.status_code == 400
 
+    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers,
+                             json={'code': ""})
+    assert resp.status_code == 400
+
     mfa = MFA("a" * 16, 0)
     resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"]
     TestVars.set("token", json["token"])
+    headers = {"Authorization": TestVars.get("token")}
+
+    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
+    assert resp.status_code == 404
 
 
 @pt.mark.asyncio
@@ -1392,3 +1428,16 @@ async def test_dm_channels(testapp):
 
     resp = await client.delete(f"/api/v9/channels/{dm_id}", headers=headers)
     assert resp.status_code == 204
+
+
+@pt.mark.asyncio
+async def test_change_username_dont_change_discriminator(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    data2 = TestVars.get("data_u2")
+    resp = await client.patch(f"/api/v9/users/@me", headers=headers, json={"username": data2["username"],
+                                                                           "discriminator": data2["discriminator"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["username"] == data2["username"]
+    assert json["discriminator"] != data2["discriminator"]

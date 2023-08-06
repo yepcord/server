@@ -249,6 +249,9 @@ async def set_notes(data: PutNote, user: User, target_uid: int):
 @multipleDecorators(validate_request(MfaEnable), usingDB, getSession)
 async def enable_mfa(data: MfaEnable, session: Session):  # TODO: Check if mfa already enabled
     user = session.user
+    settings = await user.settings
+    if settings.mfa is not None:
+        raise InvalidDataErr(404, Errors.make(60001))
     if not (password := data.password) or not await getCore().checkUserPassword(user, password):
         raise InvalidDataErr(400, Errors.make(50018))
     if not (secret := data.secret):
@@ -258,7 +261,6 @@ async def enable_mfa(data: MfaEnable, session: Session):  # TODO: Check if mfa a
         raise InvalidDataErr(400, Errors.make(60005))
     if not (code := data.code) or code not in mfa.getCodes():
         raise InvalidDataErr(400, Errors.make(60008))
-    settings = await user.settings
     await settings.update(mfa=secret)
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
     await getCore().setBackupCodes(user, codes)
@@ -275,13 +277,14 @@ async def disable_mfa(data: MfaDisable, session: Session):
     if not (code := data.code):
         raise InvalidDataErr(400, Errors.make(60008))
     user = session.user
-    if not (mfa := await getCore().getMfa(user)):
-        raise InvalidDataErr(400, Errors.make(50018))
+    settings = await user.settings
+    if settings.mfa is None:
+        raise InvalidDataErr(404, Errors.make(60002))
+    mfa = await getCore().getMfa(user)
     code = code.replace("-", "").replace(" ", "")
     if code not in mfa.getCodes():
         if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
             raise InvalidDataErr(400, Errors.make(60008))
-    settings = await user.settings
     await settings.update(mfa=None)
     await getCore().clearBackupCodes(user)
     await getGw().dispatch(UserUpdateEvent(user, await user.data, settings), [user.id])
@@ -410,7 +413,7 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
         for event_id in await getCore().getSubscribedGuildEventIds(user, guild_id):
             events.append({
                 "guild_scheduled_event_id": str(event_id),
-                "user_id": str(user.id)  # current user or creator??
+                "user_id": str(user.id)
             })
 
     return events
