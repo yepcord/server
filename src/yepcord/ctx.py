@@ -22,7 +22,7 @@ from __future__ import annotations
 from contextvars import ContextVar, copy_context
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from .core import Core
     from .storage import _Storage
     from .gateway_dispatcher import GatewayDispatcher

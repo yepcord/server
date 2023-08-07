@@ -24,14 +24,14 @@ from typing_extensions import TYPE_CHECKING
 
 from ..utils import b64encode, int_size
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from . import Message
 
 import ormar
 from ormar import ReferentialAction, QuerySet
 from pydantic import Field
 
-from . import DefaultMeta, User
+from . import DefaultMeta, User, collation
 from ..ctx import getCore
 from ..enums import ChannelType
 from ..snowflake import Snowflake
@@ -49,8 +49,8 @@ class Channel(ormar.Model):
     guild: Optional[GuildRef] = ormar.ForeignKey(GuildRef, ondelete=ReferentialAction.CASCADE, nullable=True,
                                                  default=None)
     position: Optional[int] = ormar.Integer(nullable=True, default=None)
-    name: Optional[str] = ormar.String(max_length=128, nullable=True, default=None, collation="utf8mb4_general_ci")
-    topic: Optional[str] = ormar.String(max_length=128, nullable=True, default=None, collation="utf8mb4_general_ci")
+    name: Optional[str] = ormar.String(max_length=128, nullable=True, default=None, collation=collation)
+    topic: Optional[str] = ormar.String(max_length=128, nullable=True, default=None, collation=collation)
     nsfw: Optional[bool] = ormar.Boolean(nullable=True, default=None)
     bitrate: Optional[int] = ormar.Integer(nullable=True, default=None)
     user_limit: Optional[int] = ormar.Integer(nullable=True, default=None)
@@ -374,7 +374,7 @@ class Webhook(ormar.Model):
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     type: int = ormar.Integer()
-    name: str = ormar.String(max_length=128, collation="utf8mb4_general_ci")
+    name: str = ormar.String(max_length=128, collation=collation)
     channel: Channel = ormar.ForeignKey(Channel, ondelete=ReferentialAction.CASCADE)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     application_id: Optional[int] = ormar.BigInteger(nullable=True, default=None)

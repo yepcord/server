@@ -23,7 +23,7 @@ import ormar
 from ormar import ReferentialAction
 from pydantic import Field
 
-from . import DefaultMeta, User, Channel, Guild, Emoji, GuildMember, ThreadMember, UserData
+from . import DefaultMeta, User, Channel, Guild, Emoji, GuildMember, ThreadMember, UserData, collation
 from ..config import Config
 from ..ctx import getCore
 from ..enums import MessageType
@@ -38,7 +38,7 @@ class Message(ormar.Model):
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     channel: Channel = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL, related_name="channel")
     author: Optional[User] = ormar.ForeignKey(User, ondelete=ReferentialAction.SET_NULL)
-    content: Optional[str] = ormar.String(max_length=2000, nullable=True, default=None, collation="utf8mb4_general_ci")
+    content: Optional[str] = ormar.String(max_length=2000, nullable=True, default=None, collation=collation)
     edit_timestamp: Optional[datetime] = ormar.DateTime(nullable=True, default=None)
     embeds: list = ormar.JSON(default=[])
     pinned: bool = ormar.Boolean(default=False)
@@ -136,7 +136,7 @@ class Attachment(ormar.Model):
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     channel: Channel = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL)
     message: Message = ormar.ForeignKey(Message, ondelete=ReferentialAction.CASCADE)
-    filename: str = ormar.String(max_length=128, collation="utf8mb4_general_ci")
+    filename: str = ormar.String(max_length=128, collation=collation)
     size: str = ormar.Integer()
     content_type: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
     metadata: dict = ormar.JSON(default={})
@@ -164,4 +164,4 @@ class Reactions(ormar.Model):
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     emoji: Optional[Emoji] = ormar.ForeignKey(Emoji, ondelete=ReferentialAction.SET_NULL, nullable=True, default=None)
     emoji_name: Optional[str] = ormar.String(max_length=128, nullable=True, default=None,
-                                             collation="utf8mb4_general_ci")
+                                             collation=collation)

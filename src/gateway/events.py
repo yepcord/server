@@ -26,7 +26,7 @@ from ..yepcord.enums import GatewayOp
 from ..yepcord.snowflake import Snowflake
 from ..yepcord.models import Emoji
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
     from ..yepcord.core import Core
     from .gateway import GatewayClient

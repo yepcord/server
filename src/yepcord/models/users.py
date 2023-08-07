@@ -27,12 +27,12 @@ from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, In
 from ormar import ReferentialAction
 from protobuf_to_dict import protobuf_to_dict
 
-from . import DefaultMeta
+from . import DefaultMeta, collation
 from ..ctx import getCore
 from ..enums import RelationshipType, RelTypeDiscord
-from ..proto import PreloadedUserSettings, UserContentSettings, Versions, VoiceAndVideoSettings, TextAndImagesSettings, \
+from ..proto import PreloadedUserSettings, UserContentSettings, Versions, VoiceAndVideoSettings, FrecencyUserSettings, \
     PrivacySettings, StatusSettings, LocalizationSettings, AppearanceSettings, Theme, GuildFolders, GuildFolder, \
-    FrecencyUserSettings, CustomStatus
+    TextAndImagesSettings, CustomStatus
 from ..snowflake import Snowflake
 from ..utils import b64encode, int_size, b64decode, dict_get, freeze, unfreeze
 
@@ -146,13 +146,13 @@ class UserData(ormar.Model):
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     birth: date = ormar.Date()
-    username: str = ormar.String(max_length=128, collation="utf8mb4_general_ci")
+    username: str = ormar.String(max_length=128, collation=collation)
     discriminator: int = ormar.Integer(minimum=1, maximum=9999)
     premium: bool = ormar.Boolean(default=True)
     flags: int = ormar.BigInteger(default=0)
     public_flags: int = ormar.BigInteger(default=0)
     phone: Optional[str] = ormar.String(max_length=32, nullable=True, default=None)
-    bio: str = ormar.String(max_length=256, default="", collation="utf8mb4_general_ci")
+    bio: str = ormar.String(max_length=256, default="", collation=collation)
     accent_color: Optional[int] = ormar.BigInteger(nullable=True, default=None)
     avatar: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
     avatar_decoration: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
@@ -531,7 +531,7 @@ class UserNote(ormar.Model):
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="user")
     target: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="target")
-    text: str = ormar.Text(nullable=True, default=None, collation="utf8mb4_general_ci")
+    text: str = ormar.Text(nullable=True, default=None, collation=collation)
 
     def ds_json(self) -> dict:
         return {

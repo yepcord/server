@@ -14,3 +14,6 @@ metadata = sqlalchemy.MetaData()
 class DefaultMeta:
     database = database
     metadata = metadata
+
+
+collation = None if "sqlite" in URL.split("://")[0].lower() else "utf8mb4_general_ci"

@@ -26,7 +26,7 @@ from typing import Optional, Any, Coroutine, TYPE_CHECKING
 from redis.asyncio.client import Redis, PubSub
 
 from ..yepcord.config import Config
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from .gateway import Gateway
 
 
