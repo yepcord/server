@@ -13,3 +13,4 @@ endpoints.*
 coverage.xml
 tests/files
 settings*_prod.py
+other/ip_database.mmdb.old

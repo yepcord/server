@@ -80,7 +80,7 @@ class Gifs(Singleton):
         return self._categories
 
     async def _update_categories(self) -> None:
-        if self._key is None:
+        if self._key is None:  # pragma: no cover
             self._categories = []
             return
         categories = []
@@ -92,7 +92,7 @@ class Gifs(Singleton):
         self._last_update = time()
 
     async def search(self, q: str=None, **kwargs) -> GifSearchResult:
-        if self._key is None or not q:
+        if self._key is None or not q:  # pragma: no cover
             return GifSearchResult(q, [], 0)
 
         search = [s for s in self._last_searches if s.query == q]
@@ -103,7 +103,7 @@ class Gifs(Singleton):
                 self._last_searches.remove(search)
                 self._last_searches.append(search)
                 return search
-            self._last_searches.remove(search)
+            self._last_searches.remove(search)  # pragma: no cover
 
         gifs = []
         if "key" in kwargs: del kwargs["key"]
@@ -126,13 +126,13 @@ class Gifs(Singleton):
 
         self._last_searches.append(search)
 
-        while len(self._last_searches) > self._keep_searches:
+        while len(self._last_searches) > self._keep_searches:  # pragma: no cover
             self._last_searches.pop(0)
 
         return search
 
     async def suggest(self, q: str=None, limit: int = 5, **kwargs) -> List[str]:
-        if self._key is None or not q:
+        if self._key is None or not q:  # pragma: no cover
             return []
 
         suggestion = [s for s in self._last_suggestions if s.query == q]
@@ -143,7 +143,7 @@ class Gifs(Singleton):
                 self._last_suggestions.remove(suggestion)
                 self._last_suggestions.append(suggestion)
                 return suggestion.tags[:limit]
-            self._last_suggestions.remove(suggestion)
+            self._last_suggestions.remove(suggestion)  # pragma: no cover
 
         if "key" in kwargs: del kwargs["key"]
         _params = {"key": self._key, "q": q, **kwargs}
@@ -153,7 +153,7 @@ class Gifs(Singleton):
 
         self._last_suggestions.append(GifSuggestion(q, suggestions, int(time())))
 
-        while len(self._last_suggestions) > self._keep_searches:
+        while len(self._last_suggestions) > self._keep_searches:  # pragma: no cover
             self._last_suggestions.pop(0)
 
         return suggestions[:limit]

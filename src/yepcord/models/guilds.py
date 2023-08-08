@@ -25,7 +25,7 @@ import ormar
 from ormar import ReferentialAction, QuerySet
 from ormar.relations.relation_proxy import RelationProxy
 
-from . import DefaultMeta, User
+from . import DefaultMeta, User, collation
 from .channels import Channel, Invite, PermissionOverwrite
 from ..ctx import getCore
 from ..enums import ScheduledEventEntityType, ChannelType, GuildPermissions, AuditLogEntryType
@@ -40,10 +40,11 @@ class Guild(ormar.Model):
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     owner: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
-    name: str = ormar.String(max_length=64)
+    name: str = ormar.String(max_length=64, collation=collation)
     features: list = ormar.JSON(default=[])
     icon: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
-    description: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
+    description: Optional[str] = ormar.String(max_length=256, nullable=True, default=None,
+                                              collation=collation)
     splash: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
     discovery_splash: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
     banner: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
@@ -151,7 +152,7 @@ class Role(ormar.Model):
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
-    name: str = ormar.String(max_length=64)
+    name: str = ormar.String(max_length=64, collation=collation)
     permissions: int = ormar.BigInteger(default=1071698660929)
     position: int = ormar.Integer(default=0)
     color: int = ormar.BigInteger(default=0)
@@ -159,7 +160,8 @@ class Role(ormar.Model):
     managed: bool = ormar.Boolean(default=False)
     mentionable: bool = ormar.Boolean(default=False)
     icon: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
-    unicode_emoji: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
+    unicode_emoji: Optional[str] = ormar.String(max_length=256, nullable=True, default=None,
+                                                collation=collation)
     flags: int = ormar.BigInteger(default=0)
 
     def ds_json(self) -> dict:
@@ -188,7 +190,7 @@ class GuildMember(ormar.Model):
     avatar: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
     communication_disabled_until: Optional[int] = ormar.BigInteger(nullable=True, default=None)
     flags: int = ormar.BigInteger(default=0)
-    nick: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
+    nick: Optional[str] = ormar.String(max_length=128, nullable=True, default=None, collation=collation)
     mute: bool = ormar.Boolean(default=False)
     deaf: bool = ormar.Boolean(default=False)
     roles: Optional[Union[RelationProxy, QuerySet]] = ormar.ManyToMany(Role)
@@ -205,8 +207,8 @@ class GuildMember(ormar.Model):
             "flags": self.flags,
             "joined_at": self.joined_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
             "nick": self.nick,
-            "is_pending": False,  # TODO
-            "pending": False,  # TODO
+            "is_pending": False,
+            "pending": False,
             "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "roles": [str(role) for role in await getCore().getMemberRolesIds(self)],
             "user": userdata.ds_json,
@@ -294,7 +296,7 @@ class Emoji(ormar.Model):
         pass
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
-    name: str = ormar.String(max_length=64)
+    name: str = ormar.String(max_length=64, collation=collation)
     user: Optional[User] = ormar.ForeignKey(User, ondelete=ReferentialAction.SET_NULL)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
     require_colons: bool = ormar.Boolean(default=True)
@@ -341,13 +343,14 @@ class Sticker(ormar.Model):
         pass
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
-    name: str = ormar.String(max_length=64)
+    name: str = ormar.String(max_length=64, collation=collation)
     user: Optional[User] = ormar.ForeignKey(User, ondelete=ReferentialAction.SET_NULL)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
     type: int = ormar.Integer()
     format: int = ormar.Integer()
-    description: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
-    tags: Optional[str] = ormar.String(max_length=64, nullable=True, default=None)
+    description: Optional[str] = ormar.String(max_length=128, nullable=True, default=None,
+                                              collation=collation)
+    tags: Optional[str] = ormar.String(max_length=64, nullable=True, default=None, collation=collation)
 
     async def ds_json(self, with_user: bool=True) -> dict:
         data = {
@@ -372,9 +375,10 @@ class GuildTemplate(ormar.Model):
         pass
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
-    name: str = ormar.String(max_length=64)
+    name: str = ormar.String(max_length=64, collation=collation)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
-    description: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
+    description: Optional[str] = ormar.String(max_length=128, nullable=True, default=None,
+                                              collation=collation)
     usage_count: int = ormar.BigInteger(default=0)
     creator: Optional[User] = ormar.ForeignKey(User, ondelete=ReferentialAction.SET_NULL)
     serialized_guild: dict = ormar.JSON(default={})
@@ -499,9 +503,11 @@ class GuildEvent(ormar.Model):
     id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
     creator: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
-    channel: Optional[Channel] = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL, nullable=True, default=None)
-    name: str = ormar.String(max_length=64)
-    description: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
+    channel: Optional[Channel] = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL, nullable=True,
+                                                  default=None)
+    name: str = ormar.String(max_length=64, collation=collation)
+    description: Optional[str] = ormar.String(max_length=128, nullable=True, default=None,
+                                              collation=collation)
     start: datetime = ormar.DateTime()
     end: Optional[datetime] = ormar.DateTime(nullable=True, default=None)
     privacy_level: int = ormar.Integer(default=2)
@@ -674,8 +680,8 @@ class AuditLogEntryQuerySet(QuerySet):
         return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=target_user.id,
                                  action_type=AuditLogEntryType.MEMBER_BAN_REMOVE)
 
-    async def member_update(self, user: User, guild: Guild, member: GuildMember, changes: dict) -> AuditLogEntry:
-        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=member.id,
+    async def member_update(self, user: User, member: GuildMember, changes: dict) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=member.guild, user=user, target_id=member.id,
                                  action_type=AuditLogEntryType.MEMBER_UPDATE, changes=changes)
 
     async def role_create(self, user: User, role: Role) -> AuditLogEntry:
@@ -714,7 +720,7 @@ class AuditLogEntry(ormar.Model):
     user: Optional[User] = ormar.ForeignKey(User, ondelete=ReferentialAction.SET_NULL)
     target_id: int = ormar.BigInteger(nullable=True, default=None)
     action_type: int = ormar.Integer()
-    reason: Optional[str] = ormar.String(max_length=512, nullable=True, default=None)
+    reason: Optional[str] = ormar.String(max_length=512, nullable=True, default=None, collation=collation)
     changes: list = ormar.JSON(default=[])
     options: dict = ormar.JSON(default={})
 

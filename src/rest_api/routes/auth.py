@@ -26,7 +26,6 @@ from ..utils import usingDB, getSession, getUser, multipleDecorators
 from ...gateway.events import UserUpdateEvent
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.geoip import getLanguageCode
 from ...yepcord.models import Session, User
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import LOCALES, b64decode
@@ -38,7 +37,7 @@ auth = Blueprint('auth', __name__)
 @auth.post("/register")
 @multipleDecorators(validate_request(Register), usingDB)
 async def register(data: Register):
-    loc = getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
+    loc = getCore().getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
     sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth,
                                     loc)
     return {"token": sess.token}

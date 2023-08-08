@@ -214,4 +214,4 @@ async def api_oauth_tokens():
 
 @other.get("/api/v9/sticker-packs")
 async def api_stickerpacks_get():
-    return {"sticker_packs": []}  # TODO
+    return {"sticker_packs": []}

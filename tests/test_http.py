@@ -18,7 +18,6 @@
 
 from asyncio import get_event_loop
 from base64 import b64encode
-from time import time
 
 import pytest as pt
 import pytest_asyncio
@@ -787,15 +786,27 @@ async def test_send_guild_message(testapp):
     resp = await client.post(f"/api/v9/channels/{channel_id}/typing", headers=headers)
     assert resp.status_code == 204
 
+    nonce = str(Snowflake.makeId())
     resp = await client.post(f"/api/v9/channels/{channel_id}/messages", headers=headers,
-                             json={"content": "test message", 'nonce': '1086700261180702720'})
+                             json={"content": "test message", 'nonce': nonce})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["author"]["id"] == user_id
     assert json["content"] == "test message"
     assert json["type"] == 0
     assert json["guild_id"] == guild_id
-    assert json["nonce"] == '1086700261180702720'
+    assert json["nonce"] == nonce
+
+    nonce = str(Snowflake.makeId())
+    resp = await client.post(f"/api/v9/channels/{channel_id}/messages", headers=headers,
+                             json={"content": "message with emoji 💀", 'nonce': nonce})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["author"]["id"] == user_id
+    assert json["content"] == "message with emoji 💀"
+    assert json["type"] == 0
+    assert json["guild_id"] == guild_id
+    assert json["nonce"] == nonce
 
 
 @pt.mark.asyncio
@@ -1060,14 +1071,33 @@ async def test_mfa_enable(testapp):
                              json={'password': 'test_passw0rd_changed'})
     assert resp.status_code == 400
 
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'password': 'test_passw0rd_invalid'})
+    assert resp.status_code == 400
+
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'code': "111111", 'secret': "abcdef!@#%", 'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 400
+
     secret = "a" * 16
     m = MFA(secret, 0)
+
+    code = m.getCode()
+    invalid_code = (code + str((int(code[-1]) + 1) % 10))[1:]
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'code': invalid_code, 'secret': secret, 'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 400
+
     resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
                              json={'code': m.getCode(), 'secret': secret, 'password': 'test_passw0rd_changed'})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"]
     TestVars.set("token", json["token"])
+    headers = {"Authorization": TestVars.get("token")}
+    resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
+                             json={'code': m.getCode(), 'secret': secret, 'password': 'test_passw0rd_changed'})
+    assert resp.status_code == 404
 
     check_codes(json["backup_codes"], user_id)
 
@@ -1093,6 +1123,16 @@ async def test_mfa_view_backup_codes(testapp):
     assert (regenerate_nonce := json["regenerate_nonce"])
 
     key = generateMfaVerificationKey(nonce, "A" * 16, b64decode(Config.KEY))
+
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': key, 'nonce': "", 'regenerate': False})
+    assert resp.status_code == 400
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': "", 'nonce': "", 'regenerate': False})
+    assert resp.status_code == 400
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': "invalidkey", 'nonce': nonce, 'regenerate': False})
+    assert resp.status_code == 400
 
     resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
                              json={'key': key, 'nonce': nonce, 'regenerate': False})
@@ -1149,12 +1189,20 @@ async def test_disable_mfa(testapp):
                              json={'code': "........"})  # Invalid backup code
     assert resp.status_code == 400
 
+    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers,
+                             json={'code': ""})
+    assert resp.status_code == 400
+
     mfa = MFA("a" * 16, 0)
     resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"]
     TestVars.set("token", json["token"])
+    headers = {"Authorization": TestVars.get("token")}
+
+    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
+    assert resp.status_code == 404
 
 
 @pt.mark.asyncio
@@ -1166,9 +1214,16 @@ async def test_gifs_trending(testapp):
     json = await resp.get_json()
     assert json["categories"]
 
+    resp = await client.get("/api/v9/gifs/trending", headers=headers)
+    assert resp.status_code == 200
+
+    resp = await client.get("/api/v9/gifs/trending-gifs", headers=headers)
+    assert resp.status_code == 200
     resp = await client.get("/api/v9/gifs/trending-gifs", headers=headers)
     assert resp.status_code == 200
 
+    resp = await client.post("/api/v9/gifs/select", headers=headers)
+    assert resp.status_code == 204
     resp = await client.post("/api/v9/gifs/select", headers=headers)
     assert resp.status_code == 204
 
@@ -1181,10 +1236,16 @@ async def test_gifs_search_suggest(testapp):
     assert resp.status_code == 200
     assert len(await resp.get_json()) > 0
 
+    resp = await client.get("/api/v9/gifs/search?q=cat", headers=headers)
+    assert resp.status_code == 200
+
     resp = await client.get("/api/v9/gifs/suggest?q=cat&limit=5", headers=headers)
     assert resp.status_code == 200
     json = await resp.get_json()
     assert 0 < len(json) <= 5
+
+    resp = await client.get("/api/v9/gifs/suggest?q=cat&limit=5", headers=headers)
+    assert resp.status_code == 200
 
 
 @pt.mark.asyncio
@@ -1367,3 +1428,117 @@ async def test_dm_channels(testapp):
 
     resp = await client.delete(f"/api/v9/channels/{dm_id}", headers=headers)
     assert resp.status_code == 204
+
+
+@pt.mark.asyncio
+async def test_change_username_dont_change_discriminator(testapp):
+    client: TestClientType = (await testapp).test_client()
+    headers = {"Authorization": TestVars.get("token")}
+    data2 = TestVars.get("data_u2")
+    resp = await client.patch(f"/api/v9/users/@me", headers=headers, json={"username": data2["username"],
+                                                                           "discriminator": data2["discriminator"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["username"] == data2["username"]
+    assert json["discriminator"] != data2["discriminator"]
+
+
+@pt.mark.asyncio
+async def test_hardcoded_endpoints(testapp):
+    client: TestClientType = (await testapp).test_client()
+
+    resp = await client.get(f"/api/v9/auth/location-metadata")
+    assert resp.status_code == 200
+
+    resp = await client.post(f"/api/v9/science")
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/experiments")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/applications/detectable")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/survey")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/affinities/guilds")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/affinities/users")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/library")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/billing/payment-sources")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/billing/country-code")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/billing/localized-pricing-promo")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/billing/user-trial-offer")
+    assert resp.status_code == 404
+
+    resp = await client.get(f"/api/v9/users/@me/billing/subscriptions")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/billing/subscription-slots")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/guilds/premium/subscription-slots")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/outbound-promotions")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/applications/0/entitlements")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/store/published-listings/skus/978380684370378762/subscription-plans")
+    assert resp.status_code == 200
+    resp = await client.get(f"/api/v9/store/published-listings/skus/521846918637420545/subscription-plans")
+    assert resp.status_code == 200
+    resp = await client.get(f"/api/v9/store/published-listings/skus/521847234246082599/subscription-plans")
+    assert resp.status_code == 200
+    resp = await client.get(f"/api/v9/store/published-listings/skus/590663762298667008/subscription-plans")
+    assert resp.status_code == 200
+    resp = await client.get(f"/api/v9/store/published-listings/skus/1/subscription-plans")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/outbound-promotions/codes")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/entitlements/gifts")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/activities/statistics/applications")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/billing/payments")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/settings-proto/3")
+    assert resp.status_code == 200
+
+    resp = await client.patch(f"/api/v9/users/@me/settings-proto/3")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/@me/settings-proto/4")
+    assert resp.status_code == 400
+
+    resp = await client.patch(f"/api/v9/users/@me/settings-proto/4")
+    assert resp.status_code == 400
+
+    resp = await client.get(f"/api/v9/gateway")
+    assert resp.status_code == 200
+    assert await resp.get_json() == {"url": f"wss://{Config.GATEWAY_HOST}"}
+
+    resp = await client.get(f"/api/v9/oauth2/tokens")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/sticker-packs")
+    assert resp.status_code == 200

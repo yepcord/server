@@ -342,7 +342,7 @@ async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: i
 @multipleDecorators(usingDB, getUser, getGuildWM)
 async def get_guild_integrations(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-    return []  # TODO
+    return []
 
 
 @guilds.post("/<int:guild>/roles")
@@ -449,7 +449,7 @@ async def delete_role(user: User, guild: Guild, member: GuildMember, role: Role)
 @multipleDecorators(usingDB, getUser, getGuildWM, getRole)
 async def get_connections_configuration(user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-    return []  # TODO
+    return []
 
 
 @guilds.get("/<int:guild>/roles/member-counts")

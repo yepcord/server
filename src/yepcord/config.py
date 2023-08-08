@@ -19,13 +19,27 @@
 from __future__ import annotations
 
 import importlib
+import warnings
 from os import environ
 
 from .classes.singleton import Singleton
 
-_module = environ.get("SETTINGS", "src.settings")
-_settings = importlib.import_module(_module)
-_variables = {k: v for k, v in vars(_settings).items() if not k.startswith("__")}
+_settings_modules = ["src.settings_prod", "src.settings"]
+if (env_module := environ.get("SETTINGS", "src.settings")) and env_module not in _settings_modules:  # pragma: no cover
+    _settings_modules.insert(0, env_module)
+
+_settings = None
+for _module in _settings_modules:
+    try:
+        _settings = importlib.import_module(_module)
+        print(f"Settings module '{_module}' loaded.")
+        break
+    except ImportError as e:  # pragma: no cover
+        print(f"Settings module '{_module}' not loaded: {e}.")
+
+_variables = {}
+if _settings:
+    _variables = {k: v for k, v in vars(_settings).items() if not k.startswith("__")}
 
 _defaults = {
     "DB_CONNECT_STRING": "sqlite:///db.sqlite",
@@ -63,6 +77,8 @@ _defaults = {
             "url": "ws://127.0.0.1:5055",
         },
     },
+    "REDIS_URL": "",
+    "GATEWAY_KEEP_ALIVE_DELAY": 45,
 }
 
 
@@ -75,3 +91,6 @@ class _Config(Singleton):
 Config = (
     _Config().update(_defaults).update(_variables).update({"SETTINGS_MODULE": environ.get("SETTINGS", "src.settings")})
 )
+
+if Config.KEY == _defaults["KEY"]:  # pragma: no cover
+    warnings.warn("It seems like KEY variable is set to default value. It should be changed in production!")

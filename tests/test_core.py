@@ -498,3 +498,17 @@ async def test_getChannelMessagesCount_success(testCore: Coroutine[Any, Any, Cor
     testCore = await testCore
     channel = await testCore.getChannel(VARS["channel_id"])
     assert await testCore.getChannelMessagesCount(channel) == 0
+
+
+@pt.mark.asyncio
+async def test_geoip(testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
+
+    assert testCore.getLanguageCode("1.1.1.1") == "en-US"
+    assert testCore.getLanguageCode("134.249.127.127") == "uk"
+    assert testCore.getLanguageCode("103.21.236.200") == "de"
+    assert testCore.getLanguageCode("109.241.127.127") == "pl"
+    assert testCore.getLanguageCode("5.65.127.127") == "en-GB"
+
+    assert testCore.getLanguageCode("255.255.255.255") == "en-US"
+    assert testCore.getLanguageCode("255.255.255.255", "uk") == "uk"

@@ -59,6 +59,7 @@ class _Errors:
     err_10070 = "Unknown Guild Scheduled Event"
 
     err_30003 = "Maximum number of pins reached (50)"
+    err_30008 = "Maximum number of emojis reached"
     err_30031 = "A server can only have a single template."
 
     err_40007 = "The user is banned from this guild."
@@ -74,11 +75,13 @@ class _Errors:
     err_50028 = "Invalid Role"
     err_50033 = "Invalid Recipient(s)"
     err_50035 = "Invalid Form Body"
+    err_50045 = "File uploaded exceeds the maximum size"
     err_50046 = "Invalid Asset"
     err_50055 = "Invalid Guild"
     err_50104 = "Malformed user settings payload"
 
-    err_60002 = "Password does not match"
+    err_60001 = "This account is already enrolled in two-factor authentication"
+    err_60002 = "This account is not enrolled in two-factor authentication"
     err_60005 = "Invalid two-factor secret"
     err_60006 = "Invalid two-factor auth ticket"
     err_60008 = "Invalid two-factor code"

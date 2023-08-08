@@ -19,16 +19,18 @@
 from __future__ import annotations
 from base64 import b64encode
 from time import time
-from typing import List, TYPE_CHECKING, Union
+from typing import List, TYPE_CHECKING
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
 from ..yepcord.snowflake import Snowflake
+from ..yepcord.models import Emoji
 
-if TYPE_CHECKING:
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Emoji
+if TYPE_CHECKING:  # pragma: no cover
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
     from ..yepcord.core import Core
-    from .gateway import GatewayClient, ClientStatus
+    from .gateway import GatewayClient
+    from .presences import Presence
 
 
 class Event:
@@ -48,6 +50,15 @@ class RawDispatchEvent(DispatchEvent):
 
     async def json(self) -> dict:
         return self.data
+
+
+class RawDispatchEventWrapper(RawDispatchEvent):
+    def __init__(self, event: DispatchEvent, data: dict=None):
+        super().__init__(data)
+        self._event = event
+
+    async def json(self) -> dict:
+        return await self._event.json()
 
 
 class ReadyEvent(DispatchEvent):
@@ -260,9 +271,9 @@ class UserUpdateEvent(DispatchEvent):
 class PresenceUpdateEvent(DispatchEvent):
     NAME = "PRESENCE_UPDATE"
 
-    def __init__(self, userdata: UserData, status: Union[ClientStatus, dict]):
+    def __init__(self, userdata: UserData, presence: Presence):
         self.userdata = userdata
-        self.status = status
+        self.presence = presence
 
     async def json(self) -> dict:
         return {
@@ -270,10 +281,11 @@ class PresenceUpdateEvent(DispatchEvent):
             "op": self.OP,
             "d": {
                 "user": self.userdata.ds_json,
-                "status": self.status["status"],
-                "last_modified": self.status.get("last_modified", int(time() * 1000)),
-                "client_status": {} if self.status["status"] == "offline" else {"desktop": self.status["status"]},
-                "activities": self.status.get("activities", [])
+                "status": self.presence.public_status,
+                "last_modified": int(time() * 1000),
+                "client_status": {} if self.presence.public_status == "offline"
+                else {"desktop": self.presence.public_status},
+                "activities": [] if self.presence.public_status == "offline" else self.presence.activities
             }
         }
 
@@ -484,9 +496,9 @@ class GuildMembersListUpdateEvent(DispatchEvent):
         self.statuses = statuses
         self.groups = {}
         for s in statuses.values():
-            if s["status"] not in self.groups:
-                self.groups[s["status"]] = 0
-            self.groups[s["status"]] += 1
+            if s.public_status not in self.groups:
+                self.groups[s.public_status] = 0
+            self.groups[s.public_status] += 1
         self.guild_id = guild_id
 
     # noinspection PyShadowingNames
@@ -497,11 +509,11 @@ class GuildMembersListUpdateEvent(DispatchEvent):
             m = await mem.ds_json()
             m["presence"] = {
                 "user": {"id": str(mem.user.id)},
-                "status": self.statuses[mem.user.id]["status"],
-                "client_status": {} if self.statuses[mem.user.id]["status"] == "offline" else {
-                    "desktop": self.statuses[mem.user.id]["status"]
+                "status": self.statuses[mem.user.id].public_status,
+                "client_status": {} if self.statuses[mem.user.id].public_status == "offline" else {
+                    "desktop": self.statuses[mem.user.id].public_status
                 },
-                "activities": self.statuses[mem.user.id].get("activities", [])
+                "activities": self.statuses[mem.user.id].activities
             }
             items.append({"member": m})
         items.sort(key=lambda i: i["member"]["presence"]["status"])

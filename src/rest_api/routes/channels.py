@@ -162,7 +162,7 @@ async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channe
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     messages = await channel.messages(**query_args.dict())
-    messages = [await message.ds_json() for message in messages]
+    messages = [await message.ds_json(user_id=user.id) for message in messages]
     return messages
 
 

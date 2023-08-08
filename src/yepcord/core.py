@@ -15,7 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+import os.path
 from asyncio import get_event_loop
 # noinspection PyPackageRequirements
 from contextvars import Context
@@ -28,6 +28,7 @@ from random import randint
 from time import time
 from typing import Optional, Union
 
+import maxminddb
 from bcrypt import hashpw, gensalt, checkpw
 from ormar import or_
 
@@ -56,11 +57,9 @@ class CDN(Singleton):
 
 # noinspection PyMethodMayBeStatic
 class Core(Singleton):
-    def __init__(self, key=None, loop=None):
-        self.key = key if key and len(key) == 16 and type(key) == bytes else b''
-        self.pool = None
-        self.loop = loop or get_event_loop()
-        self._cache = {}
+    def __init__(self, key=None):
+        self.key = key if key and len(key) >= 16 and type(key) == bytes else urandom(32)
+        self.ipdb = None
 
     def prepPassword(self, password: str, uid: int) -> bytes:
         """
@@ -407,13 +406,9 @@ class Core(Singleton):
 
     async def getReadStatesJ(self, user: User) -> list:
         states = []
+        st: ReadState
         for st in await ReadState.objects.filter(user=user).all():
-            states.append({  # TODO: replace with st.ds_json
-                "mention_count": st.count,
-                "last_pin_timestamp": await self.getLastPinTimestamp(st.channel),
-                "last_message_id": str(st.last_read_id),
-                "id": str(st.channel.id),
-            })
+            states.append(await st.ds_json())
         return states
 
     async def getUserNote(self, user: User, target: User) -> Optional[UserNote]:
@@ -523,19 +518,22 @@ class Core(Singleton):
     async def removeReaction(self, message: Message, user: User, emoji: Emoji, emoji_name: str) -> None:
         await Reaction.objects.delete(user=user, message=message, emoji=emoji, emoji_name=emoji_name)
 
-    async def getMessageReactionsJ(self, message: Message, user: User) -> list:
+    async def getMessageReactionsJ(self, message: Message, user: Union[User, int]) -> list:
+        if isinstance(user, User):
+            user = user.id
         reactions = []
-        # TODO: test and maybe rewrite whole method
-        # result = await Channel.Meta.database.fetch_all(
-        #    query=f'SELECT `emoji_name` as ename, `emoji` as eid, COUNT(*) AS ecount, (SELECT COUNT(*) > 0 FROM '
-        #          f'`reactions` WHERE `emoji_name`=ename AND (`emoji`=eid OR (`emoji` IS NULL AND eid IS NULL)) '
-        #          f'AND `user_id`=:user_id) as me FROM `reactions` WHERE `message_id`=:message_id GROUP BY '
-        #          f'CONCAT(`emoji_name`, `emoji`) COLLATE utf8mb4_unicode_520_ci;',
-        #    values={"user_id": user.id, "message_id": message.id}
-        # )
-        # for r in result:
-        #    reactions.append(
-        #        {"emoji": {"id": str(r[1]) if r[1] else None, "name": r[0]}, "count": r[2], "me": bool(r[3])})
+        table_name = "reactionss"
+        result = await Channel.Meta.database.fetch_all(
+           query=f'SELECT `emoji_name` as ename, `emoji` as eid, COUNT(*) AS ecount, (SELECT COUNT(*) > 0 FROM '
+                 f'`reactionss` WHERE `emoji_name`=ename AND (`emoji`=eid OR (`emoji` IS NULL AND eid IS NULL)) '
+                 f'AND `user`=:user_id) as me FROM `reactionss` WHERE `message`=:message_id GROUP BY '
+                 f'CONCAT(`emoji_name`, `emoji`) COLLATE utf8mb4_unicode_520_ci;',
+           values={"user_id": user, "message_id": message.id}
+        )
+        for r in result:
+            reactions.append(
+               {"emoji": {"id": str(r[1]) if r[1] else None, "name": r[0]}, "count": r[2], "me": bool(r[3])}
+            )
         return reactions
 
     async def getReactedUsersJ(self, message: Message, limit: int, emoji: Emoji, emoji_name: str) -> list[dict]:
@@ -810,7 +808,7 @@ class Core(Singleton):
         # noinspection PyUnresolvedReferences
         return await GuildMember.objects.filter(
             (GuildMember.guild == guild) &
-            (GuildMember.nick.startswith(query) | GuildMember.user.userdata.username.istartswith(query))
+            (GuildMember.nick.startswith(query) | GuildMember.user.userdatas.username.istartswith(query))
         ).limit(limit).all()
 
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
@@ -950,6 +948,25 @@ class Core(Singleton):
 
     async def getThreadMember(self, thread: Channel, user_id: int) -> Optional[ThreadMember]:
         return await ThreadMember.objects.get_or_none(channel=thread, user__id=user_id)
+
+    def getLanguageCode(self, ip: str, default: str="en-US") -> str:
+        if self.ipdb is None and not os.path.exists("other/ip_database.mmdb"):
+            return default
+        if self.ipdb is None:
+            self.ipdb = maxminddb.open_database("other/ip_database.mmdb")
+
+        try:
+            country_code = (self.ipdb.get(ip) or {"country": {"iso_code": None}})["country"]["iso_code"] or default
+        except (ValueError, KeyError):
+            return default
+        country_to_language = {
+            "UA": "uk", "US": "en-US", "BG": "bg", "CZ": "cs", "DK": "da", "DE": "de", "GR": "el", "GB": "en-GB",
+            "ES": "es-ES", "FI": "fi", "FR": "fr", "IN": "hi", "HR": "hr", "HU": "hu", "IT": "it", "JP": "ja",
+            "KR": "ko", "LT": "lt", "NL": "nl", "NO": "no", "PL": "pl", "BR": "pt-BR", "RO": "ro", "RU": "RU",
+            "SE": "sv-SE", "TH": "th", "TR": "tr", "VN": "vi", "CN": "zh-CN", "TW": "zh-TW",
+        }
+
+        return country_to_language.get(country_code, default)
 
 
 import src.yepcord.ctx as c
