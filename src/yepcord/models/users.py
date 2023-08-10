@@ -27,7 +27,7 @@ from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, In
 from ormar import ReferentialAction
 from protobuf_to_dict import protobuf_to_dict
 
-from . import DefaultMeta, collation
+from . import DefaultMeta, collation, SnowflakeAIQuerySet
 from ..ctx import getCore
 from ..enums import RelationshipType, RelTypeDiscord
 from ..proto import PreloadedUserSettings, UserContentSettings, Versions, VoiceAndVideoSettings, FrecencyUserSettings, \
@@ -490,7 +490,7 @@ class FrecencySettings(ormar.Model):
 
 class Relationship(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     user1: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="user1")
@@ -526,7 +526,7 @@ class Relationship(ormar.Model):
 
 class UserNote(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="user")
@@ -543,7 +543,7 @@ class UserNote(ormar.Model):
 
 class MfaCode(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)

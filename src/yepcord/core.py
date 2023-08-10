@@ -40,7 +40,7 @@ from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .models import User, UserData, UserSettings, Session, Relationship, Channel, Message, ReadState, UserNote, \
     Attachment, FrecencySettings, Emoji, Invite, Guild, GuildMember, GuildTemplate, Reactions as Reaction, Sticker, \
     PermissionOverwrite, GuildBan, AuditLogEntry, Webhook, HiddenDmChannel, MfaCode, Role, GuildEvent, \
-    ThreadMetadata, ThreadMember
+    ThreadMetadata, ThreadMember, is_sqlite
 from .snowflake import Snowflake
 from .utils import b64encode, b64decode, int_size, NoneType
 from ..gateway.events import DMChannelCreateEvent
@@ -358,11 +358,11 @@ class Core(Singleton):
         channels = await Channel.objects.select_related("recipients").filter(recipients__id__in=[user.id]).all()
         return [await self.setLastMessageIdForChannel(channel) for channel in channels]
 
-    async def getChannelMessages(self, channel, limit: int, before: int = 0, after: int = 0) -> list[Message]:
+    async def getChannelMessages(self, channel: Channel, limit: int, before: int = 0, after: int = 0) -> list[Message]:
         id_filter = {}
         if after: id_filter["id__gt"] = after
         if before: id_filter["id__lt"] = before
-        messages = await Message.objects.filter(channel=channel, **id_filter).order_by("-id").limit(limit).all()
+        messages = await Message.objects.select_related(["thread"]).filter(channel=channel, **id_filter).order_by("-id").limit(limit).all()
         # messages.sort(key=lambda msg: msg.id, reverse=True)
         return messages
 
@@ -522,12 +522,11 @@ class Core(Singleton):
         if isinstance(user, User):
             user = user.id
         reactions = []
-        table_name = "reactionss"
         result = await Channel.Meta.database.fetch_all(
-           query=f'SELECT `emoji_name` as ename, `emoji` as eid, COUNT(*) AS ecount, (SELECT COUNT(*) > 0 FROM '
-                 f'`reactionss` WHERE `emoji_name`=ename AND (`emoji`=eid OR (`emoji` IS NULL AND eid IS NULL)) '
-                 f'AND `user`=:user_id) as me FROM `reactionss` WHERE `message`=:message_id GROUP BY '
-                 f'CONCAT(`emoji_name`, `emoji`) COLLATE utf8mb4_unicode_520_ci;',
+           query=f'SELECT `emoji_name`, `emoji`, COUNT(*) AS ecount, (SELECT COUNT(*) > 0 FROM '
+                 f'`reactionss` r2 WHERE `emoji_name`=r1.emoji_name AND (`emoji`=r1.emoji OR (`emoji` IS NULL AND r1.emoji IS NULL)) '
+                 f'AND `user`=:user_id) as me FROM `reactionss` r1 WHERE `message`=:message_id GROUP BY '
+                 f'`emoji_name`, `emoji`' + ('' if is_sqlite else ' COLLATE utf8mb4_unicode_520_ci'),
            values={"user_id": user, "message_id": message.id}
         )
         for r in result:

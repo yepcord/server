@@ -23,7 +23,8 @@ import ormar
 from ormar import ReferentialAction
 from pydantic import Field
 
-from . import DefaultMeta, User, Channel, Guild, Emoji, GuildMember, ThreadMember, UserData, collation
+from . import DefaultMeta, User, Channel, Guild, Emoji, GuildMember, ThreadMember, UserData, collation, \
+    SnowflakeAIQuerySet
 from ..config import Config
 from ..ctx import getCore
 from ..enums import MessageType
@@ -157,7 +158,7 @@ class Attachment(ormar.Model):
 
 class Reactions(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     message: Message = ormar.ForeignKey(Message, ondelete=ReferentialAction.CASCADE)

@@ -25,7 +25,7 @@ import ormar
 from ormar import ReferentialAction, QuerySet
 from ormar.relations.relation_proxy import RelationProxy
 
-from . import DefaultMeta, User, collation
+from . import DefaultMeta, User, collation, SnowflakeAIQuerySet
 from .channels import Channel, Invite, PermissionOverwrite
 from ..ctx import getCore
 from ..enums import ScheduledEventEntityType, ChannelType, GuildPermissions, AuditLogEntryType
@@ -322,7 +322,7 @@ class Emoji(ormar.Model):
 
 class GuildBan(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     reason: str = ormar.String(max_length=512)
