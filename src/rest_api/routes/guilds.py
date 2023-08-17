@@ -83,7 +83,7 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
                 setattr(data, ch, None)
     changes = data.dict(exclude_defaults=True)
     await guild.update(**changes)
-    await getGw().dispatch(GuildUpdateEvent(await guild.ds_json(user_id=user.id)), guild_id=guild.id)
+    await getGw().dispatch(GuildUpdateEvent(await guild.ds_json(user_id=0)), guild_id=guild.id)
 
     entry = await AuditLogEntry.objects.guild_update(user, guild, changes)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,

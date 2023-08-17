@@ -179,8 +179,7 @@ class Channel(ormar.Model):
                 "total_message_sent": message_count,
                 "member_ids_preview": [str(member.user.id) for member in await getCore().getThreadMembers(self, 10)]
             }
-            if user_id:
-                member = await getCore().getThreadMember(self, user_id)
+            if user_id and (member := await getCore().getThreadMember(self, user_id)) is not None:
                 data["member"] = {
                     "muted": False,
                     "mute_config": None,

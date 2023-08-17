@@ -184,7 +184,7 @@ class GuildMember(ormar.Model):
     class Meta(DefaultMeta):
         pass
 
-    id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
     avatar: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)

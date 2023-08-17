@@ -9,8 +9,8 @@ KEY = "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE="
 # Domain which will be used in email verification links, etc.
 PUBLIC_HOST = "127.0.0.1:8080"
 
-GATEWAY_HOST = "127.0.0.1:8001"
-CDN_HOST = "127.0.0.1:8003"
+GATEWAY_HOST = "127.0.0.1:8000/gateway"
+CDN_HOST = "127.0.0.1:8000/media"
 
 STORAGE = {
     "type": "local",  # Can be local, s3 or ftp

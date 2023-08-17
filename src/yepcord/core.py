@@ -599,7 +599,7 @@ class Core(Singleton):
         )
         await guild.update(system_channel=system_channel.id)
 
-        await GuildMember.objects.create(id=user.id, user=user, guild=guild)
+        await GuildMember.objects.create(id=Snowflake.makeId(), user=user, guild=guild)
 
         return guild
 
@@ -656,7 +656,7 @@ class Core(Singleton):
         del serialized["channels"]
 
         await guild.update(**serialized)
-        await GuildMember.objects.create(id=user.id, user=user, guild=guild)
+        await GuildMember.objects.create(id=Snowflake.makeId(), user=user, guild=guild)
 
         return guild
 
@@ -676,7 +676,7 @@ class Core(Singleton):
         return await GuildMember.objects.select_related("user").filter(guild=guild).all()
 
     async def getGuildMembersIds(self, guild: Guild) -> list[int]:
-        return [member.id for member in await self.getGuildMembers(guild)]
+        return [member.user.id for member in await self.getGuildMembers(guild)]
 
     async def getGuildChannels(self, guild: Guild) -> list[Channel]:
         return await Channel.objects.filter(guild=guild) \
