@@ -20,6 +20,7 @@ from pydantic import BaseModel, validator, Field
 from typing import Optional, List
 
 from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.utils import b64decode
 
 
 # noinspection PyMethodParameters
@@ -154,3 +155,43 @@ class GetScheduledEventsQuery(BaseModel):
         if "guild_ids" in data:
             data["guild_ids"] = data["guild_ids"].split(",")
         super().__init__(**data)
+
+
+# noinspection PyMethodParameters
+class RemoteAuthLogin(BaseModel):
+    fingerprint: str
+
+    @validator("fingerprint")
+    def validate_fingerprint(cls, value: str) -> str:
+        try:
+            assert len(b64decode(value)) == 32
+        except (ValueError, AssertionError):
+            raise InvalidDataErr(404, Errors.make(10012))
+        return value
+
+
+# noinspection PyMethodParameters
+class RemoteAuthFinish(BaseModel):
+    handshake_token: str
+    temporary_token: bool
+
+    @validator("handshake_token")
+    def validate_handshake_token(cls, value: str) -> str:
+        try:
+            int(value)
+        except ValueError:
+            raise InvalidDataErr(404, Errors.make(10012))
+        return value
+
+
+# noinspection PyMethodParameters
+class RemoteAuthCancel(BaseModel):
+    handshake_token: str
+
+    @validator("handshake_token")
+    def validate_handshake_token(cls, value: str) -> str:
+        try:
+            int(value)
+        except ValueError:
+            raise InvalidDataErr(404, Errors.make(10012))
+        return value

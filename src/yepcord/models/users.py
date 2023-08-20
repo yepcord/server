@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from time import time
 from typing import Optional, Any
 
 import ormar
@@ -501,7 +502,7 @@ class Relationship(ormar.Model):
         return self.user1 if self.user2 == current_user else self.user2
 
     def discord_rel_type(self, current_user: User) -> Optional[int]:
-        if self.type == RelationshipType.BLOCK and self.user1 != current_user.id:
+        if self.type == RelationshipType.BLOCK and self.user1.id != current_user.id:
             return None
         elif self.type == RelationshipType.BLOCK:
             return RelTypeDiscord.BLOCK
@@ -556,3 +557,17 @@ class MfaCode(ormar.Model):
             "code": self.code,
             "consumed": self.used
         }
+
+
+def time_plus_150s():
+    return int(time())+150
+
+
+class RemoteAuthSession(ormar.Model):
+    class Meta(DefaultMeta):
+        queryset_class = SnowflakeAIQuerySet
+
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
+    fingerprint: str = ormar.String(max_length=64, unique=True)
+    user: Optional[User] = ormar.ForeignKey(User, nullable=True, default=None, ondelete=ReferentialAction.CASCADE)
+    expires_at: int = ormar.Integer(default=time_plus_150s)

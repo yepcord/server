@@ -130,8 +130,7 @@ class Core(Singleton):
         if not isinstance(user, User) and (user := await User.objects.get_or_none(id=user, deleted=False)) is None:
             return
         sig = self.generateSessionSignature()
-        session = await Session.objects.create(id=Snowflake.makeId(), user=user, signature=sig)
-        return session
+        return await Session.objects.create(id=Snowflake.makeId(), user=user, signature=sig)
 
     async def getUser(self, uid: int, allow_deleted: bool = True) -> Optional[User]:
         kwargs = {} if allow_deleted else {"deleted": False}
@@ -188,6 +187,7 @@ class Core(Singleton):
 
     async def getRelationships(self, user: User, with_data=False) -> list[dict]:
         rels = []
+        rel: Relationship
         for rel in await Relationship.objects.filter(or_(user1=user, user2=user)).all():
             if (rel_json := await rel.ds_json(user, with_data)) is not None:
                 rels.append(rel_json)

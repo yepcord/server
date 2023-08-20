@@ -94,6 +94,8 @@ async def ydataerror_handler(err: YDataError):
 @app.errorhandler(RequestSchemaValidationError)
 async def handle_validation_error(error: RequestSchemaValidationError):
     pydantic_error = error.validation_error
+    if isinstance(pydantic_error, TypeError):
+        raise pydantic_error
     return Errors.from_pydantic(pydantic_error), 400
 
 

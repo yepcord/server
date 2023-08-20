@@ -55,6 +55,12 @@ class GatewayDispatcher(Singleton):
             "permissions": permissions,
         })
 
+    async def dispatchRA(self, op: str, data: dict) -> None:
+        await self.broker.publish(channel="yepcord_remote_auth", message={
+            "op": op,
+            **data
+        })
+
     async def sendMessageAck(self, uid: int, channel_id: int, message_id: int, mention_count: int=None,
                              manual: bool=None) -> None:
         ack = {

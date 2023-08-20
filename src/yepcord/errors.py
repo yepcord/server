@@ -51,6 +51,7 @@ class _Errors:
     err_10006 = "Unknown Invite"
     err_10008 = "Unknown Message"
     err_10011 = "Unknown Role"
+    err_10012 = "Unknown Token"
     err_10013 = "Unknown User"
     err_10014 = "Unknown Emoji"
     err_10015 = "Unknown Webhook"

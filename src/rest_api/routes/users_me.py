@@ -18,13 +18,14 @@
 
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from random import choice
+from time import time
 
 from quart import Blueprint
 from quart_schema import validate_request, validate_querystring
 
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, PutNote, \
     RelationshipRequest, SettingsProtoUpdate, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, \
-    DmChannelCreate, DeleteRequest, GetScheduledEventsQuery
+    DmChannelCreate, DeleteRequest, GetScheduledEventsQuery, RemoteAuthLogin, RemoteAuthFinish, RemoteAuthCancel
 from ..utils import usingDB, getUser, multipleDecorators, getSession, getGuildWM
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
     UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent
@@ -32,7 +33,8 @@ from ...yepcord.classes.other import MFA
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import RelationshipType
 from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, GuildMember
+from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, \
+    GuildMember, RemoteAuthSession
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import execute_after, validImage, getImage
 
@@ -417,3 +419,53 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
             })
 
     return events
+
+
+@users_me.post("/remote-auth/login")
+@multipleDecorators(validate_request(RemoteAuthLogin), getUser)
+async def remote_auth_login(data: RemoteAuthLogin, user: User):
+    ra_session = await RemoteAuthSession.objects.get_or_none(fingerprint=data.fingerprint, user=None,
+                                                             expires_at__gt=int(time()))
+    if ra_session is None:
+        raise InvalidDataErr(404, Errors.make(10012))
+
+    await ra_session.update(user=user)
+    userdata = await user.userdata
+    avatar = userdata.avatar if userdata.avatar else ""
+    await getGw().dispatchRA("pending_finish", {
+        "fingerprint": data.fingerprint,
+        "userdata": f"{user.id}:{userdata.s_discriminator}:{avatar}:{userdata.username}"
+    })
+
+    return {"handshake_token": str(ra_session.id)}
+
+
+@users_me.post("/remote-auth/finish")
+@multipleDecorators(validate_request(RemoteAuthFinish), getUser)
+async def remote_auth_finish(data: RemoteAuthFinish, user: User):
+    ra_session = await RemoteAuthSession.objects.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
+                                                             user=user)
+    if ra_session is None:
+        raise InvalidDataErr(404, Errors.make(10012))
+
+    await getGw().dispatchRA("finish", {
+        "fingerprint": ra_session.fingerprint,
+        "token": (await getCore().createSession(user)).token
+    })
+
+    return "", 204
+
+
+@users_me.post("/remote-auth/cancel")
+@multipleDecorators(validate_request(RemoteAuthCancel), getUser)
+async def remote_auth_cancel(data: RemoteAuthCancel, user: User):
+    ra_session = await RemoteAuthSession.objects.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
+                                                             user=user)
+    if ra_session is None:
+        raise InvalidDataErr(404, Errors.make(10012))
+
+    await getGw().dispatchRA("cancel", {"fingerprint": ra_session.fingerprint})
+
+    await ra_session.delete()
+
+    return "", 204
