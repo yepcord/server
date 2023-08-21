@@ -90,7 +90,6 @@ class Message(ormar.Model):
         data["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None
         data["mentions"] = []
         data["mention_roles"] = []
-        data["attachments"] = []
         if self.content:
             for ping in ping_regex.findall(self.content):
                 if ping.startswith("!"):
@@ -100,10 +99,7 @@ class Message(ormar.Model):
                     continue
                 if not (member := await getCore().getUserByChannelId(self.channel.id, int(ping))):
                     continue
-                if isinstance(member, GuildMember):
-                    member = member.user
-                elif isinstance(member, ThreadMember):
-                    member = member.user
+                member = member.user
                 mdata = await member.data
                 data["mentions"].append(mdata.ds_json)
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
