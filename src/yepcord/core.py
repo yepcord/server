@@ -362,8 +362,7 @@ class Core(Singleton):
         id_filter = {}
         if after: id_filter["id__gt"] = after
         if before: id_filter["id__lt"] = before
-        messages = await Message.objects.select_related(["thread"]).filter(channel=channel, **id_filter).order_by("-id").limit(limit).all()
-        # messages.sort(key=lambda msg: msg.id, reverse=True)
+        messages = await Message.objects.select_related(["thread"]).filter(channel=channel, **id_filter).order_by("-id").limit(limit, limit_raw_sql=True).all()
         return messages
 
     async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
@@ -522,8 +521,9 @@ class Core(Singleton):
         if isinstance(user, User):
             user = user.id
         reactions = []
+        coll = "" if is_sqlite else " collate utf8mb4_unicode_520_ci as `emoji_name`"
         result = await Channel.Meta.database.fetch_all(
-           query=f'SELECT `emoji_name` collate utf8mb4_unicode_520_ci as `emoji_name`, `emoji`, COUNT(*) AS ecount, '
+           query=f'SELECT `emoji_name`{coll}, `emoji`, COUNT(*) AS ecount, '
                  f'(SELECT COUNT(*) > 0 FROM `reactionss` AS r2 WHERE r2.`emoji_name`=r1.emoji_name AND '
                  f'(`emoji`=r1.emoji OR (`emoji` IS NULL AND r1.emoji IS NULL)) AND `user`=:user_id) as me '
                  f'FROM `reactionss` AS r1 WHERE `message`=:message_id GROUP BY `emoji_name`, `emoji`',

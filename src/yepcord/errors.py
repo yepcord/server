@@ -55,6 +55,7 @@ class _Errors:
     err_10013 = "Unknown User"
     err_10014 = "Unknown Emoji"
     err_10015 = "Unknown Webhook"
+    err_10017 = "Unknown Connection"
     err_10057 = "Unknown server template"
     err_10060 = "Unknown sticker"
     err_10070 = "Unknown Guild Scheduled Event"
