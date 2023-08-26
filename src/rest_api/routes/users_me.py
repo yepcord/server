@@ -331,8 +331,8 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
         await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}), [user.id])
     elif data.type == 2:
         if relationship := await getCore().getRelationship(user.id, user_id):
-            rel_type_current = relationship.discord_type(user.id)
-            rel_type_target = relationship.discord_type(user_id)
+            rel_type_current = relationship.discord_rel_type(user)
+            rel_type_target = relationship.discord_rel_type(await User.objects.get(id=user_id))
             await getGw().dispatch(RelationshipRemoveEvent(user_id, rel_type_current), [user.id])
             await getGw().dispatch(RelationshipRemoveEvent(user.id, rel_type_target), [user_id])
         await getCore().blockUser(user, target_user_data.user)
@@ -344,8 +344,8 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
 @multipleDecorators(usingDB, getUser)
 async def delete_relationship(user_id: int, user: User):
     if relationship := await getCore().delRelationship(user, user_id):
-        rel_type_current = relationship.discord_type(user.id)
-        rel_type_target = relationship.discord_type(user_id)
+        rel_type_current = relationship.discord_rel_type(user)
+        rel_type_target = relationship.discord_rel_type(await User.objects.get(id=user_id))
         await getGw().dispatch(RelationshipRemoveEvent(user_id, rel_type_current), [user.id])
         await getGw().dispatch(RelationshipRemoveEvent(user.id, rel_type_target), [user_id])
     return "", 204
