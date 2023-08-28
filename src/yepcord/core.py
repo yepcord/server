@@ -224,23 +224,25 @@ class Core(Singleton):
                 users.append(data.ds_json)
         return users
 
-    async def accRelationship(self, user: User, uid: int) -> None:
+    async def accRelationship(self, user: User, uid: int) -> bool:
         rel = await Relationship.objects.select_related(["user1", "user2"]).get_or_none(
             user1__id=uid, user2__id=user.id, type=RelationshipType.PENDING
         )
         if rel is None:
-            return
+            return False
         await rel.update(type=RelationshipType.FRIEND)
+        return True
 
     async def delRelationship(self, user: User, uid: int) -> Optional[Relationship]:
         rel = await self.getRelationship(user, uid)
-        if rel.type == RelationshipType.BLOCK:
+        if rel is not None and rel.type == RelationshipType.BLOCK:
             rel = await Relationship.objects.select_related(["user1", "user2"]).get_or_none(
                 user1__id=user.id, user2__id=uid
             )
             if rel is None:
                 return
-        await rel.delete()
+        if rel is not None:
+            await rel.delete()
         return rel
 
     async def changeUserPassword(self, user: User, new_password: str) -> None:
@@ -328,7 +330,7 @@ class Core(Singleton):
             values={"user1": user1.id, "user2": user2.id}
         )
         if channel_row is None: return
-        return await Channel.from_row(channel_row, Channel).load_all()
+        return Channel.from_row(channel_row, Channel)
 
     async def getDMChannelOrCreate(self, user1: User, user2: User) -> Channel:
         channel = await self.getDChannel(user1, user2)

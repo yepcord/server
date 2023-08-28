@@ -322,13 +322,20 @@ async def get_backup_codes(data: MfaCodesVerification, user: User):
 async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user: User):
     if not (target_user_data := await UserData.objects.select_related("user").get(id=user_id)):
         raise InvalidDataErr(404, Errors.make(10013))
-    if not data.type:
-        await getCore().accRelationship(user, user_id)
-        await getGw().dispatch(RelationshipAddEvent(user.id, await user.data, 1), [user_id])
-        await getGw().dispatch(RelationshipAddEvent(user_id, target_user_data, 1), [user.id])
-        channel = await getCore().getDMChannelOrCreate(user, target_user_data.user)
-        await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user_id}), [user_id])
-        await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}), [user.id])
+    if not data.type or data.type == 1:
+        target_user = target_user_data.user
+        if not await getCore().accRelationship(user, user_id):
+            await getCore().checkRelationShipAvailable(target_user, user)
+            await getCore().reqRelationship(target_user, user)
+
+            await getGw().dispatch(RelationshipAddEvent(user.id, await user.userdata, 3), [target_user.id])
+            await getGw().dispatch(RelationshipAddEvent(target_user.id, await target_user.userdata, 4), [user.id])
+        else:
+            await getGw().dispatch(RelationshipAddEvent(user.id, await user.data, 1), [user_id])
+            await getGw().dispatch(RelationshipAddEvent(user_id, target_user_data, 1), [user.id])
+            channel = await getCore().getDMChannelOrCreate(user, target_user_data.user)
+            await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user_id}), [user_id])
+            await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}), [user.id])
     elif data.type == 2:
         if relationship := await getCore().getRelationship(user.id, user_id):
             rel_type_current = relationship.discord_rel_type(user)
