@@ -543,8 +543,9 @@ class RelationshipQS(SnowflakeAIQuerySet):
             ret["block"] = True
         return ret
 
-    async def rdelete(self, user1: User, user2: User) -> dict:
-        rels = await self.all(or_(and_(from_user=user1, to_user=user2), and_(from_user=user2, to_user=user1)))
+    async def rdelete(self, current: User, target: User) -> dict:
+        rels = await self.all(or_(and_(from_user=current, to_user=target),
+                                  and_(from_user=target, to_user=current)))
         ret = {"delete": []}
         if not rels:
             pass
@@ -557,11 +558,17 @@ class RelationshipQS(SnowflakeAIQuerySet):
             await rel.delete()
         elif len(rels) == 1 and rels[0].type == RelationshipType.BLOCK:
             rel = rels[0]
-            if rel.from_user == user1 and rel.to_user == user2:
+            if rel.from_user == current and rel.to_user == target:
                 ret["delete"] = [
                     {"id": rel.from_user.id, "rel": rel.to_user.id, "type": rel.discord_rel_type(rel.from_user)}
                 ]
                 await rel.delete()
+        elif len(rels) == 2:
+            rel = [r for r in rels if r.from_user == current and r.to_user == target][0]
+            ret["delete"] = [
+                {"id": rel.from_user.id, "rel": rel.to_user.id, "type": rel.discord_rel_type(rel.from_user)}
+            ]
+            await rel.delete()
         return ret
 
     async def is_blocked(self, user: User, check_blocked: User) -> bool:
