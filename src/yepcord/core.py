@@ -176,34 +176,17 @@ class Core(Singleton):
         if data is not None:
             return data.user
 
-    async def checkRelationShipAvailable(self, target_user: User, current_user: User) -> None:
-        relationship = await self.getRelationship(target_user, current_user)
-        if relationship is not None:
-            raise InvalidDataErr(400, Errors.make(80007))
-        # TODO: check for mutual guilds or mutual friends
-
-    async def reqRelationship(self, target_user: User, current_user: User) -> None:
-        await Relationship.objects.create(user1=current_user, user2=target_user, type=RelationshipType.PENDING)
-
     async def getRelationships(self, user: User, with_data=False) -> list[dict]:
         rels = []
         rel: Relationship
-        for rel in await Relationship.objects.filter(or_(user1=user, user2=user)).all():
+        for rel in await Relationship.objects.filter(or_(from_user=user, to_user=user)).all():
             if (rel_json := await rel.ds_json(user, with_data)) is not None:
                 rels.append(rel_json)
         return rels
 
-    async def getRelationship(self, u1: Union[User, int], u2: Union[User, int]) -> Optional[Relationship]:
-        id1 = u1.id if isinstance(u1, User) else u1
-        id2 = u2.id if isinstance(u2, User) else u2
-        return await Relationship.objects.prefetch_related(["user1", "user2"]).get_or_none(
-            ((Relationship.user1.id == id1) & (Relationship.user2.id == id2)) |
-            ((Relationship.user1.id == id2) & (Relationship.user2.id == id1))
-        )
-
     async def getRelatedUsers(self, user: User, only_ids=False) -> list:
         users = []
-        for r in await Relationship.objects.filter(or_(user1=user, user2=user)).all():
+        for r in await Relationship.objects.filter(or_(from_user=user, to_user=user)).all():
             other_user = r.other_user(user)
             if only_ids:
                 users.append(other_user.id)
@@ -223,27 +206,6 @@ class Core(Singleton):
                 data = await recipient.data
                 users.append(data.ds_json)
         return users
-
-    async def accRelationship(self, user: User, uid: int) -> bool:
-        rel = await Relationship.objects.select_related(["user1", "user2"]).get_or_none(
-            user1__id=uid, user2__id=user.id, type=RelationshipType.PENDING
-        )
-        if rel is None:
-            return False
-        await rel.update(type=RelationshipType.FRIEND)
-        return True
-
-    async def delRelationship(self, user: User, uid: int) -> Optional[Relationship]:
-        rel = await self.getRelationship(user, uid)
-        if rel is not None and rel.type == RelationshipType.BLOCK:
-            rel = await Relationship.objects.select_related(["user1", "user2"]).get_or_none(
-                user1__id=user.id, user2__id=uid
-            )
-            if rel is None:
-                return
-        if rel is not None:
-            await rel.delete()
-        return rel
 
     async def changeUserPassword(self, user: User, new_password: str) -> None:
         await user.update(password=self.hashPassword(user.id, new_password))
@@ -693,14 +655,6 @@ class Core(Singleton):
 
     async def getGuild(self, guild_id: int) -> Optional[Guild]:
         return await Guild.objects.select_related("owner").get_or_none(id=guild_id)
-
-    async def blockUser(self, user: User, block_user: User) -> None:
-        rel = await self.getRelationship(user.id, block_user)
-        if rel and rel.type != RelationshipType.BLOCK:
-            await rel.delete()
-        elif rel and rel.type == RelationshipType.BLOCK and rel.user1 == user:
-            return
-        await Relationship.objects.create(user1=user, user2=block_user, type=RelationshipType.BLOCK)
 
     async def getEmojis(self, guild_id: int) -> list[Emoji]:
         return await Emoji.objects.filter(guild__id=guild_id).all()

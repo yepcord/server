@@ -29,7 +29,7 @@ from src.yepcord.config import Config
 from src.yepcord.core import Core
 from src.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType
 from src.yepcord.errors import InvalidDataErr, MfaRequiredErr
-from src.yepcord.models import User, UserData, Session, database
+from src.yepcord.models import User, UserData, Session, database, Relationship
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import b64decode, b64encode
 
@@ -67,6 +67,8 @@ async def test_register_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     session = await testCore.register(VARS["user_id"], "Test Login", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
     assert session is not None, "Account not registered: maybe you using already used database?"
+
+    await core.register(VARS["user_id"] + 200001, "Test", f"{EMAIL_ID}_test2_1@yepcord.ml", "password", "2000-01-01")
 
 
 @pt.mark.asyncio
@@ -244,27 +246,24 @@ async def test_getUserByUsername_fail(testCore: Coroutine[Any, Any, Core]):
 
 @pt.mark.asyncio
 async def test_checkRelationShipAvailable_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
     user1 = await User.objects.get(id=VARS["user_id"] + 100000)
     user2 = await User.objects.get(id=VARS["user_id"] + 200000)
-    await testCore.checkRelationShipAvailable(user1, user2)
+    assert await Relationship.objects.available(user1, user2)
 
 
 @pt.mark.asyncio
 async def test_reqRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
     user1 = await User.objects.get(id=VARS["user_id"] + 100000)
     user2 = await User.objects.get(id=VARS["user_id"] + 200000)
-    await testCore.reqRelationship(user1, user2)
+    assert await Relationship.objects.request(user2, user1)
 
 
 @pt.mark.asyncio
 async def test_checkRelationShipAvailable_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
     user1 = await User.objects.get(id=VARS["user_id"] + 100000)
     user2 = await User.objects.get(id=VARS["user_id"] + 200000)
     with pt.raises(InvalidDataErr):
-        await testCore.checkRelationShipAvailable(user1, user2)
+        await Relationship.objects.available(user1, user2, raise_=True)
 
 
 @pt.mark.asyncio
@@ -287,18 +286,16 @@ async def test_getRelationships_fail(testCore: Coroutine[Any, Any, Core]):
 
 @pt.mark.asyncio
 async def test_getRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    rel = await testCore.getRelationship(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
-    assert rel is not None
+    assert await Relationship.objects.rexists(await User.objects.get(id=VARS["user_id"] + 100000),
+                                              await User.objects.get(id=VARS["user_id"] + 200000))
 
 
 @pt.mark.asyncio
 async def test_getRelationship_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    rel = await testCore.getRelationship(VARS["user_id"] + 100001, VARS["user_id"] + 200000)
-    assert rel is None
-    rel = await testCore.getRelationship(VARS["user_id"] + 100001, VARS["user_id"] + 200001)
-    assert rel is None
+    assert not await Relationship.objects.rexists(await User.objects.get(id=VARS["user_id"] + 100001),
+                                                  await User.objects.get(id=VARS["user_id"] + 200000))
+    assert not await Relationship.objects.rexists(await User.objects.get(id=VARS["user_id"] + 100001),
+                                                  await User.objects.get(id=VARS["user_id"] + 200001))
 
 
 @pt.mark.asyncio
@@ -312,21 +309,22 @@ async def test_getRelatedUsers_success(testCore: Coroutine[Any, Any, Core]):
 
 @pt.mark.asyncio
 async def test_accRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
     user = await User.objects.get(id=VARS["user_id"] + 100000)
-    await testCore.accRelationship(user, VARS["user_id"] + 200000)
-    rel = await testCore.getRelationship(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
+    user2 = await User.objects.get(id=VARS["user_id"] + 200000)
+    await Relationship.objects.accept(user2, user)
+    rel = await Relationship.objects.rget(await User.objects.get(id=VARS["user_id"] + 100000),
+                                          await User.objects.get(id=VARS["user_id"] + 200000))
     assert rel is not None
     assert rel.type == RelationshipType.FRIEND
 
 
 @pt.mark.asyncio
 async def test_delRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
     user = await User.objects.get(id=VARS["user_id"] + 100000)
-    await testCore.delRelationship(user, VARS["user_id"] + 200000)
-    rel = await testCore.getRelationship(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
-    assert rel is None
+    user2 = await User.objects.get(id=VARS["user_id"] + 200000)
+    await Relationship.objects.rdelete(user, user2)
+    assert not await Relationship.objects.rexists(await User.objects.get(id=VARS["user_id"] + 100000),
+                                                  await User.objects.get(id=VARS["user_id"] + 200000))
 
 
 @pt.mark.asyncio

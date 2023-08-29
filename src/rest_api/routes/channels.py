@@ -34,7 +34,7 @@ from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, RelationshipType, WebhookType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
-    ThreadMetadata, AuditLogEntry
+    ThreadMetadata, AuditLogEntry, Relationship
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage, b64encode
 
@@ -171,10 +171,7 @@ async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channe
 async def send_message(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
         oth = await channel.other_user(user)
-        rel = await getCore().getRelationship(user.id, oth)
-        if not rel:
-            ...  # TODO: Check
-        if rel and rel.type == RelationshipType.BLOCK:
+        if await Relationship.objects.is_blocked(oth, user):
             raise InvalidDataErr(403, Errors.make(50007))
     elif channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)

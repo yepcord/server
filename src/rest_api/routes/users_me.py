@@ -34,7 +34,7 @@ from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import RelationshipType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, \
-    GuildMember, RemoteAuthSession
+    GuildMember, RemoteAuthSession, Relationship
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import execute_after, validImage, getImage
 
@@ -211,8 +211,7 @@ async def new_relationship(data: RelationshipRequest, user: User):
         raise InvalidDataErr(400, Errors.make(80004))
     if target_user == user:
         raise InvalidDataErr(400, Errors.make(80007))
-    await getCore().checkRelationShipAvailable(target_user, user)
-    await getCore().reqRelationship(target_user, user)
+    await Relationship.objects.request(user, target_user)
 
     await getGw().dispatch(RelationshipAddEvent(user.id, await user.userdata, 3), [target_user.id])
     await getGw().dispatch(RelationshipAddEvent(target_user.id, await target_user.userdata, 4), [user.id])
@@ -323,13 +322,13 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
     if not (target_user_data := await UserData.objects.select_related("user").get(id=user_id)):
         raise InvalidDataErr(404, Errors.make(10013))
     if not data.type or data.type == 1:
-        target_user = target_user_data.user
-        if not await getCore().accRelationship(user, user_id):
-            await getCore().checkRelationShipAvailable(target_user, user)
-            await getCore().reqRelationship(target_user, user)
+        from_user = target_user_data.user
 
-            await getGw().dispatch(RelationshipAddEvent(user.id, await user.userdata, 3), [target_user.id])
-            await getGw().dispatch(RelationshipAddEvent(target_user.id, await target_user.userdata, 4), [user.id])
+        if not await Relationship.objects.accept(from_user, user):
+            await Relationship.objects.request(user, from_user)
+
+            await getGw().dispatch(RelationshipAddEvent(user.id, await user.userdata, 3), [from_user.id])
+            await getGw().dispatch(RelationshipAddEvent(from_user.id, await from_user.userdata, 4), [user.id])
         else:
             await getGw().dispatch(RelationshipAddEvent(user.id, await user.data, 1), [user_id])
             await getGw().dispatch(RelationshipAddEvent(user_id, target_user_data, 1), [user.id])
@@ -337,24 +336,24 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user_id}), [user_id])
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}), [user.id])
     elif data.type == 2:
-        if relationship := await getCore().getRelationship(user.id, user_id):
-            rel_type_current = relationship.discord_rel_type(user)
-            rel_type_target = relationship.discord_rel_type(await User.objects.get(id=user_id))
-            await getGw().dispatch(RelationshipRemoveEvent(user_id, rel_type_current), [user.id])
-            await getGw().dispatch(RelationshipRemoveEvent(user.id, rel_type_target), [user_id])
-        await getCore().blockUser(user, target_user_data.user)
-        await getGw().dispatch(RelationshipAddEvent(user_id, target_user_data, RelationshipType.BLOCK), [user.id])
+        block_user = target_user_data.user
+        result = await Relationship.objects.block(user, block_user)
+        for d in result["delete"]:
+            await getGw().dispatch(RelationshipRemoveEvent(d["rel"], d["type"]), [d["id"]])
+        if result["block"]:
+            await getGw().dispatch(RelationshipAddEvent(user_id, target_user_data, RelationshipType.BLOCK), [user.id])
+
     return "", 204
 
 
 @users_me.delete("/relationships/<int:user_id>")
 @multipleDecorators(usingDB, getUser)
 async def delete_relationship(user_id: int, user: User):
-    if relationship := await getCore().delRelationship(user, user_id):
-        rel_type_current = relationship.discord_rel_type(user)
-        rel_type_target = relationship.discord_rel_type(await User.objects.get(id=user_id))
-        await getGw().dispatch(RelationshipRemoveEvent(user_id, rel_type_current), [user.id])
-        await getGw().dispatch(RelationshipRemoveEvent(user.id, rel_type_target), [user_id])
+    if (target_user := await getCore().getUser(user_id)) is None:
+        return "", 204
+    result = await Relationship.objects.rdelete(user, target_user)
+    for d in result["delete"]:
+        await getGw().dispatch(RelationshipRemoveEvent(d["rel"], d["type"]), [d["id"]])
     return "", 204
 
 
