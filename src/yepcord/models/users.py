@@ -510,7 +510,7 @@ class RelationshipQS(SnowflakeAIQuerySet):
         return available
 
     async def request(self, from_user: User, to_user: User) -> Relationship:
-        if not self.available(from_user, to_user):
+        if not await self.available(from_user, to_user):
             raise InvalidDataErr(400, Errors.make(80007))
         return await self.create(from_user=from_user, to_user=to_user, type=RelationshipType.PENDING)
 
