@@ -99,7 +99,8 @@ class Message(ormar.Model):
                     continue
                 if not (member := await getCore().getUserByChannelId(self.channel.id, int(ping))):
                     continue
-                member = member.user
+                if isinstance(member, (GuildMember, ThreadMember)):
+                    member = member.user
                 mdata = await member.data
                 data["mentions"].append(mdata.ds_json)
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
