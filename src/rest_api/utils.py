@@ -40,11 +40,6 @@ def multipleDecorators(*decorators):
     return _multipleDecorators
 
 
-def usingDB(f):
-    setattr(f, "__db", True)
-    return f
-
-
 def allowWithoutUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
@@ -62,9 +57,7 @@ def getUser(f):
                 raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
             user = session.user
         except InvalidDataErr as e:
-            if e.code != 401:
-                raise
-            if not Ctx.get("allow_without_user"):
+            if e.code != 401 or not Ctx.get("allow_without_user"):
                 raise
             user = User(id=0, email="", password="")
         Ctx["user_id"] = user.id

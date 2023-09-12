@@ -760,11 +760,12 @@ class Core(Singleton):
         role = await Role.objects.select_related("guildmembers").get(id=role.id)
         return [member.id for member in role.guildmembers]
 
-    async def getGuildMembersGw(self, guild: Guild, query: str, limit: int) -> list[GuildMember]:
+    async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:
         # noinspection PyUnresolvedReferences
         return await GuildMember.objects.filter(
             (GuildMember.guild == guild) &
-            (GuildMember.nick.startswith(query) | GuildMember.user.userdatas.username.istartswith(query))
+            (GuildMember.nick.startswith(query) | GuildMember.user.userdatas.username.istartswith(query)) &
+            ((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
         ).limit(limit).all()
 
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:

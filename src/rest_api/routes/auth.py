@@ -22,7 +22,7 @@ from quart import Blueprint, request
 from quart_schema import validate_request
 
 from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmail
-from ..utils import usingDB, getSession, getUser, multipleDecorators
+from ..utils import getSession, getUser, multipleDecorators
 from ...gateway.events import UserUpdateEvent
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
@@ -35,7 +35,7 @@ auth = Blueprint('auth', __name__)
 
 
 @auth.post("/register")
-@multipleDecorators(validate_request(Register), usingDB)
+@validate_request(Register)
 async def register(data: Register):
     loc = getCore().getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
     sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth,
@@ -44,7 +44,7 @@ async def register(data: Register):
 
 
 @auth.post("/login")
-@multipleDecorators(validate_request(Login), usingDB)
+@validate_request(Login)
 async def login(data: Login):
     sess = await getCore().login(data.login, data.password)
     user = sess.user
@@ -57,7 +57,7 @@ async def login(data: Login):
 
 
 @auth.post("/mfa/totp")
-@multipleDecorators(validate_request(MfaLogin), usingDB)
+@validate_request(MfaLogin)
 async def login_with_mfa(data: MfaLogin):
     if not (ticket := data.ticket):
         raise InvalidDataErr(400, Errors.make(60006))
@@ -80,14 +80,14 @@ async def login_with_mfa(data: MfaLogin):
 
 
 @auth.post("/logout")
-@multipleDecorators(usingDB, getSession)
+@getSession
 async def logout(session: Session):
     await session.delete()
     return "", 204
 
 
 @auth.post("/verify/view-backup-codes-challenge")
-@multipleDecorators(validate_request(ViewBackupCodes), usingDB, getUser)
+@multipleDecorators(validate_request(ViewBackupCodes), getUser)
 async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User):
     if not (password := data.password):
         raise InvalidDataErr(400, Errors.make(50018))
@@ -99,7 +99,7 @@ async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User)
 
 
 @auth.post("/verify/resend")
-@multipleDecorators(usingDB, getUser)
+@getUser
 async def resend_verification_email(user: User):
     if not user.verified:
         await getCore().sendVerificationEmail(user)
@@ -107,7 +107,7 @@ async def resend_verification_email(user: User):
 
 
 @auth.post("/verify")
-@multipleDecorators(validate_request(VerifyEmail), usingDB)
+@validate_request(VerifyEmail)
 async def verify_email(data: VerifyEmail):
     if not data.token:
         raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))

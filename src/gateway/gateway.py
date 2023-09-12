@@ -167,7 +167,7 @@ class GatewayClient:
         limit = data.get("limit", 100)
         if limit > 100 or limit < 1:
             limit = 100
-        members = await getCore().getGuildMembersGw(guild, query, limit)
+        members = await getCore().getGuildMembersGw(guild, query, limit, data.get("user_ids", []))
         presences = []  # TODO: add presences
         await self.esend(GuildMembersChunkEvent(members, presences, guild_id))
 

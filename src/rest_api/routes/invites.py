@@ -20,7 +20,7 @@ from quart import Blueprint
 from quart_schema import validate_querystring
 
 from ..models.invites import GetInviteQuery
-from ..utils import usingDB, getUser, multipleDecorators, getInvite
+from ..utils import getUser, multipleDecorators, getInvite
 from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelRecipientAddEvent, GuildCreateEvent, \
     InviteDeleteEvent
 from ...yepcord.ctx import getCore, getGw
@@ -34,7 +34,7 @@ invites = Blueprint('invites', __name__)
 
 
 @invites.get("/<string:invite>")
-@multipleDecorators(validate_querystring(GetInviteQuery), usingDB, getInvite)
+@multipleDecorators(validate_querystring(GetInviteQuery), getInvite)
 async def get_invite(query_args: GetInviteQuery, invite: Invite):
     invite = await invite.ds_json(with_counts=query_args.with_counts)
     for excl in ["max_age", "created_at"]:  # Remove excluded fields
@@ -44,7 +44,7 @@ async def get_invite(query_args: GetInviteQuery, invite: Invite):
 
 
 @invites.post("/<string:invite>")
-@multipleDecorators(usingDB, getUser, getInvite)
+@multipleDecorators(getUser, getInvite)
 async def use_invite(user: User, invite: Invite):
     channel = invite.channel
     inv = None
@@ -95,7 +95,7 @@ async def use_invite(user: User, invite: Invite):
 
 
 @invites.delete("/<string:invite>")
-@multipleDecorators(usingDB, getUser, getInvite)
+@multipleDecorators(getUser, getInvite)
 async def delete_invite(user: User, invite: Invite):
     if invite.channel.guild:
         member = await getCore().getGuildMember(invite.channel.guild, user.id)

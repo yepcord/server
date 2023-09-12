@@ -76,7 +76,3 @@ async def ws_gateway():
             setattr(ws, "ws_connected", False)
             await gw.disconnect(ws)
             raise
-
-if __name__ == "__main__":
-    from uvicorn import run as urun
-    urun('main:app', host="0.0.0.0", port=8001, reload=True, use_colors=False)

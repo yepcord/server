@@ -137,10 +137,3 @@ async def other_api_endpoints(path):
         print(f"  Data: {await request.get_json()}")
     print("----------------")
     return "Not Implemented!", 501
-
-
-if __name__ == "__main__":  # pragma: no cover
-    # Deprecated
-    from uvicorn import run as urun
-
-    urun('main:app', host="0.0.0.0", port=8000, reload=True, use_colors=False)

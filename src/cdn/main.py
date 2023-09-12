@@ -217,8 +217,3 @@ async def get_attachment(channel_id: int, attachment_id: int, name: str):
     if not (attachment := await cdn.getAttachment(channel_id, attachment_id, name)):
         return b'', 404
     return attachment, 200, headers
-
-
-if __name__ == "__main__":  # pragma: no cover
-    from uvicorn import run as urun
-    urun('main:app', host="0.0.0.0", port=8003, reload=True, use_colors=False)
