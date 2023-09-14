@@ -16,7 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
+
+from src.yepcord.errors import InvalidDataErr, Errors
 
 
 class Register(BaseModel):
@@ -24,6 +26,13 @@ class Register(BaseModel):
     email: str
     password: str
     date_of_birth: str = "2000-01-01"
+
+    @validator("email", "password", "username")
+    def validate_name(cls, value: str, values, field):
+        if not value:
+            raise InvalidDataErr(400, Errors.make(50035, {field.name: {
+                "_errors": [{"code": "BASE_TYPE_REQUIRED", "message": "Required field."}]}}))
+        return value
 
 
 class Login(BaseModel):

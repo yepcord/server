@@ -35,7 +35,7 @@ from ormar import or_
 from .classes.other import EmailMsg, JWT, MFA
 from .classes.singleton import Singleton
 from .config import Config
-from .enums import RelationshipType, ChannelType, GUILD_CHANNELS
+from .enums import ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .models import User, UserData, UserSettings, Session, Relationship, Channel, Message, ReadState, UserNote, \
     Attachment, FrecencySettings, Emoji, Invite, Guild, GuildMember, GuildTemplate, Reactions as Reaction, Sticker, \
@@ -764,8 +764,8 @@ class Core(Singleton):
         # noinspection PyUnresolvedReferences
         return await GuildMember.objects.filter(
             (GuildMember.guild == guild) &
-            (GuildMember.nick.startswith(query) | GuildMember.user.userdatas.username.istartswith(query)) &
-            ((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
+            (GuildMember.nick.startswith(query) | GuildMember.user.userdatas.username.istartswith(query)) #&
+            #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
         ).limit(limit).all()
 
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
