@@ -31,7 +31,7 @@ from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEven
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
     WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
-from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, RelationshipType, WebhookType, GUILD_CHANNELS
+from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
     ThreadMetadata, AuditLogEntry, Relationship

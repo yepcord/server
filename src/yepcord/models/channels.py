@@ -78,8 +78,7 @@ class Channel(ormar.Model):
         last_message_id = str(self.last_message_id) if self.last_message_id is not None else None
         recipients = []
         if self.type in (ChannelType.DM, ChannelType.GROUP_DM):
-            exclude = {} if not user_id else {"id": user_id}
-            recipients = await self.recipients.exclude(**exclude).all()
+            recipients = await (self.recipients.all() if not user_id else self.recipients.exclude(id=user_id).all())
             if with_ids:
                 recipients = [str(recipient.id) for recipient in recipients]
             else:

@@ -377,7 +377,7 @@ async def leave_guild(user: User, guild: Guild, member: GuildMember):
 @users_me.get("/channels")
 @getUser
 async def get_dm_channels(user: User):
-    return [await channel.ds_json() for channel in await getCore().getPrivateChannels(user)]
+    return [await channel.ds_json(user_id=user.id) for channel in await getCore().getPrivateChannels(user)]
 
 
 @users_me.post("/channels")

@@ -203,21 +203,23 @@ async def test_settings_proto(testapp):
 @pt.mark.asyncio
 async def test_register_other_user(testapp):
     client: TestClientType = (await testapp).test_client()
-    response = await client.post('/api/v9/auth/register', json={
-        "username": f"TestUser_{TestVars.EMAIL_ID}",
-        "email": f"{TestVars.EMAIL_ID}_user@yepcord.ml",
-        "password": "test_passw0rd",
-        "date_of_birth": "2000-01-01",
-    })
-    assert response.status_code == 200
-    j = await response.get_json()
-    assert "token" in j
-    TestVars.set("token_u2", j["token"])
-    response = await client.get("/api/v9/users/@me", headers={
-        "Authorization": j["token"]
-    })
-    assert response.status_code == 200
-    TestVars.set("data_u2", await response.get_json())
+    for i in (2, 3):
+        prefix = ("" if i == 2 else "3_")
+        response = await client.post('/api/v9/auth/register', json={
+            "username": f"{prefix}TestUser_{TestVars.EMAIL_ID}",
+            "email": f"{prefix}{TestVars.EMAIL_ID}_user@yepcord.ml",
+            "password": "test_passw0rd",
+            "date_of_birth": "2000-01-01",
+        })
+        assert response.status_code == 200
+        j = await response.get_json()
+        assert "token" in j
+        TestVars.set(f"token_u{i}", j["token"])
+        response = await client.get("/api/v9/users/@me", headers={
+            "Authorization": j["token"]
+        })
+        assert response.status_code == 200
+        TestVars.set(f"data_u{i}", await response.get_json())
 
 
 @pt.mark.asyncio
@@ -1336,7 +1338,9 @@ async def test_dm_channels(testapp):
     client: TestClientType = (await testapp).test_client()
     headers = {"Authorization": TestVars.get("token")}
     headers_u2 = {"Authorization": TestVars.get("token_u2")}
+    data = TestVars.get("data")
     data2 = TestVars.get("data_u2")
+    data3 = TestVars.get("data_u3")
     resp = await client.post(f"/api/v9/users/@me/channels", headers=headers, json={"recipients": []})
     assert resp.status_code == 200
     json = await resp.get_json()
@@ -1365,11 +1369,38 @@ async def test_dm_channels(testapp):
     last_owner_id = json["owner_id"]
     TestVars.set("dmgroup_channel_id", json["id"])
 
+    resp = await client.post(f"/api/v9/users/@me/channels", headers=headers, json={"recipients": [data3["id"]]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["type"] == ChannelType.DM
+    dm_id3 = json["id"]
+
+    resp = await client.put(f"/api/v9/channels/{dm_id3}/recipients/{data2['id']}", headers=headers)
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/users/@me/channels", headers=headers)
+    json = await resp.get_json()
+    dmchannel_id3 = [ch for ch in json if ch["type"] == ChannelType.GROUP_DM and len(ch["recipient_ids"]) == 2][0]["id"]
+
+    resp = await client.delete(f"/api/v9/channels/{dmchannel_id3}/recipients/{data2['id']}", headers=headers)
+    assert resp.status_code == 204
+
     resp = await client.put(f"/api/v9/channels/{dm_id}/recipients/{Snowflake.makeId()}", headers=headers)
     assert resp.status_code == 404
 
     resp = await client.put(f"/api/v9/channels/{dm_id}/recipients/{data2['id']}", headers=headers)
     assert resp.status_code == 204
+
+    guild_c_id = [ch for ch in TestVars.get("guild_channels") if ch["name"] == "test_text_channel"][0]["id"]
+
+    resp = await client.put(f"/api/v9/channels/{guild_c_id}/recipients/{data2['id']}", headers=headers)
+    assert resp.status_code == 403
+
+    resp = await client.delete(f"/api/v9/channels/{guild_c_id}/recipients/{data2['id']}", headers=headers)
+    assert resp.status_code == 403
+
+    resp = await client.delete(f"/api/v9/channels/{dm_id}/recipients/{data['id']}", headers=headers_u2)
+    assert resp.status_code == 403
 
     resp = await client.post(f"/api/v9/channels/{dm_id}/messages", headers=headers,
                              json={"content": "test message"})
