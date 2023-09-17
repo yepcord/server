@@ -4,6 +4,7 @@ import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
+from src.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_webhook, \
     create_guild_channel
 from tests.yep_image import YEP_IMAGE
@@ -84,6 +85,16 @@ async def test_edit_webhook():
     assert json["guild_id"] == guild["id"]
     assert len(json["avatar"]) == 32
 
+    resp = await client.patch(f"/api/v9/webhooks/{webhook['id']}/{webhook['token']}", json={'name': 'Test webhook 1'})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["name"] == "Test webhook 1"
+
+    resp = await client.patch(f"/api/v9/webhooks/{webhook['id']}/{webhook['token']}", json={'channel_id': '123456789'})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["channel_id"] == channel2["id"]
+
 
 @pt.mark.asyncio
 async def test_get_webhook():
@@ -100,6 +111,11 @@ async def test_get_webhook():
     assert json["name"] == webhook["name"]
     assert json["guild_id"] == guild["id"]
 
+    resp = await client.get(f"/api/v9/webhooks/{webhook['id']}/{webhook['token']}")
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["channel_id"] == channel["id"]
+
 
 @pt.mark.asyncio
 async def test_post_webhook_message():
@@ -110,12 +126,10 @@ async def test_post_webhook_message():
     webhook = await create_webhook(client, user, channel["id"])
 
     resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}",
-                             headers={"Authorization": user["token"]},
                              json={'content': 'test message sent from webhook'})
     assert resp.status_code == 204
 
     resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
-                             headers={"Authorization": user["token"]},
                              json={'content': 'test message sent from webhook 2'})
     assert resp.status_code == 200
     json = await resp.get_json()
@@ -125,6 +139,14 @@ async def test_post_webhook_message():
     assert json["content"] == "test message sent from webhook 2"
     assert json["type"] == 0
     assert json["guild_id"] == guild["id"]
+
+    resp = await client.post(f"/api/webhooks/{Snowflake.makeId()}/{webhook['token']}",
+                             json={'content': 'test message sent from webhook'})
+    assert resp.status_code == 404
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/wrong-token",
+                             json={'content': 'test message sent from webhook'})
+    assert resp.status_code == 403
 
 
 @pt.mark.asyncio
@@ -147,3 +169,40 @@ async def test_delete_webhook():
     resp = await client.get(f"/api/v9/guilds/{guild['id']}/webhooks", headers={"Authorization": user["token"]})
     assert resp.status_code == 200
     assert await resp.get_json() == []
+
+
+@pt.mark.asyncio
+async def test_edit_webhook_fail():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    guild = await create_guild(client, user1, "Test Guild")
+    channel = await create_guild_channel(client, user1, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user1, channel["id"])
+
+    resp = await client.patch(f"/api/v9/webhooks/{webhook['id']}/wrong-token", json={'name': 'Test webhook'})
+    assert resp.status_code == 403
+
+    resp = await client.patch(f"/api/v9/webhooks/{Snowflake.makeId()}", json={'name': 'Test webhook'})
+    assert resp.status_code == 404
+
+
+@pt.mark.asyncio
+async def test_get_webhook_fail():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    guild = await create_guild(client, user1, "Test Guild")
+    channel = await create_guild_channel(client, user1, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user1, channel["id"])
+
+    resp = await client.get(f"/api/v9/webhooks/{webhook['id']}", headers={"Authorization": user2["token"]})
+    assert resp.status_code == 403
+
+    resp = await client.get(f"/api/v9/webhooks/{webhook['id']}/wrong-token", headers={"Authorization": user2["token"]})
+    assert resp.status_code == 403
+
+    resp = await client.get(f"/api/v9/webhooks/{webhook['id']}/wrong-token")
+    assert resp.status_code == 403
+
+    resp = await client.get(f"/api/v9/webhooks/{Snowflake.makeId()}/wrong-token")
+    assert resp.status_code == 404
+

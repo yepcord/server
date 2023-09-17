@@ -319,7 +319,7 @@ async def get_backup_codes(data: MfaCodesVerification, user: User):
 @users_me.put("/relationships/<int:user_id>")
 @multipleDecorators(validate_request(RelationshipPut), getUser)
 async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user: User):
-    if not (target_user_data := await UserData.objects.select_related("user").get(id=user_id)):
+    if not (target_user_data := await UserData.objects.select_related("user").get_or_none(id=user_id)):
         raise InvalidDataErr(404, Errors.make(10013))
     if not data.type or data.type == 1:
         from_user = target_user_data.user

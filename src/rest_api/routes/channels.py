@@ -64,25 +64,23 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
             del changes["owner_id"]
         if "icon" in changes and changes["icon"] is not None:
             img = getImage(changes["icon"])
-            if not (image := await getCDNStorage().setChannelIconFromBytesIO(channel.id, img)):
-                del changes["icon"]
-            else:
-                changes["icon"] = image
+            image = await getCDNStorage().setChannelIconFromBytesIO(channel.id, img)
+            changes["icon"] = image
         if "icon" in changes and changes["icon"] != channel.icon: changed.append("icon")
         if "name" in changes and changes["name"] != channel.name: changed.append("name")
         await channel.update(**changes)
         Ctx["with_ids"] = False
         await getGw().dispatch(DMChannelUpdateEvent(channel), channel_id=channel.id)
     elif channel.type in GUILD_CHANNELS:
-
         guild = channel.guild
         member = await getCore().getGuildMember(guild, user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
         changes = data.to_json(channel.type)
-        if "parent_id" in changes and changes["parent_id"] is not None:
+        if "parent_id" in changes:
             parent = await getCore().getChannel(changes["parent_id"])
-            if parent:
+            if (parent is None or
+                    (parent is not None and parent.guild == guild and parent.type == ChannelType.GUILD_CATEGORY)):
                 changes["parent"] = parent
             del changes["parent_id"]
 
@@ -101,8 +99,8 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
             await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel_id=message.channel.id)
     elif channel.type in GUILD_CHANNELS:
-        if "parent_id" in changes and changes["parent_id"] is not None:
-            changes["parent_id"] = changes["parent"].id
+        if "parent" in changes:
+            changes["parent_id"] = changes["parent"].id if changes["parent"] is not None else None
             del changes["parent"]
         entry = await AuditLogEntry.objects.channel_update(user, channel, changes)
         await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,

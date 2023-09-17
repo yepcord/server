@@ -142,6 +142,12 @@ async def test_hardcoded_endpoints():
     resp = await client.get(f"/api/v9/sticker-packs")
     assert resp.status_code == 200
 
+    resp = await client.get(f"/api/v9/instance")
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert "name" in json
+    assert "features" in json
+
 
 @pt.mark.asyncio
 async def test_gifs_trending():
@@ -188,3 +194,14 @@ async def test_gifs_search_suggest():
 
     resp = await client.get("/api/v9/gifs/suggest?q=cat&limit=5", headers=headers)
     assert resp.status_code == 200
+
+
+@pt.mark.asyncio
+async def test_harvest():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.get("/api/v9/users/@me/harvest", headers=headers)
+    assert resp.status_code == 204
+

@@ -118,6 +118,9 @@ async def test_mfa_view_backup_codes():
                              json={'key': "", 'nonce': "", 'regenerate': False})
     assert resp.status_code == 400
     resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
+                             json={'key': "", 'nonce': nonce, 'regenerate': False})
+    assert resp.status_code == 400
+    resp = await client.post("/api/v9/users/@me/mfa/codes-verification", headers=headers,
                              json={'key': "invalidkey", 'nonce': nonce, 'regenerate': False})
     assert resp.status_code == 400
 

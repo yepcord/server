@@ -5,6 +5,7 @@ import pytest_asyncio
 
 from src.rest_api.main import app
 from src.yepcord.enums import ChannelType
+from src.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_invite
 
 
@@ -99,9 +100,11 @@ async def test_edit_channel():
     user = (await create_users(client, 1))[0]
     guild = await create_guild(client, user, "Test Guild")
     channel_id = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_VOICE][0]["id"]
+    category_id = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_CATEGORY][0]["id"]
+    text_id = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]["id"]
 
     resp = await client.patch(f"/api/v9/channels/{channel_id}", headers={"Authorization": user["token"]},
-                              json={'bitrate': 384000, 'user_limit': 69})
+                              json={'bitrate': 384000, 'user_limit': 69, "parent_id": category_id})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["type"] == 2
@@ -109,6 +112,19 @@ async def test_edit_channel():
     assert json["guild_id"] == guild["id"]
     assert json["user_limit"] == 69
     assert json["bitrate"] == 384000
+    assert json["parent_id"] == category_id
+
+    resp = await client.patch(f"/api/v9/channels/{channel_id}", headers={"Authorization": user["token"]},
+                              json={'bitrate': 384000, 'user_limit': 69, "parent_id": Snowflake.makeId()})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["parent_id"] == category_id
+
+    resp = await client.patch(f"/api/v9/channels/{channel_id}", headers={"Authorization": user["token"]},
+                              json={'bitrate': 384000, 'user_limit': 69, "parent_id": text_id})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["parent_id"] == category_id
 
 
 @pt.mark.asyncio

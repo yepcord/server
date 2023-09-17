@@ -72,3 +72,16 @@ async def test_settings_proto():
                                json={"settings": ""})).status_code == 400
     assert (await client.patch("/api/v9/users/@me/settings-proto/2", headers=headers,
                                json={"settings": "1"})).status_code == 400
+
+
+@pt.mark.asyncio
+async def test_user_delete():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.post("/api/v9/users/@me/delete", headers=headers, json={"password": "wrong_password"})
+    assert resp.status_code == 400
+
+    resp = await client.post("/api/v9/users/@me/delete", headers=headers, json={"password": user["password"]})
+    assert resp.status_code == 204

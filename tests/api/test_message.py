@@ -5,7 +5,8 @@ import pytest_asyncio
 
 from src.rest_api.main import app
 from src.yepcord.snowflake import Snowflake
-from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message
+from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, rel_block, \
+    create_dm_channel
 
 
 @pt.fixture()
@@ -130,3 +131,39 @@ async def test_message_deleting():
     resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers={"Authorization": user["token"]})
     assert resp.status_code == 200
     assert await resp.get_json() == []
+
+
+@pt.mark.asyncio
+async def test_send_message_blocked():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    channel = await create_dm_channel(client, user1, user2)
+    assert await rel_block(client, user2, user1) == 204  # Block first user
+
+    resp = await client.post(f"/api/v9/channels/{channel['id']}/messages", headers={"Authorization": user1["token"]},
+                             json={"content": "test"})
+    assert resp.status_code == 403
+
+
+@pt.mark.asyncio
+async def test_send_message_in_hidden_channel():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    channel = await create_dm_channel(client, user1, user2)
+
+    resp = await client.delete(f"/api/v9/channels/{channel['id']}", headers={"Authorization": user1["token"]})
+    assert resp.status_code == 200
+
+    await create_message(client, user2, channel["id"], content="test", nonce="123456789")
+
+
+@pt.mark.asyncio
+async def test_edit_message_from_other_user():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    channel = await create_dm_channel(client, user1, user2)
+    message = await create_message(client, user2, channel["id"], content="test", nonce="123456789")
+
+    resp = await client.patch(f"/api/v9/channels/{channel['id']}/messages/{message['id']}", json={"content": "123456"},
+                              headers={"Authorization": user1["token"]})
+    assert resp.status_code == 403

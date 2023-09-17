@@ -4,6 +4,7 @@ import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
+from src.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, rel_request, rel_count, rel_delete, rel_accept, rel_block
 
 
@@ -63,6 +64,18 @@ async def test_relationship_accept():
 
 
 @pt.mark.asyncio
+async def test_relationship_accept_without_request():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+
+    assert await rel_accept(client, {"id": Snowflake.makeId()}, user2) == 404
+    assert await rel_accept(client, user1, user2) == 204
+
+    assert await rel_count(client, user1) == 1
+    assert await rel_count(client, user2) == 1
+
+
+@pt.mark.asyncio
 async def test_relationship_decline():
     client: TestClientType = app.test_client()
     user1, user2 = (await create_users(client, 2))
@@ -88,6 +101,8 @@ async def test_relationship_remove():
     assert await rel_count(client, user2) == 1
 
     assert await rel_delete(client, user1, user2) == 204
+
+    assert await rel_delete(client, {"id": Snowflake.makeId()}, user2) == 204
 
     assert await rel_count(client, user1) == 0
     assert await rel_count(client, user2) == 0
@@ -120,3 +135,5 @@ async def test_relationship_block():
 
     assert await rel_count(client, user1) == 1
     assert await rel_count(client, user2) == 1
+
+    assert await rel_block(client, user2, user1) == 204

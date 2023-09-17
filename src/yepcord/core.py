@@ -865,7 +865,7 @@ class Core(Singleton):
         await data.update(discriminator=0, username=f"Deleted User {hex(user.id)[2:]}", avatar=None,
                           avatar_decoration=None, public_flags=0)
         await Session.objects.delete(user=user)
-        await Relationship.objects.delete(or_(user1=user, user2=user))
+        await Relationship.objects.delete(or_(from_user=user, to_user=user))
         await MfaCode.objects.delete(user=user)
         await GuildMember.objects.delete(user=user)
         await UserSettings.objects.delete(user=user)
