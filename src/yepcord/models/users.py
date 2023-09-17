@@ -149,7 +149,7 @@ class UserData(ormar.Model):
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     birth: date = ormar.Date()
     username: str = ormar.String(max_length=128, collation=collation)
-    discriminator: int = ormar.Integer(minimum=1, maximum=9999)
+    discriminator: int = ormar.Integer(minimum=0, maximum=9999)
     premium: bool = ormar.Boolean(default=True)
     flags: int = ormar.BigInteger(default=0)
     public_flags: int = ormar.BigInteger(default=0)

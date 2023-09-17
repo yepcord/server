@@ -6,8 +6,8 @@ import pytest_asyncio
 from src.rest_api.main import app
 from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
-from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_invite, \
-    create_dm_channel, create_dm_group, create_message
+from tests.api.utils import TestClientType, create_users, create_guild, create_dm_channel, create_dm_group, \
+    create_message
 from tests.yep_image import YEP_IMAGE
 
 
