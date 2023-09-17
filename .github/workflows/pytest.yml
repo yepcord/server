@@ -57,9 +57,9 @@ jobs:
           KEY: ${{ secrets.KEY }}
           SETTINGS: src.settings_test
 
-      - name: Run test suite for http
+      - name: Run test suite for http api
         run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --disable-warnings tests/test_http.py
+          pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --disable-warnings tests/api/
         env:
           DB_CONNECT_STRING: mysql+pymysql://root:${{ secrets.DB_PASS }}@127.0.0.1/yepcord_test?charset=utf8mb4
           KEY: ${{ secrets.KEY }}

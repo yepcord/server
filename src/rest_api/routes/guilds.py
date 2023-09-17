@@ -650,7 +650,7 @@ async def get_guild_stickers(user: User, guild: Guild):
 @multipleDecorators(getUser, getGuildWM)
 async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
-    if request.content_length > 1024 * 512:
+    if request.content_length is not None and request.content_length > 1024 * 512:
         raise InvalidDataErr(400, Errors.make(50006))
     async with timeout(current_app.config["BODY_TIMEOUT"]):
         if not (file := (await request.files).get("file")):
