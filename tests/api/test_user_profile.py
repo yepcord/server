@@ -4,7 +4,7 @@ import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
-from .utils import TestClientType, create_users
+from .utils import TestClientType, create_users, create_guild
 from ..yep_image import YEP_IMAGE
 
 
@@ -51,20 +51,22 @@ async def test_change_username():
 async def test_get_my_profile():
     client: TestClientType = app.test_client()
     user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
     headers = {"Authorization": user["token"]}
     user_id = user["id"]
 
     resp = await client.get(f"/api/v9/users/@me/profile?guild_id=invalid_id", headers=headers)  # Invalid id
     assert resp.status_code == 400
 
-    # resp = await client.get(
-    #    f"/api/v9/users/@me/profile?with_mutual_guilds=true&mutual_friends_count=true&guild_id={guild_id}",
-    #    headers=headers)
-    # assert resp.status_code == 200
-    # json = await resp.get_json()
-    # assert json["user"]["id"] == user_id
-    # assert json["guild_member_profile"]["guild_id"] == guild_id
-    # assert json["guild_member"]["user"]["id"] == user_id
+    resp = await client.get(
+       f"/api/v9/users/@me/profile?with_mutual_guilds=true&mutual_friends_count=true&guild_id={guild['id']}",
+       headers=headers
+    )
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["user"]["id"] == user_id
+    assert json["guild_member_profile"]["guild_id"] == guild["id"]
+    assert json["guild_member"]["user"]["id"] == user_id
 
     resp = await client.get(f"/api/v9/users/@me/profile?with_mutual_guilds=true&mutual_friends_count=true",
                             headers=headers)

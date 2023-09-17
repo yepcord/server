@@ -1,12 +1,14 @@
 from asyncio import get_event_loop
+from json import dumps
 
 import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
 from src.yepcord.snowflake import Snowflake
+from src.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_webhook, \
-    create_guild_channel
+    create_guild_channel, create_sticker
 from tests.yep_image import YEP_IMAGE
 
 
@@ -132,13 +134,23 @@ async def test_post_webhook_message():
     resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
                              json={'content': 'test message sent from webhook 2'})
     assert resp.status_code == 200
-    json = await resp.get_json()
-    assert json["author"]["bot"]
-    assert json["author"]["id"] == webhook["id"]
-    assert json["author"]["discriminator"] == "0000"
-    assert json["content"] == "test message sent from webhook 2"
-    assert json["type"] == 0
-    assert json["guild_id"] == guild["id"]
+    message = await resp.get_json()
+    assert message["author"]["bot"]
+    assert message["author"]["id"] == webhook["id"]
+    assert message["author"]["discriminator"] == "0000"
+    assert message["content"] == "test message sent from webhook 2"
+    assert message["type"] == 0
+    assert message["guild_id"] == guild["id"]
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={'content': 'test reply', "message_reference": {'message_id': message["id"]}})
+    assert resp.status_code == 200
+    reply = await resp.get_json()
+    assert reply["message_reference"]["message_id"] == message["id"]
+    assert reply["message_reference"]["guild_id"] == guild["id"]
+    assert reply["message_reference"]["channel_id"] == channel["id"]
+    assert reply["referenced_message"]["id"] == message["id"]
+    assert reply["referenced_message"]["content"] == message["content"]
 
     resp = await client.post(f"/api/webhooks/{Snowflake.makeId()}/{webhook['token']}",
                              json={'content': 'test message sent from webhook'})
@@ -147,6 +159,60 @@ async def test_post_webhook_message():
     resp = await client.post(f"/api/webhooks/{webhook['id']}/wrong-token",
                              json={'content': 'test message sent from webhook'})
     assert resp.status_code == 403
+
+
+@pt.mark.asyncio
+async def test_post_webhook_message_sticker():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+    sticker = await create_sticker(client, user, guild["id"], "yep")
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={'sticker_ids': [sticker["id"]]})
+    assert resp.status_code == 200
+    message = await resp.get_json()
+    assert len(message["stickers"]) == 1
+    assert message["stickers"][0]["id"] == sticker["id"]
+    assert message["sticker_items"][0]["id"] == sticker["id"]
+
+
+@pt.mark.asyncio
+async def test_post_webhook_message_attachment():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+
+    file = getImage(YEP_IMAGE)
+    file.filename = "yep.png"
+    file.headers = []
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true", files={
+        "file": file,
+    }, form={
+        "payload_json": dumps({"attachments": [{"filename": "yep.png"}]})
+    })
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["attachments"]) == 1
+
+
+@pt.mark.asyncio
+async def test_post_webhook_empty_message():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}", json={'content': ''})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}", json={})
+    assert resp.status_code == 400
 
 
 @pt.mark.asyncio
@@ -205,4 +271,3 @@ async def test_get_webhook_fail():
 
     resp = await client.get(f"/api/v9/webhooks/{Snowflake.makeId()}/wrong-token")
     assert resp.status_code == 404
-

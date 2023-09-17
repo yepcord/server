@@ -1,12 +1,18 @@
 from asyncio import get_event_loop
+from io import BytesIO
+from json import dumps
 
 import pytest as pt
 import pytest_asyncio
+from async_timeout import timeout
 
 from src.rest_api.main import app
+from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
+from src.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, rel_block, \
-    create_dm_channel
+    create_dm_channel, create_sticker
+from tests.yep_image import YEP_IMAGE
 
 
 @pt.fixture()
@@ -167,3 +173,59 @@ async def test_edit_message_from_other_user():
     resp = await client.patch(f"/api/v9/channels/{channel['id']}/messages/{message['id']}", json={"content": "123456"},
                               headers={"Authorization": user1["token"]})
     assert resp.status_code == 403
+
+
+@pt.mark.asyncio
+async def test_send_empty_message():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+
+    await create_message(client, user, channel["id"], exp_code=400)
+    await create_message(client, user, channel["id"], content="", exp_code=400)
+
+
+@pt.mark.asyncio
+async def test_message_with_stickers():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    sticker = await create_sticker(client, user, guild["id"], "yep")
+    channel_id = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]["id"]
+
+    message = await create_message(client, user, channel_id, sticker_ids=[sticker["id"]])
+    assert len(message["stickers"]) == 1
+    assert message["stickers"][0]["id"] == sticker["id"]
+    assert message["sticker_items"][0]["id"] == sticker["id"]
+
+
+@pt.mark.asyncio
+async def test_message_with_attachment():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel_id = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]["id"]
+    headers = {"Authorization": user["token"]}
+
+    def get_file() -> BytesIO:
+        image = getImage(YEP_IMAGE)
+        assert image is not None
+        image.filename = "yep.png"
+        image.headers = []
+        return image
+    resp = await client.post(f"/api/v9/channels/{channel_id}/messages", headers=headers, files={
+        "file": get_file(),
+    }, form={
+        "payload_json": dumps({"attachments": [{"filename": "yep.png"}]})
+    })
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["attachments"]) == 1
+
+    resp = await client.post(f"/api/v9/channels/{channel_id}/messages", headers=headers, files={
+        f"files[{i}]": get_file() for i in range(11)
+    }, form={
+        "payload_json": dumps({"attachments": [{"filename": "yep.png"}]})
+    })
+    assert resp.status_code == 400

@@ -192,7 +192,7 @@ getGuildWoM = getGuildWithoutMember
 async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[dict, list[Attachment]]:
     attachments = []
     if data is None:  # Multipart request
-        if request.content_length > 1024 * 1024 * 100:
+        if request.content_length is not None and request.content_length > 1024 * 1024 * 100:
             raise InvalidDataErr(400, Errors.make(50045))
         async with timeout(current_app.config["BODY_TIMEOUT"]):
             files = list((await request.files).values())
@@ -202,6 +202,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                 raise InvalidDataErr(400, Errors.make(50013, {"files": {
                     "code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."
                 }}))
+            total_size = 0
             for idx, file in enumerate(files):
                 att = {"filename": None}
                 if idx + 1 <= len(data["attachments"]):
@@ -209,6 +210,8 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                 name = att.get("filename") or file.filename or "unknown"
                 get_content = getattr(file, "getvalue", file.read)
                 content = get_content()
+                total_size += len(content)
+                if total_size > 1024 * 1024 * 100: raise InvalidDataErr(400, Errors.make(50045))
                 content_type = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
                 metadata = {}
                 if content_type.startswith("image/"):

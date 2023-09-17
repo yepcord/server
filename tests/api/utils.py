@@ -142,10 +142,10 @@ async def create_sticker(app: TestClientType, user: dict, guild_id: str, name: s
     return await resp.get_json()
 
 
-async def create_message(app: TestClientType, user: dict, channel_id: str, **kwargs) -> dict:
+async def create_message(app: TestClientType, user: dict, channel_id: str, *, exp_code=200, **kwargs) -> dict:
     resp = await app.post(f"/api/v9/channels/{channel_id}/messages", headers={"Authorization": user["token"]},
                           json=kwargs)
-    assert resp.status_code == 200
+    assert resp.status_code == exp_code
     return await resp.get_json()
 
 
