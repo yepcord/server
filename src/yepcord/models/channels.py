@@ -323,7 +323,7 @@ class Invite(ormar.Model):
         }
 
         if with_counts:
-            related_users = await getCore().getRelatedUsersToChannel(self.channel.id)
+            related_users = await getCore().getRelatedUsersToChannel(self.channel.id, ids=False)
             data["approximate_member_count"] = len(related_users)
             if self.channel.type == ChannelType.GROUP_DM:
                 data["channel"]["recipients"] = [

@@ -161,3 +161,10 @@ async def create_dm_group(app: TestClientType, user: dict, recipient_ids: list[s
                           json={"recipients": recipient_ids})
     assert resp.status_code == exp_code
     return await resp.get_json()
+
+
+async def create_ban(app: TestClientType, user: dict, guild: dict, target_id: str, *, exp_code=204) -> dict:
+    resp = await app.put(f"/api/v9/guilds/{guild['id']}/bans/{target_id}", headers={"Authorization": user["token"]},
+                         json={})
+    assert resp.status_code == exp_code
+    return await resp.get_json()

@@ -77,7 +77,7 @@ async def use_invite(user: User, invite: Invite):
                 del inv[excl]
         if not await getCore().getGuildMember(channel.guild, user.id):
             guild = channel.guild
-            if await getCore().getGuildBan(channel.guild, user.id) is not None:
+            if await getCore().getGuildBan(guild, user.id) is not None:
                 raise InvalidDataErr(403, Errors.make(40007))
             inv["new_member"] = True
             await GuildMember.objects.create(id=Snowflake.makeId(), user=user, guild=guild)
@@ -98,7 +98,8 @@ async def use_invite(user: User, invite: Invite):
 @multipleDecorators(getUser, getInvite)
 async def delete_invite(user: User, invite: Invite):
     if invite.channel.guild:
-        member = await getCore().getGuildMember(invite.channel.guild, user.id)
+        if (member := await getCore().getGuildMember(invite.channel.guild, user.id)) is None:
+            raise InvalidDataErr(403, Errors.make(50001))
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         await invite.delete()
         await getGw().dispatch(InviteDeleteEvent(invite), guild_id=invite.channel.guild.id)

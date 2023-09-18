@@ -679,7 +679,12 @@ class Core(Singleton):
             .filter(channel__guild=guild).all()
 
     async def banGuildMember(self, member: GuildMember, reason: str = None) -> None:
+        if reason is None: reason = ""
         await GuildBan.objects.create(user=member.user, guild=member.guild, reason=reason)
+
+    async def banGuildUser(self, user: User, guild: Guild, reason: str = None) -> None:
+        if reason is None: reason = ""
+        await GuildBan.objects.create(user=user, guild=guild, reason=reason)
 
     async def getGuildBan(self, guild: Guild, user_id: int) -> Optional[GuildMember]:
         return await GuildBan.objects.get_or_none(guild=guild, user__id=user_id)

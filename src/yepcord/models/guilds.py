@@ -676,6 +676,10 @@ class AuditLogEntryQuerySet(QuerySet):
         return await self.create(id=Snowflake.makeId(), guild=member.guild, user=user, target_id=member.id,
                                  action_type=AuditLogEntryType.MEMBER_BAN_ADD, reason=reason)
 
+    async def member_ban_user(self, user: User, target_id: int, guild: Guild, reason: str = None) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=target_id,
+                                 action_type=AuditLogEntryType.MEMBER_BAN_ADD, reason=reason)
+
     async def member_unban(self, user: User, guild: Guild, target_user: User) -> AuditLogEntry:
         return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=target_user.id,
                                  action_type=AuditLogEntryType.MEMBER_BAN_REMOVE)

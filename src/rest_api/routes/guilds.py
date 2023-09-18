@@ -285,19 +285,24 @@ async def kick_member(user: User, guild: Guild, member: GuildMember, user_id: in
 @multipleDecorators(validate_request(BanMember), getUser, getGuildWM)
 async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMember, user_id: int):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
-    if not (target_member := await getCore().getGuildMember(guild, user_id)):
-        return "", 204
-    if not await member.perm_checker.canKickOrBan(target_member):
+    target_member = await getCore().getGuildMember(guild, user_id)
+    if target_member is not None and not await member.perm_checker.canKickOrBan(target_member):
         raise InvalidDataErr(403, Errors.make(50013))
     if await getCore().getGuildBan(guild, user_id) is not None:
         return "", 204
     reason = request.headers.get("x-audit-log-reason")
-    await target_member.delete()
-    await getCore().banGuildMember(target_member, reason)
-    target_user = target_member.user
+    if target_member is not None:
+        await target_member.delete()
+        await getCore().banGuildMember(target_member, reason)
+        target_user = target_member.user
+    else:
+        if (target_user := await getCore().getUser(user_id, False)) is None:
+            raise InvalidDataErr(404, Errors.make(10013))
+        await getCore().banGuildUser(target_user, guild, reason)
     target_user_data = await target_user.data
-    await getGw().dispatch(GuildMemberRemoveEvent(guild.id, target_user_data.ds_json), users=[user_id])
-    await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
+    if target_member is not None:
+        await getGw().dispatch(GuildMemberRemoveEvent(guild.id, target_user_data.ds_json), users=[user_id])
+        await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
     await getGw().dispatch(GuildBanAddEvent(guild.id, target_user_data.ds_json), guild_id=guild.id,
                            permissions=GuildPermissions.BAN_MEMBERS)
     if (delete_message_seconds := data.delete_message_seconds) > 0:
@@ -309,7 +314,10 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
             elif len(messages) == 1:
                 await getGw().dispatch(MessageDeleteEvent(messages[0], channel_id, guild.id), channel_id=channel_id)
 
-    entry = await AuditLogEntry.objects.member_ban(user, target_member, reason)
+    if target_member is not None:
+        entry = await AuditLogEntry.objects.member_ban(user, target_member, reason)
+    else:
+        entry = await AuditLogEntry.objects.member_ban_user(user, user_id, guild, reason)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
