@@ -4,14 +4,13 @@ from json import dumps
 
 import pytest as pt
 import pytest_asyncio
-from async_timeout import timeout
 
 from src.rest_api.main import app
 from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, rel_block, \
-    create_dm_channel, create_sticker
+    create_dm_channel, create_sticker, create_emoji
 from tests.yep_image import YEP_IMAGE
 
 
@@ -229,3 +228,143 @@ async def test_message_with_attachment():
         "payload_json": dumps({"attachments": [{"filename": "yep.png"}]})
     })
     assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_add_message_reaction():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    message = await create_message(client, user, channel["id"], content="test", nonce="123456789")
+    emoji = await create_emoji(client, user, guild["id"], "YEP")
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.put(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/👍/@me",
+                            headers=headers)
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers=headers)
+    assert resp.status_code == 200
+    messages = await resp.get_json()
+    assert len(messages) == 1
+    assert messages[0]["id"] == message["id"]
+    assert len(messages[0]["reactions"]) == 1
+    assert messages[0]["reactions"][0] == {"count": 1, "emoji": {"id": None, "name": "👍"}, "me": True}
+
+    resp = await client.put(
+        f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/{emoji['name']}:{emoji['id']}/@me",
+        headers=headers
+    )
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers=headers)
+    assert resp.status_code == 200
+    messages = await resp.get_json()
+    assert len(messages[0]["reactions"]) == 2
+    assert {"count": 1, "emoji": {"id": None, "name": "👍"}, "me": True} in messages[0]["reactions"]
+    assert {"count": 1, "emoji": {"id": emoji['id'], "name": emoji['name']}, "me": True} in messages[0]["reactions"]
+
+    resp = await client.put(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/notemoji/@me",
+                            headers=headers)
+    assert resp.status_code == 400
+    resp = await client.put(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/not:emoji/@me",
+                            headers=headers)
+    assert resp.status_code == 400
+    resp = await client.put(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/notemoji:123456/@me",
+                            headers=headers)
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_remove_message_reaction():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    message = await create_message(client, user, channel["id"], content="test", nonce="123456789")
+    emoji = await create_emoji(client, user, guild["id"], "YEP")
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.put(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/👍/@me",
+                            headers=headers)
+    assert resp.status_code == 204
+
+    resp = await client.put(
+        f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/{emoji['name']}:{emoji['id']}/@me",
+        headers=headers
+    )
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers=headers)
+    assert resp.status_code == 200
+    messages = await resp.get_json()
+    assert len(messages[0]["reactions"]) == 2
+    assert {"count": 1, "emoji": {"id": None, "name": "👍"}, "me": True} in messages[0]["reactions"]
+    assert {"count": 1, "emoji": {"id": emoji['id'], "name": emoji['name']}, "me": True} in messages[0]["reactions"]
+
+    resp = await client.delete(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/👍/@me",
+                               headers=headers)
+    assert resp.status_code == 204
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers=headers)
+    assert resp.status_code == 200
+    messages = await resp.get_json()
+    assert len(messages[0]["reactions"]) == 1
+    assert messages[0]["reactions"][0] == {"count": 1, "emoji": {"id": emoji['id'], "name": emoji['name']}, "me": True}
+
+    resp = await client.delete(
+        f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/{emoji['name']}:{emoji['id']}/@me",
+        headers=headers
+    )
+    assert resp.status_code == 204
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers=headers)
+    assert resp.status_code == 200
+    messages = await resp.get_json()
+    assert "reactions" not in messages[0]
+
+    resp = await client.delete(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/notemoji/@me",
+                               headers=headers)
+    assert resp.status_code == 400
+    resp = await client.delete(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/not:emoji/@me",
+                               headers=headers)
+    assert resp.status_code == 400
+    resp = await client.delete(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/notemoji:1234/@me",
+                               headers=headers)
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_get_message_reaction():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    message = await create_message(client, user, channel["id"], content="test", nonce="123456789")
+    emoji = await create_emoji(client, user, guild["id"], "YEP")
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.put(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/👍/@me",
+                            headers=headers)
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/👍",
+                            headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 1
+    assert json[0]["id"] == user["id"]
+
+    resp = await client.put(
+        f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/{emoji['name']}:{emoji['id']}/@me",
+        headers=headers
+    )
+    assert resp.status_code == 204
+
+    resp = await client.get(
+        f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/{emoji['name']}:{emoji['id']}",
+        headers=headers
+    )
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 1
+    assert json[0]["id"] == user["id"]
