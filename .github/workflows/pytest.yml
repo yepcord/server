@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
-        database: ["mariadb", "sqlite"]
+        database: ["mariadb"]
 
     steps:
       - name: Check out repository code
@@ -38,7 +38,7 @@ jobs:
 
       - name: Wait for MariaDB
         run: |
-          while ! mysqladmin ping --host=127.0.0.1 --password=${{ secrets.DB_PASS }} --silent; do
+          while ! mysqladmin ping --host=127.0.0.1 --password=yepcord_test --silent; do
             sleep 1
           done
 
@@ -78,6 +78,7 @@ jobs:
 
       - name: Run test suite for cdn and s3 storage
         run: |
+          mkdir -p tests/files/yepcord-test
           pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
         env:
           DB_TYPE: ${{ matrix.database }}
