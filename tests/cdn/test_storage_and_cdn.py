@@ -18,7 +18,6 @@
 
 from asyncio import get_event_loop
 from io import BytesIO
-from typing import Coroutine, Any
 
 import pytest as pt
 import pytest_asyncio
@@ -28,15 +27,25 @@ from src.cdn.main import app
 from src.yepcord.config import Config
 from src.yepcord.core import Core
 from src.yepcord.enums import StickerFormat, StickerType, ChannelType
-from src.yepcord.models import database, User, Sticker, Guild, Emoji, Channel, Message, Attachment
+from src.yepcord.models import User, Sticker, Guild, Emoji, Channel, Message, Attachment
 from src.yepcord.snowflake import Snowflake
-from src.yepcord.storage import getStorage
+from src.yepcord.storage import getStorage, S3Storage, FTPStorage
 from src.yepcord.utils import getImage, b64decode
+from .ftp_server import ftp_server
+from .local_server import local_server
+from .s3_server import s3_server
 from tests.yep_image import YEP_IMAGE
 
 TestClientType = app.test_client_class
 storage = getStorage()
 core = Core(b64decode(Config.KEY))
+
+if isinstance(storage, S3Storage):
+    storage_server = s3_server
+elif isinstance(storage, FTPStorage):
+    storage_server = ftp_server
+else:
+    storage_server = local_server
 
 
 class TestVars:
@@ -66,25 +75,14 @@ def event_loop():
     loop.close()
 
 
-@pt.fixture(name='testApp')
-async def _test_app():
+@pytest_asyncio.fixture(autouse=True)
+async def process_test():
     for func in app.before_serving_funcs:
         await app.ensure_async(func)()
-    return app
-
-
-@pt.fixture(name='testCore')
-async def _setup_db():
-    return core
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def setup_db():
-    if not database.is_connected:
-        await database.connect()
-    yield
-    if database.is_connected:
-        await database.disconnect()
+    with storage_server().run_in_thread():
+        yield
+    for func in app.after_serving_funcs:
+        await app.ensure_async(func)()
 
 
 @pt.mark.asyncio
@@ -95,8 +93,8 @@ async def test_set_avatar():
 
 
 @pt.mark.asyncio
-async def test_get_avatar(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_avatar():
+    client: TestClientType = app.test_client()
     avatar_hash = TestVars.get("avatar_hash")
 
     response = await client.get(f"/avatars/{TestVars.USER_ID}/{avatar_hash}.idk?size=240")
@@ -120,8 +118,8 @@ async def test_set_banner():
 
 
 @pt.mark.asyncio
-async def test_get_banner(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_banner():
+    client: TestClientType = app.test_client()
     banner_hash = TestVars.get("banner_hash")
 
     response = await client.get(f"/banners/{TestVars.USER_ID}/{banner_hash}.idk?size=240")
@@ -145,8 +143,8 @@ async def test_set_guild_splash():
 
 
 @pt.mark.asyncio
-async def test_get_guild_splash(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_guild_splash():
+    client: TestClientType = app.test_client()
     gsplash_hash = TestVars.get("banner_hash")
 
     response = await client.get(f"/splashes/{TestVars.GUILD_ID}/{gsplash_hash}.idk?size=240")
@@ -170,8 +168,8 @@ async def test_set_channel_icon():
 
 
 @pt.mark.asyncio
-async def test_get_channel_icon(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_channel_icon():
+    client: TestClientType = app.test_client()
     channel_icon_hash = TestVars.get("channel_icon_hash")
 
     response = await client.get(f"/channel-icons/{TestVars.CHANNEL_ID}/{channel_icon_hash}.idk?size=240")
@@ -195,8 +193,8 @@ async def test_set_guild_icon():
 
 
 @pt.mark.asyncio
-async def test_get_guild_icon(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_guild_icon():
+    client: TestClientType = app.test_client()
     guild_icon_hash = TestVars.get("guild_icon_hash")
 
     response = await client.get(f"/icons/{TestVars.GUILD_ID}/{guild_icon_hash}.idk?size=240")
@@ -220,8 +218,8 @@ async def test_set_guild_avatar():
 
 
 @pt.mark.asyncio
-async def test_get_guild_avatar(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_guild_avatar():
+    client: TestClientType = app.test_client()
     gavatar_hash = TestVars.get("gavatar_hash")
 
     response = await client.get(
@@ -247,10 +245,9 @@ async def test_get_guild_avatar(testApp):
 
 
 @pt.mark.asyncio
-async def test_set_sticker(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_set_sticker():
     user = await User.objects.create(id=Snowflake.makeId(), email=f"test_{TestVars.STICKER_ID}@yepcord.ml", password="")
-    guild = await testCore.createGuild(TestVars.GUILD_ID, user, "test")
+    guild = await core.createGuild(TestVars.GUILD_ID, user, "test")
     sticker = await Sticker.objects.create(id=TestVars.STICKER_ID, guild=guild, name="test", user=user,
                                            type=StickerType.GUILD, format=StickerFormat.PNG)
     sticker_hash = await storage.setStickerFromBytesIO(sticker.id, getImage(YEP_IMAGE))
@@ -258,8 +255,8 @@ async def test_set_sticker(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_get_sticker(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_sticker():
+    client: TestClientType = app.test_client()
 
     response = await client.get(f"/stickers/{TestVars.STICKER_ID}.idk?size=240")
     assert response.status_code == 400
@@ -288,8 +285,8 @@ async def test_set_event_image():
 
 
 @pt.mark.asyncio
-async def test_get_event_image(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_event_image():
+    client: TestClientType = app.test_client()
     event_hash = TestVars.get("event_hash")
 
     response = await client.get(f"/guild-events/{TestVars.EVENT_ID}/{event_hash}?size=241")
@@ -312,8 +309,8 @@ async def test_set_emoji():
 
 
 @pt.mark.asyncio
-async def test_get_emoji(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_emoji():
+    client: TestClientType = app.test_client()
 
     response = await client.get(f"/emojis/{TestVars.EMOJI_ID}.idk?size=240")
     assert response.status_code == 400
@@ -342,8 +339,8 @@ async def test_set_role_icon():
 
 
 @pt.mark.asyncio
-async def test_get_role_icon(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_role_icon():
+    client: TestClientType = app.test_client()
     role_icon_hash = TestVars.get("role_icon_hash")
 
     response = await client.get(f"/role-icons/{TestVars.ROLE_ID}/{role_icon_hash}.idk?size=240")
@@ -375,8 +372,8 @@ async def test_upload_attachment():
 
 
 @pt.mark.asyncio
-async def test_get_attachment(testApp):
-    client: TestClientType = (await testApp).test_client()
+async def test_get_attachment():
+    client: TestClientType = app.test_client()
 
     response = await client.get(f"/attachments/{TestVars.CHANNEL_ID}/{TestVars.ATTACHMENT_ID}/YEP.png")
     assert response.status_code == 200
