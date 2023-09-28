@@ -60,7 +60,7 @@ jobs:
 
       - name: Run test suite for http api
         run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --disable-warnings tests/api/
+          pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --cov=src/remote_auth --disable-warnings tests/api/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}

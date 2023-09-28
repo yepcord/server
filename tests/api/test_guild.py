@@ -4,8 +4,9 @@ import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
+from src.yepcord.classes.other import MFA
 from src.yepcord.enums import ChannelType
-from tests.api.utils import TestClientType, create_users, create_guild, create_invite
+from tests.api.utils import TestClientType, create_users, create_guild, create_invite, enable_mfa
 from tests.yep_image import YEP_IMAGE
 
 
@@ -138,3 +139,51 @@ async def test_create_guild_template():
     assert json["creator_id"] == user["id"]
     assert json["creator"]["id"] == user["id"]
     assert json["source_guild_id"] == guild["id"]
+
+
+@pt.mark.asyncio
+async def test_delete_guild():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    mfa = MFA("a" * 16, 0)
+    await enable_mfa(client, user1, mfa)
+    guild = await create_guild(client, user1, "Test")
+    channel = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]
+    invite = await create_invite(client, user1, channel["id"])
+    headers1 = {"Authorization": user1["token"]}
+    headers2 = {"Authorization": user2["token"]}
+
+    resp = await client.post(f"/api/v9/invites/{invite['code']}", headers={"Authorization": user2["token"]})
+    assert resp.status_code == 200
+
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/delete", headers=headers2, json={})
+    assert resp.status_code == 403
+
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/delete", headers=headers1, json={})
+    assert resp.status_code == 400
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/delete", headers=headers1, json={"code": "wrong"})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/delete", headers=headers1, json={"code": mfa.getCode()})
+    assert resp.status_code == 204
+
+
+@pt.mark.asyncio
+async def test_leave_guild():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    guild = await create_guild(client, user1, "Test")
+    channel = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]
+    invite = await create_invite(client, user1, channel["id"])
+    headers1 = {"Authorization": user1["token"]}
+    headers2 = {"Authorization": user2["token"]}
+
+    resp = await client.post(f"/api/v9/invites/{invite['code']}", headers=headers2)
+    assert resp.status_code == 200
+
+    resp = await client.delete(f"/api/v9/users/@me/guilds/{guild['id']}", headers=headers1)
+    assert resp.status_code == 400
+
+    resp = await client.delete(f"/api/v9/users/@me/guilds/{guild['id']}", headers=headers2)
+    assert resp.status_code == 204
+

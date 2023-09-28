@@ -54,7 +54,7 @@ class GatewayClient:
     async def check_timeout(self, _task=False):
         if not _task:
             return get_event_loop().create_task(self.check_timeout(True))
-        while self.ws.connected:
+        while self.ws.connected:  # pragma: no cover
             if time()-self.cTime > 150:
                 await self.ws.close(4003)
                 break
@@ -123,20 +123,20 @@ class Gateway:
 
     async def sendPendingFinish(self, fingerprint: str, userdata: str) -> None:
         # userdata = id : discriminator : avatar : username
-        if not (client := self.clients_by_fingerprint.get(fingerprint)):
+        if not (client := self.clients_by_fingerprint.get(fingerprint)):  # pragma: no cover
             return
         data = _b64encode(client.encrypt(userdata.encode("utf8"))).decode("utf8")
         await self.send(client.ws, "pending_finish", encrypted_user_payload=data)
 
     async def sendFinishV1(self, fingerprint: str, token: str) -> None:
-        if not (client := self.clients_by_fingerprint.get(fingerprint)):
+        if not (client := self.clients_by_fingerprint.get(fingerprint)):  # pragma: no cover
             return
         data = _b64encode(client.encrypt(token.encode("utf8"))).decode("utf8")
         await self.send(client.ws, "finish", encrypted_token=data)
         await client.ws.close(1000)
 
     async def sendCancel(self, fingerprint: str) -> None:
-        if not (client := self.clients_by_fingerprint.get(fingerprint)):
+        if not (client := self.clients_by_fingerprint.get(fingerprint)):  # pragma: no cover
             return
         await self.send(client.ws, "cancel")
         await client.ws.close(1000)

@@ -10,7 +10,7 @@ from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, rel_block, \
-    create_dm_channel, create_sticker, create_emoji
+    create_dm_channel, create_sticker, create_emoji, create_dm_group
 from tests.yep_image import YEP_IMAGE
 
 
@@ -343,6 +343,10 @@ async def test_get_message_reaction():
     emoji = await create_emoji(client, user, guild["id"], "YEP")
     headers = {"Authorization": user["token"]}
 
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/not-reaction",
+                            headers=headers)
+    assert resp.status_code == 400
+
     resp = await client.put(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/reactions/👍/@me",
                             headers=headers)
     assert resp.status_code == 204
@@ -368,3 +372,40 @@ async def test_get_message_reaction():
     json = await resp.get_json()
     assert len(json) == 1
     assert json[0]["id"] == user["id"]
+
+
+@pt.mark.asyncio
+async def test_get_messages_search():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    channel = await create_dm_group(client, user, [])
+    headers = {"Authorization": user["token"]}
+    await create_message(client, user, channel["id"], content="test", nonce="123456789")
+    await create_message(client, user, channel["id"], content="test1", nonce="123456789")
+    await create_message(client, user, channel["id"], content="123test", nonce="123456789")
+    await create_message(client, user, channel["id"], content="t123est", nonce="123456789")
+    await create_message(client, user, channel["id"], content="te st", nonce="123456789")
+    await create_message(client, user, channel["id"], content="test 123test", nonce="123456789")
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/search?content=test", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["messages"]) == 4
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/search?content=test+123test", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["messages"]) == 1
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/search?content=test&author_id=123",
+                            headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["messages"]) == 0
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/search?author_id={user['id']}",
+                            headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["messages"]) == 6
+

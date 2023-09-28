@@ -431,12 +431,12 @@ async def get_message_reactions(query_args: GetReactionsQuery, user: User, chann
 
 @channels.get("/<int:channel>/messages/search")
 @multipleDecorators(validate_querystring(SearchQuery), getUser, getChannel)
-async def search_messages(query: SearchQuery, user: User, channel: Channel):
+async def search_messages(query_args: SearchQuery, user: User, channel: Channel):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL,
                                      channel=channel)
-    messages, total = await getCore().searchMessages(query.dict(exclude_defaults=True))
+    messages, total = await getCore().searchMessages(channel, query_args.dict(exclude_defaults=True))
     messages = [[await message.ds_json(search=True)] for message in messages]
     for message in messages:
         message[0]["hit"] = True

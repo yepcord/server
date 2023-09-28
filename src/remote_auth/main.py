@@ -41,7 +41,7 @@ async def after_serving():
 
 
 @app.after_request
-async def set_cors_headers(response):
+async def set_cors_headers(response):  # pragma: no cover
     response.headers['Server'] = "YEPcord"
     response.headers['Access-Control-Allow-Origin'] = "*"
     response.headers['Access-Control-Allow-Headers'] = "*"

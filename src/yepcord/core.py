@@ -510,9 +510,9 @@ class Core(Singleton):
             users.append(data.ds_json)
         return users
 
-    async def searchMessages(self, search_filter: dict) -> tuple[list[Message], int]:
-        filter_args = {}
-        query = Message.objects.order_by("-id").limit(25)
+    async def searchMessages(self, channel: Channel, search_filter: dict) -> tuple[list[Message], int]:
+        filter_args = {"channel": channel}
+        query = Message.objects.select_related(["author", "channel", "thread", "guild"]).order_by("-id").limit(25)
         if "author_id" in search_filter:
             filter_args["author__id"] = search_filter["author_id"]
         if "mentions" in search_filter:

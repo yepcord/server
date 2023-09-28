@@ -657,3 +657,36 @@ class RemoteAuthSession(ormar.Model):
     fingerprint: str = ormar.String(max_length=64, unique=True)
     user: Optional[User] = ormar.ForeignKey(User, nullable=True, default=None, ondelete=ReferentialAction.CASCADE)
     expires_at: int = ormar.Integer(default=time_plus_150s)
+
+
+class ConnectedAccount(ormar.Model):
+    class Meta(DefaultMeta):
+        queryset_class = SnowflakeAIQuerySet
+
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
+    service_id: str = ormar.String(max_length=128, unique=True)
+    user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
+    name: str = ormar.Text(collation=collation)
+    type: str = ormar.String(max_length=64, choices=["github"])
+    revoked: bool = ormar.Boolean(default=False)
+    show_activity: bool = ormar.Boolean(default=True)
+    verified: bool = ormar.Boolean(default=False)
+    visibility: int = ormar.Integer(default=1, choices=[0, 1])
+    metadata_visibility: int = ormar.Integer(default=1, choices=[0, 1])
+    metadata: dict = ormar.JSON(default={})
+    access_token: Optional[str] = ormar.Text(nullable=True, default=None)
+    state: int = ormar.BigInteger(default=Snowflake.makeId)
+
+    def ds_json(self) -> dict:
+        return {
+            "visibility": self.visibility,
+            "verified": True,
+            "type": self.type,
+            "two_way_link": False,
+            "show_activity": self.show_activity,
+            "revoked": self.revoked,
+            "name": self.name,
+            "metadata_visibility": self.metadata_visibility,
+            "id": self.service_id,
+            "friend_sync": False,
+        }

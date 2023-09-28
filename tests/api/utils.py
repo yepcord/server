@@ -1,3 +1,11 @@
+import asyncio
+from asyncio import get_event_loop
+from base64 import urlsafe_b64encode, b64decode
+from hashlib import sha256
+from typing import Optional, Union
+
+from quart.typing import TestWebsocketConnectionProtocol
+
 from src.rest_api.main import app as _app
 from src.yepcord.classes.other import MFA
 from src.yepcord.snowflake import Snowflake
@@ -168,3 +176,107 @@ async def create_ban(app: TestClientType, user: dict, guild: dict, target_id: st
                          json={})
     assert resp.status_code == exp_code
     return await resp.get_json()
+
+
+class RemoteAuthClient:
+    def __init__(self, on_fingerprint=None, on_userdata=None, on_token=None, on_cancel=None):
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        self.privKey: Optional[rsa.RSAPrivateKey] = None
+        self.pubKey: Optional[rsa.RSAPublicKey] = None
+        self.pubKeyS: Optional[str] = None
+
+        self.heartbeatTask = None
+
+        self.on_fingerprint = on_fingerprint
+        self.on_userdata = on_userdata
+        self.on_token = on_token
+        self.on_cancel = on_cancel
+
+        self.results: dict[str, Union[Optional[str], bool]] = {
+            "fingerprint": None,
+            "userdata": None,
+            "token": None,
+            "cancel": False,
+        }
+
+        self.handlers = {
+            "hello": self.handle_hello,
+            "nonce_proof": self.handle_nonce_proof,
+            "pending_remote_init": self.handle_pending_remote_init,
+            "pending_finish": self.handle_pending_finish,
+            "finish": self.handle_finish,
+            "cancel": self.handle_cancel,
+        }
+
+    def genKeys(self) -> None:
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        self.privKey = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.pubKey = self.privKey.public_key()
+        pubKeyS = self.pubKey.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode("utf8")
+        self.pubKeyS = "".join(pubKeyS.split("\n")[1:-2])
+
+    async def heartbeat(self, ws: TestWebsocketConnectionProtocol, interval: int) -> None:
+        while True:
+            await asyncio.sleep(interval/1000)
+            await ws.send_json({"op": "heartbeat"})
+
+    def decrypt(self, b64_payload: str) -> bytes:
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives import hashes
+
+        return self.privKey.decrypt(
+            b64decode(b64_payload.encode("utf8")),
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+
+    async def handle_hello(self, ws: TestWebsocketConnectionProtocol, msg: dict) -> None:
+        await ws.send_json({"op": "init", "encoded_public_key": self.pubKeyS})
+        await ws.send_json({"op": "heartbeat"})
+        self.heartbeatTask = asyncio.get_event_loop().create_task(self.heartbeat(ws, msg["heartbeat_interval"]))
+
+    async def handle_nonce_proof(self, ws: TestWebsocketConnectionProtocol, msg: dict) -> None:
+        decryptedNonce = self.decrypt(msg["encrypted_nonce"])
+        nonceHash = sha256()
+        nonceHash.update(decryptedNonce)
+        nonceHash = urlsafe_b64encode(nonceHash.digest()).decode("utf8")
+        nonceHash = nonceHash.replace("/", "").replace("+", "").replace("=", "")
+        await ws.send_json({"op": 'nonce_proof', "proof": nonceHash})
+
+    async def handle_pending_remote_init(self, ws: TestWebsocketConnectionProtocol, msg: dict) -> None:
+        self.results["fingerprint"] = msg["fingerprint"]
+        if self.on_fingerprint is not None: await self.on_fingerprint(msg["fingerprint"])
+
+    async def handle_pending_finish(self, ws: TestWebsocketConnectionProtocol, msg: dict) -> None:
+        userdata = self.decrypt(msg["encrypted_user_payload"]).decode("utf8")
+        self.results["userdata"] = userdata
+        if self.on_userdata is not None: await self.on_userdata(userdata)
+
+    async def handle_finish(self, ws: TestWebsocketConnectionProtocol, msg: dict) -> None:
+        token = self.decrypt(msg["encrypted_token"]).decode("utf8")
+        self.results["token"] = token
+        if self.on_token is not None: await self.on_token(token)
+
+    async def handle_cancel(self, ws: TestWebsocketConnectionProtocol, msg: dict) -> None:
+        self.results["cancel"] = True
+        if self.on_cancel is not None: await self.on_cancel()
+
+    async def run(self, ws: TestWebsocketConnectionProtocol) -> None:
+        self.genKeys()
+        while True:
+            msg = await ws.receive_json()
+            if msg["op"] not in self.handlers: continue
+            handler = self.handlers[msg["op"]]
+            await handler(ws, msg)
+            if msg["op"] in {"finish", "cancel"}:
+                break
+
+        if self.heartbeatTask is not None:
+            self.heartbeatTask.cancel()
+

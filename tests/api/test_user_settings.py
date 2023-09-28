@@ -7,7 +7,7 @@ from google.protobuf.wrappers_pb2 import StringValue
 
 from src.rest_api.main import app
 from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, FrecencyUserSettings, FavoriteStickers
-from .utils import create_users, TestClientType
+from .utils import create_users, TestClientType, create_guild
 
 
 @pt.fixture()
@@ -82,6 +82,23 @@ async def test_user_delete():
 
     resp = await client.post("/api/v9/users/@me/delete", headers=headers, json={"password": "wrong_password"})
     assert resp.status_code == 400
+
+    resp = await client.post("/api/v9/users/@me/delete", headers=headers, json={"password": user["password"]})
+    assert resp.status_code == 204
+
+
+@pt.mark.asyncio
+async def test_user_delete_with_guild():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    headers = {"Authorization": user["token"]}
+
+    guild = await create_guild(client, user, "Test")
+    resp = await client.post("/api/v9/users/@me/delete", headers=headers, json={"password": user["password"]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/delete", headers=headers, json={})
+    assert resp.status_code == 204
 
     resp = await client.post("/api/v9/users/@me/delete", headers=headers, json={"password": user["password"]})
     assert resp.status_code == 204
