@@ -1,4 +1,3 @@
-from asyncio import get_event_loop
 from hashlib import sha256
 from hmac import new
 from json import dumps
@@ -12,13 +11,6 @@ from src.yepcord.config import Config
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import b64decode, b64encode
 from .utils import TestClientType, create_user, get_userdata, create_users
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

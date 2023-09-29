@@ -44,6 +44,7 @@ from .models import User, UserData, UserSettings, Session, Relationship, Channel
 from .snowflake import Snowflake
 from .utils import b64encode, b64decode, int_size, NoneType
 from ..gateway.events import DMChannelCreateEvent
+from . import ctx
 
 
 class CDN(Singleton):
@@ -304,7 +305,7 @@ class Core(Singleton):
 
         if await self.isDmChannelHidden(user1, channel):
             await self.unhideDmChannel(user1, channel)
-            await c.getGw().dispatch(DMChannelCreateEvent(channel), users=[user1.id])
+            await ctx.getGw().dispatch(DMChannelCreateEvent(channel), users=[user1.id])
         return await self.setLastMessageIdForChannel(channel)
 
     async def getLastMessageId(self, channel: Channel) -> Optional[int]:
@@ -826,7 +827,7 @@ class Core(Singleton):
         return await GuildTemplate.objects.get_or_none(guild=guild)
 
     async def getGuildTemplateById(self, template_id: int) -> Optional[GuildTemplate]:
-        return await GuildTemplate.objects.get_or_none(id=template_id)
+        return await GuildTemplate.objects.select_related("guild").get_or_none(id=template_id)
 
     async def setTemplateDirty(self, guild: Guild) -> None:
         if not (template := await self.getGuildTemplate(guild)):
@@ -931,7 +932,5 @@ class Core(Singleton):
         return country_to_language.get(country_code, default)
 
 
-import src.yepcord.ctx as c
-
-c._getCore = lambda: Core.getInstance()
-c._getCDNStorage = lambda: CDN.getInstance().storage
+ctx._getCore = lambda: Core.getInstance()
+ctx._getCDNStorage = lambda: CDN.getInstance().storage

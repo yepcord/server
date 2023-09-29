@@ -30,7 +30,7 @@ from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEven
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
     WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
-from ...yepcord.ctx import getCore, getCDNStorage, Ctx, getGw
+from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
@@ -69,7 +69,6 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
         if "icon" in changes and changes["icon"] != channel.icon: changed.append("icon")
         if "name" in changes and changes["name"] != channel.name: changed.append("name")
         await channel.update(**changes)
-        Ctx["with_ids"] = False
         await getGw().dispatch(DMChannelUpdateEvent(channel), channel_id=channel.id)
     elif channel.type in GUILD_CHANNELS:
         guild = channel.guild

@@ -1,4 +1,3 @@
-from asyncio import get_event_loop
 from base64 import b64encode
 
 import pytest as pt
@@ -8,13 +7,6 @@ from google.protobuf.wrappers_pb2 import StringValue
 from src.rest_api.main import app
 from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, FrecencyUserSettings, FavoriteStickers
 from .utils import create_users, TestClientType, create_guild
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

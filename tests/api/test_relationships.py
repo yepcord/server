@@ -1,18 +1,9 @@
-from asyncio import get_event_loop
-
 import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
 from src.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, rel_request, rel_count, rel_delete, rel_accept, rel_block
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

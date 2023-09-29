@@ -1,4 +1,3 @@
-from asyncio import get_event_loop
 from io import BytesIO
 from json import dumps
 
@@ -10,15 +9,8 @@ from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, rel_block, \
-    create_dm_channel, create_sticker, create_emoji, create_dm_group
+    create_dm_channel, create_sticker, create_emoji, create_dm_group, create_invite
 from tests.yep_image import YEP_IMAGE
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -409,3 +401,37 @@ async def test_get_messages_search():
     json = await resp.get_json()
     assert len(json["messages"]) == 6
 
+
+@pt.mark.asyncio
+async def test_message_delete_not_own_guild():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    guild = await create_guild(client, user1, "Test Guild")
+    channel = await create_guild_channel(client, user1, guild, "test_channel")
+    invite = await create_invite(client, user1, channel["id"])
+    headers1 = {"Authorization": user1["token"]}
+    headers2 = {"Authorization": user2["token"]}
+
+    resp = await client.post(f"/api/v9/invites/{invite['code']}", headers=headers2)
+    assert resp.status_code == 200
+
+    message = await create_message(client, user2, channel["id"], content="test", nonce="123456789", tts=False)
+
+    resp = await client.delete(f"/api/v9/channels/{channel['id']}/messages/{message['id']}", headers=headers1)
+    assert resp.status_code == 204
+
+    message = await create_message(client, user1, channel["id"], content="test", nonce="123456789", tts=False)
+    resp = await client.delete(f"/api/v9/channels/{channel['id']}/messages/{message['id']}", headers=headers2)
+    assert resp.status_code == 403
+
+
+@pt.mark.asyncio
+async def test_message_delete_not_own_dm():
+    client: TestClientType = app.test_client()
+    user1, user2 = (await create_users(client, 2))
+    channel = await create_dm_channel(client, user1, user2)
+    message = await create_message(client, user1, channel["id"], content="test", nonce="123456789", tts=False)
+    headers2 = {"Authorization": user2["token"]}
+
+    resp = await client.delete(f"/api/v9/channels/{channel['id']}/messages/{message['id']}", headers=headers2)
+    assert resp.status_code == 403

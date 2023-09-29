@@ -1,5 +1,3 @@
-from asyncio import get_event_loop
-
 import pytest as pt
 import pytest_asyncio
 
@@ -9,13 +7,6 @@ from src.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_dm_channel, create_dm_group, \
     create_message
 from tests.yep_image import YEP_IMAGE
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

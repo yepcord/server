@@ -1,20 +1,11 @@
-from asyncio import get_event_loop
-
 import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
 from src.yepcord.classes.other import MFA
 from src.yepcord.enums import ChannelType
-from tests.api.utils import TestClientType, create_users, create_guild, create_invite, enable_mfa
+from tests.api.utils import TestClientType, create_users, create_guild, create_invite, enable_mfa, create_guild_channel
 from tests.yep_image import YEP_IMAGE
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -34,6 +25,16 @@ async def test_create_guild():
 
     assert guild["name"] == 'Test Guild'
     assert guild["icon"] is None
+    assert guild["description"] is None
+    assert guild["splash"] is None
+    assert guild["discovery_splash"] is None
+    assert guild["emojis"] == []
+    assert len(guild["channels"]) > 0
+
+    guild = await create_guild(client, user, "Test Guild", YEP_IMAGE)
+
+    assert guild["name"] == 'Test Guild'
+    assert len(guild["icon"]) == 32
     assert guild["description"] is None
     assert guild["splash"] is None
     assert guild["discovery_splash"] is None
@@ -129,8 +130,9 @@ async def test_create_guild_template():
     client: TestClientType = app.test_client()
     user = (await create_users(client, 1))[0]
     guild = await create_guild(client, user, "Test Guild")
+    headers = {"Authorization": user["token"]}
 
-    resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers={"Authorization": user["token"]},
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers=headers,
                              json={'name': 'test', 'description': 'test template'})
     assert resp.status_code == 200
     json = await resp.get_json()
@@ -139,6 +141,54 @@ async def test_create_guild_template():
     assert json["creator_id"] == user["id"]
     assert json["creator"]["id"] == user["id"]
     assert json["source_guild_id"] == guild["id"]
+
+    resp = await client.get(f"/api/v9/guilds/{guild['id']}/templates", headers=headers)
+    assert resp.status_code == 200
+    assert len(await resp.get_json()) == 1
+
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers=headers,
+                             json={'name': 'test', 'description': 'test template'})
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_delete_guild_template():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers=headers,
+                             json={'name': 'test', 'description': 'test template'})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+
+    resp = await client.delete(f"/api/v9/guilds/{guild['id']}/templates/{json['code']}", headers=headers)
+    assert resp.status_code == 200
+
+
+@pt.mark.asyncio
+async def test_sync_update_guild_template():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers=headers,
+                             json={'name': 'test', 'description': 'test template'})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+
+    await create_guild_channel(client, user, guild, "test")
+
+    resp = await client.put(f"/api/v9/guilds/{guild['id']}/templates/{json['code']}", headers=headers)
+    assert resp.status_code == 200
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/templates/{json['code']}", headers=headers,
+                              json={"name": "test template updated"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["name"] == "test template updated"
 
 
 @pt.mark.asyncio
@@ -186,4 +236,3 @@ async def test_leave_guild():
 
     resp = await client.delete(f"/api/v9/users/@me/guilds/{guild['id']}", headers=headers2)
     assert resp.status_code == 204
-

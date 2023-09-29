@@ -1,18 +1,9 @@
-from asyncio import get_event_loop
-
 import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
 from src.yepcord.enums import StickerType
 from tests.api.utils import TestClientType, create_users, create_guild, create_emoji, create_sticker
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

@@ -1,5 +1,3 @@
-from asyncio import get_event_loop
-
 import pytest as pt
 import pytest_asyncio
 
@@ -8,13 +6,6 @@ from src.yepcord.classes.other import MFA, JWT
 from src.yepcord.config import Config
 from src.yepcord.utils import b64decode
 from .utils import TestClientType, create_users, enable_mfa
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

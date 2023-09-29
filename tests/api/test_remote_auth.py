@@ -1,21 +1,11 @@
-from asyncio import get_event_loop
-
 import pytest as pt
 import pytest_asyncio
 from quart.testing.connections import WebsocketDisconnectError
-from quart.typing import TestWebsocketConnectionProtocol
 
 from src.remote_auth.main import app as ra_app
 from src.rest_api.main import app
 from src.yepcord.utils import b64encode
 from .utils import TestClientType, create_users, RemoteAuthClient
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

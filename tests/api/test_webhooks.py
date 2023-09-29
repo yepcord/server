@@ -1,4 +1,3 @@
-from asyncio import get_event_loop
 from json import dumps
 
 import pytest as pt
@@ -10,13 +9,6 @@ from src.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_webhook, \
     create_guild_channel, create_sticker
 from tests.yep_image import YEP_IMAGE
-
-
-@pt.fixture()
-def event_loop():
-    loop = get_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

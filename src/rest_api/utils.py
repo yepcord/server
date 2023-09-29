@@ -60,7 +60,6 @@ def getUser(f):
             if e.code != 401 or not Ctx.get("allow_without_user"):
                 raise
             user = User(id=0, email="", password="")
-        Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
     return wrapped
@@ -71,7 +70,6 @@ def getSession(f):
     async def wrapped(*args, **kwargs):
         if not (session := await Session.from_token(request.headers.get("Authorization", ""))):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-        Ctx["user_id"] = session.user.id
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
@@ -170,7 +168,7 @@ def getGuildTemplate(f):
             template_id = int.from_bytes(b64decode(template), "big")
             if not (template := await getCore().getGuildTemplateById(template_id)):
                 raise ValueError
-            if template.guild_id != guild.id:
+            if template.guild.id != guild.id:
                 raise ValueError
         except ValueError:
             raise InvalidDataErr(404, Errors.make(10057))
