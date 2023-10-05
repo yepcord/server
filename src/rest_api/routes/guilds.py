@@ -273,7 +273,7 @@ async def kick_member(user: User, guild: Guild, member: GuildMember, user_id: in
     if not await member.perm_checker.canKickOrBan(target_member):
         raise InvalidDataErr(403, Errors.make(50013))
     await target_member.delete()
-    await getGw().dispatch(GuildMemberRemoveEvent(guild.id, (await target_member.data).ds_json), users=[user_id])
+    await getGw().dispatch(GuildMemberRemoveEvent(guild.id, (await target_member.user.data).ds_json), users=[user_id])
     await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
     entry = await AuditLogEntry.objects.member_kick(user, target_member)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
@@ -379,15 +379,15 @@ async def create_role(data: RoleCreate, user: User, guild: Guild, member: GuildM
 @multipleDecorators(validate_request(RoleUpdate), getUser, getGuildWM, getRole)
 async def update_role(data: RoleUpdate, user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
+    if role.id != guild.id and data.icon != "" and (img := data.icon) is not None:
+        data.icon = ""
+        img = getImage(img)
+        if h := await getCDNStorage().setRoleIconFromBytesIO(role.id, img):
+            data.icon = h
     if role.id == guild.id:  # Only allow permissions editing for @everyone role
-        data = {"permissions": data.permissions} if data.permissions is not None else {}
-    if data.icon != "":
-        if (img := data.icon) is not None:
-            data.icon = ""
-            img = getImage(img)
-            if h := await getCDNStorage().setRoleIconFromBytesIO(role.id, img):
-                data.icon = h
-    changes = data.dict(exclude_defaults=True)
+        changes = {"permissions": data.permissions} if data.permissions is not None else {}
+    else:
+        changes = data.dict(exclude_defaults=True)
     await role.update(**changes)
     await getGw().dispatch(GuildRoleUpdateEvent(guild.id, role.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
@@ -438,8 +438,6 @@ async def update_roles_positions(user: User, guild: Guild, member: GuildMember):
 @multipleDecorators(getUser, getGuildWM, getRole)
 async def delete_role(user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-    if role.id == guild.id:
-        raise InvalidDataErr(400, Errors.make(50028))
     await role.delete()
     await getGw().dispatch(GuildRoleDeleteEvent(guild.id, role.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
@@ -538,12 +536,9 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
 @multipleDecorators(getUser, getGuildWM)
 async def get_vanity_url(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    code = {
-        "code": guild.vanity_url_code
-    }
-    if guild.vanity_url_code:
-        if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
-            code["uses"]: invite.uses
+    code = {"code": guild.vanity_url_code}
+    if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
+        code["uses"] = invite.uses
     return code
 
 
@@ -565,7 +560,7 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
         if guild.vanity_url_code and (invite := await getCore().getVanityCodeInvite(guild.vanity_url_code)):
             await invite.delete()
         await guild.update(vanity_url_code=data.code)
-        channel = await getCore().getChannel(guild.system_channel_id) if guild.system_channel_id is not None else None
+        channel = await getCore().getChannel(guild.system_channel) if guild.system_channel is not None else None
         if channel is None:
             channel = (await getCore().getGuildChannels(guild))[0]
         await Invite.objects.create(id=Snowflake.makeId(), channel=channel, inviter=guild.owner, vanity_code=data.code)
@@ -582,7 +577,7 @@ async def get_audit_logs(query_args: GetAuditLogsQuery, user: User, guild: Guild
     for entry in entries:
         target_id = entry.target_id
         if target_id and target_id not in userdatas:
-            if (data := await UserData.objects.get(id=target_id)) is not None:
+            if (data := await UserData.objects.get_or_none(id=target_id)) is not None:
                 userdatas[target_id] = data
     userdatas = list(userdatas.values())
 

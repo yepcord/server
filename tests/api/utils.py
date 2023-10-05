@@ -8,6 +8,7 @@ from quart.typing import TestWebsocketConnectionProtocol
 
 from src.rest_api.main import app as _app
 from src.yepcord.classes.other import MFA
+from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import getImage
 from tests.yep_image import YEP_IMAGE
@@ -96,9 +97,9 @@ async def create_guild(app: TestClientType, user: dict, name: str, icon: str = N
 
 
 async def create_guild_channel(app: TestClientType, user: dict, guild: dict, name: str, type_=0,
-                               parent: str = None) -> dict:
+                               parent: str = None, **kwargs) -> dict:
     resp = await app.post(f"/api/v9/guilds/{guild['id']}/channels", headers={"Authorization": user["token"]},
-                          json={'type': type_, 'name': name, 'parent_id': parent})
+                          json={'type': type_, 'name': name, 'parent_id': parent, **kwargs})
     assert resp.status_code == 200
     channel = await resp.get_json()
     guild["channels"].append(channel)
@@ -119,9 +120,10 @@ async def create_webhook(app: TestClientType, user: dict, channel_id: str, name=
     return await resp.get_json()
 
 
-async def create_role(app: TestClientType, user: dict, guild_id: str, name="new role") -> dict:
+async def create_role(app: TestClientType, user: dict, guild_id: str, name="new role", icon: str=None) -> dict:
+    icon_kw = {"icon": icon} if icon is not None else {}
     resp = await app.post(f"/api/v9/guilds/{guild_id}/roles", headers={"Authorization": user["token"]},
-                          json={'name': name})
+                          json={'name': name, **icon_kw})
     assert resp.status_code == 200
     return await resp.get_json()
 
@@ -171,11 +173,19 @@ async def create_dm_group(app: TestClientType, user: dict, recipient_ids: list[s
     return await resp.get_json()
 
 
-async def create_ban(app: TestClientType, user: dict, guild: dict, target_id: str, *, exp_code=204) -> dict:
+async def create_ban(app: TestClientType, user: dict, guild: dict, target_id: str, seconds: int=0, *, exp_code=204) -> dict:
     resp = await app.put(f"/api/v9/guilds/{guild['id']}/bans/{target_id}", headers={"Authorization": user["token"]},
-                         json={})
+                         json=({} if not seconds else {"delete_message_seconds": seconds}))
     assert resp.status_code == exp_code
     return await resp.get_json()
+
+
+async def add_user_to_guild(app: TestClientType, guild: dict, owner: dict, target: dict) -> None:
+    channel = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]
+    invite = await create_invite(app, owner, channel["id"])
+
+    resp = await app.post(f"/api/v9/invites/{invite['code']}", headers={"Authorization": target["token"]})
+    assert resp.status_code == 200
 
 
 class RemoteAuthClient:

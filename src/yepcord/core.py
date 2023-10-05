@@ -571,10 +571,10 @@ class Core(Singleton):
 
     async def createGuildFromTemplate(self, guild_id: int, user: User, template: GuildTemplate, name: Optional[str],
                                       icon: Optional[str]) -> Guild:
-        guild = await Guild.objects.create(id=guild_id, owner=user.id)
-
         serialized = template.serialized_guild
-        serialized["name"] = name or serialized["name"]
+        name = serialized["name"] = name or serialized["name"]
+        guild = await Guild.objects.create(id=guild_id, owner=user.id, name=name)
+
         serialized["icon"] = icon
         replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None, 0: guild_id}
         channels = {}
@@ -593,6 +593,7 @@ class Core(Singleton):
             channel["rate_limit"] = channel["rate_limit_per_user"]
             channel["default_auto_archive"] = channel["default_auto_archive_duration"]
 
+            del channel["parent_id"]
             del channel["rate_limit_per_user"]
             del channel["default_auto_archive_duration"]
 
@@ -811,7 +812,7 @@ class Core(Singleton):
 
     async def getVanityCodeInvite(self, code: str) -> Optional[Invite]:
         if code is None: return
-        return await Invite.objects.filter(vanity_code=code).all()
+        return await Invite.objects.get_or_none(vanity_code=code)
 
     async def useInvite(self, invite: Invite) -> None:
         if 0 < invite.max_uses <= invite.uses + 1:

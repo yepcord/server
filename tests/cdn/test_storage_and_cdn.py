@@ -111,6 +111,15 @@ async def test_get_avatar():
 
 
 @pt.mark.asyncio
+async def test_set_jpg_avatar():
+    img = BytesIO()
+    Image.open(getImage(YEP_IMAGE)).convert("RGB").save(img, format="JPEG")
+
+    avatar_hash = await storage.setAvatarFromBytesIO(TestVars.USER_ID + 2, img)
+    assert avatar_hash is not None and len(avatar_hash) == 32
+
+
+@pt.mark.asyncio
 async def test_set_banner():
     banner_hash = await storage.setBannerFromBytesIO(TestVars.USER_ID, getImage(YEP_IMAGE))
     assert banner_hash is not None and len(banner_hash) == 32

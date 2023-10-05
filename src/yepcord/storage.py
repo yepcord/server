@@ -107,7 +107,7 @@ async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
     return res[0]
 
 
-def imageFrames(img) -> int:
+def imageFrames(img: Image) -> int:
     return getattr(img, "n_frames", 1)
 
 

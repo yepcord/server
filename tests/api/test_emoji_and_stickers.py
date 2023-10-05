@@ -3,6 +3,7 @@ import pytest_asyncio
 
 from src.rest_api.main import app
 from src.yepcord.enums import StickerType
+from src.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_emoji, create_sticker
 
 
@@ -71,6 +72,9 @@ async def test_edit_emoji_name():
     assert not json["animated"]
     assert json["available"]
 
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/emojis/{Snowflake.makeId()}", json={'name': 'YEP_test1'},
+                              headers={"Authorization": user["token"]})
+    assert resp.status_code == 400
 
 @pt.mark.asyncio
 async def test_emoji_delete():
@@ -79,6 +83,9 @@ async def test_emoji_delete():
     guild = await create_guild(client, user, "Test Guild")
     emoji = await create_emoji(client, user, guild["id"], "YEP")
     headers = {"Authorization": user["token"]}
+
+    resp = await client.delete(f"/api/v9/guilds/{guild['id']}/emojis/{Snowflake.makeId()}", headers=headers)
+    assert resp.status_code == 204
 
     resp = await client.delete(f"/api/v9/guilds/{guild['id']}/emojis/{emoji['id']}", headers=headers)
     assert resp.status_code == 204

@@ -37,6 +37,13 @@ async def test_create_guild_channels():
     assert voice["parent_id"] == parent_id
     assert voice["guild_id"] == guild["id"]
 
+    text = await create_guild_channel(client, user, guild, 'test_text_channel', 0, parent_id,
+                                      permission_overwrites=[{"id": guild["id"], "type": 0, "allow": 0, "deny": 1024}])
+    assert text["type"] == 0
+    assert text["name"] == "test_text_channel"
+    assert text["parent_id"] == parent_id
+    assert text["guild_id"] == guild["id"]
+
 
 @pt.mark.asyncio
 async def test_change_guild_channels_positions():
@@ -44,8 +51,20 @@ async def test_change_guild_channels_positions():
     user = (await create_users(client, 1))[0]
     guild = await create_guild(client, user, "Test Guild")
     channel_id = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_CATEGORY][0]["id"]
-    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/channels", headers={"Authorization": user["token"]},
+    headers = {"Authorization": user["token"]}
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/channels", headers=headers,
                               json=[{'id': channel_id, 'position': 1}])
+    assert resp.status_code == 204
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/channels", headers=headers, json=[])
+    assert resp.status_code == 204
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/channels", headers=headers,
+                              json=[{'id': str(Snowflake.makeId()), 'position': 1}])
+    assert resp.status_code == 204
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/channels", headers=headers,
+                              json=[{'id': channel_id, 'position': 1, "parent_id": str(Snowflake.makeId())}])
     assert resp.status_code == 204
 
 
