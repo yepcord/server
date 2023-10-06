@@ -31,7 +31,7 @@ import ormar
 from ormar import ReferentialAction, QuerySet
 from pydantic import Field
 
-from . import DefaultMeta, User, collation
+from . import DefaultMeta, User, collation, SnowflakeAIQuerySet
 from ..ctx import getCore
 from ..enums import ChannelType
 from ..snowflake import Snowflake
@@ -68,16 +68,17 @@ class Channel(ormar.Model):
     default_auto_archive: Optional[int] = ormar.Integer(nullable=True, default=None)
     flags: Optional[int] = ormar.Integer(nullable=True, default=0)
 
-    last_message_id: Optional[int] = Field()
+    last_message_id: Optional[int] = Field(default=None)
 
     async def ds_json(self, user_id: int=None, with_ids: bool=True) -> dict:
         if self.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
             self.last_message_id = await getCore().getLastMessageId(self)
+        if self.last_message_id is None:
+            await getCore().setLastMessageIdForChannel(self)
         last_message_id = str(self.last_message_id) if self.last_message_id is not None else None
         recipients = []
         if self.type in (ChannelType.DM, ChannelType.GROUP_DM):
-            exclude = {} if not user_id else {"id": user_id}
-            recipients = await self.recipients.exclude(**exclude).all()
+            recipients = await (self.recipients.all() if not user_id else self.recipients.exclude(id=user_id).all())
             if with_ids:
                 recipients = [str(recipient.id) for recipient in recipients]
             else:
@@ -165,7 +166,7 @@ class Channel(ormar.Model):
             message_count = await getCore().getChannelMessagesCount(self)
             data = base_data | {
                 "guild_id": str(self.guild.id),
-                "parent_id": str(self.parent_id),
+                "parent_id": str(self.parent.id) if self.parent is not None else None,
                 "owner_id": str(self.owner.id),
                 "name": self.name,
                 "last_message_id": last_message_id,
@@ -177,8 +178,7 @@ class Channel(ormar.Model):
                 "total_message_sent": message_count,
                 "member_ids_preview": [str(member.user.id) for member in await getCore().getThreadMembers(self, 10)]
             }
-            if user_id:
-                member = await getCore().getThreadMember(self, user_id)
+            if user_id and (member := await getCore().getThreadMember(self, user_id)) is not None:
                 data["member"] = {
                     "muted": False,
                     "mute_config": None,
@@ -254,6 +254,7 @@ class ThreadMember(ormar.Model):
 
 class HiddenDmChannel(ormar.Model):
     class Meta(DefaultMeta):
+        queryset_class = SnowflakeAIQuerySet
         constraints = [ormar.UniqueColumns("user", "channel")]
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
@@ -263,7 +264,7 @@ class HiddenDmChannel(ormar.Model):
 
 class PermissionOverwrite(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     channel: Channel = ormar.ForeignKey(Channel, ondelete=ReferentialAction.CASCADE)
@@ -322,7 +323,7 @@ class Invite(ormar.Model):
         }
 
         if with_counts:
-            related_users = await getCore().getRelatedUsersToChannel(self.channel.id)
+            related_users = await getCore().getRelatedUsersToChannel(self.channel.id, ids=False)
             data["approximate_member_count"] = len(related_users)
             if self.channel.type == ChannelType.GROUP_DM:
                 data["channel"]["recipients"] = [
@@ -398,7 +399,7 @@ class Webhook(ormar.Model):
 
 class ReadState(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     channel: Channel = ormar.ForeignKey(Channel, ondelete=ReferentialAction.CASCADE)

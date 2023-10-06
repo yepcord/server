@@ -23,7 +23,8 @@ import ormar
 from ormar import ReferentialAction
 from pydantic import Field
 
-from . import DefaultMeta, User, Channel, Guild, Emoji, GuildMember, ThreadMember, UserData, collation
+from . import DefaultMeta, User, Channel, Guild, Emoji, GuildMember, ThreadMember, UserData, collation, \
+    SnowflakeAIQuerySet
 from ..config import Config
 from ..ctx import getCore
 from ..enums import MessageType
@@ -89,7 +90,6 @@ class Message(ormar.Model):
         data["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None
         data["mentions"] = []
         data["mention_roles"] = []
-        data["attachments"] = []
         if self.content:
             for ping in ping_regex.findall(self.content):
                 if ping.startswith("!"):
@@ -99,9 +99,7 @@ class Message(ormar.Model):
                     continue
                 if not (member := await getCore().getUserByChannelId(self.channel.id, int(ping))):
                     continue
-                if isinstance(member, GuildMember):
-                    member = member.user
-                elif isinstance(member, ThreadMember):
+                if isinstance(member, (GuildMember, ThreadMember)):
                     member = member.user
                 mdata = await member.data
                 data["mentions"].append(mdata.ds_json)
@@ -157,7 +155,7 @@ class Attachment(ormar.Model):
 
 class Reactions(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     message: Message = ormar.ForeignKey(Message, ondelete=ReferentialAction.CASCADE)

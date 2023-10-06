@@ -20,7 +20,7 @@ from quart import Blueprint
 from quart_schema import validate_querystring
 
 from ..models.users import UserProfileQuery
-from ..utils import usingDB, getUser, multipleDecorators
+from ..utils import getUser, multipleDecorators
 from ...yepcord.ctx import getCore
 from ...yepcord.models import User
 
@@ -29,7 +29,7 @@ users = Blueprint('users', __name__)
 
 
 @users.get("/<string:target_user>/profile")
-@multipleDecorators(validate_querystring(UserProfileQuery), usingDB, getUser)
+@multipleDecorators(validate_querystring(UserProfileQuery), getUser)
 async def get_user_profile(query_args: UserProfileQuery, user: User, target_user: str):
     if target_user == "@me":
         target_user = user.id

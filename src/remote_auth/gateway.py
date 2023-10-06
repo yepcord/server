@@ -21,21 +21,23 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode
 from hashlib import sha256
 from os import urandom
 from time import time
+from typing import Any
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
+from ..yepcord.models import RemoteAuthSession
 from ..yepcord.mq_broker import getBroker
 from ..yepcord.utils import b64encode, b64decode
 
 
 class GatewayClient:
-    def __init__(self, ws, pubkey, fp, nonce):
+    def __init__(self, ws, pubkey: str, fp: str, nonce: bytes):
         self.ws = ws
         self.pubkey = load_pem_public_key(
-            ("-----BEGIN PUBLIC KEY-----\n"+pubkey+"\n-----END PUBLIC KEY-----\n").encode("utf8"),
+            f"-----BEGIN PUBLIC KEY-----\n{pubkey}\n-----END PUBLIC KEY-----\n".encode("utf8"),
             backend=default_backend()
         )
         self.fingerprint = fp
@@ -46,13 +48,13 @@ class GatewayClient:
         self.cTime = time()
         self.lastHeartbeat = time()
 
-    def encrypt(self, data):
+    def encrypt(self, data: bytes):
         return self.pubkey.encrypt(data, OAEP(mgf=MGF1(algorithm=SHA256()), algorithm=SHA256(), label=None))
 
     async def check_timeout(self, _task=False):
         if not _task:
             return get_event_loop().create_task(self.check_timeout(True))
-        while self.ws.connected:
+        while self.ws.connected:  # pragma: no cover
             if time()-self.cTime > 150:
                 await self.ws.close(4003)
                 break
@@ -64,7 +66,8 @@ class GatewayClient:
 
 class Gateway:
     def __init__(self):
-        self.clients = []
+        self.clients_by_fingerprint: dict[str, GatewayClient] = {}
+        self.clients_by_socket: dict[Any, GatewayClient] = {}
         self.broker = getBroker()
         self.broker.handle("yepcord_remote_auth")(self.mq_callback)
 
@@ -74,76 +77,72 @@ class Gateway:
     async def stop(self):
         await self.broker.close()
 
-    async def mq_callback(self, body: dict):
+    async def mq_callback(self, body: dict) -> None:
         if body["op"] == "pending_finish":
             await self.sendPendingFinish(body["fingerprint"], body["userdata"])
         elif body["op"] == "finish":
-            await self.sendFinish(body["fingerprint"], body["token"])
+            await self.sendFinishV1(body["fingerprint"], body["token"])
         elif body["op"] == "cancel":
             await self.sendCancel(body["fingerprint"])
 
     # noinspection PyMethodMayBeStatic
-    async def send(self, ws, op, **data):
-        r = {"op": op}
-        r.update(data)
-        await ws.send_json(r)
+    async def send(self, ws, op: str, **data) -> None:
+        await ws.send_json({"op": op, **data})
 
-    async def process(self, ws, data):
+    async def process(self, ws, data: dict) -> None:
         op = data["op"]
         if op == "init":
             pubkey = data["encoded_public_key"]
             s = sha256()
             s.update(_b64decode(pubkey.encode("utf8")))
             fingerprint = b64encode(s.digest()).replace("=", "")
+            if self.clients_by_fingerprint.get(fingerprint):
+                return await ws.close(1001)
             nonce = urandom(32)
             cl = GatewayClient(ws, pubkey, fingerprint, nonce)
-            self.clients.append(cl)
+            self.clients_by_fingerprint[fingerprint] = self.clients_by_socket[ws] = cl
+            await RemoteAuthSession.objects.create(fingerprint=fingerprint)
             encrypted_nonce = _b64encode(cl.encrypt(nonce)).decode("utf8")
             await self.send(ws, "nonce_proof", encrypted_nonce=encrypted_nonce)
             await cl.check_timeout()
         elif op == "nonce_proof":
-            client = [cl for cl in self.clients if cl.ws == ws]
-            if not client:
+            if not (client := self.clients_by_socket.get(ws)):
                 return await ws.close(1001)
-            client = client[0]
-            proof = data["proof"]
-            proof = b64decode(proof)
+            proof = b64decode(data["proof"])
             if proof != client.nonceHash:
                 return await ws.close(1001)
             await self.send(ws, "pending_remote_init", fingerprint=client.fingerprint)
         elif op == "heartbeat":
-            client = [cl for cl in self.clients if cl.ws == ws]
-            if not client:
+            if not (client := self.clients_by_socket.get(ws)):
                 return await ws.close(1001)
-            client = client[0]
             client.lastHeartbeat = time()
             await self.send(ws, "heartbeat_ack")
 
-    async def sendHello(self, ws):
+    async def sendHello(self, ws) -> None:
         await self.send(ws, "hello", heartbeat_interval=41500, timeout_ms=150*1000)
 
-    async def sendPendingFinish(self, fingerprint, userdata):
+    async def sendPendingFinish(self, fingerprint: str, userdata: str) -> None:
         # userdata = id : discriminator : avatar : username
-        client = [cl for cl in self.clients if cl.fingerprint == fingerprint]
-        if not client:
+        if not (client := self.clients_by_fingerprint.get(fingerprint)):  # pragma: no cover
             return
-        client = client[0]
         data = _b64encode(client.encrypt(userdata.encode("utf8"))).decode("utf8")
         await self.send(client.ws, "pending_finish", encrypted_user_payload=data)
 
-    async def sendFinish(self, fingerprint, token):
-        client = [cl for cl in self.clients if cl.fingerprint == fingerprint]
-        if not client:
+    async def sendFinishV1(self, fingerprint: str, token: str) -> None:
+        if not (client := self.clients_by_fingerprint.get(fingerprint)):  # pragma: no cover
             return
-        client = client[0]
         data = _b64encode(client.encrypt(token.encode("utf8"))).decode("utf8")
         await self.send(client.ws, "finish", encrypted_token=data)
         await client.ws.close(1000)
 
-    async def sendCancel(self, fingerprint):
-        client = [cl for cl in self.clients if cl.fingerprint == fingerprint]
-        if not client:
+    async def sendCancel(self, fingerprint: str) -> None:
+        if not (client := self.clients_by_fingerprint.get(fingerprint)):  # pragma: no cover
             return
-        client = client[0]
         await self.send(client.ws, "cancel")
         await client.ws.close(1000)
+
+    async def disconnect(self, ws) -> None:
+        if not (client := self.clients_by_socket.get(ws)):
+            return
+
+        await RemoteAuthSession.objects.delete(fingerprint=client.fingerprint)

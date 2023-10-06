@@ -41,7 +41,7 @@ async def after_serving():
 
 
 @app.after_request
-async def set_cors_headers(response):
+async def set_cors_headers(response):  # pragma: no cover
     response.headers['Server'] = "YEPcord"
     response.headers['Access-Control-Allow-Origin'] = "*"
     response.headers['Access-Control-Allow-Headers'] = "*"
@@ -62,9 +62,5 @@ async def ws_gateway():
             await gw.process(ws, jloads(data))
         except CancelledError:
             setattr(ws, "connected", False)
+            await gw.disconnect(ws)
             raise
-
-
-if __name__ == "__main__":
-    from uvicorn import run as urun
-    urun('main:app', host="0.0.0.0", port=8002, reload=True, use_colors=False)

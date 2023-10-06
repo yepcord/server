@@ -40,11 +40,6 @@ def multipleDecorators(*decorators):
     return _multipleDecorators
 
 
-def usingDB(f):
-    setattr(f, "__db", True)
-    return f
-
-
 def allowWithoutUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
@@ -62,12 +57,9 @@ def getUser(f):
                 raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
             user = session.user
         except InvalidDataErr as e:
-            if e.code != 401:
-                raise
-            if not Ctx.get("allow_without_user"):
+            if e.code != 401 or not Ctx.get("allow_without_user"):
                 raise
             user = User(id=0, email="", password="")
-        Ctx["user_id"] = user.id
         kwargs["user"] = user
         return await f(*args, **kwargs)
     return wrapped
@@ -78,7 +70,6 @@ def getSession(f):
     async def wrapped(*args, **kwargs):
         if not (session := await Session.from_token(request.headers.get("Authorization", ""))):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-        Ctx["user_id"] = session.user.id
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
@@ -177,7 +168,7 @@ def getGuildTemplate(f):
             template_id = int.from_bytes(b64decode(template), "big")
             if not (template := await getCore().getGuildTemplateById(template_id)):
                 raise ValueError
-            if template.guild_id != guild.id:
+            if template.guild.id != guild.id:
                 raise ValueError
         except ValueError:
             raise InvalidDataErr(404, Errors.make(10057))
@@ -199,7 +190,7 @@ getGuildWoM = getGuildWithoutMember
 async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[dict, list[Attachment]]:
     attachments = []
     if data is None:  # Multipart request
-        if request.content_length > 1024 * 1024 * 100:
+        if request.content_length is not None and request.content_length > 1024 * 1024 * 100:
             raise InvalidDataErr(400, Errors.make(50045))
         async with timeout(current_app.config["BODY_TIMEOUT"]):
             files = list((await request.files).values())
@@ -209,6 +200,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                 raise InvalidDataErr(400, Errors.make(50013, {"files": {
                     "code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."
                 }}))
+            total_size = 0
             for idx, file in enumerate(files):
                 att = {"filename": None}
                 if idx + 1 <= len(data["attachments"]):
@@ -216,6 +208,8 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                 name = att.get("filename") or file.filename or "unknown"
                 get_content = getattr(file, "getvalue", file.read)
                 content = get_content()
+                total_size += len(content)
+                if total_size > 1024 * 1024 * 100: raise InvalidDataErr(400, Errors.make(50045))
                 content_type = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
                 metadata = {}
                 if content_type.startswith("image/"):

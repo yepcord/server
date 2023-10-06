@@ -215,3 +215,18 @@ async def api_oauth_tokens():
 @other.get("/api/v9/sticker-packs")
 async def api_stickerpacks_get():
     return {"sticker_packs": []}
+
+
+# Instance-related
+
+
+@other.get("/api/v9/instance")
+async def instance_info():
+    return {
+        "name": "YEPCord",
+        "features": [
+            "OLD_USERNAMES",
+            "REMOTE_AUTH_V1",
+            "SETTINGS_PROTO",
+        ],
+    }

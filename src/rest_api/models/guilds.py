@@ -319,7 +319,7 @@ class ChannelCreate(BaseModel):
 
 # noinspection PyMethodParameters
 class BanMember(BaseModel):
-    delete_message_seconds: Optional[int] = None
+    delete_message_seconds: Optional[int] = 0
 
     @validator("delete_message_seconds")
     def validate_delete_message_seconds(cls, value: Optional[int]):

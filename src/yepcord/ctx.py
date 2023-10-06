@@ -51,9 +51,6 @@ class _Ctx:
             v.set({})
         return self
 
-    def __getitem__(self, item):
-        return self.get(item)
-
     def __setitem__(self, key, value):
         self.set(key, value)
 

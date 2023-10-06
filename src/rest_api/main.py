@@ -33,7 +33,7 @@ from .routes.users_me import users_me
 from .routes.webhooks import webhooks
 from ..yepcord.classes.gifs import Gifs
 from ..yepcord.config import Config
-from ..yepcord.core import Core, CDN
+from ..yepcord.core import Core
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.gateway_dispatcher import GatewayDispatcher
 from ..yepcord.models import database
@@ -48,7 +48,7 @@ class YEPcord(Quart):
 app = YEPcord("YEPcord-api")
 QuartSchema(app)
 core = Core(b64decode(Config.KEY))
-cdn = CDN(getStorage(), core)
+storage = getStorage()
 gateway = GatewayDispatcher()
 app.gifs = Gifs(Config.TENOR_KEY)
 
@@ -94,6 +94,8 @@ async def ydataerror_handler(err: YDataError):
 @app.errorhandler(RequestSchemaValidationError)
 async def handle_validation_error(error: RequestSchemaValidationError):
     pydantic_error = error.validation_error
+    if isinstance(pydantic_error, TypeError):
+        raise pydantic_error
     return Errors.from_pydantic(pydantic_error), 400
 
 
@@ -135,10 +137,3 @@ async def other_api_endpoints(path):
         print(f"  Data: {await request.get_json()}")
     print("----------------")
     return "Not Implemented!", 501
-
-
-if __name__ == "__main__":  # pragma: no cover
-    # Deprecated
-    from uvicorn import run as urun
-
-    urun('main:app', host="0.0.0.0", port=8000, reload=True, use_colors=False)

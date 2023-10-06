@@ -1,10 +1,14 @@
 from os import environ as __environ
 
-DB_CONNECT_STRING = __environ.get("DB_CONNECT_STRING")
+__db = __environ.get("DB_TYPE", "mariadb").lower()
+if __db == "sqlite":
+    DB_CONNECT_STRING = "sqlite:///test.db"
+elif __db == "mariadb":
+    DB_CONNECT_STRING = "mysql+pymysql://root:yepcord_test@127.0.0.1/yepcord_test?charset=utf8mb4"
 KEY = __environ.get("KEY")
 
 STORAGE = {
-    "type": __environ.get("STORAGE_TYPE", "local"),
+    "type": "local",
 
     # Storage-specific settings
     "local": {

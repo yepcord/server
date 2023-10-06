@@ -25,7 +25,7 @@ import ormar
 from ormar import ReferentialAction, QuerySet
 from ormar.relations.relation_proxy import RelationProxy
 
-from . import DefaultMeta, User, collation
+from . import DefaultMeta, User, collation, SnowflakeAIQuerySet
 from .channels import Channel, Invite, PermissionOverwrite
 from ..ctx import getCore
 from ..enums import ScheduledEventEntityType, ChannelType, GuildPermissions, AuditLogEntryType
@@ -184,7 +184,7 @@ class GuildMember(ormar.Model):
     class Meta(DefaultMeta):
         pass
 
-    id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     guild: Guild = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
     avatar: Optional[str] = ormar.String(max_length=256, nullable=True, default=None)
@@ -322,7 +322,7 @@ class Emoji(ormar.Model):
 
 class GuildBan(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     reason: str = ormar.String(max_length=512)
@@ -519,7 +519,7 @@ class GuildEvent(ormar.Model):
     subscribers: Optional[Union[RelationProxy, QuerySet]] = ormar.ManyToMany(GuildMember)
 
     async def ds_json(self, with_user: bool=False, with_user_count: bool=False) -> dict:
-        channel_id = str(self.channel_id) if self.channel_id is not None else None
+        channel_id = str(self.channel.id) if self.channel is not None else None
         entity_id = str(self.entity_id) if self.entity_id is not None else None
         start_time = self.start.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         end_time = None
@@ -527,9 +527,9 @@ class GuildEvent(ormar.Model):
             end_time = self.end.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         data = {
             "id": str(self.id),
-            "guild_id": str(self.guild_id),
+            "guild_id": str(self.guild.id),
             "channel_id": str(channel_id),
-            "creator_id": str(self.creator_id),
+            "creator_id": str(self.creator.id),
             "name": self.name,
             "description": self.description,
             "scheduled_start_time": start_time,
@@ -674,6 +674,10 @@ class AuditLogEntryQuerySet(QuerySet):
 
     async def member_ban(self, user: User, member: GuildMember, reason: str = None) -> AuditLogEntry:
         return await self.create(id=Snowflake.makeId(), guild=member.guild, user=user, target_id=member.id,
+                                 action_type=AuditLogEntryType.MEMBER_BAN_ADD, reason=reason)
+
+    async def member_ban_user(self, user: User, target_id: int, guild: Guild, reason: str = None) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=target_id,
                                  action_type=AuditLogEntryType.MEMBER_BAN_ADD, reason=reason)
 
     async def member_unban(self, user: User, guild: Guild, target_user: User) -> AuditLogEntry:

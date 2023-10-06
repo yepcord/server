@@ -19,17 +19,19 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from time import time
 from typing import Optional, Any
 
 import ormar
 # noinspection PyPackageRequirements
 from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, Int32Value
-from ormar import ReferentialAction
+from ormar import ReferentialAction, and_, or_
 from protobuf_to_dict import protobuf_to_dict
 
-from . import DefaultMeta, collation
+from . import DefaultMeta, collation, SnowflakeAIQuerySet
 from ..ctx import getCore
 from ..enums import RelationshipType, RelTypeDiscord
+from ..errors import InvalidDataErr, Errors
 from ..proto import PreloadedUserSettings, UserContentSettings, Versions, VoiceAndVideoSettings, FrecencyUserSettings, \
     PrivacySettings, StatusSettings, LocalizationSettings, AppearanceSettings, Theme, GuildFolders, GuildFolder, \
     TextAndImagesSettings, CustomStatus
@@ -63,8 +65,8 @@ class User(ormar.Model):
     def created_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
 
-    async def profile_json(self, other_user: User, with_mutual_guilds: bool=False, mutual_friends_count: bool=False,
-                           guild_id: int=None) -> dict:
+    async def profile_json(self, other_user: User, with_mutual_guilds: bool = False, mutual_friends_count: bool = False,
+                           guild_id: int = None) -> dict:
         data = await self.data
         premium_since = self.created_at.strftime("%Y-%m-%dT%H:%M:%SZ")
         data = {
@@ -135,7 +137,7 @@ class Session(ormar.Model):
         if token is None:
             return
         user_id, session_id, signature = token
-        return await Session.objects.select_related("user")\
+        return await Session.objects.select_related("user") \
             .get_or_none(id=session_id, user__id=user_id, signature=signature)
 
 
@@ -147,7 +149,7 @@ class UserData(ormar.Model):
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
     birth: date = ormar.Date()
     username: str = ormar.String(max_length=128, collation=collation)
-    discriminator: int = ormar.Integer(minimum=1, maximum=9999)
+    discriminator: int = ormar.Integer(minimum=0, maximum=9999)
     premium: bool = ormar.Boolean(default=True)
     flags: int = ormar.BigInteger(default=0)
     public_flags: int = ormar.BigInteger(default=0)
@@ -381,7 +383,7 @@ class UserSettingsProto:
         return proto
 
     @staticmethod
-    def _to_settings_dict(proto_dict: dict, changes: dict=None) -> dict:
+    def _to_settings_dict(proto_dict: dict, changes: dict = None) -> dict:
         if changes is None:
             changes = {}
         fields = [
@@ -488,28 +490,113 @@ class FrecencySettings(ormar.Model):
         return proto
 
 
+class RelationshipQS(SnowflakeAIQuerySet):
+    async def rexists(self, user1: User, user2: User) -> bool:
+        return await self.filter(or_(
+            and_(from_user=user1, to_user=user2),
+            and_(from_user=user2, to_user=user1)
+        )).exists()
+
+    async def rget(self, user1: User, user2: User) -> bool:
+        return await self.get(or_(
+            and_(from_user=user1, to_user=user2),
+            and_(from_user=user2, to_user=user1)
+        ))
+
+    async def available(self, from_user: User, to_user: User, *, raise_: bool=False) -> bool:
+        available = not await self.rexists(from_user, to_user)  # TODO: check for to_user settings
+        if not available and raise_:
+            raise InvalidDataErr(400, Errors.make(80007))
+        return available
+
+    async def request(self, from_user: User, to_user: User) -> Relationship:
+        if not await self.available(from_user, to_user):
+            raise InvalidDataErr(400, Errors.make(80007))
+        return await self.create(from_user=from_user, to_user=to_user, type=RelationshipType.PENDING)
+
+    async def accept(self, from_user: User, to_user: User) -> Optional[Relationship]:
+        if (rel := await self.get_or_none(from_user=from_user, to_user=to_user, type=RelationshipType.PENDING)) is None:
+            return
+        await rel.update(type=RelationshipType.FRIEND)
+        return rel
+
+    async def block(self, user: User, block_user: User) -> dict:
+        rels = await self.all(or_(and_(from_user=user, to_user=block_user), and_(from_user=block_user, to_user=user)))
+        block = True
+        ret = {"block": False, "delete": []}
+        if not rels:
+            pass
+        elif len(rels) == 1 and rels[0].type != RelationshipType.BLOCK:
+            rel = rels[0]
+            ret["delete"] = [
+                {"id": rel.from_user.id, "rel": rel.to_user.id, "type": rel.discord_rel_type(rel.from_user)},
+                {"id": rel.to_user.id, "rel": rel.from_user.id, "type": rel.discord_rel_type(rel.to_user)}
+            ]
+            await rels[0].delete()
+        elif len(rels) == 1 and rels[0].type == RelationshipType.BLOCK:
+            if rels[0].from_user == user and rels[0].to_user == block_user:
+                block = False
+        elif len(rels) == 2:
+            block = False
+        if block:
+            await self.create(from_user=user, to_user=block_user, type=RelationshipType.BLOCK)
+            ret["block"] = True
+        return ret
+
+    async def rdelete(self, current: User, target: User) -> dict:
+        rels = await self.all(or_(and_(from_user=current, to_user=target),
+                                  and_(from_user=target, to_user=current)))
+        ret = {"delete": []}
+        if not rels:
+            pass
+        elif len(rels) == 1 and rels[0].type != RelationshipType.BLOCK:
+            rel = rels[0]
+            ret["delete"] = [
+                {"id": rel.from_user.id, "rel": rel.to_user.id, "type": rel.discord_rel_type(rel.from_user)},
+                {"id": rel.to_user.id, "rel": rel.from_user.id, "type": rel.discord_rel_type(rel.to_user)}
+            ]
+            await rel.delete()
+        elif len(rels) == 1 and rels[0].type == RelationshipType.BLOCK:
+            rel = rels[0]
+            if rel.from_user == current and rel.to_user == target:
+                ret["delete"] = [
+                    {"id": rel.from_user.id, "rel": rel.to_user.id, "type": rel.discord_rel_type(rel.from_user)}
+                ]
+                await rel.delete()
+        elif len(rels) == 2:
+            rel = [r for r in rels if r.from_user == current and r.to_user == target][0]
+            ret["delete"] = [
+                {"id": rel.from_user.id, "rel": rel.to_user.id, "type": rel.discord_rel_type(rel.from_user)}
+            ]
+            await rel.delete()
+        return ret
+
+    async def is_blocked(self, user: User, check_blocked: User) -> bool:
+        return await self.filter(from_user=user, to_user=check_blocked, type=RelationshipType.BLOCK).exists()
+
+
 class Relationship(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = RelationshipQS
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
-    user1: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="user1")
-    user2: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="user2")
+    from_user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="from_user")
+    to_user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="to_user")
     type: int = ormar.Integer(choices=[0, 1, 2])
 
     def other_user(self, current_user: User) -> User:
-        return self.user1 if self.user2 == current_user else self.user2
+        return self.from_user if self.to_user == current_user else self.to_user
 
     def discord_rel_type(self, current_user: User) -> Optional[int]:
-        if self.type == RelationshipType.BLOCK and self.user1 != current_user.id:
+        if self.type == RelationshipType.BLOCK and self.from_user.id != current_user.id:
             return None
         elif self.type == RelationshipType.BLOCK:
             return RelTypeDiscord.BLOCK
         elif self.type == RelationshipType.FRIEND:
             return RelTypeDiscord.FRIEND
-        elif self.user1 == current_user:
+        elif self.from_user == current_user:
             return RelTypeDiscord.REQUEST_SENT
-        elif self.user2 == current_user:
+        elif self.to_user == current_user:
             return RelTypeDiscord.REQUEST_RECV
 
     async def ds_json(self, current_user: User, with_data=False) -> Optional[dict]:
@@ -526,7 +613,7 @@ class Relationship(ormar.Model):
 
 class UserNote(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE, related_name="user")
@@ -543,7 +630,7 @@ class UserNote(ormar.Model):
 
 class MfaCode(ormar.Model):
     class Meta(DefaultMeta):
-        pass
+        queryset_class = SnowflakeAIQuerySet
 
     id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
     user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
@@ -555,4 +642,51 @@ class MfaCode(ormar.Model):
             "user_id": str(self.user.id),
             "code": self.code,
             "consumed": self.used
+        }
+
+
+def time_plus_150s():
+    return int(time()) + 150
+
+
+class RemoteAuthSession(ormar.Model):
+    class Meta(DefaultMeta):
+        queryset_class = SnowflakeAIQuerySet
+
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
+    fingerprint: str = ormar.String(max_length=64, unique=True)
+    user: Optional[User] = ormar.ForeignKey(User, nullable=True, default=None, ondelete=ReferentialAction.CASCADE)
+    expires_at: int = ormar.Integer(default=time_plus_150s)
+
+
+class ConnectedAccount(ormar.Model):
+    class Meta(DefaultMeta):
+        queryset_class = SnowflakeAIQuerySet
+
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
+    service_id: str = ormar.String(max_length=128, unique=True)
+    user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
+    name: str = ormar.Text(collation=collation)
+    type: str = ormar.String(max_length=64, choices=["github"])
+    revoked: bool = ormar.Boolean(default=False)
+    show_activity: bool = ormar.Boolean(default=True)
+    verified: bool = ormar.Boolean(default=False)
+    visibility: int = ormar.Integer(default=1, choices=[0, 1])
+    metadata_visibility: int = ormar.Integer(default=1, choices=[0, 1])
+    metadata: dict = ormar.JSON(default={})
+    access_token: Optional[str] = ormar.Text(nullable=True, default=None)
+    state: int = ormar.BigInteger(default=Snowflake.makeId)
+
+    def ds_json(self) -> dict:
+        return {
+            "visibility": self.visibility,
+            "verified": True,
+            "type": self.type,
+            "two_way_link": False,
+            "show_activity": self.show_activity,
+            "revoked": self.revoked,
+            "name": self.name,
+            "metadata_visibility": self.metadata_visibility,
+            "id": self.service_id,
+            "friend_sync": False,
         }

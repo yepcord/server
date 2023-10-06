@@ -35,24 +35,17 @@ from ormar import or_
 from .classes.other import EmailMsg, JWT, MFA
 from .classes.singleton import Singleton
 from .config import Config
-from .enums import RelationshipType, ChannelType, GUILD_CHANNELS
+from .enums import ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .models import User, UserData, UserSettings, Session, Relationship, Channel, Message, ReadState, UserNote, \
     Attachment, FrecencySettings, Emoji, Invite, Guild, GuildMember, GuildTemplate, Reactions as Reaction, Sticker, \
     PermissionOverwrite, GuildBan, AuditLogEntry, Webhook, HiddenDmChannel, MfaCode, Role, GuildEvent, \
-    ThreadMetadata, ThreadMember
+    ThreadMetadata, ThreadMember, is_sqlite
 from .snowflake import Snowflake
+from .storage import getStorage
 from .utils import b64encode, b64decode, int_size, NoneType
 from ..gateway.events import DMChannelCreateEvent
-
-
-class CDN(Singleton):
-    def __init__(self, storage, core):
-        self.storage = storage
-        self.core = core
-
-    def __getattr__(self, item):
-        return getattr(self.storage, item)
+from . import ctx
 
 
 # noinspection PyMethodMayBeStatic
@@ -130,8 +123,7 @@ class Core(Singleton):
         if not isinstance(user, User) and (user := await User.objects.get_or_none(id=user, deleted=False)) is None:
             return
         sig = self.generateSessionSignature()
-        session = await Session.objects.create(id=Snowflake.makeId(), user=user, signature=sig)
-        return session
+        return await Session.objects.create(id=Snowflake.makeId(), user=user, signature=sig)
 
     async def getUser(self, uid: int, allow_deleted: bool = True) -> Optional[User]:
         kwargs = {} if allow_deleted else {"deleted": False}
@@ -177,33 +169,17 @@ class Core(Singleton):
         if data is not None:
             return data.user
 
-    async def checkRelationShipAvailable(self, target_user: User, current_user: User) -> None:
-        relationship = await self.getRelationship(target_user, current_user)
-        if relationship is not None:
-            raise InvalidDataErr(400, Errors.make(80007))
-        # TODO: check for mutual guilds or mutual friends
-
-    async def reqRelationship(self, target_user: User, current_user: User) -> None:
-        await Relationship.objects.create(user1=current_user, user2=target_user, type=RelationshipType.PENDING)
-
     async def getRelationships(self, user: User, with_data=False) -> list[dict]:
         rels = []
-        for rel in await Relationship.objects.filter(or_(user1=user, user2=user)).all():
+        rel: Relationship
+        for rel in await Relationship.objects.filter(or_(from_user=user, to_user=user)).all():
             if (rel_json := await rel.ds_json(user, with_data)) is not None:
                 rels.append(rel_json)
         return rels
 
-    async def getRelationship(self, u1: Union[User, int], u2: Union[User, int]) -> Optional[Relationship]:
-        id1 = u1.id if isinstance(u1, User) else u1
-        id2 = u2.id if isinstance(u2, User) else u2
-        return await Relationship.objects.prefetch_related(["user1", "user2"]).get_or_none(
-            ((Relationship.user1.id == id1) & (Relationship.user2.id == id2)) |
-            ((Relationship.user1.id == id2) & (Relationship.user2.id == id1))
-        )
-
     async def getRelatedUsers(self, user: User, only_ids=False) -> list:
         users = []
-        for r in await Relationship.objects.filter(or_(user1=user, user2=user)).all():
+        for r in await Relationship.objects.filter(or_(from_user=user, to_user=user)).all():
             other_user = r.other_user(user)
             if only_ids:
                 users.append(other_user.id)
@@ -223,25 +199,6 @@ class Core(Singleton):
                 data = await recipient.data
                 users.append(data.ds_json)
         return users
-
-    async def accRelationship(self, user: User, uid: int) -> None:
-        rel = await Relationship.objects.select_related(["user1", "user2"]).get_or_none(
-            user1__id=uid, user2__id=user.id, type=RelationshipType.PENDING
-        )
-        if rel is None:
-            return
-        await rel.update(type=RelationshipType.FRIEND)
-
-    async def delRelationship(self, user: User, uid: int) -> Optional[Relationship]:
-        rel = await self.getRelationship(user, uid)
-        if rel.type == RelationshipType.BLOCK:
-            rel = await Relationship.objects.select_related(["user1", "user2"]).get_or_none(
-                user1__id=user.id, user2__id=uid
-            )
-            if rel is None:
-                return
-        await rel.delete()
-        return rel
 
     async def changeUserPassword(self, user: User, new_password: str) -> None:
         await user.update(password=self.hashPassword(user.id, new_password))
@@ -328,7 +285,7 @@ class Core(Singleton):
             values={"user1": user1.id, "user2": user2.id}
         )
         if channel_row is None: return
-        return await Channel.from_row(channel_row, Channel).load_all()
+        return Channel.from_row(channel_row, Channel)
 
     async def getDMChannelOrCreate(self, user1: User, user2: User) -> Channel:
         channel = await self.getDChannel(user1, user2)
@@ -340,7 +297,7 @@ class Core(Singleton):
 
         if await self.isDmChannelHidden(user1, channel):
             await self.unhideDmChannel(user1, channel)
-            await c.getGw().dispatch(DMChannelCreateEvent(channel), users=[user1.id])
+            await ctx.getGw().dispatch(DMChannelCreateEvent(channel), users=[user1.id])
         return await self.setLastMessageIdForChannel(channel)
 
     async def getLastMessageId(self, channel: Channel) -> Optional[int]:
@@ -356,14 +313,14 @@ class Core(Singleton):
 
     async def getPrivateChannels(self, user: User, with_hidden: bool = False) -> list[Channel]:
         channels = await Channel.objects.select_related("recipients").filter(recipients__id__in=[user.id]).all()
+        channels = [channel for channel in channels if not await self.isDmChannelHidden(user, channel)]
         return [await self.setLastMessageIdForChannel(channel) for channel in channels]
 
-    async def getChannelMessages(self, channel, limit: int, before: int = 0, after: int = 0) -> list[Message]:
+    async def getChannelMessages(self, channel: Channel, limit: int, before: int = 0, after: int = 0) -> list[Message]:
         id_filter = {}
         if after: id_filter["id__gt"] = after
         if before: id_filter["id__lt"] = before
-        messages = await Message.objects.filter(channel=channel, **id_filter).order_by("-id").limit(limit).all()
-        # messages.sort(key=lambda msg: msg.id, reverse=True)
+        messages = await Message.objects.select_related(["thread"]).filter(channel=channel, **id_filter).order_by("-id").limit(limit, limit_raw_sql=True).all()
         return messages
 
     async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
@@ -522,12 +479,12 @@ class Core(Singleton):
         if isinstance(user, User):
             user = user.id
         reactions = []
-        table_name = "reactionss"
+        coll = "" if is_sqlite else " collate utf8mb4_unicode_520_ci as `emoji_name`"
         result = await Channel.Meta.database.fetch_all(
-           query=f'SELECT `emoji_name` as ename, `emoji` as eid, COUNT(*) AS ecount, (SELECT COUNT(*) > 0 FROM '
-                 f'`reactionss` WHERE `emoji_name`=ename AND (`emoji`=eid OR (`emoji` IS NULL AND eid IS NULL)) '
-                 f'AND `user`=:user_id) as me FROM `reactionss` WHERE `message`=:message_id GROUP BY '
-                 f'CONCAT(`emoji_name`, `emoji`) COLLATE utf8mb4_unicode_520_ci;',
+           query=f'SELECT `emoji_name`{coll}, `emoji`, COUNT(*) AS ecount, '
+                 f'(SELECT COUNT(*) > 0 FROM `reactionss` AS r2 WHERE r2.`emoji_name`=r1.emoji_name AND '
+                 f'(`emoji`=r1.emoji OR (`emoji` IS NULL AND r1.emoji IS NULL)) AND `user`=:user_id) as me '
+                 f'FROM `reactionss` AS r1 WHERE `message`=:message_id GROUP BY `emoji_name`, `emoji`',
            values={"user_id": user, "message_id": message.id}
         )
         for r in result:
@@ -546,9 +503,9 @@ class Core(Singleton):
             users.append(data.ds_json)
         return users
 
-    async def searchMessages(self, search_filter: dict) -> tuple[list[Message], int]:
-        filter_args = {}
-        query = Message.objects.order_by("-id").limit(25)
+    async def searchMessages(self, channel: Channel, search_filter: dict) -> tuple[list[Message], int]:
+        filter_args = {"channel": channel}
+        query = Message.objects.select_related(["author", "channel", "thread", "guild"]).order_by("-id").limit(25)
         if "author_id" in search_filter:
             filter_args["author__id"] = search_filter["author_id"]
         if "mentions" in search_filter:
@@ -600,16 +557,16 @@ class Core(Singleton):
         )
         await guild.update(system_channel=system_channel.id)
 
-        await GuildMember.objects.create(id=user.id, user=user, guild=guild)
+        await GuildMember.objects.create(id=Snowflake.makeId(), user=user, guild=guild)
 
         return guild
 
     async def createGuildFromTemplate(self, guild_id: int, user: User, template: GuildTemplate, name: Optional[str],
                                       icon: Optional[str]) -> Guild:
-        guild = await Guild.objects.create(id=guild_id, owner=user.id)
-
         serialized = template.serialized_guild
-        serialized["name"] = name or serialized["name"]
+        name = serialized["name"] = name or serialized["name"]
+        guild = await Guild.objects.create(id=guild_id, owner=user.id, name=name)
+
         serialized["icon"] = icon
         replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None, 0: guild_id}
         channels = {}
@@ -628,6 +585,7 @@ class Core(Singleton):
             channel["rate_limit"] = channel["rate_limit_per_user"]
             channel["default_auto_archive"] = channel["default_auto_archive_duration"]
 
+            del channel["parent_id"]
             del channel["rate_limit_per_user"]
             del channel["default_auto_archive_duration"]
 
@@ -657,7 +615,7 @@ class Core(Singleton):
         del serialized["channels"]
 
         await guild.update(**serialized)
-        await GuildMember.objects.create(id=user.id, user=user, guild=guild)
+        await GuildMember.objects.create(id=Snowflake.makeId(), user=user, guild=guild)
 
         return guild
 
@@ -677,7 +635,7 @@ class Core(Singleton):
         return await GuildMember.objects.select_related("user").filter(guild=guild).all()
 
     async def getGuildMembersIds(self, guild: Guild) -> list[int]:
-        return [member.id for member in await self.getGuildMembers(guild)]
+        return [member.user.id for member in await self.getGuildMembers(guild)]
 
     async def getGuildChannels(self, guild: Guild) -> list[Channel]:
         return await Channel.objects.filter(guild=guild) \
@@ -691,14 +649,6 @@ class Core(Singleton):
 
     async def getGuild(self, guild_id: int) -> Optional[Guild]:
         return await Guild.objects.select_related("owner").get_or_none(id=guild_id)
-
-    async def blockUser(self, user: User, block_user: User) -> None:
-        rel = await self.getRelationship(user.id, block_user)
-        if rel and rel.type != RelationshipType.BLOCK:
-            await rel.delete()
-        elif rel and rel.type == RelationshipType.BLOCK and rel.user1 == user:
-            return
-        await Relationship.objects.create(user1=user, user2=block_user, type=RelationshipType.BLOCK)
 
     async def getEmojis(self, guild_id: int) -> list[Emoji]:
         return await Emoji.objects.filter(guild__id=guild_id).all()
@@ -723,7 +673,12 @@ class Core(Singleton):
             .filter(channel__guild=guild).all()
 
     async def banGuildMember(self, member: GuildMember, reason: str = None) -> None:
+        if reason is None: reason = ""
         await GuildBan.objects.create(user=member.user, guild=member.guild, reason=reason)
+
+    async def banGuildUser(self, user: User, guild: Guild, reason: str = None) -> None:
+        if reason is None: reason = ""
+        await GuildBan.objects.create(user=user, guild=guild, reason=reason)
 
     async def getGuildBan(self, guild: Guild, user_id: int) -> Optional[GuildMember]:
         return await GuildBan.objects.get_or_none(guild=guild, user__id=user_id)
@@ -801,14 +756,15 @@ class Core(Singleton):
         await GuildBan.objects.delete(guild=guild, user__id=user_id)
 
     async def getRoleMemberIds(self, role: Role) -> list[int]:
-        role = await Role.objects.select_related("guildmembers").get(id=role.id)
-        return [member.id for member in role.guildmembers]
+        role = await Role.objects.select_related(["guildmembers", "guildmembers__user"]).get(id=role.id)
+        return [member.user.id for member in role.guildmembers]
 
-    async def getGuildMembersGw(self, guild: Guild, query: str, limit: int) -> list[GuildMember]:
+    async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:
         # noinspection PyUnresolvedReferences
         return await GuildMember.objects.filter(
             (GuildMember.guild == guild) &
-            (GuildMember.nick.startswith(query) | GuildMember.user.userdatas.username.istartswith(query))
+            (GuildMember.nick.startswith(query) | GuildMember.user.userdatas.username.istartswith(query)) #&
+            #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
         ).limit(limit).all()
 
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
@@ -848,7 +804,7 @@ class Core(Singleton):
 
     async def getVanityCodeInvite(self, code: str) -> Optional[Invite]:
         if code is None: return
-        return await Invite.objects.filter(vanity_code=code).all()
+        return await Invite.objects.get_or_none(vanity_code=code)
 
     async def useInvite(self, invite: Invite) -> None:
         if 0 < invite.max_uses <= invite.uses + 1:
@@ -864,7 +820,7 @@ class Core(Singleton):
         return await GuildTemplate.objects.get_or_none(guild=guild)
 
     async def getGuildTemplateById(self, template_id: int) -> Optional[GuildTemplate]:
-        return await GuildTemplate.objects.get_or_none(id=template_id)
+        return await GuildTemplate.objects.select_related("guild").get_or_none(id=template_id)
 
     async def setTemplateDirty(self, guild: Guild) -> None:
         if not (template := await self.getGuildTemplate(guild)):
@@ -908,7 +864,7 @@ class Core(Singleton):
         await data.update(discriminator=0, username=f"Deleted User {hex(user.id)[2:]}", avatar=None,
                           avatar_decoration=None, public_flags=0)
         await Session.objects.delete(user=user)
-        await Relationship.objects.delete(or_(user1=user, user2=user))
+        await Relationship.objects.delete(or_(from_user=user, to_user=user))
         await MfaCode.objects.delete(user=user)
         await GuildMember.objects.delete(user=user)
         await UserSettings.objects.delete(user=user)
@@ -969,7 +925,5 @@ class Core(Singleton):
         return country_to_language.get(country_code, default)
 
 
-import src.yepcord.ctx as c
-
-c._getCore = lambda: Core.getInstance()
-c._getCDNStorage = lambda: CDN.getInstance().storage
+ctx._getCore = lambda: Core.getInstance()
+ctx._getCDNStorage = lambda: getStorage()
