@@ -42,18 +42,10 @@ from .models import User, UserData, UserSettings, Session, Relationship, Channel
     PermissionOverwrite, GuildBan, AuditLogEntry, Webhook, HiddenDmChannel, MfaCode, Role, GuildEvent, \
     ThreadMetadata, ThreadMember, is_sqlite
 from .snowflake import Snowflake
+from .storage import getStorage
 from .utils import b64encode, b64decode, int_size, NoneType
 from ..gateway.events import DMChannelCreateEvent
 from . import ctx
-
-
-class CDN(Singleton):
-    def __init__(self, storage, core):
-        self.storage = storage
-        self.core = core
-
-    def __getattr__(self, item):
-        return getattr(self.storage, item)
 
 
 # noinspection PyMethodMayBeStatic
@@ -764,8 +756,8 @@ class Core(Singleton):
         await GuildBan.objects.delete(guild=guild, user__id=user_id)
 
     async def getRoleMemberIds(self, role: Role) -> list[int]:
-        role = await Role.objects.select_related("guildmembers").get(id=role.id)
-        return [member.id for member in role.guildmembers]
+        role = await Role.objects.select_related(["guildmembers", "guildmembers__user"]).get(id=role.id)
+        return [member.user.id for member in role.guildmembers]
 
     async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:
         # noinspection PyUnresolvedReferences
@@ -934,4 +926,4 @@ class Core(Singleton):
 
 
 ctx._getCore = lambda: Core.getInstance()
-ctx._getCDNStorage = lambda: CDN.getInstance().storage
+ctx._getCDNStorage = lambda: getStorage()

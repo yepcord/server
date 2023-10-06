@@ -15,7 +15,8 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from __future__ import annotations
+from abc import abstractmethod, ABCMeta
 from asyncio import get_event_loop, gather
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import md5
@@ -27,6 +28,7 @@ from typing import Optional, Tuple, Union
 from PIL import Image, ImageSequence
 from aiofiles import open as aopen
 
+from .classes.singleton import SingletonMeta
 from .config import Config
 from .models import Attachment
 
@@ -111,13 +113,18 @@ def imageFrames(img: Image) -> int:
     return getattr(img, "n_frames", 1)
 
 
-# noinspection PyShadowingBuiltins
-class _Storage:
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]:  # pragma: no cover
-        raise NotImplementedError
+class SingletonABCMeta(ABCMeta, SingletonMeta):
+    pass
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:  # pragma: no cover
-        raise NotImplementedError
+
+# noinspection PyShadowingBuiltins
+class _Storage(metaclass=SingletonABCMeta):
+
+    @abstractmethod
+    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]: ...  # pragma: no cover
+
+    @abstractmethod
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str: ...  # pragma: no cover
 
     async def getAvatar(self, uid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = avatar_hash.startswith("a_")
@@ -146,8 +153,8 @@ class _Storage:
     async def getGuildEvent(self, event_id: int, event_hash: str, size: int, fmt: str) -> Optional[bytes]:
         return await self._getImage("guild_event", event_id, event_hash, size, fmt, 600, lambda s: int(9 * s / 16))
 
-    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:  # pragma: no cover
-        raise NotImplementedError
+    @abstractmethod
+    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]: ...  # pragma: no cover
 
     async def getRoleIcon(self, rid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = icon_hash.startswith("a_")
@@ -200,19 +207,19 @@ class _Storage:
     async def setGuildEventFromBytesIO(self, event_id: int, image: BytesIO) -> str:
         return await self._setImage(f"guild_event", event_id, 600, lambda s: int(9 * s / 16), image)
 
-    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:  # pragma: no cover
-        raise NotImplementedError
+    @abstractmethod
+    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict: ...  # pragma: no cover
 
     async def setRoleIconFromBytesIO(self, rid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("role_icon", rid, size, lambda s: s, image)
 
-    async def uploadAttachment(self, data, attachment: Attachment):  # pragma: no cover
-        raise NotImplementedError
+    @abstractmethod
+    async def uploadAttachment(self, data, attachment: Attachment): ...  # pragma: no cover
 
-    async def getAttachment(self, channel_id, attachment_id, name):  # pragma: no cover
-        raise NotImplementedError
+    @abstractmethod
+    async def getAttachment(self, channel_id, attachment_id, name): ...  # pragma: no cover
 
 
 # noinspection PyShadowingBuiltins
@@ -408,7 +415,7 @@ class S3Storage(_Storage):
             try:
                 await s3.download_fileobj(self.bucket, f"attachments/{channel_id}/{attachment_id}/{name}", f)
             except ClientError as ce:
-                if "(404)" not in str(ce):
+                if "(404)" not in str(ce):  # pragma: no cover
                     raise
             else:
                 return f.getvalue()
@@ -515,7 +522,7 @@ class FTPStorage(_Storage):
             try:
                 return await ftp.s_download(f"attachments/{channel_id}/{attachment_id}/{name}")
             except StatusCodeError as sce:
-                if "550" not in sce.received_codes:
+                if "550" not in sce.received_codes:  # pragma: no cover
                     raise
 
 

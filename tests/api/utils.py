@@ -1,6 +1,7 @@
 import asyncio
 from asyncio import get_event_loop
 from base64 import urlsafe_b64encode, b64decode
+from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Optional, Union
 
@@ -120,10 +121,12 @@ async def create_webhook(app: TestClientType, user: dict, channel_id: str, name=
     return await resp.get_json()
 
 
-async def create_role(app: TestClientType, user: dict, guild_id: str, name="new role", icon: str=None) -> dict:
-    icon_kw = {"icon": icon} if icon is not None else {}
+async def create_role(app: TestClientType, user: dict, guild_id: str, name="new role", icon: str=None, perms: int=None) -> dict:
+    kw = {}
+    if icon is not None: kw["icon"] = icon
+    if perms is not None: kw["permissions"] = perms
     resp = await app.post(f"/api/v9/guilds/{guild_id}/roles", headers={"Authorization": user["token"]},
-                          json={'name': name, **icon_kw})
+                          json={'name': name, **kw})
     assert resp.status_code == 200
     return await resp.get_json()
 
@@ -186,6 +189,16 @@ async def add_user_to_guild(app: TestClientType, guild: dict, owner: dict, targe
 
     resp = await app.post(f"/api/v9/invites/{invite['code']}", headers={"Authorization": target["token"]})
     assert resp.status_code == 200
+
+
+async def create_event(app: TestClientType, guild: dict, user: dict, *, exp_code: int=200, **kwargs) -> dict:
+    kwargs["privacy_level"] = 2
+    if "scheduled_start_time" not in kwargs:
+        kwargs["scheduled_start_time"] = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    resp = await app.post(f"/api/v9/guilds/{guild['id']}/scheduled-events", headers={"Authorization": user["token"]},
+                          json={**kwargs})
+    assert resp.status_code == exp_code
+    return await resp.get_json()
 
 
 class RemoteAuthClient:

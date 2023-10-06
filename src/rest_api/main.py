@@ -33,7 +33,7 @@ from .routes.users_me import users_me
 from .routes.webhooks import webhooks
 from ..yepcord.classes.gifs import Gifs
 from ..yepcord.config import Config
-from ..yepcord.core import Core, CDN
+from ..yepcord.core import Core
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.gateway_dispatcher import GatewayDispatcher
 from ..yepcord.models import database
@@ -48,7 +48,7 @@ class YEPcord(Quart):
 app = YEPcord("YEPcord-api")
 QuartSchema(app)
 core = Core(b64decode(Config.KEY))
-cdn = CDN(getStorage(), core)
+storage = getStorage()
 gateway = GatewayDispatcher()
 app.gifs = Gifs(Config.TENOR_KEY)
 

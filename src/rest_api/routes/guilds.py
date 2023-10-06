@@ -35,7 +35,8 @@ from ...gateway.events import MessageDeleteEvent, GuildUpdateEvent, ChannelUpdat
     GuildScheduledEventCreateEvent, GuildScheduledEventUpdateEvent, GuildScheduledEventDeleteEvent, \
     ScheduledEventUserAddEvent, ScheduledEventUserRemoveEvent, GuildCreateEvent, GuildAuditLogEntryCreateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
-from ...yepcord.enums import GuildPermissions, StickerType, StickerFormat, ScheduledEventStatus
+from ...yepcord.enums import GuildPermissions, StickerType, StickerFormat, ScheduledEventStatus, ChannelType, \
+    ScheduledEventEntityType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Guild, GuildMember, GuildTemplate, Emoji, Channel, PermissionOverwrite, UserData, \
     Role, Invite, Sticker, GuildEvent, AuditLogEntry
@@ -75,12 +76,17 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
             if h := await func(guild.id, img):
                 setattr(data, image_type, h)
     for ch in ("afk_channel", "system_channel"):
-        setattr(data, ch, None)  # TODO
         if (channel_id := getattr(data, ch)) is not None:
             if (channel := await getCore().getChannel(channel_id)) is None:
                 setattr(data, ch, None)
             elif channel.guild != guild:
                 setattr(data, ch, None)
+            elif ch == "afk_channel" and channel.type != ChannelType.GUILD_VOICE:
+                setattr(data, ch, None)
+            elif ch == "system_channel" and channel.type != ChannelType.GUILD_TEXT:
+                setattr(data, ch, None)
+            else:
+                setattr(data, ch, channel.id)
     changes = data.dict(exclude_defaults=True)
     await guild.update(**changes)
     await getGw().dispatch(GuildUpdateEvent(await guild.ds_json(user_id=0)), guild_id=guild.id)
@@ -158,10 +164,8 @@ async def create_guild_emoji(data: EmojiCreate, user: User, guild: Guild, member
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     img = getImage(data.image)
     emoji_id = Snowflake.makeId()
-    if not (emd := await getCDNStorage().setEmojiFromBytesIO(emoji_id, img)):
-        raise InvalidDataErr(400, Errors.make(50035, {"image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
-    # TODO: check if emojis limit exceeded
-    emoji = await Emoji.objects.create(id=emoji_id, name=data.name, user=user, guild=guild, animated=emd["animated"])
+    result = await getCDNStorage().setEmojiFromBytesIO(emoji_id, img)
+    emoji = await Emoji.objects.create(id=emoji_id, name=data.name, user=user, guild=guild, animated=result["animated"])
     await getGw().sendGuildEmojisUpdateEvent(guild)
 
     entry = await AuditLogEntry.objects.emoji_create(user, emoji)
@@ -665,8 +669,7 @@ async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
         sticker_type = getattr(StickerFormat, str(imageType(img)).upper(), StickerFormat.PNG)
 
         sticker_id = Snowflake.makeId()
-        if not await getCDNStorage().setStickerFromBytesIO(sticker_id, img):
-            raise InvalidDataErr(400, Errors.make(50006))
+        await getCDNStorage().setStickerFromBytesIO(sticker_id, img)
 
         sticker = await Sticker.objects.create(
             id=sticker_id, guild=guild, user=user, name=data.name, tags=data.tags, type=StickerType.GUILD,
@@ -713,11 +716,21 @@ async def create_scheduled_event(data: CreateEvent, user: User, guild: Guild, me
             raise InvalidDataErr(400, Errors.make(50035, {"image": {
                 "code": "IMAGE_INVALID", "message": "Invalid image"
             }}))
-        if h := await getCDNStorage().setGuildEventFromBytesIO(event_id, img):
-            img = h
+
+        img = await getCDNStorage().setGuildEventFromBytesIO(event_id, img)
         data.image = img
 
-    event = await GuildEvent.objects.create(id=event_id, guild=guild, creator=user, **data.dict())
+    data_dict = data.dict()
+    if data.entity_type in (ScheduledEventEntityType.STAGE_INSTANCE, ScheduledEventEntityType.VOICE):
+        if ((channel := await getCore().getChannel(data.channel_id)) is None or channel.guild != guild
+                or channel.type not in (ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE)):
+            raise InvalidDataErr(400, Errors.make(50035, {"channel_id": {
+                "code": "CHANNEL_INVALID", "message": "Invalid channel"
+            }}))
+        data_dict["channel"] = channel
+    del data_dict["channel_id"]
+
+    event = await GuildEvent.objects.create(id=event_id, guild=guild, creator=user, **data_dict)
     await getGw().dispatch(GuildScheduledEventCreateEvent(await event.ds_json()), guild_id=guild.id)
 
     await event.subscribers.add(member)
@@ -805,9 +818,10 @@ async def unsubscribe_from_scheduled_event(user: User, guild: Guild, member: Gui
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
         raise InvalidDataErr(404, Errors.make(10070))
 
-    await event.subscribers.remove(member)
-    await getGw().dispatch(ScheduledEventUserRemoveEvent(user.id, event_id, guild.id),
-                           guild_id=guild.id)  # TODO: Replace with list of users subscribed to event
+    if await event.subscribers.get_or_none(user__id=user.id) is not None:
+        await event.subscribers.remove(member)
+        await getGw().dispatch(ScheduledEventUserRemoveEvent(user.id, event_id, guild.id),
+                               guild_id=guild.id)  # TODO: Replace with list of users subscribed to event
 
     return "", 204
 

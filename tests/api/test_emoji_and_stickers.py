@@ -1,3 +1,5 @@
+from io import BytesIO
+
 import pytest as pt
 import pytest_asyncio
 
@@ -76,6 +78,7 @@ async def test_edit_emoji_name():
                               headers={"Authorization": user["token"]})
     assert resp.status_code == 400
 
+
 @pt.mark.asyncio
 async def test_emoji_delete():
     client: TestClientType = app.test_client()
@@ -122,6 +125,31 @@ async def test_create_sticker():
 
 
 @pt.mark.asyncio
+async def test_create_sticker_fail():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+
+    image = BytesIO()
+    assert image is not None
+    image.filename = "yep.png"
+    image.headers = []
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/stickers", headers={"Authorization": user["token"]}, files={
+        "file_": image
+    })
+    assert resp.status_code == 400
+
+    image = BytesIO(b"not image"*1024*64)
+    assert image is not None
+    image.filename = "yep.png"
+    image.headers = []
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/stickers", headers={"Authorization": user["token"]}, files={
+        "file": image
+    }, form={"name": "test", "tags": "test"})
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
 async def test_edit_sticker():
     client: TestClientType = app.test_client()
     user = (await create_users(client, 1))[0]
@@ -136,6 +164,10 @@ async def test_edit_sticker():
     assert json["name"] == "yep_test"
     assert json["tags"] == "slight_smile"
     assert json["description"] == "test description"
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/stickers/{Snowflake.makeId()}", json={'name': 'yep_tes1'},
+                              headers={"Authorization": user["token"]})
+    assert resp.status_code == 404
 
 
 @pt.mark.asyncio
@@ -153,3 +185,7 @@ async def test_delete_sticker():
     resp = await client.get(f"/api/v9/guilds/{guild['id']}/stickers", headers={"Authorization": user["token"]})
     assert resp.status_code == 200
     assert await resp.get_json() == []
+
+    resp = await client.delete(f"/api/v9/guilds/{guild['id']}/stickers/{Snowflake.makeId()}",
+                               headers={"Authorization": user["token"]})
+    assert resp.status_code == 404

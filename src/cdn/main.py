@@ -23,7 +23,7 @@ from quart_schema import validate_querystring, QuartSchema
 
 from .models import CdnImageSizeQuery
 from ..yepcord.config import Config
-from ..yepcord.core import Core, CDN
+from ..yepcord.core import Core
 from ..yepcord.enums import StickerFormat
 from ..yepcord.models import database
 from ..yepcord.storage import getStorage
@@ -37,7 +37,6 @@ class YEPcord(Quart):
 app = YEPcord("YEPcord-Cdn")
 QuartSchema(app)
 core = Core(b64decode(Config.KEY))
-cdn = CDN(getStorage(), core)
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
@@ -73,7 +72,7 @@ async def get_avatar(query_args: CdnImageSizeQuery, user_id: int, file_hash: str
     if format_ not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
     if query_args.size > 1024: query_args.size = 1024
-    if not (avatar := await cdn.getAvatar(user_id, file_hash, query_args.size, format_)):
+    if not (avatar := await getStorage().getAvatar(user_id, file_hash, query_args.size, format_)):
         return b'', 404
     return avatar, 200, {"Content-Type": f"image/{format_}"}
 
@@ -84,7 +83,7 @@ async def get_banner(query_args: CdnImageSizeQuery, user_id: int, file_hash: str
     if format_ not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
     if query_args.size > 600: query_args.size = 600
-    if not (banner := await cdn.getBanner(user_id, file_hash, query_args.size, format_)):
+    if not (banner := await getStorage().getBanner(user_id, file_hash, query_args.size, format_)):
         return b'', 404
     return banner, 200, {"Content-Type": f"image/{format_}"}
 
@@ -95,7 +94,7 @@ async def get_splash(query_args: CdnImageSizeQuery, guild_id: int, file_hash: st
     if format_ not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
     if query_args.size > 600: query_args.size = 600
-    if not (splash := await cdn.getGuildSplash(guild_id, file_hash, query_args.size, format_)):
+    if not (splash := await getStorage().getGuildSplash(guild_id, file_hash, query_args.size, format_)):
         return b'', 404
     return splash, 200, {"Content-Type": f"image/{format_}"}
 
@@ -106,7 +105,7 @@ async def get_channel_icon(query_args: CdnImageSizeQuery, channel_id: int, file_
     if format_ not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
     if query_args.size > 1024: query_args.size = 1024
-    if not (icon := await cdn.getChannelIcon(channel_id, file_hash, query_args.size, format_)):
+    if not (icon := await getStorage().getChannelIcon(channel_id, file_hash, query_args.size, format_)):
         return b'', 404
     return icon, 200, {"Content-Type": f"image/{format_}"}
 
@@ -117,7 +116,7 @@ async def get_guild_icon(query_args: CdnImageSizeQuery, guild_id: int, file_hash
     if format_ not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
     if query_args.size > 1024: query_args.size = 1024
-    if not (icon := await cdn.getGuildIcon(guild_id, file_hash, query_args.size, format_)):
+    if not (icon := await getStorage().getGuildIcon(guild_id, file_hash, query_args.size, format_)):
         return b'', 404
     return icon, 200, {"Content-Type": f"image/{format_}"}
 
@@ -128,7 +127,7 @@ async def get_role_icon(query_args: CdnImageSizeQuery, role_id: int, file_hash: 
     if format_ not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
     if query_args.size > 1024: query_args.size = 1024
-    if not (icon := await cdn.getRoleIcon(role_id, file_hash, query_args.size, format_)):
+    if not (icon := await getStorage().getRoleIcon(role_id, file_hash, query_args.size, format_)):
         return b'', 404
     return icon, 200, {"Content-Type": f"image/{format_}"}
 
@@ -143,11 +142,11 @@ async def get_emoji(query_args: CdnImageSizeQuery, emoji_id: int, format_: str):
     if not emoji:
         # If emoji deleted or never existed
         for animated in (False, True):
-            emoji = await cdn.getEmoji(emoji_id, query_args.size, format_, animated)
+            emoji = await getStorage().getEmoji(emoji_id, query_args.size, format_, animated)
             if emoji:  # If deleted from database, but file found
                 break
     else:
-        emoji = await cdn.getEmoji(emoji_id, query_args.size, format_, emoji.animated)
+        emoji = await getStorage().getEmoji(emoji_id, query_args.size, format_, emoji.animated)
     if not emoji:
         return b'', 404
     return emoji, 200, {"Content-Type": f"image/{format_}"}
@@ -159,7 +158,7 @@ async def get_guild_avatar(query_args: CdnImageSizeQuery, guild_id: int, member_
     if format_ not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
     if query_args.size > 1024: query_args.size = 1024
-    if not (avatar := await cdn.getGuildAvatar(member_id, guild_id, file_hash, query_args.size, format_)):
+    if not (avatar := await getStorage().getGuildAvatar(member_id, guild_id, file_hash, query_args.size, format_)):
         return b'', 404
     return avatar, 200, {"Content-Type": f"image/{format_}"}
 
@@ -174,11 +173,11 @@ async def get_sticker(query_args: CdnImageSizeQuery, sticker_id: int, format_: s
     if not sticker:
         # If sticker deleted or never existed
         for animated in (False, True):
-            sticker = await cdn.getSticker(sticker_id, query_args.size, format_, animated)
+            sticker = await getStorage().getSticker(sticker_id, query_args.size, format_, animated)
             if sticker:  # If deleted from database, but file found
                 break
     else:
-        sticker = await cdn.getSticker(sticker_id, query_args.size, format_,
+        sticker = await getStorage().getSticker(sticker_id, query_args.size, format_,
                                        sticker.format in (StickerFormat.APNG, StickerFormat.GIF))
     if not sticker:
         return b'', 404
@@ -190,7 +189,7 @@ async def get_sticker(query_args: CdnImageSizeQuery, sticker_id: int, format_: s
 async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, file_hash: str):
     if query_args.size > 600: query_args.size = 600
     for form in ("png", "jpg"):
-        if event_image := await cdn.getGuildEvent(event_id, file_hash, query_args.size, form):
+        if event_image := await getStorage().getGuildEvent(event_id, file_hash, query_args.size, form):
             return event_image, 200, {"Content-Type": f"image/{form}"}
     return b'', 404
 
@@ -214,6 +213,6 @@ async def get_attachment(channel_id: int, attachment_id: int, name: str):
     headers = {}
     if attachment.content_type:
         headers["Content-Type"] = attachment.content_type
-    if not (attachment := await cdn.getAttachment(channel_id, attachment_id, name)):
+    if not (attachment := await getStorage().getAttachment(channel_id, attachment_id, name)):
         return b'', 404
     return attachment, 200, headers

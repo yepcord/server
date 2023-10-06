@@ -85,6 +85,33 @@ async def test_edit_guild():
     assert json["afk_timeout"] == 900
     assert len(json["icon"]) == 32
 
+    guild2 = await create_guild(client, user, "Test Guild")
+    channel = [ch for ch in guild2["channels"] if ch["type"] == ChannelType.GUILD_TEXT][0]
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers, json={
+        'system_channel_id': str(Snowflake.makeId()), 'afk_channel_id': channel["id"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["afk_channel_id"] is None
+    assert json["system_channel_id"] == guild["system_channel_id"]
+
+    text_ch = await create_guild_channel(client, user, guild, "test-text")
+    voice_ch = await create_guild_channel(client, user, guild, "test-voice", 2)
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers, json={
+        'system_channel_id': voice_ch["id"], 'afk_channel_id': text_ch["id"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["afk_channel_id"] is None
+    assert json["system_channel_id"] == guild["system_channel_id"]
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers, json={
+        'system_channel_id': text_ch["id"], 'afk_channel_id': voice_ch["id"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["afk_channel_id"] == voice_ch["id"]
+    assert json["system_channel_id"] == text_ch["id"]
+
 
 @pt.mark.asyncio
 async def test_guild_invites_empty():
@@ -239,11 +266,19 @@ async def test_kick_member():
     guild = await create_guild(client, user1, "Test")
     channel = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]
     await add_user_to_guild(client, guild, user1, user2)
+    admin_role = await create_role(client, user1, guild["id"], perms=8)
     headers1 = {"Authorization": user1["token"]}
     headers2 = {"Authorization": user2["token"]}
 
     resp = await client.delete(f"/api/v9/guilds/{guild['id']}/members/{Snowflake.makeId()}", headers=headers1)
     assert resp.status_code == 204
+
+    resp = await client.delete(f"/api/v9/guilds/{guild['id']}/members/{user1['id']}", headers=headers2)
+    assert resp.status_code == 403
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/members/{user2['id']}", headers=headers1,
+                              json={"roles": [admin_role["id"]]})
+    assert resp.status_code == 200
 
     resp = await client.delete(f"/api/v9/guilds/{guild['id']}/members/{user1['id']}", headers=headers2)
     assert resp.status_code == 403
@@ -262,12 +297,19 @@ async def test_ban_member():
     guild = await create_guild(client, user1, "Test")
     channel1 = await create_guild_channel(client, user1, guild, "Test 1")
     channel2 = await create_guild_channel(client, user1, guild, "Test 2")
+    admin_role = await create_role(client, user1, guild["id"], perms=8)
     await add_user_to_guild(client, guild, user1, user3)
     headers = {"Authorization": user1["token"]}
 
     await create_ban(client, user1, guild, user2["id"])
     await create_ban(client, user1, guild, user2["id"])
     await create_ban(client, user1, guild, str(Snowflake.makeId()), exp_code=404)
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/members/{user3['id']}", headers=headers,
+                              json={"roles": [admin_role["id"]]})
+    assert resp.status_code == 200
+
+    await create_ban(client, user3, guild, user1["id"], exp_code=403)
 
     await create_message(client, user3, channel1["id"], content="1")
     await create_message(client, user3, channel1["id"], content="2")
@@ -403,6 +445,19 @@ async def test_set_vanity_url():
     json = await resp.get_json()
     assert json["code"] == code
     assert "uses" in json
+
+    guild2 = await create_guild(client, user, "Test Guild 2")
+    resp = await client.patch(f"/api/v9/guilds/{guild2['id']}/vanity-url", headers=headers, json={"code": f"{code}_1"})
+    assert resp.status_code == 200
+    assert (await resp.get_json() == {"code": f"{code}_1"})
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/vanity-url", headers=headers, json={"code": f"{code}_1"})
+    assert resp.status_code == 200
+    assert (await resp.get_json() == {"code": code})
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/vanity-url", headers=headers, json={"code": f"{code}_2"})
+    assert resp.status_code == 200
+    assert (await resp.get_json() == {"code": f"{code}_2"})
 
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}/vanity-url", headers=headers, json={"code": ""})
     assert resp.status_code == 200

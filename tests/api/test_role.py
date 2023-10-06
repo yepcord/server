@@ -129,3 +129,34 @@ async def test_get_roles_member_counts():
                             headers={"Authorization": user["token"]})
     assert resp.status_code == 200
     assert (await resp.get_json() == {guild["id"]: 0, role["id"]: 0})
+
+
+@pt.mark.asyncio
+async def test_get_role_connections():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    role = await create_role(client, user, guild["id"])
+
+    resp = await client.get(f"/api/v9/guilds/{guild['id']}/roles/{role['id']}/connections/configuration",
+                            headers={"Authorization": user["token"]})
+    assert resp.status_code == 200
+    assert len(await resp.get_json()) == 0
+
+
+@pt.mark.asyncio
+async def test_get_role_members():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    role = await create_role(client, user, guild["id"])
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/members/@me", headers=headers,
+                              json={"roles": [role["id"]]})
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/guilds/{guild['id']}/roles/{role['id']}/member-ids",
+                            headers=headers)
+    assert resp.status_code == 200
+    assert await resp.get_json() == [user["id"]]

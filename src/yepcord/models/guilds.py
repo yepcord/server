@@ -519,7 +519,7 @@ class GuildEvent(ormar.Model):
     subscribers: Optional[Union[RelationProxy, QuerySet]] = ormar.ManyToMany(GuildMember)
 
     async def ds_json(self, with_user: bool=False, with_user_count: bool=False) -> dict:
-        channel_id = str(self.channel_id) if self.channel_id is not None else None
+        channel_id = str(self.channel.id) if self.channel is not None else None
         entity_id = str(self.entity_id) if self.entity_id is not None else None
         start_time = self.start.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         end_time = None
@@ -527,9 +527,9 @@ class GuildEvent(ormar.Model):
             end_time = self.end.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         data = {
             "id": str(self.id),
-            "guild_id": str(self.guild_id),
+            "guild_id": str(self.guild.id),
             "channel_id": str(channel_id),
-            "creator_id": str(self.creator_id),
+            "creator_id": str(self.creator.id),
             "name": self.name,
             "description": self.description,
             "scheduled_start_time": start_time,

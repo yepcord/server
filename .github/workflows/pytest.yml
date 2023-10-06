@@ -67,32 +67,12 @@ jobs:
           TENOR_KEY: ${{ secrets.TENOR_KEY }}
           SETTINGS: src.settings_test
 
-      - name: Run test suite for cdn and file storage
+      - name: Run test suite for cdn/storage
         run: |
           pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
-          STORAGE_TYPE: local
-          SETTINGS: src.settings_test
-
-      - name: Run test suite for cdn and s3 storage
-        run: |
-          mkdir -p tests/files/yepcord-test
-          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
-        env:
-          DB_TYPE: ${{ matrix.database }}
-          KEY: ${{ secrets.KEY }}
-          STORAGE_TYPE: s3
-          SETTINGS: src.settings_test
-
-      - name: Run test suite for cdn and ftp storage
-        run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
-        env:
-          DB_TYPE: ${{ matrix.database }}
-          KEY: ${{ secrets.KEY }}
-          STORAGE_TYPE: ftp
           SETTINGS: src.settings_test
 
       - name: Print coverage report

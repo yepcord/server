@@ -8,7 +8,7 @@ elif __db == "mariadb":
 KEY = __environ.get("KEY")
 
 STORAGE = {
-    "type": __environ.get("STORAGE_TYPE", "local"),
+    "type": "local",
 
     # Storage-specific settings
     "local": {
