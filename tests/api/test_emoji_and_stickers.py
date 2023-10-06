@@ -40,6 +40,12 @@ async def test_create_emoji():
     assert not emoji["animated"]
     assert emoji["available"]
 
+    await create_emoji(client, user, guild["id"], " ", exp_code=400)
+    await create_emoji(client, user, guild["id"], "123", "not image", exp_code=400)
+    name = "test" * 16
+    emoji = await create_emoji(client, user, guild["id"], name)
+    assert emoji["name"] == name[:32]
+
 
 @pt.mark.asyncio
 async def test_get_emojis():
@@ -77,6 +83,19 @@ async def test_edit_emoji_name():
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}/emojis/{Snowflake.makeId()}", json={'name': 'YEP_test1'},
                               headers={"Authorization": user["token"]})
     assert resp.status_code == 400
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/emojis/{emoji['id']}", json={'name': ' '},
+                              headers={"Authorization": user["token"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["name"] == "YEP_test"
+
+    name = "test"*16
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/emojis/{emoji['id']}", json={'name': name},
+                              headers={"Authorization": user["token"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["name"] == name[:32]
 
 
 @pt.mark.asyncio

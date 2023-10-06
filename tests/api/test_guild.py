@@ -43,6 +43,9 @@ async def test_create_guild():
     assert guild["emojis"] == []
     assert len(guild["channels"]) > 0
 
+    guild = await create_guild(client, user, "Test Guild", "not image")
+    assert guild["icon"] is None
+
 
 @pt.mark.asyncio
 async def test_guild_subscriptions():
@@ -76,14 +79,18 @@ async def test_edit_guild():
     headers = {"Authorization": user["token"]}
 
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers, json={
-        'name': 'Test Guild Renamed', 'afk_channel_id': None, 'afk_timeout': 900,
-        'verification_level': 0, 'icon': YEP_IMAGE})
+        "name": "Test Guild Renamed", "afk_channel_id": None, "afk_timeout": 900,
+        "verification_level": 0, "icon": YEP_IMAGE, "system_channel_flags": 1, "default_message_notifications": 1,
+        "explicit_content_filter": 1,
+    })
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["name"] == "Test Guild Renamed"
     assert json["afk_channel_id"] is None
     assert json["afk_timeout"] == 900
     assert len(json["icon"]) == 32
+    assert json["system_channel_flags"] == 1
+    guild.update(json)
 
     guild2 = await create_guild(client, user, "Test Guild")
     channel = [ch for ch in guild2["channels"] if ch["type"] == ChannelType.GUILD_TEXT][0]
@@ -111,6 +118,27 @@ async def test_edit_guild():
     json = await resp.get_json()
     assert json["afk_channel_id"] == voice_ch["id"]
     assert json["system_channel_id"] == text_ch["id"]
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers,
+                              json={"name": " ", "afk_timeout": 350, "icon": "not image", "preferred_locale": "test",
+                                    "description": " "})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["name"] == guild["name"]
+    assert json["afk_timeout"] == 300
+    assert json["icon"] == guild["icon"]
+    assert json["preferred_locale"] == guild["preferred_locale"]
+    assert json["description"] == guild["description"]
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers, json={"verification_level": 5})
+    assert resp.status_code == 400
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers,
+                              json={"default_message_notifications": 2})
+    assert resp.status_code == 400
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers, json={"explicit_content_filter": 2})
+    assert resp.status_code == 400
 
 
 @pt.mark.asyncio
@@ -176,7 +204,17 @@ async def test_create_guild_template():
     assert len(await resp.get_json()) == 1
 
     resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers=headers,
-                             json={'name': 'test', 'description': 'test template'})
+                             json={"name": "test", "description": "test template"})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers=headers,
+                             json={"name": "1"})
+    assert resp.status_code == 400
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers=headers,
+                             json={"name": " "})
+    assert resp.status_code == 400
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/templates", headers=headers,
+                             json={"name": "123", "description": "test" * 40})
     assert resp.status_code == 400
 
 
@@ -215,6 +253,15 @@ async def test_sync_update_guild_template():
 
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}/templates/{json['code']}", headers=headers,
                               json={"name": "test template updated"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["name"] == "test template updated"
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/templates/{json['code']}", headers=headers,
+                              json={"name": "test"*40})
+    assert resp.status_code == 400
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/templates/{json['code']}", headers=headers,
+                              json={"name": " "})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["name"] == "test template updated"

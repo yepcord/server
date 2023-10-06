@@ -44,6 +44,9 @@ async def test_register():
     client: TestClientType = app.test_client()
     _id = Snowflake.makeId()
     assert await create_user(client, f"{_id}_test@yepcord.ml", "test_passw0rd", f"TestUser_{_id}")
+    await create_user(client, f"{Snowflake.makeId()}@yepcord.ml", "", f"Test_{Snowflake.makeId()}", exp_code=400)
+    await create_user(client, f"{Snowflake.makeId()}@yepcord.ml", "test_passw0rd", f"", exp_code=400)
+    await create_user(client, f"", "test_passw0rd", f"Test_{Snowflake.makeId()}", exp_code=400)
 
 
 @pt.mark.asyncio

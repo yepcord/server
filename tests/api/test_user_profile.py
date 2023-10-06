@@ -95,9 +95,19 @@ async def test_edit_user_data():
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["email"] == f"new_{user['email']}"
-    assert json["discriminator"] == '9999'
+    assert json["discriminator"] == "9999"
     assert len(json["avatar"]) == 32
     assert not json["verified"]
+
+    resp = await client.patch(f"/api/v9/users/@me", headers=headers, json={"discriminator": "0000"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["discriminator"] == "9999"
+
+    resp = await client.patch(f"/api/v9/users/@me", headers=headers, json={"discriminator": "10000"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["discriminator"] == "9999"
 
 
 @pt.mark.asyncio

@@ -77,7 +77,7 @@ async def test_edit_webhook():
     assert json["channel_id"] == channel2["id"]
     assert json["name"] == "Test webhook"
     assert json["guild_id"] == guild["id"]
-    assert len(json["avatar"]) == 32
+    assert len(avatar := json["avatar"]) == 32
 
     resp = await client.patch(f"/api/v9/webhooks/{webhook['id']}/{webhook['token']}", json={'name': 'Test webhook 1'})
     assert resp.status_code == 200
@@ -88,6 +88,11 @@ async def test_edit_webhook():
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["channel_id"] == channel2["id"]
+
+    resp = await client.patch(f"/api/v9/webhooks/{webhook['id']}/{webhook['token']}", json={'avatar': 'not image'})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["avatar"] == avatar
 
 
 @pt.mark.asyncio

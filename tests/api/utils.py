@@ -17,17 +17,18 @@ from tests.yep_image import YEP_IMAGE
 TestClientType = _app.test_client_class
 
 
-async def create_user(app: TestClientType, email: str, password: str, username: str) -> str:
+async def create_user(app: TestClientType, email: str, password: str, username: str, *, exp_code: int=200) -> Optional[str]:
     response = await app.post('/api/v9/auth/register', json={
         "username": username,
         "email": email,
         "password": password,
         "date_of_birth": "2000-01-01",
     })
-    assert response.status_code == 200
-    json = await response.get_json()
-    assert "token" in json
-    return json["token"]
+    assert response.status_code == exp_code
+    if exp_code < 400:
+        json = await response.get_json()
+        assert "token" in json
+        return json["token"]
 
 
 async def get_userdata(app: TestClientType, token: str) -> dict:
@@ -131,10 +132,10 @@ async def create_role(app: TestClientType, user: dict, guild_id: str, name="new 
     return await resp.get_json()
 
 
-async def create_emoji(app: TestClientType, user: dict, guild_id: str, name: str, image=YEP_IMAGE) -> dict:
+async def create_emoji(app: TestClientType, user: dict, guild_id: str, name: str, image=YEP_IMAGE, *, exp_code=200) -> dict:
     resp = await app.post(f"/api/v9/guilds/{guild_id}/emojis", headers={"Authorization": user["token"]},
                           json={'image': image, 'name': name})
-    assert resp.status_code == 200
+    assert resp.status_code == exp_code
     return await resp.get_json()
 
 

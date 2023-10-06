@@ -100,13 +100,33 @@ async def test_remote_auth_unknown_fp_and_token():
     })
     assert resp.status_code == 404
 
+    resp = await client.post("/api/v9/users/@me/remote-auth/login", headers=headers, json={
+        "fingerprint": b64encode("a" * 64)
+    })
+    assert resp.status_code == 404
+
+    resp = await client.post("/api/v9/users/@me/remote-auth/login", headers=headers, json={
+        "fingerprint": "not b64"
+    })
+    assert resp.status_code == 404
+
     resp = await client.post("/api/v9/users/@me/remote-auth/finish", headers=headers, json={
         "handshake_token": "123456789", "temporary_token": False
     })
     assert resp.status_code == 404
 
+    resp = await client.post("/api/v9/users/@me/remote-auth/finish", headers=headers, json={
+        "handshake_token": "not int", "temporary_token": False
+    })
+    assert resp.status_code == 404
+
     resp = await client.post("/api/v9/users/@me/remote-auth/cancel", headers=headers, json={
-        "handshake_token": "123456789", "temporary_token": False
+        "handshake_token": "123456789"
+    })
+    assert resp.status_code == 404
+
+    resp = await client.post("/api/v9/users/@me/remote-auth/cancel", headers=headers, json={
+        "handshake_token": "not int"
     })
     assert resp.status_code == 404
 

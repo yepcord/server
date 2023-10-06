@@ -173,7 +173,7 @@ class RemoteAuthLogin(BaseModel):
 # noinspection PyMethodParameters
 class RemoteAuthFinish(BaseModel):
     handshake_token: str
-    temporary_token: bool
+    temporary_token: bool = False
 
     @validator("handshake_token")
     def validate_handshake_token(cls, value: str) -> str:

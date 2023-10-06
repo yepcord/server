@@ -35,6 +35,14 @@ async def test_relationship_request():
 
     assert await rel_request(client, user1, user2) == 400
 
+    response = await client.post('/api/v9/users/@me/relationships', headers=headers,
+                                 json={"username": user1["username"], "discriminator": "0000"})
+    assert response.status_code == 400
+
+    response = await client.post('/api/v9/users/@me/relationships', headers=headers,
+                                 json={"username": user1["username"], "discriminator": "10000"})
+    assert response.status_code == 400
+
 
 @pt.mark.asyncio
 async def test_relationship_accept():
