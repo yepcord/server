@@ -69,6 +69,7 @@ jobs:
 
       - name: Run test suite for cdn/storage
         run: |
+          mkdir -p tests/files/yepcord-test
           pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
         env:
           DB_TYPE: ${{ matrix.database }}
