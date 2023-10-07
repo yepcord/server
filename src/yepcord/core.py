@@ -40,7 +40,7 @@ from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .models import User, UserData, UserSettings, Session, Relationship, Channel, Message, ReadState, UserNote, \
     Attachment, FrecencySettings, Emoji, Invite, Guild, GuildMember, GuildTemplate, Reactions as Reaction, Sticker, \
     PermissionOverwrite, GuildBan, AuditLogEntry, Webhook, HiddenDmChannel, MfaCode, Role, GuildEvent, \
-    ThreadMetadata, ThreadMember, is_sqlite
+    ThreadMetadata, ThreadMember, is_sqlite, Application
 from .snowflake import Snowflake
 from .storage import getStorage
 from .utils import b64encode, b64decode, int_size, NoneType
@@ -923,6 +923,9 @@ class Core(Singleton):
         }
 
         return country_to_language.get(country_code, default)
+
+    async def getApplications(self, user: User) -> list[Application]:
+        return await Application.objects.select_related(["bots", "bots__user"]).filter(owner=user, deleted=False).all()
 
 
 ctx._getCore = lambda: Core.getInstance()

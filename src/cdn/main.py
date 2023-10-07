@@ -194,6 +194,17 @@ async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, fi
     return b'', 404
 
 
+@app.get("/app-icons/<int:app_id>/<string:file_hash>.<string:format_>")
+@validate_querystring(CdnImageSizeQuery)
+async def get_app_icon(query_args: CdnImageSizeQuery, app_id: int, file_hash: str, format_: str):
+    if format_ not in ["webp", "png", "jpg", "gif"]:
+        return b'', 400
+    if query_args.size > 1024: query_args.size = 1024
+    if not (avatar := await getStorage().getAppIcon(app_id, file_hash, query_args.size, format_)):
+        return b'', 404
+    return avatar, 200, {"Content-Type": f"image/{format_}"}
+
+
 if "pytest" in sys.modules:  # pragma: no cover
     # Raise original exceptions instead of InternalServerError when testing
     from werkzeug.exceptions import InternalServerError

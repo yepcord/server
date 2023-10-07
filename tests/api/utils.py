@@ -202,6 +202,12 @@ async def create_event(app: TestClientType, guild: dict, user: dict, *, exp_code
     return await resp.get_json()
 
 
+async def create_application(app: TestClientType, user: dict, name: str, *, exp_code: int=200) -> dict:
+    resp = await app.post(f"/api/v9/applications", headers={"Authorization": user["token"]}, json={"name": name})
+    assert resp.status_code == exp_code
+    return await resp.get_json()
+
+
 class RemoteAuthClient:
     def __init__(self, on_fingerprint=None, on_userdata=None, on_token=None, on_cancel=None):
         from cryptography.hazmat.primitives.asymmetric import rsa

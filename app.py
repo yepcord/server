@@ -41,6 +41,8 @@ def create_yepcord():
     from src.rest_api.routes import webhooks
     from src.rest_api.routes import gifs
     from src.rest_api.routes import hypesquad
+    from src.rest_api.routes import applications
+    from src.rest_api.routes import teams
     from src.rest_api.routes import other
     from src.yepcord.errors import YDataError
 
@@ -71,6 +73,8 @@ def create_yepcord():
     app.register_blueprint(webhooks.webhooks, url_prefix="/api/webhooks")
     app.register_blueprint(gifs.gifs, url_prefix="/api/v9/gifs")
     app.register_blueprint(hypesquad.hypesquad, url_prefix="/api/v9/hypesquad")
+    app.register_blueprint(applications.applications, url_prefix="/api/v9/applications")
+    app.register_blueprint(teams.teams, url_prefix="/api/v9/teams")
     app.register_blueprint(other.other, url_prefix="/")
 
     app.route("/api/v9/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])(rest_api.other_api_endpoints)
@@ -92,6 +96,7 @@ def create_yepcord():
     app.get("/media/stickers/<int:sticker_id>.<string:format_>")(cdn.get_sticker)
     app.get("/media/guild-events/<int:event_id>/<string:file_hash>")(cdn.get_guild_event_image)
     app.get("/media/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")(cdn.get_attachment)
+    app.get("/media/app-icons/<int:app_id>/<string:file_hash>.<string:format_>")(cdn.get_app_icon)
 
     return app
 

@@ -475,3 +475,22 @@ async def remote_auth_cancel(data: RemoteAuthCancel, user: User):
     await ra_session.delete()
 
     return "", 204
+
+
+@users_me.get("/guilds")
+@getUser
+async def get_guilds(user: User):
+    async def ds_json(guild: Guild) -> dict:
+        return {
+            "approximate_member_count": await getCore().getGuildMemberCount(guild),
+            "approximate_presence_count": 0,
+            "features": ["ANIMATED_ICON", "BANNER", "INVITE_SPLASH", "VANITY_URL", "PREMIUM_TIER_3_OVERRIDE",
+                         "ROLE_ICONS", *guild.features],
+            "icon": guild.icon,
+            "id": str(guild.id),
+            "name": guild.name,
+            "owner": guild.owner == user,
+            "permissions": "562949953421311",
+        }
+
+    return [await ds_json(guild) for guild in await getCore().getUserGuilds(user)]

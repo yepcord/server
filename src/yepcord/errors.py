@@ -46,6 +46,7 @@ class MfaRequiredErr(YDataError):
 
 class _Errors:
     _instance = None
+    err_10002 = "Unknown Application"
     err_10003 = "Unknown Channel"
     err_10004 = "Unknown Guild"
     err_10006 = "Unknown Invite"

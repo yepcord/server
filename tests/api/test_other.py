@@ -139,6 +139,15 @@ async def test_hardcoded_endpoints():
     assert "name" in json
     assert "features" in json
 
+    resp = await client.get(f"/api/v9/applications/1/skus")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/applications/1/subscription-group-listings")
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/applications/1/listings")
+    assert resp.status_code == 200
+
 
 @pt.mark.asyncio
 async def test_gifs_trending():

@@ -21,6 +21,7 @@ from json import dumps as jdumps
 from quart import Quart, request, Response
 from quart_schema import QuartSchema, RequestSchemaValidationError
 
+from .routes.applications import applications
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
@@ -28,6 +29,7 @@ from .routes.guilds import guilds
 from .routes.hypesquad import hypesquad
 from .routes.invites import invites
 from .routes.other import other
+from .routes.teams import teams
 from .routes.users import users
 from .routes.users_me import users_me
 from .routes.webhooks import webhooks
@@ -119,6 +121,8 @@ app.register_blueprint(webhooks, url_prefix="/api/v9/webhooks")
 app.register_blueprint(webhooks, url_prefix="/api/webhooks")
 app.register_blueprint(gifs, url_prefix="/api/v9/gifs")
 app.register_blueprint(hypesquad, url_prefix="/api/v9/hypesquad")
+app.register_blueprint(applications, url_prefix="/api/v9/applications")
+app.register_blueprint(teams, url_prefix="/api/v9/teams")
 app.register_blueprint(other, url_prefix="/")
 
 

@@ -46,6 +46,10 @@ async def test_create_guild():
     guild = await create_guild(client, user, "Test Guild", "not image")
     assert guild["icon"] is None
 
+    resp = await client.get("/api/v9/users/@me/guilds", headers={"Authorization": user["token"]})
+    assert resp.status_code == 200
+    assert len(await resp.get_json()) == 3
+
 
 @pt.mark.asyncio
 async def test_guild_subscriptions():

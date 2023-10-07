@@ -25,7 +25,7 @@ from async_timeout import timeout
 from magic import from_buffer
 from quart import request, current_app
 
-from ..yepcord.models import Session, User, Channel, Attachment
+from ..yepcord.models import Session, User, Channel, Attachment, Application
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
 from ..yepcord.errors import Errors, InvalidDataErr
 from ..yepcord.snowflake import Snowflake
@@ -175,6 +175,20 @@ def getGuildTemplate(f):
         kwargs["template"] = template
         return await f(*args, **kwargs)
 
+    return wrapped
+
+
+def getApplication(f):
+    # noinspection PyUnboundLocalVariable
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (app_id := kwargs.get("application_id")) or \
+                not (user := kwargs.get("user")) or \
+                not (app := await Application.objects.get_or_none(id=app_id, owner=user, deleted=False)):
+            raise InvalidDataErr(404, Errors.make(10002))
+        del kwargs["application_id"]
+        kwargs["application"] = app
+        return await f(*args, **kwargs)
     return wrapped
 
 
