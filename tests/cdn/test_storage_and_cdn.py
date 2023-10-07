@@ -328,3 +328,24 @@ async def test_attachment(storage: _Storage):
     assert response.status_code == 404
     response = await client.get(f"/attachments/{Snowflake.makeId()}/{attachment.id}/YEP.png")
     assert response.status_code == 404
+
+
+@pt.mark.asyncio
+async def test_app_icon(storage: _Storage):
+    client: TestClientType = app.test_client()
+    app_id = Snowflake.makeId()
+
+    avatar_hash = await storage.setAppIconFromBytesIO(app_id, getImage(YEP_IMAGE))
+    assert avatar_hash is not None and len(avatar_hash) == 32
+
+    response = await client.get(f"/app-icons/{app_id}/{avatar_hash}.idk?size=240")
+    assert response.status_code == 400
+
+    response = await client.get(f"/app-icons/{app_id}/{avatar_hash}.webp?size=240")
+    assert response.status_code == 200
+    assert response.headers["Content-Type"] == "image/webp"
+    img = Image.open(BytesIO(await response.data))
+    assert img.size[0] == 240
+
+    response = await client.get(f"/app-icons/{Snowflake.makeId()}/{avatar_hash}.webp?size=240")
+    assert response.status_code == 404
