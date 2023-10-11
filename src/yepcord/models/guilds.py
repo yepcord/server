@@ -234,6 +234,8 @@ class GuildMember(ormar.Model):
 
     @property
     async def permissions(self) -> int:
+        if self.user == self.guild.owner:
+            return 562949953421311
         permissions = 0
         for role in await self.roles_w_default:
             permissions |= role.permissions
@@ -713,6 +715,10 @@ class AuditLogEntryQuerySet(QuerySet):
         ]
         return await self.create(id=Snowflake.makeId(), guild=role.guild, user=user, target_id=role.id,
                                  action_type=AuditLogEntryType.ROLE_DELETE, changes=changes)
+
+    async def bot_add(self, user: User, guild: Guild, bot: User) -> AuditLogEntry:
+        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id,
+                                 action_type=AuditLogEntryType.BOT_ADD)
 
 
 class AuditLogEntry(ormar.Model):

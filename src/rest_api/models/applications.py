@@ -20,6 +20,7 @@ class UpdateApplication(BaseModel):
     terms_of_service_url: Optional[str] = ""
     role_connections_verification_url: Optional[str] = ""
     tags: list[str] = Field(default_factory=list, max_items=5)
+    redirect_uris: list[str] = Field(default_factory=list, max_items=9)
     max_participants: Optional[int] = None
     bot_public: bool = None
     bot_require_code_grant: bool = None

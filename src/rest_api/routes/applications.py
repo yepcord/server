@@ -25,7 +25,7 @@ from ..utils import getUser, multipleDecorators, getApplication
 from ...yepcord.ctx import getCore, getCDNStorage
 from ...yepcord.errors import Errors, InvalidDataErr
 from ...yepcord.models import User, UserData, UserSettings
-from ...yepcord.models.applications import Application, Bot, gen_secret_key, gen_bot_token_secret
+from ...yepcord.models.applications import Application, Bot, gen_secret_key, gen_token_secret
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage
 
@@ -124,7 +124,7 @@ async def reset_application_secret(user: User, application: Application):
 async def reset_application_bot_token(user: User, application: Application):
     bot: Bot = await Bot.objects.select_related("user").get(application=application)
 
-    new_token = gen_bot_token_secret()
+    new_token = gen_token_secret()
     await bot.update(token_secret=new_token)
 
     return {"token": bot.token}

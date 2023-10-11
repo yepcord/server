@@ -18,14 +18,14 @@
 
 from functools import wraps
 from json import loads as jloads
-from typing import Optional
+from typing import Optional, Union
 
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
-from quart import request, current_app
+from quart import request, current_app, g
 
-from ..yepcord.models import Session, User, Channel, Attachment, Application
+from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
 from ..yepcord.errors import Errors, InvalidDataErr
 from ..yepcord.snowflake import Snowflake
@@ -49,13 +49,45 @@ def allowWithoutUser(f):
     return wrapped
 
 
+def allowOauth(scopes: list[str]):
+    def decorator(f):
+        @wraps(f)
+        async def wrapped(*args, **kwargs):
+            g.oauth_allowed = True
+            g.oauth_scopes = set(scopes)
+            return await f(*args, **kwargs)
+
+        return wrapped
+    return decorator
+
+
+async def getSessionFromToken(token: str) -> Optional[Union[Session, Authorization, Bot]]:
+    if not token:
+        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+
+    token = token.split(" ")
+    if len(token) == 1:  # Regular token
+        return await Session.from_token(token[0])
+    elif len(token) == 2 and token[0].lower() == "bearer" and g.get("oauth_allowed"):  # oauth2 token
+        auth = await Authorization.from_token(token[1])
+        oauth_scopes = g.get("oauth_scopes", set())
+        if oauth_scopes & auth.scope_set != oauth_scopes:
+            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        return auth
+    elif len(token) == 2 and token[0].lower() == "bot":
+        ...  # oauth2 token
+    else:
+        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+
+
 def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         try:
-            if not (session := await Session.from_token(request.headers.get("Authorization", ""))):
+            if not (session := await getSessionFromToken(request.headers.get("Authorization", ""))):
                 raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-            user = session.user
+            g.auth = session
+            g.user = user = session.user
         except InvalidDataErr as e:
             if e.code != 401 or not Ctx.get("allow_without_user"):
                 raise
@@ -70,6 +102,7 @@ def getSession(f):
     async def wrapped(*args, **kwargs):
         if not (session := await Session.from_token(request.headers.get("Authorization", ""))):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        g.auth = session
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
@@ -78,7 +111,7 @@ def getSession(f):
 def getChannel(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (user := kwargs.get("user")):
+        if not (user := kwargs.get("user")) and not (user := g.get("user")):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         if not (channel := kwargs.get("channel")) or not (channel := await getCore().getChannel(channel)):
             raise InvalidDataErr(404, Errors.make(10003))

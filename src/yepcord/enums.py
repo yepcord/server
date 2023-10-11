@@ -15,18 +15,36 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+from typing import Any
 
 
 class E:
+    __values = None
+    __reversed = None
+    __values_set = None
+
     @classmethod
     def values(cls):
-        attrs = [i for i in cls.__dict__.keys() if not i.startswith("__")]
-        return {attr: getattr(cls, attr) for attr in attrs}
+        if cls.__values is None:
+            attrs = [i for i in cls.__dict__.keys() if not i.startswith("__")]
+            cls.__values = {attr: getattr(cls, attr) for attr in attrs}
+
+        return cls.__values
 
     @classmethod
     def reversed(cls):
-        values = cls.values()
-        return {v: k for k, v in values.items()}
+        if cls.__reversed is None:
+            values = cls.values()
+            cls.__reversed = {v: k for k, v in values.items()}
+
+        return cls.__reversed
+
+    @classmethod
+    def values_set(cls) -> set[Any]:
+        if cls.__values_set is None:
+            cls.__values_set = set(cls.values().values())
+
+        return cls.__values_set
 
 
 class RelationshipType(E):
@@ -276,3 +294,34 @@ class ScheduledEventStatus(E):
     ACTIVE = 2
     COMPLETED = 3
     CANCELED = 4
+
+
+class ApplicationScope(E):
+    ACTIVITIES_READ = "activities.read"
+    ACTIVITIES_WRITE = "activities.write"
+    APPLICATIONS_BUILDS_READ = "applications.builds.read"
+    APPLICATIONS_BUILDS_WRITE = "applications.builds.upload"
+    APPLICATIONS_COMMANDS = "applications.commands"
+    APPLICATIONS_COMMANDS_UPDATE = "applications.commands.update"
+    APPLICATIONS_COMMANDS_PERMISSIONS = "applications.commands.permissions.update"
+    APPLICATIONS_ENTIITLEMENTS = "applications.entitlements"
+    APPLICATIONS_STORE_UPDATE = "applications.store.update"
+    BOT = "bot"
+    CONNECTIONS = "connections"
+    DM_CHANNELS_READ = "dm_channels.read"
+    EMAIL = "email"
+    GDM_JOIN = "gdm.join"
+    GUILDS = "guilds"
+    GUILDS_JOIN = "guilds.join"
+    GUILDS_MEMBERS = "guilds.members.read"
+    IDENTIFY = "identify"
+    MESSAGES_READ = "messages.read"
+    RELATIONSHIPS_READ = "relationships.read"
+    ROLE_CONNECTIONS_WRITE = "role_connections.write"
+    RPC = "rpc"
+    RPC_ACTIVITIES_WRITE = "rpc.activities.write"
+    RPC_NOTIFICATIONS_READ = "rpc.notifications.read"
+    RPC_VOICE_READ = "rpc.voice.read"
+    RPC_VOICE_WRITE = "rpc.voice.write"
+    VOICE = "voice"
+    WEBHOOK_INCOMING = "webhook.incoming"

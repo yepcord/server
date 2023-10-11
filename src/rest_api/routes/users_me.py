@@ -20,13 +20,13 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode
 from random import choice
 from time import time
 
-from quart import Blueprint
+from quart import Blueprint, g
 from quart_schema import validate_request, validate_querystring
 
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, PutNote, \
     RelationshipRequest, SettingsProtoUpdate, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, \
     DmChannelCreate, DeleteRequest, GetScheduledEventsQuery, RemoteAuthLogin, RemoteAuthFinish, RemoteAuthCancel
-from ..utils import getUser, multipleDecorators, getSession, getGuildWM
+from ..utils import getUser, multipleDecorators, getSession, getGuildWM, allowOauth
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
     UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent
 from ...yepcord.classes.other import MFA
@@ -43,7 +43,7 @@ users_me = Blueprint('users_@me', __name__)
 
 
 @users_me.get("/", strict_slashes=False)
-@getUser
+@multipleDecorators(allowOauth(["identify"]), getUser)
 async def get_me(user: User):
     userdata = await user.data
     return await userdata.ds_json_full()
@@ -199,7 +199,7 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
 
 
 @users_me.get("/connections")
-@getUser
+@multipleDecorators(allowOauth(["connections"]), getUser)
 async def get_connections(user: User):  # TODO: add connections
     return []
 
@@ -220,7 +220,7 @@ async def new_relationship(data: RelationshipRequest, user: User):
 
 
 @users_me.get("/relationships")
-@getUser
+@multipleDecorators(allowOauth(["relationships.read"]), getUser)
 async def get_relationships(user: User):
     return await getCore().getRelationships(user, with_data=True)
 
@@ -478,9 +478,10 @@ async def remote_auth_cancel(data: RemoteAuthCancel, user: User):
 
 
 @users_me.get("/guilds")
-@getUser
+@multipleDecorators(allowOauth(["guilds"]), getUser)
 async def get_guilds(user: User):
     async def ds_json(guild: Guild) -> dict:
+        member = await getCore().getGuildMember(guild, user.id)
         return {
             "approximate_member_count": await getCore().getGuildMemberCount(guild),
             "approximate_presence_count": 0,
@@ -490,7 +491,7 @@ async def get_guilds(user: User):
             "id": str(guild.id),
             "name": guild.name,
             "owner": guild.owner == user,
-            "permissions": "562949953421311",
+            "permissions": str(await member.permissions),
         }
 
     return [await ds_json(guild) for guild in await getCore().getUserGuilds(user)]

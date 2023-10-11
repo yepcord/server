@@ -20,7 +20,7 @@ import os.path
 from os import environ
 import click
 
-from quart import Quart
+from quart import Quart, request
 
 app = Quart("YEPCord server")
 
@@ -43,6 +43,7 @@ def create_yepcord():
     from src.rest_api.routes import hypesquad
     from src.rest_api.routes import applications
     from src.rest_api.routes import teams
+    from src.rest_api.routes import oauth2
     from src.rest_api.routes import other
     from src.yepcord.errors import YDataError
 
@@ -70,11 +71,12 @@ def create_yepcord():
     app.register_blueprint(invites.invites, url_prefix="/api/v9/invites")
     app.register_blueprint(guilds.guilds, url_prefix="/api/v9/guilds")
     app.register_blueprint(webhooks.webhooks, url_prefix="/api/v9/webhooks")
-    app.register_blueprint(webhooks.webhooks, url_prefix="/api/webhooks")
+    app.register_blueprint(webhooks.webhooks, url_prefix="/api/webhooks", name="webhooks2")
     app.register_blueprint(gifs.gifs, url_prefix="/api/v9/gifs")
     app.register_blueprint(hypesquad.hypesquad, url_prefix="/api/v9/hypesquad")
     app.register_blueprint(applications.applications, url_prefix="/api/v9/applications")
     app.register_blueprint(teams.teams, url_prefix="/api/v9/teams")
+    app.register_blueprint(oauth2.oauth2, url_prefix="/api/v9/oauth2")
     app.register_blueprint(other.other, url_prefix="/")
 
     app.route("/api/v9/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])(rest_api.other_api_endpoints)

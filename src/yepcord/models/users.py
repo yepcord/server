@@ -27,6 +27,7 @@ import ormar
 from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, Int32Value
 from ormar import ReferentialAction, and_, or_
 from protobuf_to_dict import protobuf_to_dict
+from quart import g
 
 from . import DefaultMeta, collation, SnowflakeAIQuerySet
 from ..ctx import getCore
@@ -211,6 +212,9 @@ class UserData(ormar.Model):
         }
         if self.user.is_bot:
             data["bot"] = True
+        from src.yepcord.models import Authorization
+        if isinstance(auth := g.get("auth"), Authorization) and "email" not in auth.scope_set:
+            del data["email"]
 
         return data
 

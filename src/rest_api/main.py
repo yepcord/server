@@ -28,6 +28,7 @@ from .routes.gifs import gifs
 from .routes.guilds import guilds
 from .routes.hypesquad import hypesquad
 from .routes.invites import invites
+from .routes.oauth2 import oauth2
 from .routes.other import other
 from .routes.teams import teams
 from .routes.users import users
@@ -118,11 +119,12 @@ app.register_blueprint(channels, url_prefix="/api/v9/channels")
 app.register_blueprint(invites, url_prefix="/api/v9/invites")
 app.register_blueprint(guilds, url_prefix="/api/v9/guilds")
 app.register_blueprint(webhooks, url_prefix="/api/v9/webhooks")
-app.register_blueprint(webhooks, url_prefix="/api/webhooks")
+app.register_blueprint(webhooks, url_prefix="/api/webhooks", name="webhooks2")
 app.register_blueprint(gifs, url_prefix="/api/v9/gifs")
 app.register_blueprint(hypesquad, url_prefix="/api/v9/hypesquad")
 app.register_blueprint(applications, url_prefix="/api/v9/applications")
 app.register_blueprint(teams, url_prefix="/api/v9/teams")
+app.register_blueprint(oauth2, url_prefix="/api/v9/oauth2")
 app.register_blueprint(other, url_prefix="/")
 
 

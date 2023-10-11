@@ -1,11 +1,31 @@
+"""
+    YEPCord: Free open source selfhostable fully discord-compatible chat
+    Copyright (C) 2022-2023 RuslanUC
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
+from __future__ import annotations
 from os import urandom
+from time import time
 from typing import Optional
 
 import ormar
 from ormar import ReferentialAction
 
-from . import User, DefaultMeta
-from ..utils import b64encode
+from . import User, DefaultMeta, SnowflakeAIQuerySet, Guild
+from ..utils import b64encode, b64decode
 
 
 def gen_verify_key() -> str:
@@ -16,7 +36,7 @@ def gen_secret_key() -> str:
     return b64encode(urandom(32))
 
 
-def gen_bot_token_secret() -> str:
+def gen_token_secret() -> str:
     return b64encode(urandom(48))
 
 
@@ -111,8 +131,61 @@ class Bot(ormar.Model):
                                   related_name="bot_user")
     bot_public: bool = ormar.Boolean(default=True)
     bot_require_code_grant: bool = ormar.Boolean(default=True)
-    token_secret: str = ormar.String(max_length=128, default=gen_bot_token_secret)
+    token_secret: str = ormar.String(max_length=128, default=gen_token_secret)
 
     @property
     def token(self) -> str:
         return f"{b64encode(str(self.id))}.{self.token_secret}"
+
+
+class Authorization(ormar.Model):
+    class Meta(DefaultMeta):
+        queryset_class = SnowflakeAIQuerySet
+
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
+    user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
+    application: Application = ormar.ForeignKey(Application, ondelete=ReferentialAction.CASCADE)
+    guild: Optional[Guild] = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE, nullable=True, default=None)
+    scope: str = ormar.String(max_length=1024)
+    secret: str = ormar.String(max_length=128, default=gen_token_secret)
+    refresh_token: str = ormar.String(max_length=128, default=gen_token_secret, nullable=True)
+    expires_at: int = ormar.BigInteger(default=lambda: int(time() + 60 * 3))
+    auth_code: Optional[str] = ormar.String(max_length=128, nullable=True, default=gen_secret_key)
+
+    @property
+    def token(self) -> str:
+        return f"{b64encode(str(self.id))}.{self.secret}"
+
+    @property
+    def ref_token(self) -> str:
+        return f"{b64encode(str(self.id))}.{self.refresh_token}"
+
+    @property
+    def code(self) -> str:
+        return f"{b64encode(str(self.id))}.{self.auth_code}"
+
+    @property
+    def scope_set(self) -> set[str]:
+        return set(self.scope.split(" "))
+
+    @staticmethod
+    def extract_token(token: str) -> Optional[tuple[int, str]]:
+        token = token.split(".")
+        if len(token) != 2:
+            return
+        auth_id, secret = token
+        try:
+            auth_id = int(b64decode(auth_id))
+            b64decode(secret)
+        except ValueError:
+            return
+        return auth_id, secret
+
+    @classmethod
+    async def from_token(cls, token: str) -> Optional[Authorization]:
+        token = Authorization.extract_token(token)
+        if token is None:
+            return
+        auth_id, secret = token
+        return await Authorization.objects.select_related("user").get_or_none(id=auth_id, secret=secret,
+                                                                              expires_at__gt=int(time()))
