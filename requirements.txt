@@ -1,25 +1,25 @@
-quart==0.19.3
-aiofiles==23.2.1
+quart~=0.18.4
+aiofiles==23.1.0
 jinja2==3.1.2
 websockets==11.0.3
 uvicorn==0.23.2
-aiohttp==3.8.6
+aiohttp~=3.8.5
 python-magic==0.4.27
 Pillow==10.0.1
 protobuf==4.23.4
 schema==0.7.5
 python-dateutil==2.8.2
 cryptography==41.0.4
-emoji==2.8.0
-pytest==7.4.2
+emoji==2.7.0
+pytest==7.4.0
 pytest-asyncio~=0.21.1
 six~=1.16.0
 gunicorn==21.2.0
 bcrypt==4.0.1
 quart-schema==0.16.0
 pydantic==1.10.8
-types-protobuf==4.24.0.2
-Werkzeug==2.3.7
+types-protobuf==4.23.0.2
+Werkzeug==2.3.6
 -r requirements-ftp.txt
 -r requirements-s3.txt
 git+https://github.com/wearefair/protobuf-to-dict
@@ -27,7 +27,7 @@ git+https://github.com/wearefair/protobuf-to-dict
 # Ormar (with mysql, orjson, sqlite extras):
 #ormar[mysql,orjson,sqlite]~=0.12.2
 git+https://github.com/yepcord/ormar
-orjson==3.9.8
+orjson==3.9.2
 aiomysql==0.2.0
 pymysql>=0.9
 aiosqlite>=0.17,<0.20
@@ -36,8 +36,8 @@ SQLAlchemy~=1.4.41
 alembic==1.11.2
 
 mailers[smtp]~=3.0.1
-propan[async-redis,async-rabbit]==0.1.5.24
+propan[async-redis,async-rabbit]==0.1.5.17
 redis>=4.6.0
-click==8.1.7
+click==8.1.6
 maxminddb~=2.4.0
 wget==3.2
