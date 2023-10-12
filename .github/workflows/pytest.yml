@@ -22,13 +22,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade wheel
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-ftp.txt
-          python -m pip install -r requirements-s3.txt
-          python -m pip install pytest pytest-asyncio pytest-cov fake-s3 pyftpdlib
+        run: poetry install --no-interaction
 
       - uses: getong/mariadb-action@v1.1
         with:
@@ -44,15 +42,15 @@ jobs:
 
       - name: Setup database
         run: |
-          python -m alembic revision --autogenerate -m "test"
-          python -m alembic upgrade head
+          poetry run alembic revision --autogenerate -m "test"
+          poetry run alembic upgrade head
         env:
           SETTINGS: src.settings_test
           DB_TYPE: ${{ matrix.database }}
 
       - name: Run test suite for core
         run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/yepcord --disable-warnings tests/test_core.py
+          poetry run pytest -x --cov-report=xml --cov-append --cov=src/yepcord --disable-warnings tests/test_core.py
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
@@ -60,7 +58,7 @@ jobs:
 
       - name: Run test suite for http api
         run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --cov=src/remote_auth --disable-warnings tests/api/
+          poetry run pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --cov=src/remote_auth --disable-warnings tests/api/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
@@ -70,7 +68,7 @@ jobs:
       - name: Run test suite for cdn/storage
         run: |
           mkdir -p tests/files/yepcord-test
-          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
+          poetry run pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
@@ -78,7 +76,7 @@ jobs:
 
       - name: Print coverage report
         run: |
-          coverage report
+          poetry run coverage report
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3

@@ -1,13 +1,14 @@
 # YEPcord server
 Unofficial discord server implementation in python.
 
-### For now I ([RuslanUC](https://github.com/RuslanUC)) don't have enough time to support YepCord (and lately not so much desire due to recent Discord actions). But you can contribute to the development of YepCord by creating a fork, implementing a feature (or fixing a bug, adding tests, etc.) and creating a pull-request.
+### For now, I ([RuslanUC](https://github.com/RuslanUC)) don't have enough time to support YepCord (and lately not so much desire due to recent Discord actions). But you can contribute to the development of YepCord by creating a fork, implementing a feature (or fixing a bug, adding tests, etc.) and creating a pull-request.
 
 [![Stand With Ukraine](.github/banner-direct.svg)](https://stand-with-ukraine.pp.ua)
 
 # Setup
 **Requirements:**
  - Python 3.9+
+ - Poetry
  
 **Setup**:
 1. Clone yepcord repository:
@@ -16,7 +17,7 @@ Unofficial discord server implementation in python.
     ```
 2. Install requirements:
     ```bash
-    pip install -r requirements.txt
+    poetry install
     ```
 3. (Optional) Install and start redis, mysql/mariadb.
 4. Write your config variables into src/settings.py (you can also write it into src/settings_prod.py, it ignored by git).
