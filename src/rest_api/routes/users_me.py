@@ -20,13 +20,13 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode
 from random import choice
 from time import time
 
-from quart import Blueprint, g
+from quart import Blueprint
 from quart_schema import validate_request, validate_querystring
 
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, PutNote, \
     RelationshipRequest, SettingsProtoUpdate, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, \
     DmChannelCreate, DeleteRequest, GetScheduledEventsQuery, RemoteAuthLogin, RemoteAuthFinish, RemoteAuthCancel
-from ..utils import getUser, multipleDecorators, getSession, getGuildWM, allowOauth
+from ..utils import getUser, multipleDecorators, getSession, getGuildWM, allowOauth, allowBots
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
     UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent
 from ...yepcord.classes.other import MFA
@@ -43,7 +43,7 @@ users_me = Blueprint('users_@me', __name__)
 
 
 @users_me.get("/", strict_slashes=False)
-@multipleDecorators(allowOauth(["identify"]), getUser)
+@multipleDecorators(allowOauth(["identify"]), allowBots, getUser)
 async def get_me(user: User):
     userdata = await user.data
     return await userdata.ds_json_full()
@@ -226,7 +226,7 @@ async def get_relationships(user: User):
 
 
 @users_me.get("/notes/<int:target_uid>")
-@getUser
+@multipleDecorators(allowBots, getUser)
 async def get_notes(user: User, target_uid: int):
     if not (target_user := await getCore().getUser(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
@@ -236,7 +236,7 @@ async def get_notes(user: User, target_uid: int):
 
 
 @users_me.put("/notes/<int:target_uid>")
-@multipleDecorators(validate_request(PutNote), getUser)
+@multipleDecorators(validate_request(PutNote), allowBots, getUser)
 async def set_notes(data: PutNote, user: User, target_uid: int):
     if not (target_user := await getCore().getUser(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
@@ -364,7 +364,7 @@ async def api_users_me_harvest(user: User):
 
 
 @users_me.delete("/guilds/<int:guild>")
-@multipleDecorators(getUser, getGuildWM)
+@multipleDecorators(allowBots, getUser, getGuildWM)
 async def leave_guild(user: User, guild: Guild, member: GuildMember):
     if user == guild.owner:
         raise InvalidDataErr(400, Errors.make(50055))
@@ -478,7 +478,7 @@ async def remote_auth_cancel(data: RemoteAuthCancel, user: User):
 
 
 @users_me.get("/guilds")
-@multipleDecorators(allowOauth(["guilds"]), getUser)
+@multipleDecorators(allowOauth(["guilds"]), allowBots, getUser)
 async def get_guilds(user: User):
     async def ds_json(guild: Guild) -> dict:
         member = await getCore().getGuildMember(guild, user.id)

@@ -22,7 +22,7 @@ from quart import Blueprint, request
 from quart_schema import validate_request, validate_querystring
 
 from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
-from ..utils import getUser, multipleDecorators, allowWithoutUser, processMessageData
+from ..utils import getUser, multipleDecorators, allowWithoutUser, processMessageData, allowBots
 from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType
@@ -37,7 +37,7 @@ webhooks = Blueprint('webhooks', __name__)
 
 @webhooks.delete("/<int:webhook>")
 @webhooks.delete("/<int:webhook>/<string:token>")
-@multipleDecorators(allowWithoutUser, getUser)
+@multipleDecorators(allowWithoutUser, allowBots, getUser)
 async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token: Optional[str]=None):
     if webhook := await getCore().getWebhook(webhook):
         if webhook.token != token:
@@ -54,7 +54,7 @@ async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token:
 
 @webhooks.patch("/<int:webhook>")
 @webhooks.patch("/<int:webhook>/<string:token>")
-@multipleDecorators(validate_request(WebhookUpdate), allowWithoutUser, getUser)
+@multipleDecorators(validate_request(WebhookUpdate), allowWithoutUser, allowBots, getUser)
 async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], webhook: int, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
@@ -91,7 +91,7 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
 
 @webhooks.get("/<int:webhook>")
 @webhooks.get("/<int:webhook>/<string:token>")
-@multipleDecorators(allowWithoutUser, getUser)
+@multipleDecorators(allowWithoutUser, allowBots, getUser)
 async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))

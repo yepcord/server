@@ -109,10 +109,16 @@ async def test_application_bot_token_reset():
     application = await create_application(client, user, "testApp")
 
     resp = await client.post(f"/api/v9/applications/{application['id']}/bot/reset",
-                              headers={"Authorization": user["token"]})
+                             headers={"Authorization": user["token"]})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"]
+
+    resp = await client.get(f"/api/v9/users/@me", headers={"Authorization": f"Bot {json['token']}"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["id"] == application["id"]
+    assert json["username"] == application["name"]
 
 
 @pt.mark.asyncio

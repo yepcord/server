@@ -137,6 +137,27 @@ class Bot(ormar.Model):
     def token(self) -> str:
         return f"{b64encode(str(self.id))}.{self.token_secret}"
 
+    @staticmethod
+    def extract_token(token: str) -> Optional[tuple[int, str]]:
+        token = token.split(".")
+        if len(token) != 2:
+            return
+        bot_id, secret = token
+        try:
+            bot_id = int(b64decode(bot_id))
+            b64decode(secret)
+        except ValueError:
+            return
+        return bot_id, secret
+
+    @classmethod
+    async def from_token(cls, token: str) -> Optional[Bot]:
+        token = Authorization.extract_token(token)
+        if token is None:
+            return
+        bot_id, secret = token
+        return await Bot.objects.select_related("user").get_or_none(id=bot_id, token_secret=secret)
+
 
 class Authorization(ormar.Model):
     class Meta(DefaultMeta):

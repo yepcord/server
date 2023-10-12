@@ -61,6 +61,15 @@ def allowOauth(scopes: list[str]):
     return decorator
 
 
+def allowBots(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        g.bots_allowed = True
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
 async def getSessionFromToken(token: str) -> Optional[Union[Session, Authorization, Bot]]:
     if not token:
         raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
@@ -74,8 +83,8 @@ async def getSessionFromToken(token: str) -> Optional[Union[Session, Authorizati
         if oauth_scopes & auth.scope_set != oauth_scopes:
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         return auth
-    elif len(token) == 2 and token[0].lower() == "bot":
-        ...  # oauth2 token
+    elif len(token) == 2 and token[0].lower() == "bot" and g.get("bots_allowed"):
+        return await Bot.from_token(token[1])
     else:
         raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
 

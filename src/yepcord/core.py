@@ -756,7 +756,7 @@ class Core(Singleton):
         await GuildBan.objects.delete(guild=guild, user__id=user_id)
 
     async def getRoleMemberIds(self, role: Role) -> list[int]:
-        role = await Role.objects.select_related(["guildmembers", "guildmembers__user"]).get(id=role.id)
+        role = await Role.objects.select_related(["guildmembers", "guildmembers__user"]).limit(100).get(id=role.id)
         return [member.user.id for member in role.guildmembers]
 
     async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:
