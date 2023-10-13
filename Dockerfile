@@ -1,16 +1,19 @@
 FROM python:3.9-alpine
 
+ENV POETRY_HOME=/opt/poetry
+ENV POETRY_CACHE_DIR=/opt/.cache
+
 WORKDIR "/yepcord"
 
-RUN apk update && apk add gcc libc-dev libmagic git bash
-RUN python -m pip install --upgrade pip && pip install --upgrade wheel setuptools
-COPY requirements.txt requirements.txt
-COPY requirements-s3.txt requirements-s3.txt
-COPY requirements-ftp.txt requirements-ftp.txt
+RUN apk update && apk add --no-cache libmagic git bash && apk add --no-cache --virtual build-deps gcc libc-dev
+RUN python -m venv $POETRY_HOME && $POETRY_HOME/bin/pip install -U pip setuptools && $POETRY_HOME/bin/pip install poetry
+ENV PATH="${PATH}:${POETRY_HOME}/bin"
 
-RUN pip install -r requirements.txt
-RUN pip install -r requirements-s3.txt
-RUN pip install -r requirements-ftp.txt
+COPY poetry.lock poetry.lock
+COPY pyproject.toml pyproject.toml
+RUN poetry install --only main --no-interaction --no-root
+
+RUN apk del build-deps
 
 COPY . .
 RUN chmod +x entrypoint.sh
