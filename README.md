@@ -23,8 +23,8 @@ Unofficial discord server implementation in python.
 4. Write your config variables into src/settings.py (you can also write it into src/settings_prod.py, it ignored by git).
 5. Run: 
     ```bash
-    quart migrate
-    quart run_all
+    poetry run quart migrate
+    poetry run quart run_all
     ```
 
 
