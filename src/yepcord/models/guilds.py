@@ -163,9 +163,10 @@ class Role(ormar.Model):
     unicode_emoji: Optional[str] = ormar.String(max_length=256, nullable=True, default=None,
                                                 collation=collation)
     flags: int = ormar.BigInteger(default=0)
+    tags: Optional[dict] = ormar.JSON(nullable=True, default=None)
 
     def ds_json(self) -> dict:
-        return {
+        data = {
             "id": str(self.id),
             "name": self.name,
             "permissions": str(self.permissions),
@@ -178,6 +179,11 @@ class Role(ormar.Model):
             "unicode_emoji": self.unicode_emoji,
             "flags": self.flags
         }
+
+        if self.tags is not None:
+            data["tags"] = self.tags
+
+        return data
 
 
 class GuildMember(ormar.Model):
@@ -719,6 +725,14 @@ class AuditLogEntryQuerySet(QuerySet):
     async def bot_add(self, user: User, guild: Guild, bot: User) -> AuditLogEntry:
         return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id,
                                  action_type=AuditLogEntryType.BOT_ADD)
+
+    async def integration_create(self, user: User, guild: Guild, bot: User) -> AuditLogEntry:
+        changes = [
+            {"new_value": "discord", "key": "type"},
+            {"new_value": "test", "key": (await bot.userdata).username},
+        ]
+        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id, changes=changes,
+                                 action_type=AuditLogEntryType.INTEGRATION_CREATE)
 
 
 class AuditLogEntry(ormar.Model):

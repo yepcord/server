@@ -27,7 +27,7 @@ from ..yepcord.snowflake import Snowflake
 from ..yepcord.models import Emoji
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Application
     from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence
@@ -907,7 +907,7 @@ class GuildScheduledEventDeleteEvent(GuildScheduledEventCreateEvent):
 class ThreadCreateEvent(DispatchEvent):
     NAME = "THREAD_CREATE"
 
-    def __init__(self, thread_obj):
+    def __init__(self, thread_obj: dict):
         self.thread_obj = thread_obj
 
     async def json(self) -> dict:
@@ -921,7 +921,7 @@ class ThreadCreateEvent(DispatchEvent):
 class ThreadMemberUpdateEvent(DispatchEvent):
     NAME = "THREAD_MEMBER_UPDATE"
 
-    def __init__(self, member_obj):
+    def __init__(self, member_obj: dict):
         self.member_obj = member_obj
 
     async def json(self) -> dict:
@@ -929,4 +929,40 @@ class ThreadMemberUpdateEvent(DispatchEvent):
             "t": self.NAME,
             "op": self.OP,
             "d": self.member_obj
+        }
+
+
+class IntegrationCreateEvent(DispatchEvent):
+    NAME = "INTEGRATION_CREATE"
+
+    def __init__(self, guild_id: int, application: Application, bot_user: User):
+        self.guild_id = guild_id
+        self.application = application
+        self.bot_user = bot_user
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "type": "discord",
+                "scopes": ["applications.commands", "bot"],
+                "name": self.application.name,
+                "id": str(self.application.id),
+                "enabled": True,
+                "application": {
+                    "type": None,
+                    "summary": self.application.summary,
+                    "name": self.application.name,
+                    "id": str(self.application.id),
+                    "icon": self.application.icon,
+                    "description": self.application.description,
+                    "bot": (await self.bot_user.userdata).ds_json
+                },
+                "account": {
+                    "name": self.application.name,
+                    "id": str(self.application.id)
+                },
+                "guild_id": self.guild_id
+            }
         }

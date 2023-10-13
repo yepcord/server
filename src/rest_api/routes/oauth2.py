@@ -22,12 +22,15 @@ from quart_schema import validate_querystring, validate_request, DataSource
 
 from ..models.oauth2 import AppAuthorizeGetQs, ExchangeCode, AppAuthorizePostQs, AppAuthorizePost
 from ..utils import getUser, multipleDecorators
+from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLogEntryCreateEvent, GuildRoleCreateEvent, \
+    IntegrationCreateEvent
 from ...yepcord.config import Config
-from ...yepcord.ctx import getCore
-from ...yepcord.enums import ApplicationScope
+from ...yepcord.ctx import getCore, getGw
+from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
 from ...yepcord.errors import Errors, InvalidDataErr
-from ...yepcord.models import User, Guild
+from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry
 from ...yepcord.models.applications import Application, Bot, Authorization
+from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import b64decode
 
 # Base path is /api/vX/oauth2
@@ -87,13 +90,60 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
     if (application := await Application.objects.get_or_none(id=query_args.client_id, deleted=False)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
 
-    if query_args.redirect_uri not in application.redirect_uris:
-        return {"location": f"https://{Config.PUBLIC_HOST}/oauth2/error?error=invalid_request&error_description="
-                            f"Redirect+URI+{query_args.redirect_uri}+is+not+supported+by+client."}
-
     if not data.authorize:
         return {"location": f"{query_args.redirect_uri}?error=access_denied&error_description="
                             "The+resource+owner+or+authorization+server+denied+the+request"}
+
+    if "bot" in scopes:
+        if not data.guild_id:
+            return {"location": f"https://{Config.PUBLIC_HOST}/oauth2/error?error=invalid_request&error_description="
+                                f"Guild+not+specified."}
+
+        if (guild := await getCore().getGuild(data.guild_id)) is None:
+            raise InvalidDataErr(404, Errors.make(10004))
+
+        if not (member := await getCore().getGuildMember(guild, user.id)):
+            raise InvalidDataErr(403, Errors.make(50001))
+
+        await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+        bot = await Bot.objects.select_related("user").get(id=application.id)
+        if (ban := await getCore().getGuildBan(guild, bot.user.id)) is not None:
+            await ban.delete()
+
+        bot_userdata = await bot.user.userdata
+        bot_member = await GuildMember.objects.create(id=Snowflake.makeId(), user=bot.user, guild=guild)
+        bot_role = await Role.objects.create(id=Snowflake.makeId(), guild=guild, name=bot_userdata.username,
+                                             tags={"bot_id": str(bot.id)}, permissions=data.permissions, managed=True)
+        await bot_member.roles.add(bot_role)
+
+        await getGw().dispatch(IntegrationCreateEvent(guild.id, application, bot.user), guild_id=guild.id,
+                               permissions=GuildPermissions.MANAGE_GUILD)
+        await getGw().dispatch(GuildRoleCreateEvent(guild.id, bot_role.ds_json()), guild_id=guild.id,
+                               permissions=GuildPermissions.MANAGE_ROLES)
+        entries = [
+            await AuditLogEntry.objects.role_create(user, bot_role),
+            await AuditLogEntry.objects.bot_add(user, guild, bot.user),
+            await AuditLogEntry.objects.integration_create(user, guild, bot.user),
+        ]
+        for entry in entries:
+            await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
+                                   permissions=GuildPermissions.VIEW_AUDIT_LOG)
+
+        await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=bot.user.id)), users=[bot.user.id])
+        if guild.system_channel:
+            sys_channel = await getCore().getChannel(guild.system_channel)
+            message = await Message.objects.create(
+                id=Snowflake.makeId(), author=bot.user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
+                guild=guild
+            )
+            await getCore().sendMessage(message)
+            await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel_id=sys_channel.id)
+
+        return {"location": f"https://{Config.PUBLIC_HOST}/oauth2/authorized"}
+
+    if query_args.redirect_uri not in application.redirect_uris:
+        return {"location": f"https://{Config.PUBLIC_HOST}/oauth2/error?error=invalid_request&error_description="
+                            f"Redirect+URI+{query_args.redirect_uri}+is+not+supported+by+client."}
 
     authorization = await Authorization.objects.create(user=user, application=application, scope=query_args.scope)
 

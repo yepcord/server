@@ -45,6 +45,7 @@ class AppAuthorizePostQs(BaseModel):
 class AppAuthorizePost(BaseModel):
     authorize: bool
     permissions: Optional[int] = None
+    guild_id: Optional[int] = None
 
 
 class ExchangeCode(BaseModel):

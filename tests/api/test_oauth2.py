@@ -5,7 +5,7 @@ import pytest_asyncio
 
 from src.rest_api.main import app
 from src.yepcord.snowflake import Snowflake
-from .utils import TestClientType, create_users, create_application, create_guild
+from .utils import TestClientType, create_users, create_application, create_guild, create_ban, add_user_to_guild
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -177,3 +177,53 @@ async def test_client_credentials():
     assert json["id"] == user["id"]
     assert json["username"] == user["username"]
     assert "email" in json
+
+
+@pt.mark.asyncio
+async def test_authorize_bot():
+    client: TestClientType = app.test_client()
+    user1, user2 = await create_users(client, 2)
+    guild = await create_guild(client, user1, "test")
+    application = await create_application(client, user1, "testApp")
+    headers1 = {"Authorization": user1["token"]}
+    headers2 = {"Authorization": user2["token"]}
+
+    resp = await client.post(f"/api/v9/oauth2/authorize?client_id={application['id']}&scope=bot", headers=headers1,
+                             json={"authorize": True, "permissions": "8"})
+    assert resp.status_code == 200
+    location = (await resp.get_json())["location"]
+    assert "invalid_request" in location
+
+    resp = await client.post(f"/api/v9/oauth2/authorize?client_id={application['id']}&scope=bot", headers=headers1,
+                             json={"authorize": True, "permissions": "8", "guild_id": str(Snowflake.makeId())})
+    assert resp.status_code == 404
+
+    resp = await client.post(f"/api/v9/oauth2/authorize?client_id={application['id']}&scope=bot", headers=headers2,
+                             json={"authorize": True, "permissions": "8", "guild_id": guild["id"]})
+    assert resp.status_code == 403
+
+    await add_user_to_guild(client, guild, user1, user2)
+
+    resp = await client.post(f"/api/v9/oauth2/authorize?client_id={application['id']}&scope=bot", headers=headers2,
+                             json={"authorize": True, "permissions": "8", "guild_id": guild["id"]})
+    assert resp.status_code == 403
+
+    await create_ban(client, user1, guild, application["id"])
+
+    resp = await client.post(f"/api/v9/oauth2/authorize?client_id={application['id']}&scope=bot", headers=headers1,
+                             json={"authorize": True, "permissions": "8", "guild_id": guild["id"]})
+    assert resp.status_code == 200
+    location = (await resp.get_json())["location"]
+    assert "authorized" in location
+
+    resp = await client.post(f"/api/v9/applications/{application['id']}/bot/reset",
+                             headers={"Authorization": user1["token"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["token"]
+
+    resp = await client.get(f"/api/v9/users/@me/guilds", headers={"Authorization": f"Bot {json['token']}"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 1
+    assert json[0]["id"] == guild["id"]
