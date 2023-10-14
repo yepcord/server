@@ -2,7 +2,8 @@ import pytest as pt
 import pytest_asyncio
 
 from src.rest_api.main import app
-from tests.api.utils import TestClientType, create_users, create_guild, create_role, add_user_to_guild
+from tests.api.utils import TestClientType, create_users, create_guild, create_role, add_user_to_guild, \
+    create_application, add_bot_to_guild
 from tests.yep_image import YEP_IMAGE
 
 
@@ -160,3 +161,40 @@ async def test_get_role_members():
                             headers=headers)
     assert resp.status_code == 200
     assert await resp.get_json() == [user["id"]]
+
+
+@pt.mark.asyncio
+async def test_change_roles_members_managed_role():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    application = await create_application(client, user, "testApp")
+    await add_bot_to_guild(client, user, guild, application)
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.get(f"/api/v9/guilds/{guild['id']}/roles", headers=headers)
+    assert resp.status_code == 200
+    roles = await resp.get_json()
+    bot_role = [role for role in roles if role["managed"]][0]
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/roles/{bot_role['id']}/members",
+                              headers=headers, json={"member_ids": [user["id"]]})
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_delete_managed_role():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    application = await create_application(client, user, "testApp")
+    await add_bot_to_guild(client, user, guild, application)
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.get(f"/api/v9/guilds/{guild['id']}/roles", headers=headers)
+    assert resp.status_code == 200
+    roles = await resp.get_json()
+    bot_role = [role for role in roles if role["managed"]][0]
+
+    resp = await client.delete(f"/api/v9/guilds/{guild['id']}/roles/{bot_role['id']}", headers=headers)
+    assert resp.status_code == 400

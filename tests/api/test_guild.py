@@ -6,7 +6,7 @@ from src.yepcord.classes.other import MFA
 from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_invite, enable_mfa, create_guild_channel, \
-    add_user_to_guild, create_ban, create_message, create_role
+    add_user_to_guild, create_ban, create_message, create_role, create_application, add_bot_to_guild
 from tests.yep_image import YEP_IMAGE
 
 
@@ -251,6 +251,9 @@ async def test_sync_update_guild_template():
     json = await resp.get_json()
 
     await create_guild_channel(client, user, guild, "test")
+
+    application = await create_application(client, user, "testApp")
+    await add_bot_to_guild(client, user, guild, application)
 
     resp = await client.put(f"/api/v9/guilds/{guild['id']}/templates/{json['code']}", headers=headers)
     assert resp.status_code == 200
@@ -564,3 +567,58 @@ async def test_get_audit_logs():
     assert len(json["users"]) == 1
 
 
+@pt.mark.asyncio
+async def test_kick_bot():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    application = await create_application(client, user, "testApp")
+    await add_bot_to_guild(client, user, guild, application)
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.post(f"/api/v9/applications/{application['id']}/bot/reset", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["token"]
+    bot_headers = {"Authorization": f"Bot {json['token']}"}
+
+    resp = await client.get(f"/api/v9/users/@me/guilds", headers=bot_headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 1
+
+    resp = await client.delete(f"/api/v9/guilds/{guild['id']}/members/{application['id']}", headers=headers)
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/users/@me/guilds", headers=bot_headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 0
+
+
+@pt.mark.asyncio
+async def test_ban_bot():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    application = await create_application(client, user, "testApp")
+    await add_bot_to_guild(client, user, guild, application)
+    headers = {"Authorization": user["token"]}
+
+    resp = await client.post(f"/api/v9/applications/{application['id']}/bot/reset", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["token"]
+    bot_headers = {"Authorization": f"Bot {json['token']}"}
+
+    resp = await client.get(f"/api/v9/users/@me/guilds", headers=bot_headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 1
+
+    await create_ban(client, user, guild, application["id"])
+
+    resp = await client.get(f"/api/v9/users/@me/guilds", headers=bot_headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 0

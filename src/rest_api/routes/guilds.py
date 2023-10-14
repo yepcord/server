@@ -33,7 +33,8 @@ from ...gateway.events import MessageDeleteEvent, GuildUpdateEvent, ChannelUpdat
     GuildDeleteEvent, GuildMemberRemoveEvent, GuildBanAddEvent, MessageBulkDeleteEvent, GuildRoleCreateEvent, \
     GuildRoleUpdateEvent, GuildRoleDeleteEvent, GuildMemberUpdateEvent, GuildBanRemoveEvent, \
     GuildScheduledEventCreateEvent, GuildScheduledEventUpdateEvent, GuildScheduledEventDeleteEvent, \
-    ScheduledEventUserAddEvent, ScheduledEventUserRemoveEvent, GuildCreateEvent, GuildAuditLogEntryCreateEvent
+    ScheduledEventUserAddEvent, ScheduledEventUserRemoveEvent, GuildCreateEvent, GuildAuditLogEntryCreateEvent, \
+    IntegrationDeleteEvent, GuildIntegrationsUpdateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, StickerType, StickerFormat, ScheduledEventStatus, ChannelType, \
     ScheduledEventEntityType
@@ -268,6 +269,26 @@ async def get_premium_boosts(user: User, guild: Guild, member: GuildMember):
     return boosts
 
 
+async def process_bot_kick(user: User, bot_member: GuildMember) -> None:
+    guild = bot_member.guild
+    bot_role = [role for role in await Role.objects.filter(guild=guild, managed=True).all()
+                if role.tags["bot_id"] == str(bot_member.user.id)]
+    if bot_role:
+        bot_role = bot_role[0]
+        await bot_role.delete()
+        await getGw().dispatch(GuildRoleDeleteEvent(guild.id, bot_role.id), guild_id=guild.id,
+                               permissions=GuildPermissions.MANAGE_ROLES)
+
+    await getGw().dispatch(IntegrationDeleteEvent(guild.id, bot_member.user.id), guild_id=guild.id,
+                           permissions=GuildPermissions.MANAGE_GUILD)
+    await getGw().dispatch(GuildIntegrationsUpdateEvent(guild.id), guild_id=guild.id,
+                           permissions=GuildPermissions.MANAGE_GUILD)
+
+    entry = await AuditLogEntry.objects.integration_delete(user, guild, bot_member.user)
+    await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
+                           permissions=GuildPermissions.VIEW_AUDIT_LOG)
+
+
 @guilds.delete("/<int:guild>/members/<int:user_id>")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def kick_member(user: User, guild: Guild, member: GuildMember, user_id: int):
@@ -277,6 +298,8 @@ async def kick_member(user: User, guild: Guild, member: GuildMember, user_id: in
     if not await member.perm_checker.canKickOrBan(target_member):
         raise InvalidDataErr(403, Errors.make(50013))
     await target_member.delete()
+    if target_member.user.is_bot:
+        await process_bot_kick(user, target_member)
     await getGw().dispatch(GuildMemberRemoveEvent(guild.id, (await target_member.user.data).ds_json), users=[user_id])
     await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
     entry = await AuditLogEntry.objects.member_kick(user, target_member)
@@ -297,6 +320,8 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
     reason = request.headers.get("x-audit-log-reason")
     if target_member is not None:
         await target_member.delete()
+        if target_member.user.is_bot:
+            await process_bot_kick(user, target_member)
         await getCore().banGuildMember(target_member, reason)
         target_user = target_member.user
     else:
@@ -355,6 +380,13 @@ async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: i
 async def get_guild_integrations(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
     return []
+
+
+@guilds.get("/<int:guild>/roles")
+@multipleDecorators(allowBots, getUser, getGuildWM)
+async def get_roles(user: User, guild: Guild, member: GuildMember):
+    await member.checkPermission(GuildPermissions.MANAGE_ROLES)
+    return [role.ds_json() for role in await getCore().getRoles(guild, True)]
 
 
 @guilds.post("/<int:guild>/roles")
@@ -442,6 +474,8 @@ async def update_roles_positions(user: User, guild: Guild, member: GuildMember):
 @multipleDecorators(allowBots, getUser, getGuildWM, getRole)
 async def delete_role(user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
+    if role.managed:
+        raise InvalidDataErr(400, Errors.make(50028))
     await role.delete()
     await getGw().dispatch(GuildRoleDeleteEvent(guild.id, role.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
@@ -479,6 +513,8 @@ async def get_role_members(user: User, guild: Guild, role: Role):
 @multipleDecorators(validate_request(AddRoleMembers), allowBots, getUser, getGuildWM, getRole)
 async def add_role_members(data: AddRoleMembers, user: User, guild: Guild, member: GuildMember, role: Role):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
+    if role.managed:
+        raise InvalidDataErr(400, Errors.make(50028))
     if role.id == guild.id or (role.position >= (await member.top_role).position and user != guild.owner):
         raise InvalidDataErr(403, Errors.make(50013))
     members = {}
@@ -499,7 +535,7 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
         target_user = user.id
     target_user = int(target_user)
     target_member = await getCore().getGuildMember(guild, target_user)
-    if data.roles is not None:  # TODO: add MEMBER_ROLE_UPDATE audit log event
+    if data.roles is not None:
         await member.checkPermission(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data.roles]
         guild_roles = {role.id: role for role in await getCore().getRoles(guild, exclude_default=True)}

@@ -44,7 +44,7 @@ class Presence:
     def __init__(self, user_id: int, status: str, custom_status: dict = None, activities: list = None) -> None:
         self.user_id = user_id
         self.status = status
-        self.activities = activities
+        self.activities = activities or []
         if custom_status is not None:
             self.activities.append({
                 "name": "Custom Status",

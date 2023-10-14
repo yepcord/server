@@ -432,6 +432,8 @@ class GuildTemplate(ormar.Model):
         roles = await getCore().getRoles(guild)
         roles.sort(key=lambda r: r.id)
         for role in roles:
+            if role.managed:
+                continue
             replaced_ids[role.id] = last_replaced_id
             role.id = last_replaced_id
             last_replaced_id += 1
@@ -733,6 +735,14 @@ class AuditLogEntryQuerySet(QuerySet):
         ]
         return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id, changes=changes,
                                  action_type=AuditLogEntryType.INTEGRATION_CREATE)
+
+    async def integration_delete(self, user: User, guild: Guild, bot: User) -> AuditLogEntry:
+        changes = [
+            {"old_value": "discord", "key": "type"},
+            {"old_value": "test", "key": (await bot.userdata).username},
+        ]
+        return await self.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id, changes=changes,
+                                 action_type=AuditLogEntryType.INTEGRATION_DELETE)
 
 
 class AuditLogEntry(ormar.Model):

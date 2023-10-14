@@ -966,3 +966,38 @@ class IntegrationCreateEvent(DispatchEvent):
                 "guild_id": self.guild_id
             }
         }
+
+
+class IntegrationDeleteEvent(DispatchEvent):
+    NAME = "INTEGRATION_DELETE"
+
+    def __init__(self, guild_id: int, application_id: int):
+        self.guild_id = guild_id
+        self.application_id = application_id
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "id": str(self.application_id),
+                "application_id": str(self.application_id),
+                "guild_id": self.guild_id
+            }
+        }
+
+
+class GuildIntegrationsUpdateEvent(DispatchEvent):
+    NAME = "GUILD_INTEGRATIONS_UPDATE"
+
+    def __init__(self, guild_id: int):
+        self.guild_id = guild_id
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "guild_id": self.guild_id,
+            }
+        }

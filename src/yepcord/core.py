@@ -738,10 +738,10 @@ class Core(Singleton):
     async def setMemberRolesFromList(self, member: GuildMember, roles: list[Role]) -> None:
         current_roles = await member.roles.all()
         for role in roles:
-            if role not in current_roles:
+            if role not in current_roles and not role.managed:
                 await member.roles.add(role)
         for role in current_roles:
-            if role not in roles:
+            if role not in roles and not role.managed:
                 await member.roles.remove(role)
 
     async def getMemberRoles(self, member: GuildMember, include_default: bool = False) -> list[Role]:
