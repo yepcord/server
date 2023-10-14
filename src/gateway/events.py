@@ -24,10 +24,10 @@ from typing import List, TYPE_CHECKING
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
 from ..yepcord.snowflake import Snowflake
-from ..yepcord.models import Emoji
+from ..yepcord.models import Emoji, Application
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Application
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
     from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence
@@ -73,7 +73,7 @@ class ReadyEvent(DispatchEvent):
         userdata = await self.user.userdata
         settings = await self.user.settings
         proto = settings.proto().get()
-        return {
+        data = {
             "t": self.NAME,
             "op": self.OP,
             "d": {
@@ -111,7 +111,7 @@ class ReadyEvent(DispatchEvent):
                     "personalization": {
                         "consented": settings.personalization
                     }
-                },
+                } if not self.user.is_bot else {},
                 "country_code": "US",
                 "experiments": [],  # TODO
                 "friend_suggestion_count": 0,
@@ -124,7 +124,7 @@ class ReadyEvent(DispatchEvent):
                 "read_state": {
                     "version": 1,
                     "partial": False,
-                    "entries": await self.core.getReadStatesJ(self.user)
+                    "entries": await self.core.getReadStatesJ(self.user) if not self.user.is_bot else []
                 },
                 "resume_gateway_url": f"wss://{Config.GATEWAY_HOST}/",
                 "session_type": "normal",
@@ -144,10 +144,21 @@ class ReadyEvent(DispatchEvent):
                     "partial": False,
                     "entries": []  # TODO
                 },
-                "user_settings": settings.ds_json(),
-                "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
+                "user_settings": settings.ds_json() if not self.user.is_bot else {},
+                "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8") if not self.user.is_bot
+                else None
             }
         }
+        if self.user.is_bot:
+            del data["d"]["user_settings_proto"]
+            del data["d"]["read_state"]
+            application = await Application.objects.get(id=self.user.id)
+            data["d"]["application"] = {
+                "id": str(application.id),
+                "flags": application.flags,
+            }
+
+        return data
 
 
 class ReadySupplementalEvent(DispatchEvent):

@@ -72,6 +72,7 @@ class Message(ormar.Model):
             "content": self.content,
             "timestamp": self.created_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
             "edit_timestamp": edit_timestamp,
+            "edited_timestamp": edit_timestamp,
             "embeds": self.embeds,
             "pinned": self.pinned,
             "webhook_id": self.webhook_id,

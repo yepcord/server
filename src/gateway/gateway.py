@@ -23,11 +23,11 @@ from typing import Optional
 
 from .events import *
 from .presences import Presences, Presence
-from .utils import require_auth
+from .utils import require_auth, get_token_type, TokenType
 from ..yepcord.core import Core
 from ..yepcord.ctx import getCore
 from ..yepcord.enums import GatewayOp
-from ..yepcord.models import Session, User, UserSettings
+from ..yepcord.models import Session, User, UserSettings, Bot
 from ..yepcord.mq_broker import getBroker
 
 
@@ -41,6 +41,7 @@ class GatewayClient:
 
         self.z = getattr(ws, "zlib", None)
         self.id = self.user_id = None
+        self.is_bot = False
         self.cached_presence: Optional[Presence] = None
 
     @property
@@ -68,16 +69,15 @@ class GatewayClient:
     async def handle_IDENTIFY(self, data: dict) -> None:
         if self.user_id is not None:
             return await self.ws.close(4005)
-        if not (token := data.get("token")):
+        if not (token := data.get("token")) or (token_type := get_token_type(token)) is None:
             return await self.ws.close(4004)
-        ex_sess = Session.extract_token(token)
-        session: Session = await Session.objects.select_related("user").get_or_none(
-            user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
-        )
-        if session is None:
+
+        S = Session if token_type == TokenType.USER else Bot
+        if (session := await S.from_token(token)) is None:
             return await self.ws.close(4004)
 
         self.id = self.user_id = session.user.id
+        self.is_bot = session.user.is_bot
 
         settings = await session.user.settings
         self.cached_presence = await self.gateway.presences.get(self.user_id) or self.cached_presence
@@ -86,8 +86,9 @@ class GatewayClient:
 
         await self.gateway.authenticated(self, self.cached_presence)
         await self.esend(ReadyEvent(session.user, self, getCore()))
-        guild_ids = [guild.id for guild in await getCore().getUserGuilds(session.user)]
-        await self.esend(ReadySupplementalEvent(await self.gateway.getFriendsPresences(self.user_id), guild_ids))
+        if not session.user.is_bot:
+            guild_ids = [guild.id for guild in await getCore().getUserGuilds(session.user)]
+            await self.esend(ReadySupplementalEvent(await self.gateway.getFriendsPresences(self.user_id), guild_ids))
 
     @require_auth
     async def handle_RESUME(self, data: dict, new_client: GatewayClient) -> None:
@@ -95,15 +96,12 @@ class GatewayClient:
             await new_client.send({"op": GatewayOp.INV_SESSION})
             await new_client.send({"op": GatewayOp.RECONNECT})
             return await new_client.ws.close(4009)
-        if not (token := data.get("token")):
+        if not (token := data.get("token")) or (token_type := get_token_type(token)) is None:
             return await new_client.ws.close(4004)
 
-        ex_sess = Session.extract_token(token)
-        session = await Session.objects.select_related("user").get_or_none(
-            user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
-        )
-        if session is None or self.user_id.id != session.user.id:
-            return await new_client.ws.close(4004)
+        S = Session if token_type == TokenType.USER else Bot
+        if (session := await S.from_token(token)) is None or self.user_id.id != session.user.id:
+            return await self.ws.close(4004)
 
         new_client.user_id = new_client.id = self.user_id
         new_client.cached_presence = self.cached_presence
@@ -173,6 +171,8 @@ class GatewayClient:
 
 
 class GatewayEvents:
+    BOTS_EVENTS_BLACKLIST = {"MESSAGE_ACK"}
+
     def __init__(self, gw: Gateway):
         self.gw = gw
         self.send = gw.send
@@ -199,6 +199,8 @@ class GatewayEvents:
         for user_id in users:
             for client in self.gw.clients_by_user_id.get(user_id, set()):
                 if not client.connected:
+                    continue
+                if client.is_bot and event.data.get("t") in self.BOTS_EVENTS_BLACKLIST:
                     continue
                 await client.esend(event)
 

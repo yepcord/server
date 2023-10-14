@@ -129,16 +129,16 @@ class Presences:
             return
 
         pipe = self._redis.pipeline()
-        pipe.set(
+        await pipe.set(
             f"presence_{user_id}",
             dumps({
-                "status": presence.status,
-                "activities": presence.activities
+                "status": presence.status if presence else "offline",
+                "activities": presence.activities if presence else [],
             }),
             ex=int(Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25),
             nx=not overwrite,
         )
-        pipe.expire(f"presence_{user_id}", int(Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25))
+        await pipe.expire(f"presence_{user_id}", int(Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25))
         await pipe.execute()
 
     async def get(self, user_id: int) -> Optional[Presence]:
