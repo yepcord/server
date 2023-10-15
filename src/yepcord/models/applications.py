@@ -25,6 +25,7 @@ import ormar
 from ormar import ReferentialAction
 
 from . import User, DefaultMeta, SnowflakeAIQuerySet, Guild
+from ..snowflake import Snowflake
 from ..utils import b64encode, b64decode
 
 
@@ -197,3 +198,91 @@ class Authorization(ormar.Model):
         auth_id, secret = token
         return await Authorization.objects.select_related("user").get_or_none(id=auth_id, secret=secret,
                                                                               expires_at__gt=int(time()))
+
+
+class Integration(ormar.Model):
+    class Meta(DefaultMeta):
+        queryset_class = SnowflakeAIQuerySet
+
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
+    application: Application = ormar.ForeignKey(Application, ondelete=ReferentialAction.CASCADE)
+    guild: Optional[Guild] = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE)
+    enabled: bool = ormar.Boolean(default=True)
+    type: str = ormar.String(default="discord", max_length=64)
+    scopes: list[str] = ormar.JSON(default=[])
+    user: Optional[User] = ormar.ForeignKey(User, on_delete=ReferentialAction.SET_NULL)
+
+    async def ds_json(self, with_application=True, with_user=True, with_guild_id=False) -> dict:
+        bot = await Bot.objects.get(id=self.application.id)
+        data = {
+            "type": self.type,
+            "scopes": self.scopes,
+            "name": self.application.name,
+            "id": str(self.id),
+            "enabled": self.enabled,
+            "account": {
+                "name": self.application.name,
+                "id": str(self.application.id)
+            },
+        }
+
+        if with_application:
+            data["application"] = {
+                "type": None,
+                "summary": self.application.summary,
+                "name": self.application.name,
+                "id": str(self.application.id),
+                "icon": self.application.icon,
+                "description": self.application.description,
+                "bot": (await bot.user.userdata).ds_json
+            }
+        if with_user:
+            data["user"] = (await self.user.userdata).ds_json
+        if with_guild_id:
+            data["guild_id"] = str(self.guild.id)
+
+        return data
+
+
+class ApplicationCommand(ormar.Model):
+    class Meta(DefaultMeta):
+        queryset_class = SnowflakeAIQuerySet
+
+    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
+    application: Application = ormar.ForeignKey(Application, ondelete=ReferentialAction.CASCADE)
+    guild: Optional[Guild] = ormar.ForeignKey(Guild, ondelete=ReferentialAction.CASCADE, nullable=True, default=None)
+    name: str = ormar.String(min_length=1, max_length=32)
+    description: str = ormar.String(max_length=100)
+    type: int = ormar.Integer(default=1, choices=[1, 2, 3])
+    name_localizations: dict = ormar.JSON(nullable=True, default=None)
+    description_localizations: dict = ormar.JSON(nullable=True, default=None)
+    options: list[dict] = ormar.JSON(default=[])
+    default_member_permissions: Optional[int] = ormar.BigInteger(nullable=True, default=None)
+    dm_permission: bool = ormar.Boolean(defailt=True)
+    nsfw: bool = ormar.Boolean(default=False)
+    version: int = ormar.BigInteger(default=Snowflake.makeId)
+
+    def ds_json(self, with_localizations: bool=False) -> dict:
+        default_member_permissions = str(self.default_member_permissions) if self.default_member_permissions else None
+
+        data = {
+            "id": str(self.id),
+            "type": self.type,
+            "application_id": str(self.application.id),
+            "name": self.name,
+            "description": self.description,
+            "options": self.options,
+            "default_member_permissions": default_member_permissions,
+            "dm_permission": self.dm_permission,
+            "nsfw": self.nsfw,
+            "version": str(self.version),
+            "integration_types": [0],
+            "contexts": None,
+        }
+        if self.guild:
+            data["guild_id"] = self.guild.id
+        if with_localizations:
+            data["name_localizations"] = self.name_localizations
+            data["description_localizations"] = self.description_localizations
+
+        return data

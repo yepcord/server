@@ -225,8 +225,14 @@ def getApplication(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         if not (app_id := kwargs.get("application_id")) or \
-                not (user := kwargs.get("user")) or \
-                not (app := await Application.objects.get_or_none(id=app_id, owner=user, deleted=False)):
+                not (user := kwargs.get("user")):
+            raise InvalidDataErr(404, Errors.make(10002))
+        if user.is_bot and app_id != user.id:
+            raise InvalidDataErr(404, Errors.make(10002))
+        kw = {"id": app_id, "deleted": False}
+        if not user.is_bot:
+            kw["owner"] = user
+        if (app := await Application.objects.get_or_none(**kw)) is None:
             raise InvalidDataErr(404, Errors.make(10002))
         del kwargs["application_id"]
         kwargs["application"] = app

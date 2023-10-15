@@ -21,13 +21,15 @@ from io import BytesIO
 from time import time
 
 from async_timeout import timeout
+from ormar import or_, and_
 from quart import Blueprint, request, current_app
 from quart_schema import validate_request, validate_querystring
 
 from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUpdate, EmojiCreate, EmojiUpdate, \
     ChannelsPositionsChangeList, ChannelCreate, BanMember, RoleCreate, RoleUpdate, \
     RolesPositionsChangeList, AddRoleMembers, MemberUpdate, SetVanityUrl, GuildCreateFromTemplate, GuildDelete, \
-    GetAuditLogsQuery, CreateSticker, UpdateSticker, CreateEvent, GetScheduledEvent, UpdateScheduledEvent
+    GetAuditLogsQuery, CreateSticker, UpdateSticker, CreateEvent, GetScheduledEvent, UpdateScheduledEvent, \
+    GetIntegrationsQS
 from ..utils import getUser, multipleDecorators, getGuildWM, getGuildWoM, getGuildTemplate, getRole, allowBots
 from ...gateway.events import MessageDeleteEvent, GuildUpdateEvent, ChannelUpdateEvent, ChannelCreateEvent, \
     GuildDeleteEvent, GuildMemberRemoveEvent, GuildBanAddEvent, MessageBulkDeleteEvent, GuildRoleCreateEvent, \
@@ -40,7 +42,7 @@ from ...yepcord.enums import GuildPermissions, StickerType, StickerFormat, Sched
     ScheduledEventEntityType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Guild, GuildMember, GuildTemplate, Emoji, Channel, PermissionOverwrite, UserData, \
-    Role, Invite, Sticker, GuildEvent, AuditLogEntry
+    Role, Invite, Sticker, GuildEvent, AuditLogEntry, Integration, ApplicationCommand
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage, b64decode, validImage, imageType
 
@@ -279,6 +281,8 @@ async def process_bot_kick(user: User, bot_member: GuildMember) -> None:
         await getGw().dispatch(GuildRoleDeleteEvent(guild.id, bot_role.id), guild_id=guild.id,
                                permissions=GuildPermissions.MANAGE_ROLES)
 
+    await Integration.objects.delete(guild=guild, application=bot_member.user.id)
+
     await getGw().dispatch(IntegrationDeleteEvent(guild.id, bot_member.user.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_GUILD)
     await getGw().dispatch(GuildIntegrationsUpdateEvent(guild.id), guild_id=guild.id,
@@ -376,10 +380,11 @@ async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: i
 
 
 @guilds.get("/<int:guild>/integrations")
-@multipleDecorators(getUser, getGuildWM)
-async def get_guild_integrations(user: User, guild: Guild, member: GuildMember):
+@multipleDecorators(validate_querystring(GetIntegrationsQS), getUser, getGuildWM)
+async def get_guild_integrations(query_args: GetIntegrationsQS, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-    return []
+    integrations = await Integration.objects.select_related("application").filter(guild=guild).all()
+    return [await integration.ds_json(query_args.include_applications) for integration in integrations]
 
 
 @guilds.get("/<int:guild>/roles")
@@ -873,3 +878,18 @@ async def delete_scheduled_event(user: User, guild: Guild, member: GuildMember, 
     await getGw().dispatch(GuildScheduledEventDeleteEvent(await event.ds_json()), guild_id=guild.id)
 
     return "", 204
+
+
+@guilds.get("/<int:guild>/application-commands/<int:application_id>")
+@multipleDecorators(getUser, getGuildWM)
+async def get_guild_integration_commands(user: User, guild: Guild, member: GuildMember, application_id: int):
+    await member.checkPermission(GuildPermissions.MANAGE_GUILD)
+    integration = await Integration.objects.get_or_none(guild=guild, application__id=application_id)
+    if integration is None:
+        return {"application_commands": [], "permissions": []}
+
+    commands = await ApplicationCommand.objects.filter(
+        or_(and_(guild=guild, application__id=application_id), application__id=application_id)
+    ).all()
+
+    return {"application_commands": [command.ds_json() for command in commands], "permissions": []}

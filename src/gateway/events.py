@@ -24,7 +24,7 @@ from typing import List, TYPE_CHECKING
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
 from ..yepcord.snowflake import Snowflake
-from ..yepcord.models import Emoji, Application
+from ..yepcord.models import Emoji, Application, Integration
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
@@ -946,36 +946,14 @@ class ThreadMemberUpdateEvent(DispatchEvent):
 class IntegrationCreateEvent(DispatchEvent):
     NAME = "INTEGRATION_CREATE"
 
-    def __init__(self, guild_id: int, application: Application, bot_user: User):
-        self.guild_id = guild_id
-        self.application = application
-        self.bot_user = bot_user
+    def __init__(self, integration: Integration):
+        self.integration = integration
 
     async def json(self) -> dict:
         return {
             "t": self.NAME,
             "op": self.OP,
-            "d": {
-                "type": "discord",
-                "scopes": ["applications.commands", "bot"],
-                "name": self.application.name,
-                "id": str(self.application.id),
-                "enabled": True,
-                "application": {
-                    "type": None,
-                    "summary": self.application.summary,
-                    "name": self.application.name,
-                    "id": str(self.application.id),
-                    "icon": self.application.icon,
-                    "description": self.application.description,
-                    "bot": (await self.bot_user.userdata).ds_json
-                },
-                "account": {
-                    "name": self.application.name,
-                    "id": str(self.application.id)
-                },
-                "guild_id": self.guild_id
-            }
+            "d": await self.integration.ds_json(with_user=False, with_guild_id=True)
         }
 
 

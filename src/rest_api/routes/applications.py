@@ -18,14 +18,14 @@
 from datetime import datetime
 
 from quart import Blueprint
-from quart_schema import validate_request
+from quart_schema import validate_request, validate_querystring
 
-from ..models.applications import CreateApplication, UpdateApplication, UpdateApplicationBot
-from ..utils import getUser, multipleDecorators, getApplication
+from ..models.applications import CreateApplication, UpdateApplication, UpdateApplicationBot, GetCommandsQS, \
+    CreateCommand
+from ..utils import getUser, multipleDecorators, getApplication, allowBots
 from ...yepcord.ctx import getCore, getCDNStorage
-from ...yepcord.errors import Errors, InvalidDataErr
 from ...yepcord.models import User, UserData, UserSettings
-from ...yepcord.models.applications import Application, Bot, gen_secret_key, gen_token_secret
+from ...yepcord.models.applications import Application, Bot, gen_secret_key, gen_token_secret, ApplicationCommand
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage
 
@@ -43,16 +43,16 @@ async def get_applications(user: User):
 @applications.post("/", strict_slashes=False)
 @multipleDecorators(validate_request(CreateApplication), getUser)
 async def create_application(data: CreateApplication, user: User):
-    name = data.name
-    disc = await getCore().getRandomDiscriminator(name)
-    if disc is None:
-        raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "USERNAME_TOO_MANY_USERS",
-                                                                "message": "Too many users have this username, "
-                                                                           "please try another."}}))
     app_id = Snowflake.makeId()
+    name = username = data.name
+    disc = await getCore().getRandomDiscriminator(username)
+    if disc is None:
+        username = f"{username}{app_id}"
+        disc = await getCore().getRandomDiscriminator(username)
+
     app = await Application.objects.create(id=app_id, owner=user, name=name)
     bot_user = await User.objects.create(id=app_id, email=f"bot_{app_id}", password="", is_bot=True)
-    await UserData.objects.create(id=app_id, user=bot_user, birth=datetime.now(), username=name, discriminator=disc)
+    await UserData.objects.create(id=app_id, user=bot_user, birth=datetime.now(), username=username, discriminator=disc)
     await UserSettings.objects.create(id=app_id, user=user, locale=(await user.settings).locale)
     await Bot.objects.create(id=app_id, application=app, user=bot_user)
     return await app.ds_json()
@@ -141,4 +141,29 @@ async def delete_application(user: User, application: Application):
 
     await application.update(owner=None, deleted=True)
 
+    return "", 204
+
+
+@applications.get("/<int:application_id>/commands")
+@multipleDecorators(validate_querystring(GetCommandsQS), allowBots, getUser, getApplication)
+async def get_application_commands(query_args: GetCommandsQS, user: User, application: Application):
+    commands: list[ApplicationCommand] = await ApplicationCommand.objects.filter(application=application).all()
+    return [command.ds_json(query_args.with_localizations) for command in commands]
+
+
+@applications.post("/<int:application_id>/commands")
+@multipleDecorators(validate_request(CreateCommand), allowBots, getUser, getApplication)
+async def create_update_application_command(data: CreateCommand, user: User, application: Application):
+    command = await ApplicationCommand.objects.get_or_none(application=application, name=data.name, type=data.type)
+    if command is not None:
+        await command.update(**data.dict(exclude={"name", "type"}), version=Snowflake.makeId(False))
+    else:
+        command = await ApplicationCommand.objects.create(application=application, **data.dict())
+    return command.ds_json()
+
+
+@applications.delete("/<int:application_id>/commands/<int:command_id>")
+@multipleDecorators(allowBots, getUser, getApplication)
+async def delete_application_command(user: User, application: Application, command_id: int):
+    await ApplicationCommand.objects.delete(application=application, id=command_id)
     return "", 204

@@ -215,6 +215,14 @@ async def add_bot_to_guild(app: TestClientType, user: dict, guild: dict, applica
     assert resp.status_code == 200
 
 
+async def bot_token(app: TestClientType, user: dict, application: dict) -> str:
+    resp = await app.post(f"/api/v9/applications/{application['id']}/bot/reset",
+                             headers={"Authorization": user["token"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    return json["token"]
+
+
 class RemoteAuthClient:
     def __init__(self, on_fingerprint=None, on_userdata=None, on_token=None, on_cancel=None):
         from cryptography.hazmat.primitives.asymmetric import rsa

@@ -53,3 +53,23 @@ class UpdateApplicationBot(BaseModel):
                 }}))
         return value
 
+
+class GetCommandsQS(BaseModel):
+    with_localizations: Optional[bool] = False
+
+
+class CreateCommand(BaseModel):
+    name: str
+    description: str
+    type: int = 1
+    name_localizations: Optional[str] = None
+    description_localizations: Optional[str] = None
+    dm_permission: bool = True
+
+    @validator("type")
+    def validate_type(cls, value: int) -> int:
+        if value not in {1, 2, 3}:
+            raise InvalidDataErr(400, Errors.make(50035, {"type": {
+                "code": "ENUM_TYPE_COERCE", "message": f"Value \"{value}\" is not a valid enum value."
+            }}))
+        return value

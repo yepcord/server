@@ -29,7 +29,7 @@ from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
 from ...yepcord.errors import Errors, InvalidDataErr
 from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry
-from ...yepcord.models.applications import Application, Bot, Authorization
+from ...yepcord.models.applications import Application, Bot, Authorization, Integration
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import b64decode
 
@@ -116,7 +116,10 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
                                              tags={"bot_id": str(bot.id)}, permissions=data.permissions, managed=True)
         await bot_member.roles.add(bot_role)
 
-        await getGw().dispatch(IntegrationCreateEvent(guild.id, application, bot.user), guild_id=guild.id,
+        integration = await Integration.objects.create(application=application, guild=guild, user=user,
+                                                       scopes=["bot", "application.commands"])
+
+        await getGw().dispatch(IntegrationCreateEvent(integration), guild_id=guild.id,
                                permissions=GuildPermissions.MANAGE_GUILD)
         await getGw().dispatch(GuildRoleCreateEvent(guild.id, bot_role.ds_json()), guild_id=guild.id,
                                permissions=GuildPermissions.MANAGE_ROLES)

@@ -477,3 +477,25 @@ class CreateThread(BaseModel):
     name: str
     type: int
     location: str = "Message"
+
+
+class CommandsSearchQS(BaseModel):
+    type: int = 1
+    limit: int = 10
+    query: Optional[str] = Field(default=None, regex=r"^[a-zA-Z]+$")
+    include_applications: bool = False
+    cursor: Optional[str] = None
+
+    @validator("type")
+    def validate_type(cls, value: int) -> int:
+        if value not in {1, 2, 3}:
+            raise InvalidDataErr(400, Errors.make(50035, {"type": {
+                "code": "ENUM_TYPE_COERCE", "message": f"Value \"{value}\" is not a valid enum value."
+            }}))
+        return value
+
+    @validator("limit")
+    def validate_limit(cls, value: int) -> int:
+        if value > 10:
+            value = 10
+        return value

@@ -16,15 +16,18 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from datetime import datetime
+from json import loads, dumps
 from os import urandom
 from random import choice
+from typing import Optional, Union, Any
 
 from emoji import is_emoji
+from ormar import or_, and_
 from quart import Blueprint, request
 from quart_schema import validate_request, validate_querystring
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck, CreateThread
+    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS
 from ..utils import getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData, allowBots
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
@@ -34,9 +37,9 @@ from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
-    ThreadMetadata, AuditLogEntry, Relationship
+    ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import getImage, b64encode
+from ...yepcord.utils import getImage, b64encode, b64decode
 
 # Base path is /api/vX/channels
 channels = Blueprint('channels', __name__)
@@ -576,3 +579,64 @@ async def create_thread(data: CreateThread, user: User, channel: Channel, messag
     await getCore().sendMessage(thread_create_message)
 
     return await thread.ds_json()
+
+
+@channels.get("/<int:channel>/application-commands/search")
+@multipleDecorators(validate_querystring(CommandsSearchQS), getUser, getChannel)
+async def search_application_commands(query_args: CommandsSearchQS, user: User, channel: Channel):
+    dm_user = None
+    if (channel.type not in (*GUILD_CHANNELS, ChannelType.DM) or
+            (channel.type == ChannelType.DM and not (dm_user := await channel.other_user(user)).is_bot)):
+        raise InvalidDataErr(403, Errors.make(50003))
+
+    try:
+        cursor = loads(b64decode(query_args.cursor)) if query_args.cursor else [0]
+        if len(cursor) != 1:
+            raise ValueError
+        if not isinstance(cursor[0], int):
+            raise ValueError
+    except ValueError:
+        cursor = [0]
+
+    if channel.guild:
+        guild = channel.guild
+        integrations = await Integration.objects.select_related("application").filter(guild=guild).all()
+        ids = [integration.application.id for integration in integrations]
+        query = or_(and_(guild=guild, application__id__in=ids), application__id__in=ids)
+    else:
+        query = and_(dm_permission=True, application__id=dm_user.id, guild=None)
+
+    if query_args.query is not None:
+        query = and_(query, name__startswith=query_args.query)
+
+    commands = await (ApplicationCommand.objects.select_related("application").filter(query)
+                      .limit(query_args.limit, limit_raw_sql=True).offset(cursor[0]).all())
+
+    result: dict[str, Any]
+    result = {"application_commands": [], "applications": {}, "cursor": {"next": None, "previous": None,
+                                                                         "repaired": None}}
+    comms = result["application_commands"]
+    apps = result["applications"]
+    for command in commands:
+        comms.append(command.ds_json(False))
+        if command.application.id in apps or not query_args.include_applications:
+            continue
+        app = command.application
+        bot = await Bot.objects.select_related("user").get(id=app.id)
+        apps[app.id] = {
+            "id": str(app.id),
+            "name": app.name,
+            "description": app.description,
+            "icon": app.icon,
+            "summary": app.summary,
+            "type": None,
+            "bot": (await bot.user.userdata).ds_json
+        }
+
+    result["applications"] = list(result["applications"].values())
+    if len(commands) == query_args.limit:
+        result["cursor"]["next"] = b64encode(dumps([cursor[0] + len(commands)]))
+    if cursor[0] - len(commands) > 0:
+        result["cursor"]["previous"] = b64encode(dumps([cursor[0] - len(commands)]))
+
+    return result

@@ -689,3 +689,8 @@ class UpdateScheduledEvent(CreateEvent):
         if values["entity_type"] == ScheduledEventEntityType.EXTERNAL:
             value = None
         return value
+
+
+class GetIntegrationsQS(BaseModel):
+    include_applications: bool = False
+    include_role_connections_metadata: bool = False

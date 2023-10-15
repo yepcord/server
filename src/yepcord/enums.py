@@ -325,3 +325,9 @@ class ApplicationScope(E):
     RPC_VOICE_WRITE = "rpc.voice.write"
     VOICE = "voice"
     WEBHOOK_INCOMING = "webhook.incoming"
+
+
+class ApplicationCommandType(E):
+    CHAT_INPUT = 1
+    USER = 2
+    MESSAGE = 3

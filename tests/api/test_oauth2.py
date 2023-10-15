@@ -227,3 +227,8 @@ async def test_authorize_bot():
     json = await resp.get_json()
     assert len(json) == 1
     assert json[0]["id"] == guild["id"]
+
+    resp = await client.get(f"/api/v9/guilds/{guild['id']}/integrations", headers={"Authorization": user1["token"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 1
