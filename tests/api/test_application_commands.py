@@ -50,6 +50,10 @@ async def test_get_and_create_commands():
     assert len(json) == 1
     assert json[0]["description"] == "desc 123"
 
+    resp = await client.post(f"/api/v9/applications/{application['id']}/commands", headers=bot_headers,
+                             json={"type": 4, "name": "test", "description": "desc"})
+    assert resp.status_code == 400
+
 
 @pt.mark.asyncio
 async def test_get_guild_commands():

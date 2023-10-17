@@ -331,3 +331,51 @@ class ApplicationCommandType(E):
     CHAT_INPUT = 1
     USER = 2
     MESSAGE = 3
+
+
+class ApplicationCommandOptionType(E):
+    SUB_COMMAND = 1
+    SUB_COMMAND_GROUP = 2
+    STRING = 3
+    INTEGER = 4
+    BOOLEAN = 5
+    USER = 6
+    CHANNEL = 7
+    ROLE = 8
+    MENTIONABLE = 9
+    NUMBER = 10
+    ATTACHMENT = 11
+
+
+class Locales(E):
+    INDONESIAN = "id"
+    DANISH = "da"
+    GERMAN = "de"
+    ENGLISH_UK = "en-GB"
+    ENGLISH_US = "en-US"
+    SPANISH = "es-ES"
+    FRENCH = "fr"
+    CROATIAN = "hr"
+    ITALIAN = "it"
+    LITHUANIAN = "lt"
+    HUNGARIAN = "hu"
+    DUTCH = "nl"
+    NORWEGIAN = "no"
+    POLISH = "pl"
+    PORTUGUESE = "pt-BR"
+    ROMANIAN = "ro"
+    FINNISH = "fi"
+    SWEDISH = "sv-SE"
+    VIETNAMESE = "vi"
+    TURKISH = "tr"
+    CZECH = "cs"
+    GREEK = "el"
+    BULGARIAN = "bg"
+    RUSSIAN = "ru"
+    UKRAINIAN = "uk"
+    HINDI = "hi"
+    THAI = "th"
+    CHINESE_CHINA = "zh-CN"
+    JAPANESE = "ja"
+    CHINESE_TAIWAN = "zh-TW"
+    KOREAN = "ko"
