@@ -44,6 +44,7 @@ def create_yepcord():
     from src.rest_api.routes import applications
     from src.rest_api.routes import teams
     from src.rest_api.routes import oauth2
+    from src.rest_api.routes import interactions
     from src.rest_api.routes import other
     from src.yepcord.errors import YDataError
 
@@ -77,6 +78,7 @@ def create_yepcord():
     app.register_blueprint(applications.applications, url_prefix="/api/v9/applications")
     app.register_blueprint(teams.teams, url_prefix="/api/v9/teams")
     app.register_blueprint(oauth2.oauth2, url_prefix="/api/v9/oauth2")
+    app.register_blueprint(interactions.interactions, url_prefix="/api/v9/interactions")
     app.register_blueprint(other.other, url_prefix="/")
 
     app.route("/api/v9/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])(rest_api.other_api_endpoints)

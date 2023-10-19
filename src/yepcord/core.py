@@ -320,7 +320,10 @@ class Core(Singleton):
         id_filter = {}
         if after: id_filter["id__gt"] = after
         if before: id_filter["id__lt"] = before
-        messages = await Message.objects.select_related(["thread"]).filter(channel=channel, **id_filter).order_by("-id").limit(limit, limit_raw_sql=True).all()
+        messages = await (Message.objects
+                          .select_related(["thread", "interaction", "interaction__user", "interaction__command"])
+                          .filter(channel=channel, ephemeral=False, **id_filter).order_by("-id")
+                          .limit(limit, limit_raw_sql=True).all())
         return messages
 
     async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:

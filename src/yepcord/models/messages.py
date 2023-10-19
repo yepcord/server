@@ -15,16 +15,16 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from __future__ import annotations
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import ormar
 from ormar import ReferentialAction
 from pydantic import Field
 
 from . import DefaultMeta, User, Channel, Guild, Emoji, GuildMember, ThreadMember, UserData, collation, \
-    SnowflakeAIQuerySet
+    SnowflakeAIQuerySet, Interaction
 from ..config import Config
 from ..ctx import getCore
 from ..enums import MessageType
@@ -56,6 +56,9 @@ class Message(ormar.Model):
     stickers: list = ormar.JSON(default=[])
     extra_data: dict = ormar.JSON(default={})
     guild: Optional[Guild] = ormar.ForeignKey(Guild, ondelete=ReferentialAction.SET_NULL, nullable=True, default=None)
+    interaction: Optional[Interaction] = ormar.ForeignKey(Interaction, ondelete=ReferentialAction.CASCADE,
+                                                          nullable=True, default=None)
+    ephemeral: bool = ormar.Boolean(default=False)
 
     nonce: Optional[str] = Field()
 
@@ -125,6 +128,16 @@ class Message(ormar.Model):
             data["nonce"] = self.nonce
         if not search and (reactions := await getCore().getMessageReactionsJ(self, user_id)):
             data["reactions"] = reactions
+
+        if self.interaction is not None:
+            userdata = (await self.interaction.user.userdata).ds_json or {
+                "id": "0", "username": "Deleted User", "discriminator": "0", "avatar": None}
+            data["interaction"] = {
+                "type": self.interaction.type,
+                "name": self.interaction.command.name,
+                "id": str(self.interaction.command.id),
+                "user": userdata
+            }
         return data
 
 

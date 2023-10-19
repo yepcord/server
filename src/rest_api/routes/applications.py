@@ -156,9 +156,9 @@ async def get_application_commands(query_args: GetCommandsQS, user: User, applic
 async def create_update_application_command(data: CreateCommand, user: User, application: Application):
     command = await ApplicationCommand.objects.get_or_none(application=application, name=data.name, type=data.type)
     if command is not None:
-        await command.update(**data.dict(exclude={"name", "type"}), version=Snowflake.makeId(False))
+        await command.update(**data.dict(exclude={"name", "type"}, exclude_defaults=True), version=Snowflake.makeId(False))
     else:
-        command = await ApplicationCommand.objects.create(application=application, **data.dict())
+        command = await ApplicationCommand.objects.create(application=application, **data.dict(exclude_defaults=True))
     return command.ds_json()
 
 

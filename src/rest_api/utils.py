@@ -17,7 +17,7 @@
 """
 
 from functools import wraps
-from json import loads as jloads
+from json import loads as jloads, loads
 from typing import Optional, Union
 
 from PIL import Image
@@ -25,7 +25,7 @@ from async_timeout import timeout
 from magic import from_buffer
 from quart import request, current_app, g
 
-from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot
+from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot, Interaction
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
 from ..yepcord.errors import Errors, InvalidDataErr
 from ..yepcord.snowflake import Snowflake
@@ -240,6 +240,22 @@ def getApplication(f):
     return wrapped
 
 
+def getInteraction(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (int_id := kwargs.get("interaction")) or not (token := kwargs.get("token")):
+            raise InvalidDataErr(404, Errors.make(10002))
+        interaction = await (Interaction.objects.select_related(["application", "user", "channel", "command"])
+                             .get_or_none(id=int_id))
+        if interaction is None or interaction.token != token:
+            raise InvalidDataErr(404, Errors.make(10002))
+        del kwargs["token"]
+        kwargs["interaction"] = interaction
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
 getGuildWithMember = getGuild(with_member=True)
 getGuildWithoutMember = getGuild(with_member=False)
 getGuildWM = getGuildWithMember
@@ -249,6 +265,16 @@ getGuildWoM = getGuildWithoutMember
 # Idk
 
 
+async def get_multipart_json() -> dict:
+    try:
+        form = await request.form
+        if not form:
+            raise ValueError
+        return loads(form["payload_json"])
+    except (ValueError, KeyError):
+        raise InvalidDataErr(400, Errors.make(50035))
+
+
 async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[dict, list[Attachment]]:
     attachments = []
     if data is None:  # Multipart request
@@ -256,8 +282,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
             raise InvalidDataErr(400, Errors.make(50045))
         async with timeout(current_app.config["BODY_TIMEOUT"]):
             files = list((await request.files).values())
-            data = await request.form
-            data = jloads(data["payload_json"])
+            data = await get_multipart_json()
             if len(files) > 10:
                 raise InvalidDataErr(400, Errors.make(50013, {"files": {
                     "code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."

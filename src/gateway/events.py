@@ -17,14 +17,16 @@
 """
 
 from __future__ import annotations
+
 from base64 import b64encode
 from time import time
 from typing import List, TYPE_CHECKING
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
-from ..yepcord.snowflake import Snowflake
 from ..yepcord.models import Emoji, Application, Integration
+from ..yepcord.models.interaction import Interaction
+from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
@@ -990,3 +992,47 @@ class GuildIntegrationsUpdateEvent(DispatchEvent):
                 "guild_id": self.guild_id,
             }
         }
+
+
+class InteractionCreateEvent(DispatchEvent):
+    NAME = "INTERACTION_CREATE"
+
+    def __init__(self, interaction: Interaction, full: bool):
+        self.interaction = interaction
+        self.full = full
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+        }
+        if not self.full:
+            return data | {"d": {
+                "nonce": str(self.interaction.nonce) if self.interaction.nonce is not None else None,
+                "id": str(self.interaction.nonce),
+            }}
+
+        return data | {"d": await self.interaction.ds_json(with_token=True)}
+
+
+class InteractionSuccessEvent(DispatchEvent):
+    NAME = "INTERACTION_SUCCESS"
+
+    def __init__(self, interaction: Interaction):
+        self.interaction = interaction
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "id": str(self.interaction.nonce),
+                "nonce": str(self.interaction.nonce) if self.interaction.nonce is not None else None,
+            },
+        }
+
+
+class InteractionFailureEvent(InteractionSuccessEvent):
+    NAME = "INTERACTION_FAILURE"
+
+

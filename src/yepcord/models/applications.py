@@ -258,7 +258,7 @@ class ApplicationCommand(ormar.Model):
     description_localizations: dict = ormar.JSON(nullable=True, default=None)
     options: list[dict] = ormar.JSON(default=[])
     default_member_permissions: Optional[int] = ormar.BigInteger(nullable=True, default=None)
-    dm_permission: bool = ormar.Boolean(defailt=True)
+    dm_permission: bool = ormar.Boolean(default=True)
     nsfw: bool = ormar.Boolean(default=False)
     version: int = ormar.BigInteger(default=Snowflake.makeId)
 

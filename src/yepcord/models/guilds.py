@@ -126,7 +126,6 @@ class Guild(ormar.Model):
             "guild_scheduled_events": [await event.ds_json() for event in await getCore().getGuildEvents(self)],
             "emojis": [await emoji.ds_json(False) for emoji in await getCore().getEmojis(self.id)],
             "data_mode": "full",
-            "application_command_counts": [],
         }
 
         if not for_gateway:
@@ -215,7 +214,7 @@ class GuildMember(ormar.Model):
             "nick": self.nick,
             "is_pending": False,
             "pending": False,
-            "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
             "roles": [str(role) for role in await getCore().getMemberRolesIds(self)],
             "user": userdata.ds_json,
             "mute": self.mute,
