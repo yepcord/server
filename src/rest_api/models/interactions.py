@@ -4,12 +4,14 @@ from pydantic import BaseModel, validator, create_model
 
 from ...yepcord.enums import ApplicationCommandOptionType
 
-
 OPTION_MODELS = {
     ApplicationCommandOptionType.STRING: create_model("OptionString", value=(str, ...)),
     ApplicationCommandOptionType.INTEGER: create_model("OptionInt", value=(int, ...)),
     ApplicationCommandOptionType.BOOLEAN: create_model("OptionBool", value=(bool, ...)),
     ApplicationCommandOptionType.NUMBER: create_model("OptionFloat", value=(float, ...)),
+    ApplicationCommandOptionType.USER: create_model("OptionUser", value=(int, ...)),
+    ApplicationCommandOptionType.CHANNEL: create_model("OptionChannel", value=(int, ...)),
+    ApplicationCommandOptionType.ROLE: create_model("OptionRole", value=(int, ...)),
 }
 
 
@@ -23,6 +25,8 @@ class InteractionDataOption(BaseModel):
         T = ApplicationCommandOptionType
         if values["type"] in {T.STRING, T.INTEGER, T.BOOLEAN, T.NUMBER}:
             return OPTION_MODELS[values["type"]](value=value).value
+        if values["type"] in {T.USER, T.CHANNEL, T.ROLE}:
+            return str(OPTION_MODELS[values["type"]](value=value).value)
 
         return value
 
@@ -50,7 +54,7 @@ class InteractionCreate(BaseModel):
 class InteractionRespondData(BaseModel):
     content: Optional[str] = None
     #embeds: Optional[list] = None
-    flags: Optional[int] = None
+    flags: int = 0
     #components: Optional[list] = None # components validation are not supported now :(
 
 

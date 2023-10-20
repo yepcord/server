@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Literal, Union, ForwardRef
+from typing import Optional, Literal, Union
 
 from pydantic import BaseModel, validator, Field
 
@@ -63,15 +63,15 @@ class GetCommandsQS(BaseModel):
 class CommandBase(BaseModel):
     name: str = Field(max_length=32)
     description: str = Field(max_length=100)
-    name_localizations: Optional[str] = None
-    description_localizations: Optional[str] = None
+    name_localizations: Optional[dict] = None
+    description_localizations: Optional[dict] = None
     options: list[CommandOption] = Field(default_factory=list)
 
     @validator("name_localizations", "description_localizations")
     def validate_localizations(cls, value: Optional[dict], values, field) -> Optional[dict]:
-        if value is not None and value not in Locales.values_set():
+        if value is not None and any(k not in Locales.values_set() for k in value):
             raise InvalidDataErr(400, Errors.make(50035, {field.name: {
-                "code": "ENUM_TYPE_COERCE", "message": f"Value \"{value}\" is not a valid enum value."
+                "code": "ENUM_TYPE_COERCE", "message": f"Value is not a valid enum value."
             }}))
         if value is not None:
             lim = 32 if field.name == "name_localizations" else 100
@@ -81,10 +81,10 @@ class CommandBase(BaseModel):
                 }}))
         return value
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         if (options := kwargs.get("options")) and isinstance(options, list) and len(options) > 25:
             kwargs["options"] = options[:25]
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
 
 ChoicesType = Optional[list[Union[str, int, float]]]
@@ -94,7 +94,7 @@ class CommandOption(CommandBase):
     type: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     required: bool = False
     choices: ChoicesType = Field(default=None, max_items=25)
-    channel_types: Optional[Literal[0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14]] = None
+    channel_types: Optional[list[Literal[0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14]]] = None
     min_value: Optional[int] = None
     max_value: Optional[int] = None
     min_length: Optional[int] = None
@@ -109,7 +109,7 @@ class CommandOption(CommandBase):
         return value
 
     @validator("channel_types")
-    def validate_channel_types(cls, value: ChoicesType, values) -> ChoicesType:
+    def validate_channel_types(cls, value, values):
         if values["type"] != ApplicationCommandOptionType.CHANNEL and value is not None:
             return None
         return value
@@ -128,13 +128,10 @@ class CommandOption(CommandBase):
         if value is not None:
             if value < 0: value = 0
             if value > 6000: value = 6000
-            if field.name == "min_length" and value > values.get("max_length", value):
-                raise InvalidDataErr(400, Errors.make(50035, {"min_length": {
-                    "code": "BASE_TYPE_BAD_INTEGER", "message": "Value should be less than \"max_length\"."
-                }}))
-            if field.name == "max_length" and value < values.get("min_length", value):
-                raise InvalidDataErr(400, Errors.make(50035, {"max_length": {
-                    "code": "BASE_TYPE_BAD_INTEGER", "message": "Value should be more than \"min_length\"."
+            if (field.name == "min_length" and value > values.get("max_length", value)) \
+                    or (field.name == "max_length" and value < values.get("min_length", value)):
+                raise InvalidDataErr(400, Errors.make(50035, {field.name: {
+                    "code": "BASE_TYPE_BAD_INTEGER", "message": "Bad integer."
                 }}))
         return value
 

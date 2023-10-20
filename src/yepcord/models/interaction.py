@@ -53,7 +53,7 @@ class Interaction(ormar.Model):
     command: Optional[ApplicationCommand] = ormar.ForeignKey(ApplicationCommand, on_delete=ReferentialAction.SET_NULL,
                                                              nullable=True, default=None)
 
-    async def ds_json(self, with_user=False, with_token=False) -> dict:
+    async def ds_json(self, with_user=False, with_token=False, resolved: dict=None) -> dict:
         data = {
             "id": str(self.id),
             "application_id": str(self.application.id),
@@ -63,6 +63,8 @@ class Interaction(ormar.Model):
 
         if self.data is not None:
             data["data"] = self.data
+            if resolved is not None:
+                data["data"] |= {"resolved": resolved}
 
         if self.guild is not None:
             data["guild_id"] = self.guild.id

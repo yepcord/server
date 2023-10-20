@@ -62,8 +62,9 @@ async def test_edit_application():
     client: TestClientType = app.test_client()
     user = (await create_users(client, 1))[0]
     application = await create_application(client, user, "testApp")
+    headers = {"Authorization": user["token"]}
 
-    resp = await client.patch(f"/api/v9/applications/{application['id']}", headers={"Authorization": user["token"]},
+    resp = await client.patch(f"/api/v9/applications/{application['id']}", headers=headers,
                               json={"name": "123", "icon": YEP_IMAGE, "bot_public": False,
                                     "bot_require_code_grant": False})
     assert resp.status_code == 200
@@ -75,18 +76,37 @@ async def test_edit_application():
     assert not json["bot_public"]
     assert not json["bot_require_code_grant"]
 
+    resp = await client.patch(f"/api/v9/applications/{application['id']}", headers=headers, json={"icon": "a"*32})
+    assert resp.status_code == 200
+    json_new = await resp.get_json()
+    assert json["icon"] == json_new["icon"]
+
+    resp = await client.patch(f"/api/v9/applications/{application['id']}", headers=headers, json={"icon": "not-image"})
+    assert resp.status_code == 400
+
 
 @pt.mark.asyncio
 async def test_edit_application_bot():
     client: TestClientType = app.test_client()
     user = (await create_users(client, 1))[0]
     application = await create_application(client, user, "testApp")
+    headers = {"Authorization": user["token"]}
 
-    resp = await client.patch(f"/api/v9/applications/{application['id']}/bot", headers={"Authorization": user["token"]},
+    resp = await client.patch(f"/api/v9/applications/{application['id']}/bot", headers=headers,
                               json={"avatar": YEP_IMAGE})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert len(json["avatar"]) == 32
+
+    resp = await client.patch(f"/api/v9/applications/{application['id']}/bot", headers=headers,
+                              json={"avatar": "a"*32})
+    assert resp.status_code == 200
+    json_new = await resp.get_json()
+    assert json["avatar"] == json_new["avatar"]
+
+    resp = await client.patch(f"/api/v9/applications/{application['id']}/bot", headers=headers,
+                              json={"avatar": "not-image"})
+    assert resp.status_code == 400
 
 
 @pt.mark.asyncio

@@ -204,9 +204,8 @@ class GuildMember(ormar.Model):
     def joined_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
 
-    async def ds_json(self) -> dict:
-        userdata = await self.user.userdata
-        return {
+    async def ds_json(self, with_user=True) -> dict:
+        data = {
             "avatar": self.avatar,
             "communication_disabled_until": self.communication_disabled_until,
             "flags": self.flags,
@@ -216,10 +215,14 @@ class GuildMember(ormar.Model):
             "pending": False,
             "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
             "roles": [str(role) for role in await getCore().getMemberRolesIds(self)],
-            "user": userdata.ds_json,
             "mute": self.mute,
             "deaf": self.deaf
         }
+
+        if with_user:
+            data["user"] = (await self.user.userdata).ds_json
+
+        return data
 
     @property
     def perm_checker(self) -> PermissionsChecker:

@@ -623,7 +623,7 @@ class Core(Singleton):
         return guild
 
     async def getRole(self, role_id: int) -> Role:
-        return await Role.objects.get_or_none(id=role_id)
+        return await Role.objects.select_related("guild").get_or_none(id=role_id)
 
     async def getRoles(self, guild: Guild, exclude_default=False) -> list[Role]:
         query = Role.objects.filter(guild=guild)

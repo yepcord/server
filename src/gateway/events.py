@@ -997,9 +997,10 @@ class GuildIntegrationsUpdateEvent(DispatchEvent):
 class InteractionCreateEvent(DispatchEvent):
     NAME = "INTERACTION_CREATE"
 
-    def __init__(self, interaction: Interaction, full: bool):
+    def __init__(self, interaction: Interaction, full: bool, **interaction_kwargs):
         self.interaction = interaction
         self.full = full
+        self.interaction_kwargs = interaction_kwargs
 
     async def json(self) -> dict:
         data = {
@@ -1012,7 +1013,7 @@ class InteractionCreateEvent(DispatchEvent):
                 "id": str(self.interaction.nonce),
             }}
 
-        return data | {"d": await self.interaction.ds_json(with_token=True)}
+        return data | {"d": await self.interaction.ds_json(with_token=True, **self.interaction_kwargs)}
 
 
 class InteractionSuccessEvent(DispatchEvent):
