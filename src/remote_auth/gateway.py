@@ -101,7 +101,7 @@ class Gateway:
             nonce = urandom(32)
             cl = GatewayClient(ws, pubkey, fingerprint, nonce)
             self.clients_by_fingerprint[fingerprint] = self.clients_by_socket[ws] = cl
-            await RemoteAuthSession.objects.create(fingerprint=fingerprint)
+            await RemoteAuthSession.create(fingerprint=fingerprint)
             encrypted_nonce = _b64encode(cl.encrypt(nonce)).decode("utf8")
             await self.send(ws, "nonce_proof", encrypted_nonce=encrypted_nonce)
             await cl.check_timeout()
@@ -145,4 +145,4 @@ class Gateway:
         if not (client := self.clients_by_socket.get(ws)):
             return
 
-        await RemoteAuthSession.objects.delete(fingerprint=client.fingerprint)
+        await RemoteAuthSession.filter(fingerprint=client.fingerprint).delete()

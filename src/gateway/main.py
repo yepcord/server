@@ -17,8 +17,8 @@
 """
 
 from quart import Quart, websocket
+from tortoise.contrib.quart import register_tortoise
 
-from src.yepcord.models import database
 from ..yepcord.config import Config
 from ..yepcord.classes.other import ZlibCompressor
 from ..yepcord.core import Core
@@ -39,15 +39,11 @@ gw = Gateway(core)
 
 @app.before_serving
 async def before_serving():
-    if not database.is_connected:
-        await database.connect()
     await gw.init()
 
 
 @app.after_serving
 async def after_serving():
-    if database.is_connected:
-        await database.disconnect()
     await gw.stop()
 
 
@@ -76,3 +72,11 @@ async def ws_gateway():
             setattr(ws, "ws_connected", False)
             await gw.disconnect(ws)
             raise
+
+
+register_tortoise(
+    app,
+    db_url=Config.DB_CONNECT_STRING,
+    modules={"models": ["src.yepcord.models"]},
+    generate_schemas=False,
+)

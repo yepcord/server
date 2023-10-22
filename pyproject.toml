@@ -33,20 +33,14 @@ aioftp = "0.21.4"
 aioboto3 = "11.3.0"
 botocore = "1.31.17"
 protobuf-to-dict = {git = "https://github.com/yepcord/protobuf-to-dict"}
-ormar = {git = "https://github.com/yepcord/ormar"}
 orjson = "3.9.9"
-aiomysql = "0.2.0"
-pymysql = ">=0.9"
-aiosqlite = ">=0.17,<0.20"
-databases = "0.6.2"
-SQLAlchemy = "1.4.41"
-alembic = "1.11.2"
 mailers = {version = "3.0.1", extras = ["smtp"]}
 propan = {version = "0.1.5.24", extras = ["async-rabbit", "async-redis"]}
 redis = ">=4.6.0"
 click = "8.1.7"
 maxminddb = ">=2.4.0,<2.5.0"
 wget = "3.2"
+tortoise-orm = {extras = ["asyncmy"], version = "^0.20.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest-cov = "4.1.0"

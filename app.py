@@ -27,6 +27,7 @@ app = Quart("YEPCord server")
 
 # noinspection PyTypeChecker
 def create_yepcord():
+    from tortoise.contrib.quart import register_tortoise
     from quart_schema import RequestSchemaValidationError, QuartSchema
     import src.rest_api.main as rest_api
     import src.gateway.main as gateway
@@ -43,6 +44,7 @@ def create_yepcord():
     from src.rest_api.routes import hypesquad
     from src.rest_api.routes import other
     from src.yepcord.errors import YDataError
+    from src.yepcord.config import Config
 
     app.gifs = rest_api.app.gifs
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
@@ -92,6 +94,13 @@ def create_yepcord():
     app.get("/media/stickers/<int:sticker_id>.<string:format_>")(cdn.get_sticker)
     app.get("/media/guild-events/<int:event_id>/<string:file_hash>")(cdn.get_guild_event_image)
     app.get("/media/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")(cdn.get_attachment)
+
+    register_tortoise(
+        app,
+        db_url=Config.DB_CONNECT_STRING,
+        modules={"models": ["src.yepcord.models"]},
+        generate_schemas=False,
+    )
 
     return app
 

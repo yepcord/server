@@ -1,10 +1,33 @@
-from .db import *
-from .users import *
-from .channels import *
-from .guilds import *
+from .user import User
+from .session import Session
+from .userdata import UserData
+from .user_settings import UserSettings, UserSettingsProto
+from .frecency_settings import FrecencySettings
+from .user_note import UserNote
+from .connected_account import ConnectedAccount
+from .mfa_code import MfaCode
+from .relationship import Relationship
+from .remote_auth_session import RemoteAuthSession
 
-Channel.update_forward_refs(**locals())
-ThreadMember.update_forward_refs(**locals())
+from .channel import Channel
+from .hidden_dm_channel import HiddenDmChannel
+from .readstate import ReadState
+from .invite import Invite
+from .permission_overwrite import PermissionOverwrite
+from .thread_member import ThreadMember
+from .thread_metadata import ThreadMetadata
+from .webhook import Webhook
 
-# noinspection PyPep8
-from .messages import *
+from .guild import Guild
+from .emoji import Emoji
+from .sticker import Sticker
+from .audit_log_entry import AuditLogEntry
+from .guild_member import GuildMember
+from .guild_ban import GuildBan
+from .guild_event import GuildEvent
+from .guild_template import GuildTemplate
+from .role import Role
+
+from .message import Message
+from .attachment import Attachment
+from .reaction import Reaction
