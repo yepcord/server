@@ -40,19 +40,6 @@ class SnowflakeField(BigIntField):
         kwargs["default"] = Snowflake.makeId
         super().__init__(*args, **kwargs)
 
-    class _db_sqlite:
-        GENERATED_SQL = "INTEGER PRIMARY KEY NOT NULL"
-
-    class _db_mysql:
-        GENERATED_SQL = "BIGINT NOT NULL PRIMARY KEY"
-
-    class _db_mssql:
-        GENERATED_SQL = "BIGINT NOT NULL PRIMARY KEY"
-
-    class _db_oracle:
-        SQL_TYPE = "INT"
-        GENERATED_SQL = "INT PRIMARY KEY NOT NULL"
-
 
 class Model(tortoise.Model):
     async def update(self, **kwargs) -> None:
