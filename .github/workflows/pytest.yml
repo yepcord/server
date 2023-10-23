@@ -47,6 +47,7 @@ jobs:
           QUART_APP: app:create_yepcord
           SETTINGS: src.settings_test
           DB_TYPE: ${{ matrix.database }}
+          KEY: ${{ secrets.KEY }}
 
       - name: Run test suite for core
         run: |
