@@ -493,18 +493,19 @@ class Core(Singleton):
         if isinstance(user, User):
             user = user.id
         reactions = []
-        #coll = "" if is_sqlite else " collate utf8mb4_unicode_520_ci as `emoji_name`"
-        #result = await Channel.Meta.database.fetch_all(
-        #   query=f'SELECT `emoji_name`{coll}, `emoji`, COUNT(*) AS ecount, '
-        #         f'(SELECT COUNT(*) > 0 FROM `reactionss` AS r2 WHERE r2.`emoji_name`=r1.emoji_name AND '
-        #         f'(`emoji`=r1.emoji OR (`emoji` IS NULL AND r1.emoji IS NULL)) AND `user`=:user_id) as me '
-        #         f'FROM `reactionss` AS r1 WHERE `message`=:message_id GROUP BY `emoji_name`, `emoji`',
-        #   values={"user_id": user, "message_id": message.id}
-        #)
-        #for r in result:
-        #    reactions.append(
-        #       {"emoji": {"id": str(r[1]) if r[1] else None, "name": r[0]}, "count": r[2], "me": bool(r[3])}
-        #    )
+        result = await (Reaction.filter(message=message)
+                        .group_by("emoji_name", "emoji__id")
+                        .annotate(count=Count("id"))
+                        .values("id", "emoji_name", "emoji__id", "count"))
+
+        me_results = set(await Reaction.filter(message=message, user=user).values_list("id", flat=True))
+
+        for r in result:
+            reactions.append({
+                "emoji": {"id": str(r["emoji__id"]) if r["emoji__id"] else None, "name": r["emoji_name"]},
+                "count": r["count"],
+                "me": r["id"] in me_results
+            })
         return reactions
 
     async def getReactedUsersJ(self, message: Message, limit: int, emoji: Emoji, emoji_name: str) -> list[dict]:
