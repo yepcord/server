@@ -16,14 +16,15 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from tortoise import Model, fields
+from tortoise import fields
 
 from src.yepcord.ctx import getCore
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class ReadState(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
     user: models.User = fields.ForeignKeyField("models.User")
     last_read_id: int = fields.BigIntField()

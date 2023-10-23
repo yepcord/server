@@ -82,9 +82,10 @@ async def update_me(data: UserUpdate, user: User):
                 data.avatar = avatar
 
     await userdata.refresh_from_db()
+    await userdata.user.refresh_from_db()
     changes = data.dict(include={"avatar"}, exclude_defaults=True)
     if changes:
-        await userdata.update_from_dict(**changes)
+        await userdata.update(**changes)
     await getGw().dispatch(UserUpdateEvent(user, userdata, await user.settings), [user.id])
     return await userdata.ds_json_full()
 
@@ -98,7 +99,7 @@ async def get_my_profile(data: UserProfileUpdate, user: User):
                 data.banner = banner
 
     userdata = await user.data
-    await userdata.update_from_dict(**data.dict(exclude_defaults=True))
+    await userdata.update(**data.dict(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return await userdata.ds_json_full()
 
@@ -123,7 +124,7 @@ async def update_consent_settings(data: ConsentSettingsUpdate, user: User):
         for revoke in data.revoke:
             if revoke not in ALLOWED_SETTINGS: continue
             new_settings[revoke] = False
-        await settings.update_from_dict(**new_settings)
+        await settings.update(**new_settings)
     return settings.ds_json_consent()
 
 
@@ -138,7 +139,7 @@ async def get_settings(user: User):
 @multipleDecorators(validate_request(SettingsUpdate), getUser)
 async def update_settings(data: SettingsUpdate, user: User):
     settings = await user.settings
-    await settings.update_from_dict(**data.dict(exclude_defaults=True))
+    await settings.update(**data.dict(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return settings.ds_json()
 
@@ -438,8 +439,7 @@ async def remote_auth_login(data: RemoteAuthLogin, user: User):
     if ra_session is None:
         raise InvalidDataErr(404, Errors.make(10012))
 
-    ra_session.user = user
-    await ra_session.save(update_fields=["user"])
+    await ra_session.update(user=user)
     userdata = await user.userdata
     avatar = userdata.avatar if userdata.avatar else ""
     await getGw().dispatchRA("pending_finish", {

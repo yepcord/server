@@ -18,13 +18,14 @@
 
 from typing import Optional
 
-from tortoise import Model, fields
+from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class Webhook(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     type: int = fields.IntField()
     name: str = fields.CharField(max_length=128)
     channel: models.Channel = fields.ForeignKeyField("models.Channel")

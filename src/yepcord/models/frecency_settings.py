@@ -16,16 +16,16 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from tortoise.models import Model
 from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.proto import FrecencyUserSettings
 from src.yepcord.utils import b64decode
 
 
 class FrecencySettings(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     settings: str = fields.TextField()
 

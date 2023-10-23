@@ -22,10 +22,9 @@ from typing import Optional, Any
 
 from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, Int32Value
 from protobuf_to_dict import protobuf_to_dict
-from tortoise.models import Model
 from tortoise import fields
 
-from src.yepcord.models._utils import ChoicesValidator
+from src.yepcord.models._utils import ChoicesValidator, SnowflakeField, Model
 import src.yepcord.models as models
 from src.yepcord.proto import PreloadedUserSettings, Versions, UserContentSettings, VoiceAndVideoSettings, \
     TextAndImagesSettings, PrivacySettings, StatusSettings, CustomStatus, LocalizationSettings, AppearanceSettings, \
@@ -34,7 +33,7 @@ from src.yepcord.utils import dict_get, freeze, unfreeze
 
 
 class UserSettings(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     inline_attachment_media: bool = fields.BooleanField(default=True)
     show_current_game: bool = fields.BooleanField(default=True)
@@ -299,4 +298,4 @@ class UserSettingsProto:
         old_settings = freeze(self._settings.__dict__)
 
         changes = unfreeze(changes - old_settings)
-        await self._settings.update_from_dict(changes)
+        await self._settings.update(**changes)

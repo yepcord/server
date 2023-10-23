@@ -16,13 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from tortoise import fields, Model
+from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class PermissionOverwrite(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
     target_id: int = fields.BigIntField()
     type: int = fields.IntField()

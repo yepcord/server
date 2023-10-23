@@ -437,7 +437,7 @@ async def test_update_member():
 
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}/roles/{role1['id']}", json={"permissions": "8"},
                               headers=headers1)
-    assert resp.status_code == 200
+    assert resp.status_code == 200, await resp.get_json()
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}/roles/{role2['id']}", json={"permissions": "8"},
                               headers=headers1)
     assert resp.status_code == 200

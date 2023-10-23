@@ -19,15 +19,15 @@
 from __future__ import annotations
 from typing import Optional
 
-from tortoise.models import Model
 from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.utils import b64encode, int_size, b64decode
 
 
 class Session(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     signature: str = fields.CharField(max_length=128)
 

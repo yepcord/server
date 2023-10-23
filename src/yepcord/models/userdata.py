@@ -19,18 +19,18 @@
 from datetime import date, timedelta
 from typing import Optional
 
-from tortoise.models import Model
 from tortoise import fields
 from tortoise.validators import MinValueValidator, MaxValueValidator
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class UserData(Model):
     class Meta:
         unique_together = (("username", "discriminator"),)
 
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     birth: date = fields.DateField()
     username: str = fields.CharField(max_length=128)

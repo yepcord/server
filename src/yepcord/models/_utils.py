@@ -18,8 +18,12 @@
 
 from typing import Any
 
+import tortoise
 from tortoise.exceptions import ValidationError
+from tortoise.fields import BigIntField
 from tortoise.validators import Validator
+
+from src.yepcord.snowflake import Snowflake
 
 
 class ChoicesValidator(Validator):
@@ -29,3 +33,28 @@ class ChoicesValidator(Validator):
     def __call__(self, value: Any):
         if value not in self.choices:
             raise ValidationError(f"Value '{value}' is not in {self.choices}")
+
+
+class SnowflakeField(BigIntField):
+    def __init__(self, *args, **kwargs):
+        kwargs["default"] = Snowflake.makeId
+        super().__init__(*args, **kwargs)
+
+    class _db_sqlite:
+        GENERATED_SQL = "INTEGER PRIMARY KEY NOT NULL"
+
+    class _db_mysql:
+        GENERATED_SQL = "BIGINT NOT NULL PRIMARY KEY"
+
+    class _db_mssql:
+        GENERATED_SQL = "BIGINT NOT NULL PRIMARY KEY"
+
+    class _db_oracle:
+        SQL_TYPE = "INT"
+        GENERATED_SQL = "INT PRIMARY KEY NOT NULL"
+
+
+class Model(tortoise.Model):
+    async def update(self, **kwargs) -> None:
+        await self.update_from_dict(kwargs)
+        await self.save()

@@ -20,16 +20,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from tortoise.models import Model
 from tortoise import fields
 
 from src.yepcord.ctx import getCore
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 
 
 class User(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     email: str = fields.CharField(max_length=254, unique=True)
     password: str = fields.CharField(max_length=128)
     verified: bool = fields.BooleanField(default=False)

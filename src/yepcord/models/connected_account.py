@@ -18,15 +18,15 @@
 
 from typing import Optional
 
-from tortoise.models import Model
 from tortoise import fields
 
-from src.yepcord.models._utils import ChoicesValidator
+from src.yepcord.models._utils import ChoicesValidator, SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 import src.yepcord.models as models
 
+
 class ConnectedAccount(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     service_id: str = fields.CharField(max_length=128, unique=True)
     user: models.User = fields.ForeignKeyField("models.User")
     name: str = fields.TextField()

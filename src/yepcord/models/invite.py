@@ -19,17 +19,18 @@
 from datetime import datetime
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 from src.yepcord.ctx import getCore
 from src.yepcord.enums import ChannelType
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import b64encode, int_size
 import src.yepcord.models as models
 
 
 class Invite(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     type: int = fields.IntField(default=1)
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
     inviter: models.User = fields.ForeignKeyField("models.User")

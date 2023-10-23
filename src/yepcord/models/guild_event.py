@@ -19,15 +19,16 @@
 from datetime import datetime
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 import src.yepcord.models as models
 from src.yepcord.ctx import getCore
 from src.yepcord.enums import ScheduledEventEntityType
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class GuildEvent(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
     creator: models.User = fields.ForeignKeyField("models.User")
     channel: Optional[models.Channel] = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
@@ -40,13 +41,13 @@ class GuildEvent(Model):
     status: int = fields.IntField(default=1)
     entity_type: int = fields.IntField()
     entity_id: Optional[int] = fields.BigIntField(null=True, default=None)
-    entity_metadata: dict = fields.JSONField(default={})
+    entity_metadata: dict = fields.JSONField(default={}, null=True)
     image: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
     subscribers = fields.ManyToManyField("models.GuildMember")
 
     async def ds_json(self, with_user: bool = False, with_user_count: bool = False) -> dict:
-        channel_id = str(self.channel.id) if self.channel is not None else None
-        entity_id = str(self.entity_id) if self.entity_id is not None else None
+        channel_id = str(self.channel.id) if self.channel else None
+        entity_id = str(self.entity_id) if self.entity_id else None
         start_time = self.start.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
         end_time = None
         if self.end:

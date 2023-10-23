@@ -20,9 +20,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 from src.yepcord.enums import AuditLogEntryType
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 
 import src.yepcord.models as models
@@ -219,7 +220,7 @@ class AuditLogEntryUtils:
 class AuditLogEntry(Model):
     utils = AuditLogEntryUtils
 
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
     user: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
     target_id: int = fields.BigIntField(null=True, default=None)

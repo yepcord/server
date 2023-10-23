@@ -69,7 +69,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
             changes["icon"] = image
         if "icon" in changes and changes["icon"] != channel.icon: changed.append("icon")
         if "name" in changes and changes["name"] != channel.name: changed.append("name")
-        await channel.update_from_dict(changes)
+        await channel.update(**changes)
         await getGw().dispatch(DMChannelUpdateEvent(channel), channel_id=channel.id)
     elif channel.type in GUILD_CHANNELS:
         guild = channel.guild
@@ -79,12 +79,12 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
         changes = data.to_json(channel.type)
         if "parent_id" in changes:
             parent = await getCore().getChannel(changes["parent_id"])
-            if (parent is None or
+            if (changes["parent_id"] is None or
                     (parent is not None and parent.guild == guild and parent.type == ChannelType.GUILD_CATEGORY)):
                 changes["parent"] = parent
             del changes["parent_id"]
 
-        await channel.update_from_dict(changes)
+        await channel.update(**changes)
         await getGw().dispatch(ChannelUpdateEvent(await channel.ds_json()), guild_id=channel.guild.id)
 
     if channel.type == ChannelType.GROUP_DM:
@@ -94,7 +94,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
             await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel_id=message.channel.id)
         if "icon" in changed:
-            message = await Message.create(id=Snowflake.makeId(), channel=channel.id, author=user,
+            message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user,
                                            type=MessageType.CHANNEL_ICON_CHANGE, content="")
             await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel_id=message.channel.id)
@@ -127,11 +127,11 @@ async def delete_channel(user: User, channel: Channel):
         await getGw().dispatch(ChannelRecipientRemoveEvent(channel.id, (await user.data).ds_json),
                                users=[user.id for user in await channel.recipients.all()])
         await getGw().dispatch(DMChannelDeleteEvent(await channel.ds_json()), users=[user.id])
-        if await channel.recipients.count() == 0:
+        if await channel.recipients.filter().count() == 0:
             await channel.delete()
         elif channel.owner == user:
             channel.owner = choice(await channel.recipients.all())
-            await channel.save(update_fields=["owner"])
+            await channel.save()
             await getGw().dispatch(DMChannelUpdateEvent(channel), channel_id=channel.id)
     elif channel.type in GUILD_CHANNELS:
         member = await getCore().getGuildMember(channel.guild, user.id)
@@ -205,9 +205,10 @@ async def send_message(user: User, channel: Channel):
 
     message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user, **data_json,
                                    **stickers_data, type=message_type, guild=channel.guild)
+    message.nonce = data_json.get("nonce")
     for attachment in attachments:
         attachment.message = message
-        await attachment.save(update_fields=["message"])
+        await attachment.save()
 
     if channel.type == ChannelType.DM:
         other_user = await channel.other_user(user)
@@ -248,7 +249,7 @@ async def edit_message(data: MessageUpdate, user: User, channel: Channel, messag
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-    await message.update_from_dict(data.to_json() | {"edit_timestamp": datetime.now()})
+    await message.update(**data.to_json(), edit_timestamp=datetime.now())
     await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=channel.id)
     return await message.ds_json()
 
@@ -474,7 +475,7 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
     old_overwrite = await getCore().getPermissionOverwrite(channel, target_id)
     if old_overwrite is not None:
-        await old_overwrite.update_from_dict(data.dict())
+        await old_overwrite.update(**data.dict())
         overwrite = old_overwrite
     else:
         overwrite = await PermissionOverwrite.create(**data.dict(), channel=channel, target_id=target_id)

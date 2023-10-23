@@ -19,10 +19,11 @@
 from datetime import datetime
 from typing import Optional, Union
 
-from tortoise import Model, fields
+from tortoise import fields
 
 from src.yepcord.ctx import getCore
 from src.yepcord.enums import ChannelType
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import b64encode, int_size, NoneType
 
@@ -30,7 +31,7 @@ import src.yepcord.models as models
 
 
 class GuildTemplate(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     name: str = fields.CharField(max_length=64)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
     description: Optional[str] = fields.CharField(max_length=128, null=True, default=None)

@@ -18,13 +18,14 @@
 
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class Reaction(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     message: models.Message = fields.ForeignKeyField("models.Message")
     user: models.User = fields.ForeignKeyField("models.User")
     emoji: Optional[models.Emoji] = fields.ForeignKeyField("models.Emoji", on_delete=fields.SET_NULL, null=True,

@@ -30,7 +30,7 @@ from typing import Optional, Union
 
 import maxminddb
 from bcrypt import hashpw, gensalt, checkpw
-from tortoise.expressions import Q
+from tortoise.expressions import Q, Subquery
 from tortoise.functions import Count, Max
 
 from .classes.other import EmailMsg, JWT, MFA
@@ -225,7 +225,7 @@ class Core(Singleton):
         await MfaCode.filter(user=user).delete()
 
     async def getBackupCodes(self, user: User) -> list[MfaCode]:
-        return await MfaCode.filter(user=user).limit(10).all()
+        return await MfaCode.filter(user=user).select_related("user").limit(10).all()
 
     def generateMfaTicketSignature(self, user: User, session_id: int) -> str:
         payload = {
@@ -285,11 +285,13 @@ class Core(Singleton):
 
     async def getDChannel(self, user1: User, user2: User) -> Optional[Channel]:
         return await Channel.get_or_none(
-            id__in=await Channel
-            .filter(recipients__id__in=[user1.id, user2.id])
-            .annotate(user_count=Count('recipients__id', distinct=True))
-            .filter(user_count=2)
-            .values_list('id', flat=True)
+            id__in=Subquery(
+                Channel
+                .filter(recipients__id__in=[user1.id, user2.id])
+                .annotate(user_count=Count('recipients__id', distinct=True))
+                .filter(user_count=2)
+                .values_list('id', flat=True)
+            )
         )
 
     async def getDMChannelOrCreate(self, user1: User, user2: User) -> Channel:
@@ -327,7 +329,8 @@ class Core(Singleton):
         if after: id_filter["id__gt"] = after
         if before: id_filter["id__lt"] = before
         messages = await (Message.filter(channel=channel, **id_filter)
-                          .select_related("thread", "channel", "author").order_by("-id").limit(limit).all())
+                          .select_related("thread", "channel", "author", "guild")
+                          .order_by("-id").limit(limit).all())
         return messages
 
     async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
@@ -352,7 +355,7 @@ class Core(Singleton):
 
     async def getRelatedUsersToChannel(self, channel: Union[Channel, int], ids: bool = True) -> list[Union[int, User]]:
         if isinstance(channel, int):
-            channel = await Channel.get_or_none(id=channel)
+            channel = await Channel.get_or_none(id=channel).select_related("guild")
         if not channel:
             return []
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
@@ -379,7 +382,7 @@ class Core(Singleton):
         return states
 
     async def getUserNote(self, user: User, target: User) -> Optional[UserNote]:
-        return await UserNote.get_or_none(user=user, target=target)
+        return await UserNote.get_or_none(user=user, target=target).select_related("user", "target")
 
     async def getAttachment(self, attachment_id: int) -> Optional[Attachment]:
         return await Attachment.get_or_none(id=attachment_id)
@@ -435,9 +438,7 @@ class Core(Singleton):
         if await self.getUserByEmail(email):
             raise InvalidDataErr(400, Errors.make(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED",
                                                                     "message": "Email address already registered."}}))
-        user.email = email
-        user.verified = True
-        await user.save(update_fields=["email", "verified"])
+        await user.update(email=email, verified=False)
 
     async def sendMfaChallengeEmail(self, user: User, nonce: str) -> None:
         code = await self.mfaNonceToCode(user, nonce)
@@ -545,7 +546,9 @@ class Core(Singleton):
         )
 
     async def getInvite(self, invite_id: int) -> Optional[Invite]:
-        return await Invite.get_or_none(id=invite_id).select_related("channel", "channel__guild", "inviter")
+        return await (Invite.get_or_none(id=invite_id)
+                      .select_related("channel", "channel__guild", "inviter", "channel__guild__owner",
+                                      "channel__owner"))
 
     async def createGuild(self, guild_id: int, user: User, name: str, icon: str = None) -> Guild:
         guild = await Guild.create(id=guild_id, owner=user, name=name, icon=icon)
@@ -578,7 +581,7 @@ class Core(Singleton):
                                       icon: Optional[str]) -> Guild:
         serialized = template.serialized_guild
         name = serialized["name"] = name or serialized["name"]
-        guild = await Guild.create(id=guild_id, owner=user.id, name=name)
+        guild = await Guild.create(id=guild_id, owner=user, name=name)
 
         serialized["icon"] = icon
         replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None, 0: guild_id}
@@ -627,22 +630,23 @@ class Core(Singleton):
         del serialized["roles"]
         del serialized["channels"]
 
-        await guild.update_from_dict(serialized)
+        await guild.update(**serialized)
         await GuildMember.create(id=Snowflake.makeId(), user=user, guild=guild)
 
         return guild
 
     async def getRole(self, role_id: int) -> Role:
-        return await Role.get_or_none(id=role_id)
+        return await Role.get_or_none(id=role_id).select_related("guild")
 
     async def getRoles(self, guild: Guild, exclude_default=False) -> list[Role]:
-        query = Role.filter(guild=guild)
+        query = Role.filter(guild=guild).select_related("guild")
         if exclude_default:
             query = query.exclude(id=guild.id)
         return await query.all()
 
     async def getGuildMember(self, guild: Guild, user_id: int) -> Optional[GuildMember]:
-        return await GuildMember.get_or_none(guild=guild, user__id=user_id).select_related("user", "guild")
+        return await GuildMember.get_or_none(guild=guild, user__id=user_id).select_related("user", "guild",
+                                                                                           "guild__owner")
 
     async def getGuildMembers(self, guild: Guild) -> list[GuildMember]:
         return await GuildMember.filter(guild=guild).select_related("user").all()
@@ -665,10 +669,10 @@ class Core(Singleton):
         return await Guild.get_or_none(id=guild_id).select_related("owner")
 
     async def getEmojis(self, guild_id: int) -> list[Emoji]:
-        return await Emoji.filter(guild__id=guild_id).all()
+        return await Emoji.filter(guild__id=guild_id).select_related("user").all()
 
     async def getEmoji(self, emoji_id: int) -> Optional[Emoji]:
-        return await Emoji.get_or_none(id=emoji_id)
+        return await Emoji.get_or_none(id=emoji_id).select_related("guild")
 
     async def getEmojiByReaction(self, reaction: str) -> Optional[Emoji]:
         try:
@@ -697,7 +701,7 @@ class Core(Singleton):
         return await GuildBan.get_or_none(guild=guild, user__id=user_id)
 
     async def getGuildBans(self, guild: Guild) -> list[GuildBan]:
-        return await GuildBan.filter(guild=guild).all()
+        return await GuildBan.filter(guild=guild).select_related("user", "guild").all()
 
     async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> dict[
         int, list[int]]:
@@ -717,8 +721,8 @@ class Core(Singleton):
 
     async def getRolesMemberCounts(self, guild: Guild) -> dict[int, int]:
         counts = {}
-        for role in await Role.filter(guild=guild).select_related("guildmembers").all():
-            counts[role.id] = len(role.guildmembers)
+        for role in await Role.filter(guild=guild).select_related("guildmembers").annotate(m=Count("guildmembers")).all():
+            counts[role.id] = role.m
         return counts
 
     async def getMutualGuildsJ(self, user: User, current_user: User) -> list[dict[str, str]]:
@@ -738,7 +742,7 @@ class Core(Singleton):
         return mutual_guilds_json
 
     async def getAttachments(self, message: Message) -> list[Attachment]:
-        return await Attachment.filter(message=message).all()
+        return await Attachment.filter(message=message).select_related("channel").all()
 
     async def getMemberRolesIds(self, member: GuildMember, include_default: bool = False) -> list[int]:
         roles_ids = [role.id for role in await member.roles.all()]
@@ -763,12 +767,12 @@ class Core(Singleton):
         roles.sort(key=lambda r: r.position)
         return roles
 
-    async def removeGuildBan(self, guild: Guild, user_id: int) -> None:
-        await GuildBan.filter(guild=guild, user__id=user_id).delete()
+    async def removeGuildBan(self, guild: Guild, user: User) -> None:
+        await GuildBan.filter(guild=guild, user=user).delete()
 
     async def getRoleMemberIds(self, role: Role) -> list[int]:
-        role = await Role.get(id=role.id).select_related("guildmembers", "guildmembers__user")
-        return [member.user.id for member in role.guildmembers]
+        role = await Role.get(id=role.id)
+        return [member.user.id for member in await role.guildmembers.all().select_related("user")]
 
     async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:
         # noinspection PyUnresolvedReferences
@@ -826,13 +830,13 @@ class Core(Singleton):
 
     async def getAuditLogEntries(self, guild: Guild, limit: int, before: Optional[int] = None) -> list[AuditLogEntry]:
         before = {} if before is None else {"id__lt": before}
-        return await AuditLogEntry.filter(guild=guild, **before).limit(limit).all()
+        return await AuditLogEntry.filter(guild=guild, **before).select_related("guild", "user").limit(limit).all()
 
     async def getGuildTemplate(self, guild: Guild) -> Optional[GuildTemplate]:
-        return await GuildTemplate.get_or_none(guild=guild)
+        return await GuildTemplate.get_or_none(guild=guild).select_related("creator", "guild")
 
     async def getGuildTemplateById(self, template_id: int) -> Optional[GuildTemplate]:
-        return await GuildTemplate.get_or_none(id=template_id).select_related("guild")
+        return await GuildTemplate.get_or_none(id=template_id).select_related("guild", "creator")
 
     async def setTemplateDirty(self, guild: Guild) -> None:
         if not (template := await self.getGuildTemplate(guild)):
@@ -859,10 +863,10 @@ class Core(Singleton):
         return await HiddenDmChannel.filter(user=user, channel=channel).exists()
 
     async def getGuildStickers(self, guild: Guild) -> list[Sticker]:
-        return await Sticker.filter(guild=guild).all()
+        return await Sticker.filter(guild=guild).select_related("guild", "user").all()
 
     async def getSticker(self, sticker_id: int) -> Optional[Sticker]:
-        return await Sticker.get_or_none(id=sticker_id)
+        return await Sticker.get_or_none(id=sticker_id).select_related("guild", "user")
 
     async def getUserOwnedGuilds(self, user: User) -> list[Guild]:
         return await Guild.filter(owner=user).all()
@@ -871,10 +875,10 @@ class Core(Singleton):
         return await Channel.filter(owner=user, type=ChannelType.GROUP_DM).all()
 
     async def deleteUser(self, user: User) -> None:
-        await user.update_from_dict({"deleted": True, "email": f"deleted_{user.id}@yepcord.ml", "password": ""})
+        await user.update(deleted=True, email=f"deleted_{user.id}@yepcord.ml", password="")
         data = await user.data
-        await data.update_from_dict(dict(discriminator=0, username=f"Deleted User {hex(user.id)[2:]}", avatar=None,
-                                    avatar_decoration=None, public_flags=0))
+        await data.update(discriminator=0, username=f"Deleted User {hex(user.id)[2:]}", avatar=None, public_flags=0,
+                          avatar_decoration=None)
         await Session.filter(user=user).delete()
         await Relationship.filter(Q(from_user=user) | Q(to_user=user)).delete()
         await MfaCode.filter(user=user).delete()
@@ -885,20 +889,18 @@ class Core(Singleton):
         await ReadState.filter(user=user).delete()
 
     async def getGuildEventUserCount(self, event: GuildEvent) -> int:
-        return await event.subscribers.count()
+        return await event.subscribers.filter().count()
 
     async def getGuildEvent(self, event_id: int) -> Optional[GuildEvent]:
-        return await GuildEvent.get_or_none(id=event_id)
+        return await GuildEvent.get_or_none(id=event_id).select_related("channel", "guild", "creator")
 
     async def getGuildEvents(self, guild: Guild) -> list[GuildEvent]:
-        return await GuildEvent.filter(guild=guild).all()
+        return await GuildEvent.filter(guild=guild).select_related("channel", "guild", "creator").all()
 
     async def getSubscribedGuildEventIds(self, user: User, guild_id: int) -> list[int]:
-        _user = await User.get(id=user.id, guildmembers__guild__id=guild_id).select_related("guildmembers__guildevents")
         events_ids = []
-        for member in _user.guildmembers:
-            for event in member.guildevents:
-                events_ids.append(event.id)
+        for member in await GuildMember.filter(user=user, guild__id=guild_id).all():
+            events_ids.extend(await member.guildevents.filter().values_list("id", flat=True))
         return events_ids
 
     async def getThreadMetadata(self, thread: Channel) -> Optional[ThreadMetadata]:

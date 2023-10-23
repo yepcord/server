@@ -21,11 +21,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 from src.yepcord.ctx import getCore
 from src.yepcord.enums import GuildPermissions
 from src.yepcord.errors import InvalidDataErr, Errors
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 import src.yepcord.models as models
 
@@ -83,7 +84,7 @@ class PermissionsChecker:
 
 
 class GuildMember(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
     avatar: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
@@ -93,6 +94,8 @@ class GuildMember(Model):
     mute: bool = fields.BooleanField(default=False)
     deaf: bool = fields.BooleanField(default=False)
     roles = fields.ManyToManyField("models.Role")
+
+    guildevents: fields.ReverseRelation[models.GuildEvent]
 
     @property
     def joined_at(self) -> datetime:

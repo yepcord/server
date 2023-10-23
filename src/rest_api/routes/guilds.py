@@ -88,7 +88,7 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
             else:
                 setattr(data, ch, channel.id)
     changes = data.dict(exclude_defaults=True)
-    await guild.update_from_dict(changes)
+    await guild.update(**changes)
     await getGw().dispatch(GuildUpdateEvent(await guild.ds_json(user_id=0)), guild_id=guild.id)
 
     entry = await AuditLogEntry.utils.guild_update(user, guild, changes)
@@ -150,7 +150,7 @@ async def sync_guild_template(user: User, guild: Guild, member: GuildMember, tem
 async def update_guild_template(data: TemplateUpdate, user: User, guild: Guild, member: GuildMember,
                                 template: GuildTemplate):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    await template.update_from_dict(**data.dict(exclude_defaults=True))
+    await template.update(**data.dict(exclude_defaults=True))
     return await template.ds_json()
 
 
@@ -184,7 +184,7 @@ async def update_guild_emoji(data: EmojiUpdate, user: User, guild: Guild, member
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if (emoji := await getCore().getEmoji(emoji)) is None or emoji.guild != guild:
         raise InvalidDataErr(400, Errors.make(10014))
-    await emoji.update_from_dict(**data.dict(exclude_defaults=True))
+    await emoji.update(**data.dict(exclude_defaults=True))
 
     await getGw().sendGuildEmojisUpdateEvent(guild)
 
@@ -342,8 +342,8 @@ async def get_guild_bans(user: User, guild: Guild, member: GuildMember):
 @multipleDecorators(getUser, getGuildWM)
 async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: int):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
-    await getCore().removeGuildBan(guild, user_id)
     target_user_data: UserData = await UserData.get(id=user_id).select_related("user")
+    await getCore().removeGuildBan(guild, target_user_data.user)
     await getGw().dispatch(GuildBanRemoveEvent(guild.id, target_user_data.ds_json), guild_id=guild.id,
                            permissions=GuildPermissions.BAN_MEMBERS)
 
@@ -395,7 +395,7 @@ async def update_role(data: RoleUpdate, user: User, guild: Guild, member: GuildM
         changes = {"permissions": data.permissions} if data.permissions is not None else {}
     else:
         changes = data.dict(exclude_defaults=True)
-    await role.update_from_dict(**changes)
+    await role.update(**changes)
     await getGw().dispatch(GuildRoleUpdateEvent(guild.id, role.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
 
@@ -529,7 +529,7 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
             if av := await getCDNStorage().setGuildAvatarFromBytesIO(user.id, guild.id, img):
                 data.avatar = av
     changes = data.dict(exclude_defaults=True)
-    await target_member.update_from_dict(**changes)
+    await target_member.update(**changes)
     await getGw().dispatch(GuildMemberUpdateEvent(guild.id, await target_member.ds_json()), guild_id=guild.id)
 
     entry = await AuditLogEntry.utils.member_update(user, target_member, changes)
@@ -692,7 +692,7 @@ async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, me
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if not (sticker := await getCore().getSticker(sticker_id)) or sticker.guild != guild:
         raise InvalidDataErr(404, Errors.make(10060))
-    await sticker.update_from_dict(**data.dict(exclude_defaults=True))
+    await sticker.update(**data.dict(exclude_defaults=True))
     await getGw().sendStickersUpdateEvent(guild)
     return await sticker.ds_json()
 
@@ -795,7 +795,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: 
             "code": "TRANSITION_INVALID", "message": "Invalid Guild Scheduled Event Status Transition"
         }}))
 
-    await event.update_from_dict(**data.dict(exclude_defaults=True))
+    await event.update(**data.dict(exclude_defaults=True))
     event_json = await event.ds_json()
     await getGw().dispatch(GuildScheduledEventUpdateEvent(event_json), guild_id=guild.id)
 
@@ -824,7 +824,7 @@ async def unsubscribe_from_scheduled_event(user: User, guild: Guild, member: Gui
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
         raise InvalidDataErr(404, Errors.make(10070))
 
-    if await event.subscribers.get_or_none(user__id=user.id) is not None:
+    if await event.subscribers.filter(user__id=user.id).get_or_none() is not None:
         await event.subscribers.remove(member)
         await getGw().dispatch(ScheduledEventUserRemoveEvent(user.id, event_id, guild.id),
                                guild_id=guild.id)  # TODO: Replace with list of users subscribed to event

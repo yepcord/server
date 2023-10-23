@@ -69,8 +69,8 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
         if user.id == 0:
             data.channel_id = None
         else:
-            channel = await Channel.get_or_none(guild=webhook.channel.guild, id=data.channel_id)
-            if not channel: data.channel_id = None
+            channel = await Channel.get_or_none(guild=webhook.channel.guild, id=data.channel_id).select_related("guild")
+            if not channel or channel.guild != webhook.channel.guild: data.channel_id = None
     if (img := data.avatar) or img is None:
         if img is not None:
             img = getImage(img)
@@ -83,7 +83,7 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
         changes["channel"] = channel
         del changes["channel_id"]
 
-    await webhook.update_from_dict(**changes)
+    await webhook.update(**changes)
     await getGw().dispatch(WebhooksUpdateEvent(guild.id, webhook.channel.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_WEBHOOKS)
 
@@ -151,7 +151,7 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
                                    **stickers_data, **data_json)
     for attachment in attachments:
         attachment.message = message
-        await attachment.save(update_fields=["message"])
+        await attachment.save()
 
     message_json = await message.ds_json()
     await getCore().sendMessage(message)

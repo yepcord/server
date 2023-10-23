@@ -19,17 +19,18 @@
 from datetime import datetime
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 from src.yepcord.ctx import getCore
 from src.yepcord.enums import MessageType
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import ping_regex
 import src.yepcord.models as models
 
 
 class Message(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     channel: models.Channel = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL, null=True,
                                                      related_name="channel")
     author: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)

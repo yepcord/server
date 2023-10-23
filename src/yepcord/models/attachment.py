@@ -18,16 +18,17 @@
 
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 from src.yepcord.config import Config
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class Attachment(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     channel: models.Channel = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL, null=True)
-    message: models.Message = fields.ForeignKeyField("models.Message")
+    message: models.Message = fields.ForeignKeyField("models.Message", null=True, default=None)
     filename: str = fields.CharField(max_length=128)
     size: str = fields.IntField()
     content_type: Optional[str] = fields.CharField(max_length=128, null=True, default=None)

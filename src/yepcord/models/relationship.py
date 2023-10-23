@@ -20,12 +20,11 @@ from __future__ import annotations
 from typing import Optional
 
 from tortoise.expressions import Q
-from tortoise.models import Model
 from tortoise import fields
 
 from src.yepcord.enums import RelationshipType, RelTypeDiscord
 from src.yepcord.errors import InvalidDataErr, Errors
-from src.yepcord.models._utils import ChoicesValidator
+from src.yepcord.models._utils import ChoicesValidator, SnowflakeField, Model
 import src.yepcord.models as models
 
 
@@ -64,7 +63,7 @@ class RelationshipUtils:
     async def block(user: models.User, block_user: models.User) -> dict:
         rels = await Relationship.filter(
             Q(from_user=user, to_user=block_user) | Q(from_user=block_user, to_user=user)
-        ).all()
+        ).select_related("from_user", "to_user").all()
         block = True
         ret = {"block": False, "delete": []}
         if not rels:
@@ -124,7 +123,7 @@ class RelationshipUtils:
 class Relationship(Model):
     utils = RelationshipUtils
 
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     from_user: models.User = fields.ForeignKeyField("models.User", related_name="from_user")
     to_user: models.User = fields.ForeignKeyField("models.User", related_name="to_user")
     type: int = fields.IntField(validators=[ChoicesValidator({0, 1, 2})])

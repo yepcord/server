@@ -16,14 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from tortoise.models import Model
 from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class UserNote(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User", related_name="user")
     target: models.User = fields.ForeignKeyField("models.User", related_name="target")
     text: str = fields.CharField(null=True, default=None, max_length=256)

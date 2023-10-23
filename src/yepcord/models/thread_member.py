@@ -19,14 +19,15 @@
 from __future__ import annotations
 from datetime import datetime
 
-from tortoise import fields, Model
+from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 
 
 class ThreadMember(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
     guild: models.Guild = fields.ForeignKeyField("models.Guild")

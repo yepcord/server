@@ -23,15 +23,15 @@ from typing import Optional
 from tortoise import fields
 from tortoise.expressions import Q
 from tortoise.fields import SET_NULL
-from tortoise.models import Model
 
 from src.yepcord.ctx import getCore
 from src.yepcord.enums import ChannelType
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class Channel(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     type: int = fields.IntField()
     guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", null=True, default=None)
     position: Optional[int] = fields.IntField(null=True, default=None)
@@ -41,7 +41,7 @@ class Channel(Model):
     bitrate: Optional[int] = fields.IntField(null=True, default=None)
     user_limit: Optional[int] = fields.IntField(null=True, default=None)
     rate_limit: Optional[int] = fields.IntField(null=True, default=None)
-    recipients = fields.ManyToManyField("models.User", null=True, default=None, related_name="recipients_mm")
+    recipients = fields.ManyToManyField("models.User", null=True, default=None, related_name="recipients")
     icon: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
     owner: Optional[models.User] = fields.ForeignKeyField("models.User", null=True, default=None, related_name="owner")
     application_id: Optional[int] = fields.BigIntField(null=True, default=None)

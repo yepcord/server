@@ -19,14 +19,15 @@
 from time import time
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 from src.yepcord.ctx import getCore
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class Guild(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     owner: models.User = fields.ForeignKeyField("models.User")
     name: str = fields.CharField(max_length=64)
     features: list = fields.JSONField(default=[])

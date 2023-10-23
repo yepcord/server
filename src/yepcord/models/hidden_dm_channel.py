@@ -16,15 +16,16 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from tortoise import fields, Model
+from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class HiddenDmChannel(Model):
     class Meta:
         unique_together = (("user", "channel"),)
 
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     channel: models.Channel = fields.ForeignKeyField("models.Channel")

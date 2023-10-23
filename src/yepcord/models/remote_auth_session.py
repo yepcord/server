@@ -19,10 +19,10 @@
 from time import time
 from typing import Optional
 
-from tortoise.models import Model
 from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 def time_plus_150s():
@@ -30,7 +30,7 @@ def time_plus_150s():
 
 
 class RemoteAuthSession(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     fingerprint: str = fields.CharField(max_length=64, unique=True)
     user: Optional[models.User] = fields.ForeignKeyField("models.User", null=True, default=None)
     expires_at: int = fields.IntField(default=time_plus_150s)

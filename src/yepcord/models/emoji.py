@@ -18,13 +18,14 @@
 
 from typing import Optional
 
-from tortoise import fields, Model
+from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 
 
 class Emoji(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     name: str = fields.CharField(max_length=64)
     user: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")

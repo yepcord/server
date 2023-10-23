@@ -108,12 +108,8 @@ def create_yepcord():
 @app.cli.command()
 @click.option("--settings", "-s", help="Settings module.", default="src.settings")
 def migrate(settings: str) -> None:
-    import alembic.config
-
     environ["SETTINGS"] = settings
-    alembic.config.main(argv=["--raiseerr", "revision", "--autogenerate"])
-    alembic.config.main(argv=["--raiseerr", "upgrade", "head"])
-    print("Migration complete!")
+    #print("Migration complete!")
 
 
 @app.cli.command(name="run_all")

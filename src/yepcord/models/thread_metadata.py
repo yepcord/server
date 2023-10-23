@@ -18,14 +18,15 @@
 
 from datetime import datetime, timedelta
 
-from tortoise import fields, Model
+from tortoise import fields
 
 import src.yepcord.models as models
+from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 
 
 class ThreadMetadata(Model):
-    id: int = fields.BigIntField(pk=True)
+    id: int = SnowflakeField(pk=True)
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
     archived: bool = fields.BooleanField(default=False)
     locked: bool = fields.BooleanField(default=False)
