@@ -42,7 +42,7 @@ jobs:
 
       - name: Setup database
         run: |
-          poetry run quart generate-schemas
+          poetry run quart migrate
         env:
           QUART_APP: app:create_yepcord
           SETTINGS: src.settings_test

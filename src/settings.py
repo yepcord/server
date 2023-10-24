@@ -2,6 +2,9 @@
 DB_CONNECT_STRING = "sqlite:///db.sqlite"
 MAIL_CONNECT_STRING = "smtp://127.0.0.1:10025?timeout=3"
 
+# Directory used to save migration files
+MIGRATIONS_DIR = "./migrations"
+
 # JWT key
 # SECURITY WARNING: change this key and keep it in secret!
 KEY = "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE="

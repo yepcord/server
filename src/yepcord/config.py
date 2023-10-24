@@ -44,6 +44,7 @@ if _settings:
 _defaults = {
     "DB_CONNECT_STRING": "sqlite:///db.sqlite",
     "MAIL_CONNECT_STRING": "smtp://127.0.0.1:10025?timeout=3",
+    "MIGRATIONS_DIR": "./migrations",
     "KEY": "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE=",
     "PUBLIC_HOST": "127.0.0.1:8080",
     "GATEWAY_HOST": "127.0.0.1:8001",

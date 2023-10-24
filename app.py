@@ -15,7 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+import asyncio
 import os.path
 from os import environ
 import click
@@ -107,9 +107,27 @@ def create_yepcord():
 
 @app.cli.command()
 @click.option("--settings", "-s", help="Settings module.", default="src.settings")
-def migrate(settings: str) -> None:
+@click.option("--location", "-s", help="Migrations directory. Config value will be used if not specified",
+              default=None)
+def migrate(settings: str, location: str = None) -> None:
     environ["SETTINGS"] = settings
-    #print("Migration complete!")
+    from pathlib import Path
+    from aerich import Command
+    from src.yepcord.config import Config
+
+    async def _migrate():
+        command = Command({
+            "connections": {"default": Config.DB_CONNECT_STRING},
+            "apps": {"models": {"models": ["src.yepcord.models", "aerich.models"], "default_connection": "default"}},
+        }, location or Config.MIGRATIONS_DIR)
+        await command.init()
+        if Path(command.location).exists():
+            await command.migrate()
+            await command.upgrade(True)
+        else:
+            await command.init_db(True)
+
+    asyncio.run(_migrate())
 
 
 @app.cli.command(name="run_all")
