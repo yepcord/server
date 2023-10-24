@@ -211,9 +211,9 @@ async def test_guild_avatar(storage: _Storage):
 async def test_sticker(storage: _Storage):
     client: TestClientType = app.test_client()
 
-    user = await User.objects.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
+    user = await User.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
     guild = await core.createGuild(Snowflake.makeId(), user, "test")
-    sticker = await Sticker.objects.create(id=Snowflake.makeId(), guild=guild, name="test", user=user,
+    sticker = await Sticker.create(id=Snowflake.makeId(), guild=guild, name="test", user=user,
                                            type=StickerType.GUILD, format=StickerFormat.PNG)
     sticker_hash = await storage.setStickerFromBytesIO(sticker.id, getImage(YEP_IMAGE))
     assert sticker_hash == "sticker"
@@ -258,9 +258,9 @@ async def test_event_image(storage: _Storage):
 async def test_emoji(storage: _Storage):
     client: TestClientType = app.test_client()
 
-    user = await User.objects.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
+    user = await User.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
     guild = await core.createGuild(Snowflake.makeId(), user, "test")
-    emoji = await Emoji.objects.create(id=Snowflake.makeId(), name="test", user=user, guild=guild)
+    emoji = await Emoji.create(id=Snowflake.makeId(), name="test", user=user, guild=guild)
     emoji_info = await storage.setEmojiFromBytesIO(emoji.id, getImage(YEP_IMAGE))
     assert not emoji_info["animated"]
 
@@ -309,11 +309,11 @@ async def test_attachment(storage: _Storage):
 
     file = getImage(YEP_IMAGE)
     file_size = file.getbuffer().nbytes
-    user = await User.objects.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
-    channel = await Channel.objects.create(id=Snowflake.makeId(), type=ChannelType.GROUP_DM)
+    user = await User.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
+    channel = await Channel.create(id=Snowflake.makeId(), type=ChannelType.GROUP_DM)
     await channel.recipients.add(user)
-    message = await Message.objects.create(id=Snowflake.makeId(), channel=channel, author=user)
-    attachment = await Attachment.objects.create(id=Snowflake.makeId(), channel=channel, message=message,
+    message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user)
+    attachment = await Attachment.create(id=Snowflake.makeId(), channel=channel, message=message,
                                                  filename="YEP.png", size=file_size, content_type="image/png")
     bytes_written = await storage.uploadAttachment(file.getvalue(), attachment)
     assert bytes_written == file_size

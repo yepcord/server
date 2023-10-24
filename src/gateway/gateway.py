@@ -71,9 +71,8 @@ class GatewayClient:
         if not (token := data.get("token")):
             return await self.ws.close(4004)
         ex_sess = Session.extract_token(token)
-        session: Session = await Session.objects.select_related("user").get_or_none(
-            user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
-        )
+        session: Session = await (Session.get_or_none(user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2])
+                                  .select_related("user"))
         if session is None:
             return await self.ws.close(4004)
 
@@ -99,9 +98,8 @@ class GatewayClient:
             return await new_client.ws.close(4004)
 
         ex_sess = Session.extract_token(token)
-        session = await Session.objects.select_related("user").get_or_none(
-            user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2]
-        )
+        session = await (Session.get_or_none(user__id=ex_sess[0], id=ex_sess[1], signature=ex_sess[2])
+                         .select_related("user"))
         if session is None or self.user_id.id != session.user.id:
             return await new_client.ws.close(4004)
 
@@ -123,7 +121,7 @@ class GatewayClient:
     async def handle_STATUS(self, data: dict) -> None:
         self.cached_presence = await self.gateway.presences.get(self.user_id) or self.cached_presence
         if self.cached_presence is None:
-            settings = await UserSettings.objects.get(id=self.user_id)
+            settings = await UserSettings.get(id=self.user_id)
             self.cached_presence = Presence(self.user_id, settings.status, settings.custom_status, [])
 
         presence = self.cached_presence
@@ -179,7 +177,7 @@ class GatewayEvents:
         self.core = gw.core
 
     async def presence_update(self, user_id: int, presence: Presence):
-        user = await User.objects.get(id=user_id)
+        user = await User.get(id=user_id)
         userdata = await user.data
         users = await self.core.getRelatedUsers(user, only_ids=True)
 
@@ -300,7 +298,7 @@ class Gateway:
 
     async def getFriendsPresences(self, uid: int) -> list[dict]:
         presences = []
-        user = await User.objects.get(id=uid)
+        user = await User.get(id=uid)
         friends = await self.core.getRelationships(user)
         friends = [int(u["user_id"]) for u in friends if u["type"] == 1]
         for friend in friends:

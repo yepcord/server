@@ -15,7 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+import asyncio
 import os.path
 from os import environ
 import click
@@ -27,6 +27,7 @@ app = Quart("YEPCord server")
 
 # noinspection PyTypeChecker
 def create_yepcord():
+    from tortoise.contrib.quart import register_tortoise
     from quart_schema import RequestSchemaValidationError, QuartSchema
     import src.rest_api.main as rest_api
     import src.gateway.main as gateway
@@ -43,6 +44,7 @@ def create_yepcord():
     from src.rest_api.routes import hypesquad
     from src.rest_api.routes import other
     from src.yepcord.errors import YDataError
+    from src.yepcord.config import Config
 
     app.gifs = rest_api.app.gifs
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
@@ -68,7 +70,7 @@ def create_yepcord():
     app.register_blueprint(invites.invites, url_prefix="/api/v9/invites")
     app.register_blueprint(guilds.guilds, url_prefix="/api/v9/guilds")
     app.register_blueprint(webhooks.webhooks, url_prefix="/api/v9/webhooks")
-    app.register_blueprint(webhooks.webhooks, url_prefix="/api/webhooks")
+    app.register_blueprint(webhooks.webhooks, url_prefix="/api/webhooks", name="webhooks2")
     app.register_blueprint(gifs.gifs, url_prefix="/api/v9/gifs")
     app.register_blueprint(hypesquad.hypesquad, url_prefix="/api/v9/hypesquad")
     app.register_blueprint(other.other, url_prefix="/")
@@ -93,18 +95,39 @@ def create_yepcord():
     app.get("/media/guild-events/<int:event_id>/<string:file_hash>")(cdn.get_guild_event_image)
     app.get("/media/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")(cdn.get_attachment)
 
+    register_tortoise(
+        app,
+        db_url=Config.DB_CONNECT_STRING,
+        modules={"models": ["src.yepcord.models"]},
+        generate_schemas=False,
+    )
+
     return app
 
 
 @app.cli.command()
 @click.option("--settings", "-s", help="Settings module.", default="src.settings")
-def migrate(settings: str) -> None:
-    import alembic.config
-
+@click.option("--location", "-s", help="Migrations directory. Config value will be used if not specified",
+              default=None)
+def migrate(settings: str, location: str = None) -> None:
     environ["SETTINGS"] = settings
-    alembic.config.main(argv=["--raiseerr", "revision", "--autogenerate"])
-    alembic.config.main(argv=["--raiseerr", "upgrade", "head"])
-    print("Migration complete!")
+    from pathlib import Path
+    from aerich import Command
+    from src.yepcord.config import Config
+
+    async def _migrate():
+        command = Command({
+            "connections": {"default": Config.DB_CONNECT_STRING},
+            "apps": {"models": {"models": ["src.yepcord.models", "aerich.models"], "default_connection": "default"}},
+        }, location=location or Config.MIGRATIONS_DIR)
+        await command.init()
+        if Path(command.location).exists():
+            await command.migrate()
+            await command.upgrade(True)
+        else:
+            await command.init_db(True)
+
+    asyncio.run(_migrate())
 
 
 @app.cli.command(name="run_all")

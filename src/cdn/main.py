@@ -20,12 +20,12 @@ import sys
 
 from quart import Quart
 from quart_schema import validate_querystring, QuartSchema
+from tortoise.contrib.quart import register_tortoise
 
 from .models import CdnImageSizeQuery
 from ..yepcord.config import Config
 from ..yepcord.core import Core
 from ..yepcord.enums import StickerFormat
-from ..yepcord.models import database
 from ..yepcord.storage import getStorage
 from ..yepcord.utils import b64decode
 
@@ -39,18 +39,6 @@ QuartSchema(app)
 core = Core(b64decode(Config.KEY))
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
-
-
-@app.before_serving
-async def before_serving():  # pragma: no cover
-    if not database.is_connected:
-        await database.connect()
-
-
-@app.after_serving
-async def after_serving():  # pragma: no cover
-    if database.is_connected:
-        await database.disconnect()
 
 
 @app.after_request
@@ -216,3 +204,11 @@ async def get_attachment(channel_id: int, attachment_id: int, name: str):
     if not (attachment := await getStorage().getAttachment(channel_id, attachment_id, name)):
         return b'', 404
     return attachment, 200, headers
+
+
+register_tortoise(
+    app,
+    db_url=Config.DB_CONNECT_STRING,
+    modules={"models": ["src.yepcord.models"]},
+    generate_schemas=False,
+)

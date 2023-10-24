@@ -16,10 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Quart, websocket
-from .gateway import Gateway
-from json import loads as jloads
 from asyncio import CancelledError
+from json import loads as jloads
+
+from quart import Quart, websocket
+from tortoise.contrib.quart import register_tortoise
+
+from .gateway import Gateway
+from ..yepcord.config import Config
 
 
 class YEPcord(Quart):
@@ -64,3 +68,11 @@ async def ws_gateway():
             setattr(ws, "connected", False)
             await gw.disconnect(ws)
             raise
+
+
+register_tortoise(
+    app,
+    db_url=Config.DB_CONNECT_STRING,
+    modules={"models": ["src.yepcord.models"]},
+    generate_schemas=False,
+)

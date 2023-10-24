@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 
 from ...yepcord.errors import InvalidDataErr, Errors
 
@@ -25,7 +25,7 @@ from ...yepcord.errors import InvalidDataErr, Errors
 class HypesquadHouseChange(BaseModel):
     house_id: int
 
-    @validator("house_id")
+    @field_validator("house_id")
     def validate_house_id(cls, value: int):
         if value not in (1, 2, 3):
             raise InvalidDataErr(400, Errors.make(50035, {"house_id": {

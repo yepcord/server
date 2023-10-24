@@ -216,7 +216,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                     img = Image.open(file)
                     metadata = {"height": img.height, "width": img.width}
                     img.close()
-                att = await Attachment.objects.create(
+                att = await Attachment.create(
                     id=Snowflake.makeId(), channel=channel, message=None, filename=name, size=len(content),
                     content_type=content_type, metadata=metadata
                 )

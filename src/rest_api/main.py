@@ -20,6 +20,7 @@ from json import dumps as jdumps
 
 from quart import Quart, request, Response
 from quart_schema import QuartSchema, RequestSchemaValidationError
+from tortoise.contrib.quart import register_tortoise
 
 from .routes.auth import auth
 from .routes.channels import channels
@@ -36,7 +37,6 @@ from ..yepcord.config import Config
 from ..yepcord.core import Core
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.gateway_dispatcher import GatewayDispatcher
-from ..yepcord.models import database
 from ..yepcord.storage import getStorage
 from ..yepcord.utils import b64decode, b64encode
 
@@ -57,15 +57,11 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 @app.before_serving
 async def before_serving():
-    if not database.is_connected:
-        await database.connect()
     await gateway.init()
 
 
 @app.after_serving
 async def after_serving():
-    if database.is_connected:
-        await database.disconnect()
     await gateway.stop()
 
 
@@ -116,7 +112,7 @@ app.register_blueprint(channels, url_prefix="/api/v9/channels")
 app.register_blueprint(invites, url_prefix="/api/v9/invites")
 app.register_blueprint(guilds, url_prefix="/api/v9/guilds")
 app.register_blueprint(webhooks, url_prefix="/api/v9/webhooks")
-app.register_blueprint(webhooks, url_prefix="/api/webhooks")
+app.register_blueprint(webhooks, url_prefix="/api/webhooks", name="webhooks2")
 app.register_blueprint(gifs, url_prefix="/api/v9/gifs")
 app.register_blueprint(hypesquad, url_prefix="/api/v9/hypesquad")
 app.register_blueprint(other, url_prefix="/")
@@ -137,3 +133,11 @@ async def other_api_endpoints(path):
         print(f"  Data: {await request.get_json()}")
     print("----------------")
     return "Not Implemented!", 501
+
+
+register_tortoise(
+    app,
+    db_url=Config.DB_CONNECT_STRING,
+    modules={"models": ["src.yepcord.models"]},
+    generate_schemas=False,
+)

@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import warnings
 from json import loads, dumps
-from typing import Optional, Any, Coroutine, TYPE_CHECKING
+from typing import Optional, Any, TYPE_CHECKING
 
 from redis.asyncio.client import Redis, PubSub
 
@@ -129,7 +129,7 @@ class Presences:
             return
 
         pipe = self._redis.pipeline()
-        pipe.set(
+        await pipe.set(
             f"presence_{user_id}",
             dumps({
                 "status": presence.status,
@@ -138,7 +138,7 @@ class Presences:
             ex=int(Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25),
             nx=not overwrite,
         )
-        pipe.expire(f"presence_{user_id}", int(Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25))
+        await pipe.expire(f"presence_{user_id}", int(Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25))
         await pipe.execute()
 
     async def get(self, user_id: int) -> Optional[Presence]:

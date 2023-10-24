@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 
 from ...yepcord.errors import InvalidDataErr, Errors
@@ -32,7 +32,7 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     avatar: Optional[str] = ""
 
-    @validator("discriminator")
+    @field_validator("discriminator")
     def validate_discriminator(cls, value: Optional[int]):
         if value is not None:
             if value < 1 or value > 9999:
@@ -106,7 +106,7 @@ class RelationshipRequest(BaseModel):
     username: str
     discriminator: int
 
-    @validator("discriminator")
+    @field_validator("discriminator")
     def validate_discriminator(cls, value: int):
         if value < 1 or value > 9999:
             raise InvalidDataErr(400, Errors.make(50035, {"name": {
@@ -161,7 +161,7 @@ class GetScheduledEventsQuery(BaseModel):
 class RemoteAuthLogin(BaseModel):
     fingerprint: str
 
-    @validator("fingerprint")
+    @field_validator("fingerprint")
     def validate_fingerprint(cls, value: str) -> str:
         try:
             assert len(b64decode(value)) == 32
@@ -175,7 +175,7 @@ class RemoteAuthFinish(BaseModel):
     handshake_token: str
     temporary_token: bool = False
 
-    @validator("handshake_token")
+    @field_validator("handshake_token")
     def validate_handshake_token(cls, value: str) -> str:
         try:
             int(value)
@@ -188,7 +188,7 @@ class RemoteAuthFinish(BaseModel):
 class RemoteAuthCancel(BaseModel):
     handshake_token: str
 
-    @validator("handshake_token")
+    @field_validator("handshake_token")
     def validate_handshake_token(cls, value: str) -> str:
         try:
             int(value)

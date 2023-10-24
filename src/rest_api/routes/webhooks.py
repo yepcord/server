@@ -38,7 +38,7 @@ webhooks = Blueprint('webhooks', __name__)
 @webhooks.delete("/<int:webhook>")
 @webhooks.delete("/<int:webhook>/<string:token>")
 @multipleDecorators(allowWithoutUser, getUser)
-async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token: Optional[str]=None):
+async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token: Optional[str] = None):
     if webhook := await getCore().getWebhook(webhook):
         if webhook.token != token:
             guild = webhook.channel.guild
@@ -55,7 +55,8 @@ async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token:
 @webhooks.patch("/<int:webhook>")
 @webhooks.patch("/<int:webhook>/<string:token>")
 @multipleDecorators(validate_request(WebhookUpdate), allowWithoutUser, getUser)
-async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], webhook: int, token: Optional[str]=None):
+async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], webhook: int,
+                                     token: Optional[str] = None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     channel = webhook.channel
@@ -68,8 +69,8 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
         if user.id == 0:
             data.channel_id = None
         else:
-            channel = await Channel.objects.get_or_none(guild=webhook.channel.guild, id=data.channel_id)
-            if not channel: data.channel_id = None
+            channel = await Channel.get_or_none(guild=webhook.channel.guild, id=data.channel_id).select_related("guild")
+            if not channel or channel.guild != webhook.channel.guild: data.channel_id = None
     if (img := data.avatar) or img is None:
         if img is not None:
             img = getImage(img)
@@ -77,7 +78,7 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
                 img = h
         data.avatar = img
 
-    changes = data.dict(exclude_defaults=True)
+    changes = data.model_dump(exclude_defaults=True)
     if "channel_id" in changes:
         changes["channel"] = channel
         del changes["channel_id"]
@@ -92,7 +93,7 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
 @webhooks.get("/<int:webhook>")
 @webhooks.get("/<int:webhook>/<string:token>")
 @multipleDecorators(allowWithoutUser, getUser)
-async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Optional[str]=None):
+async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Optional[str] = None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
@@ -145,11 +146,12 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
     data_json = data.to_json()
     if "sticker_ids" in data_json: del data_json["sticker_ids"]
 
-    message = await Message.objects.create(id=Snowflake.makeId(), channel=webhook.channel, author=None,
-                                           guild=channel.guild, webhook_author=author, type=message_type,
-                                           **stickers_data, **data_json)
+    message = await Message.create(id=Snowflake.makeId(), channel=webhook.channel, author=None,
+                                   guild=channel.guild, webhook_author=author, type=message_type,
+                                   **stickers_data, **data_json)
     for attachment in attachments:
-        await attachment.update(message=message)
+        attachment.message = message
+        await attachment.save()
 
     message_json = await message.ds_json()
     await getCore().sendMessage(message)

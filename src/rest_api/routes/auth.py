@@ -66,7 +66,7 @@ async def login_with_mfa(data: MfaLogin):
     if not (mfa := await getCore().getMfaFromTicket(ticket)):
         raise InvalidDataErr(400, Errors.make(60006))
     code = code.replace("-", "").replace(" ", "")
-    user = await getCore().getUser(mfa.uid)
+    user = await User.y.get(mfa.uid)
     if code not in mfa.getCodes():
         if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
             raise InvalidDataErr(400, Errors.make(60008))

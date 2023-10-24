@@ -15,4 +15,4 @@ tests/files
 tests/api/files
 settings*_prod.py
 other/ip_database.mmdb.old
-migrations/versions*
+migrations*

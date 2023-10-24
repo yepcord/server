@@ -2,6 +2,9 @@
 DB_CONNECT_STRING = "sqlite:///db.sqlite"
 MAIL_CONNECT_STRING = "smtp://127.0.0.1:10025?timeout=3"
 
+# Directory used to save migration files
+MIGRATIONS_DIR = "./migrations"
+
 # JWT key
 # SECURITY WARNING: change this key and keep it in secret!
 KEY = "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE="
@@ -70,3 +73,5 @@ REDIS_URL = ""
 # How often gateway clients must send keep-alive packets (also, presences expiration time is this variable times 1.25).
 # Default value is 45 seconds, do not set it too big or too small.
 GATEWAY_KEEP_ALIVE_DELAY = 45
+
+BCRYPT_ROUNDS = 15

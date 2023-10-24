@@ -39,6 +39,7 @@ async def api_hypesquad_online(data: HypesquadHouseChange, user: User):
     for f in (UserFlags.HYPESQUAD_ONLINE_HOUSE_1, UserFlags.HYPESQUAD_ONLINE_HOUSE_2, UserFlags.HYPESQUAD_ONLINE_HOUSE_3):
         flags.remove(f)
     flags.add(getattr(UserFlags, f"HYPESQUAD_ONLINE_HOUSE_{data.house_id}"))
-    await userdata.update(public_flags=flags.value)
+    userdata.public_flags = flags.value
+    await userdata.save(update_fields=["public_flags"])
     await getGw().dispatch(UserUpdateEvent(user, userdata, await user.settings), [user.id])
     return "", 204

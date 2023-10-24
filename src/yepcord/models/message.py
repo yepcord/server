@@ -19,51 +19,47 @@
 from datetime import datetime
 from typing import Optional
 
-import ormar
-from ormar import ReferentialAction
-from pydantic import Field
+from tortoise import fields
 
-from . import DefaultMeta, User, Channel, Guild, Emoji, GuildMember, ThreadMember, UserData, collation, \
-    SnowflakeAIQuerySet
-from ..config import Config
-from ..ctx import getCore
-from ..enums import MessageType
-from ..snowflake import Snowflake
-from ..utils import ping_regex
+from src.yepcord.ctx import getCore
+from src.yepcord.enums import MessageType
+from src.yepcord.models._utils import SnowflakeField, Model
+from src.yepcord.snowflake import Snowflake
+from src.yepcord.utils import ping_regex
+import src.yepcord.models as models
 
 
-class Message(ormar.Model):
-    class Meta(DefaultMeta):
-        pass
+class Message(Model):
+    id: int = SnowflakeField(pk=True)
+    channel: models.Channel = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL, null=True,
+                                                     related_name="channel")
+    author: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
+    content: Optional[str] = fields.TextField(max_length=2000, null=True, default=None)
+    edit_timestamp: Optional[datetime] = fields.DatetimeField(null=True, default=None)
+    embeds: list = fields.JSONField(default=[])
+    pinned: bool = fields.BooleanField(default=False)
+    webhook_id: Optional[int] = fields.BigIntField(null=True, default=None)
+    webhook_author: dict = fields.JSONField(default={})
+    application: Optional[int] = fields.BigIntField(null=True, default=None)
+    type: int = fields.IntField(default=0)
+    flags: int = fields.IntField(default=0)
+    message_reference: dict = fields.JSONField(default={})
+    thread: Optional[models.Channel] = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
+                                                              null=True, default=None, related_name="thread")
+    components: list = fields.JSONField(default=[])
+    sticker_items: list = fields.JSONField(default=[])
+    stickers: list = fields.JSONField(default=[])
+    extra_data: dict = fields.JSONField(default={})
+    guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", on_delete=fields.SET_NULL,
+                                                           null=True, default=None)
 
-    id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
-    channel: Channel = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL, related_name="channel")
-    author: Optional[User] = ormar.ForeignKey(User, ondelete=ReferentialAction.SET_NULL)
-    content: Optional[str] = ormar.String(max_length=2000, nullable=True, default=None, collation=collation)
-    edit_timestamp: Optional[datetime] = ormar.DateTime(nullable=True, default=None)
-    embeds: list = ormar.JSON(default=[])
-    pinned: bool = ormar.Boolean(default=False)
-    webhook_id: Optional[int] = ormar.BigInteger(nullable=True, default=None)
-    webhook_author: dict = ormar.JSON(default={})
-    application: Optional[int] = ormar.BigInteger(nullable=True, default=None)
-    type: int = ormar.Integer(default=0)
-    flags: int = ormar.Integer(default=0)
-    message_reference: dict = ormar.JSON(default={})
-    thread: Optional[Channel] = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL, nullable=True,
-                                                 default=None, related_name="thread")
-    components: list = ormar.JSON(default=[])
-    sticker_items: list = ormar.JSON(default=[])
-    stickers: list = ormar.JSON(default=[])
-    extra_data: dict = ormar.JSON(default={})
-    guild: Optional[Guild] = ormar.ForeignKey(Guild, ondelete=ReferentialAction.SET_NULL, nullable=True, default=None)
-
-    nonce: Optional[str] = Field()
+    nonce: Optional[str] = None
 
     @property
     def created_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
 
-    async def ds_json(self, user_id: int=None, search: bool=False) -> dict:
+    async def ds_json(self, user_id: int = None, search: bool = False) -> dict:
         edit_timestamp = self.edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00") if self.edit_timestamp else None
         data = {
             "id": str(self.id),
@@ -78,7 +74,7 @@ class Message(ormar.Model):
             "application_id": self.application,
             "type": self.type,
             "flags": self.flags,
-            "thread": await self.thread.ds_json(user_id) if self.thread is not None else None,
+            "thread": await self.thread.ds_json(user_id) if self.thread else None,
             "components": self.components,
             "sticker_items": self.sticker_items,
             "stickers": self.stickers,
@@ -99,12 +95,12 @@ class Message(ormar.Model):
                     continue
                 if not (member := await getCore().getUserByChannelId(self.channel.id, int(ping))):
                     continue
-                if isinstance(member, (GuildMember, ThreadMember)):
+                if isinstance(member, (models.GuildMember, models.ThreadMember)):
                     member = member.user
                 mdata = await member.data
                 data["mentions"].append(mdata.ds_json)
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
-            if (user_id := self.extra_data.get("user")) and (udata := await UserData.objects.get_or_none(id=user_id)):
+            if (user_id := self.extra_data.get("user")) and (udata := await models.UserData.get_or_none(id=user_id)):
                 data["mentions"].append(udata.ds_json)
         if self.message_reference:
             data["message_reference"] = {
@@ -125,41 +121,3 @@ class Message(ormar.Model):
         if not search and (reactions := await getCore().getMessageReactionsJ(self, user_id)):
             data["reactions"] = reactions
         return data
-
-
-class Attachment(ormar.Model):
-    class Meta(DefaultMeta):
-        pass
-
-    id: int = ormar.BigInteger(primary_key=True, autoincrement=False)
-    channel: Channel = ormar.ForeignKey(Channel, ondelete=ReferentialAction.SET_NULL)
-    message: Message = ormar.ForeignKey(Message, ondelete=ReferentialAction.CASCADE)
-    filename: str = ormar.String(max_length=128, collation=collation)
-    size: str = ormar.Integer()
-    content_type: Optional[str] = ormar.String(max_length=128, nullable=True, default=None)
-    metadata: dict = ormar.JSON(default={})
-
-    def ds_json(self) -> dict:
-        data = {
-            "filename": self.filename,
-            "id": str(self.id),
-            "size": self.size,
-            "url": f"https://{Config.CDN_HOST}/attachments/{self.channel.id}/{self.id}/{self.filename}"
-        }
-        if self.content_type:
-            data["content_type"] = self.content_type
-        if self.metadata:
-            data.update(self.metadata)
-        return data
-
-
-class Reactions(ormar.Model):
-    class Meta(DefaultMeta):
-        queryset_class = SnowflakeAIQuerySet
-
-    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
-    message: Message = ormar.ForeignKey(Message, ondelete=ReferentialAction.CASCADE)
-    user: User = ormar.ForeignKey(User, ondelete=ReferentialAction.CASCADE)
-    emoji: Optional[Emoji] = ormar.ForeignKey(Emoji, ondelete=ReferentialAction.SET_NULL, nullable=True, default=None)
-    emoji_name: Optional[str] = ormar.String(max_length=128, nullable=True, default=None,
-                                             collation=collation)
