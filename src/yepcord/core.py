@@ -32,6 +32,7 @@ import maxminddb
 from bcrypt import hashpw, gensalt, checkpw
 from tortoise.expressions import Q, Subquery
 from tortoise.functions import Count, Max
+from tortoise.transactions import atomic
 
 from .classes.other import EmailMsg, JWT, MFA
 from .classes.singleton import Singleton
@@ -76,9 +77,10 @@ class Core(Singleton):
     async def getRandomDiscriminator(self, login: str) -> Optional[int]:
         for _ in range(5):
             d = randint(1, 9999)
-            if not await self.getUserByUsername(login, d):
+            if not await User.y.getByUsername(login, d):
                 return d
 
+    @atomic()
     async def register(self, uid: int, login: str, email: Optional[str], password: str, birth: str,
                        locale: str = "en-US",
                        invite: Optional[str] = None) -> Session:
@@ -126,13 +128,9 @@ class Core(Singleton):
         sig = self.generateSessionSignature()
         return await Session.create(id=Snowflake.makeId(), user=user, signature=sig)
 
-    async def getUser(self, uid: int, allow_deleted: bool = True) -> Optional[User]:
-        kwargs = {} if allow_deleted else {"deleted": False}
-        return await User.get_or_none(id=uid, **kwargs)
-
     async def getUserProfile(self, uid: int, current_user: User) -> User:
         # TODO: check for relationship, mutual guilds or mutual friends
-        if not (user := await self.getUser(uid, False)):
+        if not (user := await User.y.get(uid, False)):
             raise InvalidDataErr(404, Errors.make(10013))
         return user
 
@@ -142,7 +140,7 @@ class Core(Singleton):
     async def changeUserDiscriminator(self, user: User, discriminator: int, changed_username: bool = False) -> bool:
         data = await user.data
         username = data.username
-        if await self.getUserByUsername(username, discriminator):
+        if await User.y.getByUsername(username, discriminator):
             if changed_username:
                 return False
             raise InvalidDataErr(400, Errors.make(50035, {"username": {
@@ -156,7 +154,7 @@ class Core(Singleton):
     async def changeUserName(self, user: User, username: str) -> None:
         data = await user.data
         discriminator = data.discriminator
-        if await self.getUserByUsername(username, discriminator):
+        if await User.y.getByUsername(username, discriminator):
             discriminator = await self.getRandomDiscriminator(username)
             if discriminator is None:
                 raise InvalidDataErr(400, Errors.make(50035, {"username": {
@@ -166,11 +164,6 @@ class Core(Singleton):
         data.username = username
         data.discriminator = discriminator
         await data.save(update_fields=["username", "discriminator"])
-
-    async def getUserByUsername(self, username: str, discriminator: int) -> Optional[User]:
-        data = await UserData.get_or_none(username=username, discriminator=discriminator).select_related("user")
-        if data is not None:
-            return data.user
 
     async def getRelationships(self, user: User, with_data=False) -> list[dict]:
         rels = []
@@ -209,12 +202,6 @@ class Core(Singleton):
         user.password = self.hashPassword(user.id, new_password)
         await user.save(update_fields=["password"])
 
-    async def getMfa(self, user: User) -> Optional[MFA]:
-        settings = await user.settings
-        mfa = MFA(settings.mfa, user.id)
-        if mfa.valid:
-            return mfa
-
     async def setBackupCodes(self, user: User, codes: list[str]) -> None:
         await self.clearBackupCodes(user)
         await MfaCode.bulk_create([
@@ -250,7 +237,7 @@ class Core(Singleton):
             sig = b64decode(sig).decode("utf8")
         except (ValueError, IndexError):
             return
-        if not (user := await self.getUser(uid)):
+        if not (user := await User.y.get(uid)):
             return
         if not self.verifyMfaTicketSignature(user, sid, sig):
             return
@@ -395,7 +382,7 @@ class Core(Singleton):
     async def getUserByChannel(self, channel: Channel, user_id: int) -> Optional[User]:
         if channel.type in (ChannelType.DM, ChannelType.GROUP_DM):
             if await Channel.filter(id=channel.id, recipients__id__in=[user_id]).select_related("recipients").exists():
-                return await self.getUser(user_id)
+                return await User.y.get(user_id)
         elif channel.type in GUILD_CHANNELS:
             return await self.getGuildMember(channel.guild, user_id)
         elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
@@ -551,6 +538,7 @@ class Core(Singleton):
                       .select_related("channel", "channel__guild", "inviter", "channel__guild__owner",
                                       "channel__owner"))
 
+    @atomic()
     async def createGuild(self, guild_id: int, user: User, name: str, icon: str = None) -> Guild:
         guild = await Guild.create(id=guild_id, owner=user, name=name, icon=icon)
         await Role.create(id=guild.id, guild=guild, name="@everyone")
@@ -578,6 +566,7 @@ class Core(Singleton):
 
         return guild
 
+    @atomic()
     async def createGuildFromTemplate(self, guild_id: int, user: User, template: GuildTemplate, name: Optional[str],
                                       icon: Optional[str]) -> Guild:
         serialized = template.serialized_guild

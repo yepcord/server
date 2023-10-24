@@ -209,7 +209,7 @@ async def get_connections(user: User):  # TODO: add connections
 @users_me.post("/relationships")
 @multipleDecorators(validate_request(RelationshipRequest), getUser)
 async def new_relationship(data: RelationshipRequest, user: User):
-    if not (target_user := await getCore().getUserByUsername(**data.model_dump())):
+    if not (target_user := await User.y.getByUsername(**data.model_dump())):
         raise InvalidDataErr(400, Errors.make(80004))
     if target_user == user:
         raise InvalidDataErr(400, Errors.make(80007))
@@ -230,7 +230,7 @@ async def get_relationships(user: User):
 @users_me.get("/notes/<int:target_uid>")
 @getUser
 async def get_notes(user: User, target_uid: int):
-    if not (target_user := await getCore().getUser(target_uid, False)):
+    if not (target_user := await User.y.get(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
     if not (note := await getCore().getUserNote(user, target_user)):
         raise InvalidDataErr(404, Errors.make(10013))
@@ -240,7 +240,7 @@ async def get_notes(user: User, target_uid: int):
 @users_me.put("/notes/<int:target_uid>")
 @multipleDecorators(validate_request(PutNote), getUser)
 async def set_notes(data: PutNote, user: User, target_uid: int):
-    if not (target_user := await getCore().getUser(target_uid, False)):
+    if not (target_user := await User.y.get(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
     if data.note:
         note, _ = await UserNote.get_or_create(user=user, target=target_user, defaults={"text": data.note})
@@ -284,7 +284,7 @@ async def disable_mfa(data: MfaDisable, session: Session):
     settings = await user.settings
     if settings.mfa is None:
         raise InvalidDataErr(404, Errors.make(60002))
-    mfa = await getCore().getMfa(user)
+    mfa = await user.mfa
     code = code.replace("-", "").replace(" ", "")
     if code not in mfa.getCodes():
         if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
@@ -353,7 +353,7 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
 @users_me.delete("/relationships/<int:user_id>")
 @getUser
 async def delete_relationship(user_id: int, user: User):
-    if (target_user := await getCore().getUser(user_id)) is None:
+    if (target_user := await User.y.get(user_id)) is None:
         return "", 204
     result = await Relationship.utils.delete(user, target_user)
     for d in result["delete"]:
@@ -390,7 +390,7 @@ async def new_dm_channel(data: DmChannelCreate, user: User):
     recipients = data.recipients
     if user.id in recipients:
         recipients.remove(user.id)
-    recipients_users = [await getCore().getUser(recipient) for recipient in recipients]
+    recipients_users = [await User.y.get(recipient) for recipient in recipients]
     if None in recipients_users:
         raise InvalidDataErr(400, Errors.make(50033))
     if len(recipients) == 1:

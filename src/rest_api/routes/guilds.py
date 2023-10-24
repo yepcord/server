@@ -303,7 +303,7 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
         await getCore().banGuildMember(target_member, reason)
         target_user = target_member.user
     else:
-        if (target_user := await getCore().getUser(user_id, False)) is None:
+        if (target_user := await User.y.get(user_id, False)) is None:
             raise InvalidDataErr(404, Errors.make(10013))
         await getCore().banGuildUser(target_user, guild, reason)
     target_user_data = await target_user.data
@@ -632,7 +632,7 @@ async def delete_guild(data: GuildDelete, user: User, guild: Guild):
     if user != guild.owner:
         raise InvalidDataErr(403, Errors.make(50013))
 
-    if mfa := await getCore().getMfa(user):
+    if mfa := await user.mfa:
         if not data.code:
             raise InvalidDataErr(400, Errors.make(60008))
         if data.code not in mfa.getCodes():

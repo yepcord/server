@@ -289,7 +289,7 @@ async def send_typing_event(user: User, channel: Channel):
 @channels.put("/<int:channel>/recipients/<int:target_user>")
 @multipleDecorators(getUser, getChannel)
 async def add_recipient(user: User, channel: Channel, target_user: int):
-    if (target_user := await getCore().getUser(target_user, False)) is None:
+    if (target_user := await User.y.get(target_user, False)) is None:
         raise InvalidDataErr(404, Errors.make(10013))
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
         raise InvalidDataErr(403, Errors.make(50013))
@@ -321,7 +321,7 @@ async def delete_recipient(user: User, channel: Channel, target_user: int):
         raise InvalidDataErr(403, Errors.make(50013))
     if channel.owner != user or target_user == user.id:
         raise InvalidDataErr(403, Errors.make(50013))
-    target_user = await getCore().getUser(target_user, False)
+    target_user = await User.y.get(target_user, False)
     recipients = await channel.recipients.all()
     if target_user in recipients:
         msg = await Message.create(id=Snowflake.makeId(), author=user, channel=channel, content="",

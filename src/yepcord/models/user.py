@@ -19,16 +19,33 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.ctx import getCore
 import src.yepcord.models as models
+from src.yepcord.classes.other import MFA
+from src.yepcord.ctx import getCore
 from src.yepcord.models._utils import SnowflakeField, Model
 from src.yepcord.snowflake import Snowflake
 
 
+class UserUtils:
+    @staticmethod
+    async def get(user_id: int, allow_deleted: bool = True) -> Optional[User]:
+        kwargs = {} if allow_deleted else {"deleted": False}
+        return await User.get_or_none(id=user_id, **kwargs)
+
+    @staticmethod
+    async def getByUsername(username: str, discriminator: int) -> Optional[User]:
+        data = await models.UserData.get_or_none(username=username, discriminator=discriminator).select_related("user")
+        if data is not None:
+            return data.user
+
+
 class User(Model):
+    y = UserUtils
+
     id: int = SnowflakeField(pk=True)
     email: str = fields.CharField(max_length=254, unique=True)
     password: str = fields.CharField(max_length=128)
@@ -50,6 +67,13 @@ class User(Model):
     @property
     def created_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
+
+    @property
+    async def mfa(self) -> Optional[MFA]:
+        settings = await self.settings
+        mfa = MFA(settings.mfa, self.id)
+        if mfa.valid:
+            return mfa
 
     async def profile_json(self, other_user: User, with_mutual_guilds: bool = False, mutual_friends_count: bool = False,
                            guild_id: int = None) -> dict:
