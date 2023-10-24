@@ -52,7 +52,7 @@ from . import ctx
 # noinspection PyMethodMayBeStatic
 class Core(Singleton):
     def __init__(self, key=None):
-        self.key = key if key and len(key) >= 16 and type(key) == bytes else urandom(32)
+        self.key = key if key and len(key) >= 16 and isinstance(key, bytes) else urandom(32)
         self.ipdb = None
 
     def prepPassword(self, password: str, uid: int) -> bytes:
@@ -68,7 +68,7 @@ class Core(Singleton):
 
     def hashPassword(self, uid: int, password: str) -> str:
         password = self.prepPassword(password, uid)
-        return hashpw(password, gensalt()).decode("utf8")
+        return hashpw(password, gensalt(Config.BCRYPT_ROUNDS)).decode("utf8")
 
     def generateSessionSignature(self) -> str:
         return b64encode(urandom(32))

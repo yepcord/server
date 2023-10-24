@@ -56,7 +56,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
     changes = {}
     if channel.type == ChannelType.GROUP_DM:
         changes = data.to_json(channel.type)
-        if "owner_id" in changes and channel.owner.id != user.id:
+        if "owner_id" in changes and channel.owner != user:
             raise InvalidDataErr(403, Errors.make(50013))
         elif "owner_id" in changes:
             new_owner = await User.get_or_none(id=changes["owner_id"])
@@ -162,7 +162,7 @@ async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channe
     if channel.guild is not None:
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-    messages = await channel.messages(**query_args.dict())
+    messages = await channel.messages(**query_args.model_dump())
     messages = [await message.ds_json(user_id=user.id) for message in messages]
     return messages
 
@@ -443,7 +443,7 @@ async def search_messages(query_args: SearchQuery, user: User, channel: Channel)
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL,
                                      channel=channel)
-    messages, total = await getCore().searchMessages(channel, query_args.dict(exclude_defaults=True))
+    messages, total = await getCore().searchMessages(channel, query_args.model_dump(exclude_defaults=True))
     messages = [[await message.ds_json(search=True)] for message in messages]
     for message in messages:
         message[0]["hit"] = True
@@ -456,7 +456,7 @@ async def create_invite(data: InviteCreate, user: User, channel: Channel):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.CREATE_INSTANT_INVITE)
-    invite = await getCore().createInvite(channel, user, **data.dict())
+    invite = await getCore().createInvite(channel, user, **data.model_dump())
     if channel.guild:
         entry = await AuditLogEntry.utils.invite_create(user, invite)
         await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
@@ -475,10 +475,10 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
     old_overwrite = await getCore().getPermissionOverwrite(channel, target_id)
     if old_overwrite is not None:
-        await old_overwrite.update(**data.dict())
+        await old_overwrite.update(**data.model_dump())
         overwrite = old_overwrite
     else:
-        overwrite = await PermissionOverwrite.create(**data.dict(), channel=channel, target_id=target_id)
+        overwrite = await PermissionOverwrite.create(**data.model_dump(), channel=channel, target_id=target_id)
     await getGw().dispatch(ChannelUpdateEvent(await channel.ds_json()), guild_id=channel.guild.id)
 
     if old_overwrite:

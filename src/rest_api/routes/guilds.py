@@ -55,7 +55,7 @@ async def create_guild(data: GuildCreate, user: User):
         img = getImage(data.icon)
         if h := await getCDNStorage().setGuildIconFromBytesIO(guild_id, img):
             data.icon = h
-    guild = await getCore().createGuild(guild_id, user, **data.dict(exclude_defaults=True))
+    guild = await getCore().createGuild(guild_id, user, **data.model_dump(exclude_defaults=True))
     await getGw().dispatch(GuildCreateEvent(
         await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
     ), users=[user.id])
@@ -87,7 +87,7 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
                 setattr(data, ch, None)
             else:
                 setattr(data, ch, channel.id)
-    changes = data.dict(exclude_defaults=True)
+    changes = data.model_dump(exclude_defaults=True)
     await guild.update(**changes)
     await getGw().dispatch(GuildUpdateEvent(await guild.ds_json(user_id=0)), guild_id=guild.id)
 
@@ -150,7 +150,7 @@ async def sync_guild_template(user: User, guild: Guild, member: GuildMember, tem
 async def update_guild_template(data: TemplateUpdate, user: User, guild: Guild, member: GuildMember,
                                 template: GuildTemplate):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    await template.update(**data.dict(exclude_defaults=True))
+    await template.update(**data.model_dump(exclude_defaults=True))
     return await template.ds_json()
 
 
@@ -184,7 +184,7 @@ async def update_guild_emoji(data: EmojiUpdate, user: User, guild: Guild, member
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if (emoji := await getCore().getEmoji(emoji)) is None or emoji.guild != guild:
         raise InvalidDataErr(400, Errors.make(10014))
-    await emoji.update(**data.dict(exclude_defaults=True))
+    await emoji.update(**data.model_dump(exclude_defaults=True))
 
     await getGw().sendGuildEmojisUpdateEvent(guild)
 
@@ -224,7 +224,7 @@ async def update_channels_positions(user: User, guild: Guild, member: GuildMembe
             continue
         if change.parent_id and change.parent_id not in channels:
             change.parent_id = 0
-        change = change.dict(exclude_defaults=True, exclude={"id"})
+        change = change.model_dump(exclude_defaults=True, exclude={"id"})
         await channel.update(**change)
         await getGw().dispatch(ChannelUpdateEvent(await channel.ds_json()), guild_id=channel.guild.id)
     await getCore().setTemplateDirty(guild)
@@ -241,7 +241,7 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
         del data_json["parent_id"]
     channel = await Channel.create(id=Snowflake.makeId(), guild=guild, **data_json)
     for overwrite in data.permission_overwrites:
-        await PermissionOverwrite.create(**overwrite.dict(), channel=channel, target_id=overwrite.id)
+        await PermissionOverwrite.create(**overwrite.model_dump(), channel=channel, target_id=overwrite.id)
 
     await getGw().dispatch(ChannelCreateEvent(await channel.ds_json()), guild_id=guild.id)
 
@@ -369,7 +369,7 @@ async def create_role(data: RoleCreate, user: User, guild: Guild, member: GuildM
         img = getImage(data.icon)
         if h := await getCDNStorage().setRoleIconFromBytesIO(role_id, img):
             data.icon = h
-    role = await Role.create(id=role_id, guild=guild, **data.dict())
+    role = await Role.create(id=role_id, guild=guild, **data.model_dump())
     await getGw().dispatch(GuildRoleCreateEvent(guild.id, role.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
 
@@ -394,7 +394,7 @@ async def update_role(data: RoleUpdate, user: User, guild: Guild, member: GuildM
     if role.id == guild.id:  # Only allow permissions editing for @everyone role
         changes = {"permissions": data.permissions} if data.permissions is not None else {}
     else:
-        changes = data.dict(exclude_defaults=True)
+        changes = data.model_dump(exclude_defaults=True)
     await role.update(**changes)
     await getGw().dispatch(GuildRoleUpdateEvent(guild.id, role.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
@@ -528,7 +528,7 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
             data.avatar = ""
             if av := await getCDNStorage().setGuildAvatarFromBytesIO(user.id, guild.id, img):
                 data.avatar = av
-    changes = data.dict(exclude_defaults=True)
+    changes = data.model_dump(exclude_defaults=True)
     await target_member.update(**changes)
     await getGw().dispatch(GuildMemberUpdateEvent(guild.id, await target_member.ds_json()), guild_id=guild.id)
 
@@ -581,7 +581,7 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
 @multipleDecorators(validate_querystring(GetAuditLogsQuery), getUser, getGuildWM)
 async def get_audit_logs(query_args: GetAuditLogsQuery, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    entries = await getCore().getAuditLogEntries(guild, **query_args.dict())
+    entries = await getCore().getAuditLogEntries(guild, **query_args.model_dump())
     userdatas = {}
     for entry in entries:
         target_id = entry.target_id
@@ -692,7 +692,7 @@ async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, me
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if not (sticker := await getCore().getSticker(sticker_id)) or sticker.guild != guild:
         raise InvalidDataErr(404, Errors.make(10060))
-    await sticker.update(**data.dict(exclude_defaults=True))
+    await sticker.update(**data.model_dump(exclude_defaults=True))
     await getGw().sendStickersUpdateEvent(guild)
     return await sticker.ds_json()
 
@@ -725,7 +725,7 @@ async def create_scheduled_event(data: CreateEvent, user: User, guild: Guild, me
         img = await getCDNStorage().setGuildEventFromBytesIO(event_id, img)
         data.image = img
 
-    data_dict = data.dict()
+    data_dict = data.model_dump()
     if data.entity_type in (ScheduledEventEntityType.STAGE_INSTANCE, ScheduledEventEntityType.VOICE):
         if ((channel := await getCore().getChannel(data.channel_id)) is None or channel.guild != guild
                 or channel.type not in (ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE)):
@@ -780,7 +780,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: 
                 img = h
         data.image = img
 
-    new_status = data.dict(exclude_defaults=True).get("status", event.status)
+    new_status = data.model_dump(exclude_defaults=True).get("status", event.status)
 
     valid_transition = True
     if event.status == ScheduledEventStatus.SCHEDULED:
@@ -795,7 +795,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: 
             "code": "TRANSITION_INVALID", "message": "Invalid Guild Scheduled Event Status Transition"
         }}))
 
-    await event.update(**data.dict(exclude_defaults=True))
+    await event.update(**data.model_dump(exclude_defaults=True))
     event_json = await event.ds_json()
     await getGw().dispatch(GuildScheduledEventUpdateEvent(event_json), guild_id=guild.id)
 

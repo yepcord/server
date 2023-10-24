@@ -83,7 +83,7 @@ async def update_me(data: UserUpdate, user: User):
 
     await userdata.refresh_from_db()
     await userdata.user.refresh_from_db()
-    changes = data.dict(include={"avatar"}, exclude_defaults=True)
+    changes = data.model_dump(include={"avatar"}, exclude_defaults=True)
     if changes:
         await userdata.update(**changes)
     await getGw().dispatch(UserUpdateEvent(user, userdata, await user.settings), [user.id])
@@ -99,7 +99,7 @@ async def get_my_profile(data: UserProfileUpdate, user: User):
                 data.banner = banner
 
     userdata = await user.data
-    await userdata.update(**data.dict(exclude_defaults=True))
+    await userdata.update(**data.model_dump(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return await userdata.ds_json_full()
 
@@ -139,7 +139,7 @@ async def get_settings(user: User):
 @multipleDecorators(validate_request(SettingsUpdate), getUser)
 async def update_settings(data: SettingsUpdate, user: User):
     settings = await user.settings
-    await settings.update(**data.dict(exclude_defaults=True))
+    await settings.update(**data.model_dump(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return settings.ds_json()
 
@@ -209,7 +209,7 @@ async def get_connections(user: User):  # TODO: add connections
 @users_me.post("/relationships")
 @multipleDecorators(validate_request(RelationshipRequest), getUser)
 async def new_relationship(data: RelationshipRequest, user: User):
-    if not (target_user := await getCore().getUserByUsername(**data.dict())):
+    if not (target_user := await getCore().getUserByUsername(**data.model_dump())):
         raise InvalidDataErr(400, Errors.make(80004))
     if target_user == user:
         raise InvalidDataErr(400, Errors.make(80007))

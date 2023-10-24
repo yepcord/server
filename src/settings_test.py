@@ -29,3 +29,5 @@ STORAGE = {
 }
 
 TENOR_KEY = __environ.get("TENOR_KEY")
+
+BCRYPT_ROUNDS = 4

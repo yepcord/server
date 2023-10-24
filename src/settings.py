@@ -70,3 +70,5 @@ REDIS_URL = ""
 # How often gateway clients must send keep-alive packets (also, presences expiration time is this variable times 1.25).
 # Default value is 45 seconds, do not set it too big or too small.
 GATEWAY_KEEP_ALIVE_DELAY = 45
+
+BCRYPT_ROUNDS = 15

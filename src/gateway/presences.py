@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import warnings
 from json import loads, dumps
-from typing import Optional, Any, Coroutine, TYPE_CHECKING
+from typing import Optional, Any, TYPE_CHECKING
 
 from redis.asyncio.client import Redis, PubSub
 

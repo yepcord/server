@@ -78,7 +78,7 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
                 img = h
         data.avatar = img
 
-    changes = data.dict(exclude_defaults=True)
+    changes = data.model_dump(exclude_defaults=True)
     if "channel_id" in changes:
         changes["channel"] = channel
         del changes["channel_id"]

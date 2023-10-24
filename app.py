@@ -70,7 +70,7 @@ def create_yepcord():
     app.register_blueprint(invites.invites, url_prefix="/api/v9/invites")
     app.register_blueprint(guilds.guilds, url_prefix="/api/v9/guilds")
     app.register_blueprint(webhooks.webhooks, url_prefix="/api/v9/webhooks")
-    app.register_blueprint(webhooks.webhooks, url_prefix="/api/webhooks")
+    app.register_blueprint(webhooks.webhooks, url_prefix="/api/webhooks", name="webhooks2")
     app.register_blueprint(gifs.gifs, url_prefix="/api/v9/gifs")
     app.register_blueprint(hypesquad.hypesquad, url_prefix="/api/v9/hypesquad")
     app.register_blueprint(other.other, url_prefix="/")

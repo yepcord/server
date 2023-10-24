@@ -18,7 +18,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 
 from .channels import MessageCreate
 from ...yepcord.utils import getImage, validImage
@@ -30,7 +30,7 @@ class WebhookUpdate(BaseModel):
     channel_id: Optional[int] = None
     avatar: Optional[str] = ""
 
-    @validator("avatar")
+    @field_validator("avatar")
     def validate_avatar(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
