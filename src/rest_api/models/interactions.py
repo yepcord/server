@@ -1,6 +1,7 @@
 from typing import Literal, Optional, Any
 
-from pydantic import BaseModel, validator, create_model
+from pydantic import BaseModel, create_model, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
 from ...yepcord.enums import ApplicationCommandOptionType
 
@@ -20,13 +21,13 @@ class InteractionDataOption(BaseModel):
     name: str
     value: Any
 
-    @validator("value")
-    def validate_value(cls, value: Any, values: dict) -> Any:
+    @field_validator("value")
+    def validate_value(cls, value: Any, info: ValidationInfo) -> Any:
         T = ApplicationCommandOptionType
-        if values["type"] in {T.STRING, T.INTEGER, T.BOOLEAN, T.NUMBER}:
-            return OPTION_MODELS[values["type"]](value=value).value
-        if values["type"] in {T.USER, T.CHANNEL, T.ROLE}:
-            return str(OPTION_MODELS[values["type"]](value=value).value)
+        if info.data["type"] in {T.STRING, T.INTEGER, T.BOOLEAN, T.NUMBER}:
+            return OPTION_MODELS[info.data["type"]](value=value).value
+        if info.data["type"] in {T.USER, T.CHANNEL, T.ROLE}:
+            return str(OPTION_MODELS[info.data["type"]](value=value).value)
 
         return value
 

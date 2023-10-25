@@ -21,7 +21,8 @@ from time import mktime
 from typing import Optional, List
 
 from dateutil.parser import parse as dparse
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, Field, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
 from .channels import PermissionOverwriteModel
 from ...yepcord.classes.other import BitFlags
@@ -41,7 +42,7 @@ class GuildCreate(BaseModel):
     #afk_channel_id
     #system_channel_id
 
-    @validator("icon")
+    @field_validator("icon")
     def validate_icon(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
@@ -69,7 +70,7 @@ class GuildUpdate(BaseModel):
     description: Optional[str] = None
     premium_progress_bar_enabled: Optional[bool] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -77,7 +78,7 @@ class GuildUpdate(BaseModel):
                 value = None
         return value
 
-    @validator("verification_level")
+    @field_validator("verification_level")
     def validate_verification_level(cls, value: Optional[int]):
         if value not in range(5):
             raise InvalidDataErr(400, Errors.make(50035, {"verification_level": {
@@ -85,7 +86,7 @@ class GuildUpdate(BaseModel):
             }}))
         return value
 
-    @validator("default_message_notifications")
+    @field_validator("default_message_notifications")
     def validate_default_message_notifications(cls, value: Optional[int]):
         if value not in (0, 1):
             raise InvalidDataErr(400, Errors.make(50035, {"default_message_notifications": {
@@ -93,7 +94,7 @@ class GuildUpdate(BaseModel):
             }}))
         return value
 
-    @validator("explicit_content_filter")
+    @field_validator("explicit_content_filter")
     def validate_explicit_content_filter(cls, value: Optional[int]):
         if value not in (0, 1):
             raise InvalidDataErr(400, Errors.make(50035, {"explicit_content_filter": {
@@ -101,7 +102,7 @@ class GuildUpdate(BaseModel):
             }}))
         return value
 
-    @validator("afk_timeout")
+    @field_validator("afk_timeout")
     def validate_afk_timeout(cls, value: Optional[int]):
         ALLOWED_TIMEOUTS = (60, 300, 900, 1800, 3600)
         if value is not None:
@@ -109,26 +110,26 @@ class GuildUpdate(BaseModel):
                 value = min(ALLOWED_TIMEOUTS, key=lambda x: abs(x - value))  # Take closest
         return value
 
-    @validator("icon", "splash", "banner")
+    @field_validator("icon", "splash", "banner")
     def validate_icon_splash_banner(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
                 value = ""
         return value
 
-    @validator("system_channel_flags")
+    @field_validator("system_channel_flags")
     def validate_system_channel_flags(cls, value: Optional[int]):
         if value is not None:
             value = BitFlags(value, SystemChannelFlags).value
         return value
 
-    @validator("preferred_locale")
+    @field_validator("preferred_locale")
     def validate_preferred_locale(cls, value: Optional[str]):
         if value is not None and value not in LOCALES:
             value = None
         return value
 
-    @validator("description")
+    @field_validator("description")
     def validate_description(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -142,7 +143,7 @@ class TemplateCreate(BaseModel):
     name: str
     description: Optional[str] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: str):
         value = value.strip()
         if not value:
@@ -154,7 +155,7 @@ class TemplateCreate(BaseModel):
             }}))
         return value
 
-    @validator("description")
+    @field_validator("description")
     def validate_description(cls, value: str):
         if len(value) > 120:
             raise InvalidDataErr(400, Errors.make(50035, {"description": {
@@ -167,7 +168,7 @@ class TemplateCreate(BaseModel):
 class TemplateUpdate(TemplateCreate):
     name: Optional[str] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -185,7 +186,7 @@ class EmojiCreate(BaseModel):
     name: str
     image: str
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: str):
         value = value.strip()
         if not value:
@@ -195,7 +196,7 @@ class EmojiCreate(BaseModel):
             value = value[:32]
         return value
 
-    @validator("image")
+    @field_validator("image")
     def validate_image(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
@@ -208,7 +209,7 @@ class EmojiCreate(BaseModel):
 class EmojiUpdate(BaseModel):
     name: Optional[str] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -247,53 +248,53 @@ class ChannelCreate(BaseModel):
     flags: Optional[int] = None
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if value is not None:
             value = value[:100]
         return value
 
-    @validator("type")
+    @field_validator("type")
     def validate_type(cls, value: Optional[str]):
         if value not in GUILD_CHANNELS:
             value = ChannelType.GUILD_TEXT
         return value
 
-    @validator("topic")
+    @field_validator("topic")
     def validate_topic(cls, value: Optional[str]):
         if value is not None:
             value = value[:1024]
         return value
 
-    @validator("rate_limit")
+    @field_validator("rate_limit")
     def validate_rate_limit(cls, value: Optional[int]):
         if value is not None:
             if value < 0: value = 0
             if value > 21600: value = 21600
         return value
 
-    @validator("bitrate")
+    @field_validator("bitrate")
     def validate_bitrate(cls, value: Optional[int]):
         if value is not None:
             if value < 8000: value = 8000
         return value
 
-    @validator("user_limit")
+    @field_validator("user_limit")
     def validate_user_limit(cls, value: Optional[int]):
         if value is not None:
             if value < 0: value = 0
             if value > 99: value = 99
         return value
 
-    @validator("video_quality_mode")
+    @field_validator("video_quality_mode")
     def validate_video_quality_mode(cls, value: Optional[int]):
         if value is not None:
             if value not in (0, 1): value = None
         return value
 
-    @validator("default_auto_archive")
+    @field_validator("default_auto_archive")
     def validate_auto_archive(cls, value: Optional[int]):
         ALLOWED_DURATIONS = (60, 1440, 4320, 10080)
         if value is not None:
@@ -303,16 +304,16 @@ class ChannelCreate(BaseModel):
 
     def to_json(self, channel_type: int) -> dict:
         if channel_type == ChannelType.GUILD_CATEGORY:
-            return self.dict(include={"name", "type", "position"}, exclude_defaults=True)
+            return self.model_dump(include={"name", "type", "position"}, exclude_defaults=True)
         elif channel_type == ChannelType.GUILD_TEXT:
-            return self.dict(
+            return self.model_dump(
                 include={"name", "type", "position", "topic", "nsfw", "rate_limit", "parent_id", "default_auto_archive"},
                 exclude_defaults=True)
         elif channel_type == ChannelType.GUILD_VOICE:
-            return self.dict(include={"name", "type", "position", "nsfw", "bitrate", "user_limit", "parent_id",
-                                      "video_quality_mode"}, exclude_defaults=True)
+            return self.model_dump(include={"name", "type", "position", "nsfw", "bitrate", "user_limit", "parent_id",
+                                            "video_quality_mode"}, exclude_defaults=True)
         elif channel_type == ChannelType.GUILD_NEWS:
-            return self.dict(
+            return self.model_dump(
                 include={"name", "type", "position", "topic", "nsfw", "parent_id", "default_auto_archive"},
                 exclude_defaults=True)
 
@@ -321,7 +322,7 @@ class ChannelCreate(BaseModel):
 class BanMember(BaseModel):
     delete_message_seconds: Optional[int] = 0
 
-    @validator("delete_message_seconds")
+    @field_validator("delete_message_seconds")
     def validate_delete_message_seconds(cls, value: Optional[int]):
         if value is not None:
             if value < 0: value = 0
@@ -341,14 +342,14 @@ class RoleCreate(BaseModel):
     unicode_emoji: Optional[str] = None
     mentionable: bool = False
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: str):
         value = value.strip()
         if not value:
             value = "new role"
         return value
 
-    @validator("icon")
+    @field_validator("icon")
     def validate_icon(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
@@ -356,7 +357,7 @@ class RoleCreate(BaseModel):
                     "image": {"code": "IMAGE_INVALID", "message": "Invalid image"}}))
         return value
 
-    @validator("unicode_emoji")
+    @field_validator("unicode_emoji")
     def validate_unicode_emoji(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -375,14 +376,14 @@ class RoleUpdate(BaseModel):
     unicode_emoji: Optional[str] = None
     mentionable: Optional[bool] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: str):
         value = value.strip()
         if not value:
             value = None
         return value
 
-    @validator("icon")
+    @field_validator("icon")
     def validate_icon(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
@@ -391,7 +392,7 @@ class RoleUpdate(BaseModel):
                 }}))
         return value
 
-    @validator("unicode_emoji")
+    @field_validator("unicode_emoji")
     def validate_unicode_emoji(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -409,7 +410,7 @@ class RolesPositionsChange(BaseModel):
 class RolesPositionsChangeList(BaseModel):
     changes: List[ChannelsPositionsChange]
 
-    @validator("changes")
+    @field_validator("changes")
     def validate_changes(cls, value: List[ChannelsPositionsChange]):
         remove = []
         for change in value:
@@ -432,7 +433,7 @@ class MemberUpdate(BaseModel):
     deaf: Optional[bool] = None
     avatar: Optional[str] = ""
 
-    @validator("nick")
+    @field_validator("nick")
     def validate_nick(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -440,7 +441,7 @@ class MemberUpdate(BaseModel):
                 value = None
         return value
 
-    @validator("avatar")
+    @field_validator("avatar")
     def validate_avatar(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
@@ -458,7 +459,7 @@ class GuildCreateFromTemplate(BaseModel):
     name: str
     icon: Optional[str] = None
 
-    @validator("icon")
+    @field_validator("icon")
     def validate_icon(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
@@ -470,7 +471,7 @@ class GuildCreateFromTemplate(BaseModel):
 class GuildDelete(BaseModel):
     code: str = ""
 
-    @validator("code")
+    @field_validator("code")
     def validate_code(cls, value: str):
         return value.replace("-", "").replace(" ", "")
 
@@ -480,7 +481,7 @@ class GetAuditLogsQuery(BaseModel):
     limit: int = 50
     before: Optional[int] = None
 
-    @validator("limit")
+    @field_validator("limit")
     def validate_limit(cls, value: int):
         if value < 0 or value > 50:
             value = 50
@@ -493,7 +494,7 @@ class CreateSticker(BaseModel):
     description: Optional[str] = None
     tags: str
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: str):
         value = value.strip()
         if len(value) < 2 or len(value) > 30:
@@ -502,7 +503,7 @@ class CreateSticker(BaseModel):
             }}))
         return value
 
-    @validator("description")
+    @field_validator("description")
     def validate_description(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -512,7 +513,7 @@ class CreateSticker(BaseModel):
                 }}))
         return value
 
-    @validator("tags")
+    @field_validator("tags")
     def validate_tags(cls, value: Optional[str]):
         value = value.strip()
         if len(value) < 2 or len(value) > 200:
@@ -528,7 +529,7 @@ class UpdateSticker(BaseModel):
     description: Optional[str] = None
     tags: Optional[str] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: str):
         if value is not None:
             value = value.strip()
@@ -538,7 +539,7 @@ class UpdateSticker(BaseModel):
                 }}))
         return value
 
-    @validator("description")
+    @field_validator("description")
     def validate_description(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -548,7 +549,7 @@ class UpdateSticker(BaseModel):
                 }}))
         return value
 
-    @validator("tags")
+    @field_validator("tags")
     def validate_tags(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -575,7 +576,7 @@ class CreateEvent(BaseModel):
     description: Optional[str] = None
     image: Optional[str] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: str):
         value = value.strip()
         if len(value) < 2 or len(value) > 30:
@@ -584,7 +585,7 @@ class CreateEvent(BaseModel):
             }}))
         return value
 
-    @validator("privacy_level")
+    @field_validator("privacy_level")
     def validate_privacy_level(cls, value: int):
         if value != 2:
             raise InvalidDataErr(400, Errors.make(50035, {"privacy_level": {
@@ -592,7 +593,7 @@ class CreateEvent(BaseModel):
             }}))
         return value
 
-    @validator("start")
+    @field_validator("start")
     def validate_start(cls, value: int):
         if value < datetime.utcnow().timestamp():
             raise InvalidDataErr(400, Errors.make(50035, {"scheduled_start_time": {
@@ -600,21 +601,21 @@ class CreateEvent(BaseModel):
             }}))
         return value
 
-    @validator("end")
-    def validate_end(cls, value: Optional[int], values: dict):
+    @field_validator("end")
+    def validate_end(cls, value: Optional[int], info: ValidationInfo):
         if value is not None:
-            if value < datetime.utcnow().timestamp() or value < values.get("start", value-1):
+            if value < datetime.utcnow().timestamp() or value < info.data.get("start", value-1):
                 raise InvalidDataErr(400, Errors.make(50035, {"scheduled_end_time": {
                     "code": "BASE_TYPE_BAD_TIME", "message": "Time should be in future."
                 }}))
         else:
-            if values["entity_type"] == ScheduledEventEntityType.EXTERNAL:
+            if info.data["entity_type"] == ScheduledEventEntityType.EXTERNAL:
                 raise InvalidDataErr(400, Errors.make(50035, {"scheduled_end_time": {
                     "code": "BASE_TYPE_REQUIRED", "message": "Required field."
                 }}))
         return value
 
-    @validator("entity_type")
+    @field_validator("entity_type")
     def validate_entity_type(cls, value: int):
         if value not in (1, 2, 3):
             raise InvalidDataErr(400, Errors.make(50035, {"entity_type": {
@@ -622,23 +623,23 @@ class CreateEvent(BaseModel):
             }}))
         return value
 
-    @validator("channel_id")
-    def validate_channel_id(cls, value: Optional[int], values: dict):
-        if not value and values["entity_type"] != ScheduledEventEntityType.EXTERNAL:
+    @field_validator("channel_id")
+    def validate_channel_id(cls, value: Optional[int], info: ValidationInfo):
+        if not value and info.data["entity_type"] != ScheduledEventEntityType.EXTERNAL:
             raise InvalidDataErr(400, Errors.make(50035, {"channel_id": {
                 "code": "BASE_TYPE_REQUIRED", "message": "Required field."
             }}))
         return value
 
-    @validator("entity_metadata")
-    def validate_entity_metadata(cls, value: Optional[EventEntityMeta], values: dict):
-        if not value and values["entity_type"] == ScheduledEventEntityType.EXTERNAL:
+    @field_validator("entity_metadata")
+    def validate_entity_metadata(cls, value: Optional[EventEntityMeta], info: ValidationInfo):
+        if not value and info.data["entity_type"] == ScheduledEventEntityType.EXTERNAL:
             raise InvalidDataErr(400, Errors.make(50035, {"entity_metadata": {
                 "code": "BASE_TYPE_REQUIRED", "message": "Required field."
             }}))
         return value
 
-    @validator("description")
+    @field_validator("description")
     def validate_description(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -648,7 +649,7 @@ class CreateEvent(BaseModel):
                 }}))
         return value
 
-    @validator("image")
+    @field_validator("image")
     def validate_image(cls, value: Optional[str]):
         if value:
             if not (img := getImage(value)) or not validImage(img):
@@ -680,13 +681,13 @@ class UpdateScheduledEvent(CreateEvent):
     status: Optional[int] = None
     image: Optional[str] = ""
 
-    @validator("channel_id")
-    def validate_channel_id(cls, value: Optional[int], values: dict):
-        if not value and values["entity_type"] != ScheduledEventEntityType.EXTERNAL:
+    @field_validator("channel_id")
+    def validate_channel_id(cls, value: Optional[int], info: ValidationInfo):
+        if not value and info.data["entity_type"] != ScheduledEventEntityType.EXTERNAL:
             raise InvalidDataErr(400, Errors.make(50035, {"channel_id": {
                 "code": "BASE_TYPE_REQUIRED", "message": "Required field."
             }}))
-        if values["entity_type"] == ScheduledEventEntityType.EXTERNAL:
+        if info.data["entity_type"] == ScheduledEventEntityType.EXTERNAL:
             value = None
         return value
 

@@ -18,10 +18,10 @@
 from os import urandom
 from typing import Optional
 
-import ormar
-from ormar import ReferentialAction
+from tortoise import fields
 
-from . import DefaultMeta, SnowflakeAIQuerySet, Application, Guild, Channel, User, ApplicationCommand
+import src.yepcord.models as models
+from ._utils import SnowflakeField, Model
 from ..ctx import getCore
 from ..enums import InteractionType, ChannelType, InteractionStatus
 from ..utils import b64encode
@@ -31,29 +31,27 @@ def gen_interaction_token() -> str:
     return b64encode(urandom(32))
 
 
-class Interaction(ormar.Model):
-    class Meta(DefaultMeta):
-        queryset_class = SnowflakeAIQuerySet
+class Interaction(Model):
+    id: int = SnowflakeField(pk=True)
+    application: models.Application = fields.ForeignKeyField("models.Application")
+    user: models.User = fields.ForeignKeyField("models.User")
+    type: int = fields.IntField(choices=InteractionType.values_set())
+    data: Optional[dict] = fields.JSONField(default=None)
+    token: str = fields.CharField(max_length=128, default=gen_interaction_token)
+    guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", on_delete=fields.SET_NULL,
+                                                           null=True, default=None)
+    channel: Optional[models.Channel] = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
+                                                               null=True, default=None)
+    message_id: Optional[int] = fields.BigIntField(null=True, default=None)
+    locale: Optional[str] = fields.CharField(max_length=8, null=True, default=None)
+    guild_locale: Optional[str] = fields.CharField(max_length=8, null=True, default=None)
+    nonce: Optional[int] = fields.BigIntField(null=True, default=None)
+    session_id: str = fields.CharField(max_length=64)
+    status: int = fields.IntField(choices=InteractionStatus.values_set(), default=InteractionStatus.PENDING)
+    command: Optional[models.ApplicationCommand] = fields.ForeignKeyField("models.ApplicationCommand", null=True,
+                                                                          on_delete=fields.SET_NULL, default=None)
 
-    id: int = ormar.BigInteger(primary_key=True, autoincrement=True)
-    application: Application = ormar.ForeignKey(Application, on_delete=ReferentialAction.CASCADE)
-    user: User = ormar.ForeignKey(User, on_delete=ReferentialAction.CASCADE)
-    type: int = ormar.Integer(choices=InteractionType.values_set())
-    data: Optional[dict] = ormar.JSON(default=None)
-    token: str = ormar.String(max_length=128, default=gen_interaction_token)
-    guild: Optional[Guild] = ormar.ForeignKey(Guild, on_delete=ReferentialAction.SET_NULL, nullable=True, default=None)
-    channel: Optional[Channel] = ormar.ForeignKey(Channel, on_delete=ReferentialAction.SET_NULL, nullable=True,
-                                                  default=None)
-    message_id: Optional[int] = ormar.BigInteger(nullable=True, default=None)
-    locale: Optional[str] = ormar.String(max_length=8, nullable=True, default=None)
-    guild_locale: Optional[str] = ormar.String(max_length=8, nullable=True, default=None)
-    nonce: Optional[int] = ormar.BigInteger(nullable=True, default=None)
-    session_id: str = ormar.String(max_length=64)
-    status: int = ormar.Integer(choices=InteractionStatus.values_set(), default=InteractionStatus.PENDING)
-    command: Optional[ApplicationCommand] = ormar.ForeignKey(ApplicationCommand, on_delete=ReferentialAction.SET_NULL,
-                                                             nullable=True, default=None)
-
-    async def ds_json(self, with_user=False, with_token=False, resolved: dict=None) -> dict:
+    async def ds_json(self, with_user=False, with_token=False, resolved: dict = None) -> dict:
         data = {
             "id": str(self.id),
             "application_id": str(self.application.id),

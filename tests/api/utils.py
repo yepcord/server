@@ -135,7 +135,7 @@ async def create_role(app: TestClientType, user: dict, guild_id: str, name="new 
 async def create_emoji(app: TestClientType, user: dict, guild_id: str, name: str, image=YEP_IMAGE, *, exp_code=200) -> dict:
     resp = await app.post(f"/api/v9/guilds/{guild_id}/emojis", headers={"Authorization": user["token"]},
                           json={'image': image, 'name': name})
-    assert resp.status_code == exp_code
+    assert resp.status_code == exp_code, await resp.get_json()
     return await resp.get_json()
 
 

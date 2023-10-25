@@ -24,8 +24,8 @@ from ..models.applications import CreateApplication, UpdateApplication, UpdateAp
     CreateCommand
 from ..utils import getUser, multipleDecorators, getApplication, allowBots
 from ...yepcord.ctx import getCore, getCDNStorage
-from ...yepcord.models import User, UserData, UserSettings
-from ...yepcord.models.applications import Application, Bot, gen_secret_key, gen_token_secret, ApplicationCommand
+from ...yepcord.models import User, UserData, UserSettings, Application, Bot, gen_secret_key, gen_token_secret, \
+    ApplicationCommand
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage
 
@@ -50,11 +50,11 @@ async def create_application(data: CreateApplication, user: User):
         username = f"{username}{app_id}"
         disc = await getCore().getRandomDiscriminator(username)
 
-    app = await Application.objects.create(id=app_id, owner=user, name=name)
-    bot_user = await User.objects.create(id=app_id, email=f"bot_{app_id}", password="", is_bot=True)
-    await UserData.objects.create(id=app_id, user=bot_user, birth=datetime.now(), username=username, discriminator=disc)
-    await UserSettings.objects.create(id=app_id, user=user, locale=(await user.settings).locale)
-    await Bot.objects.create(id=app_id, application=app, user=bot_user)
+    app = await Application.create(id=app_id, owner=user, name=name)
+    bot_user = await User.create(id=app_id, email=f"bot_{app_id}", password="", is_bot=True)
+    await UserData.create(id=app_id, user=bot_user, birth=datetime.now(), username=username, discriminator=disc)
+    await UserSettings.create(id=app_id, user=user, locale=(await user.settings).locale)
+    await Bot.create(id=app_id, application=app, user=bot_user)
     return await app.ds_json()
 
 
@@ -67,10 +67,10 @@ async def get_application(user: User, application: Application):
 @applications.patch("/<int:application_id>")
 @multipleDecorators(validate_request(UpdateApplication), getUser, getApplication)
 async def edit_application(data: UpdateApplication, user: User, application: Application):
-    bot = await Bot.objects.select_related("user").get(application=application)
+    bot = await Bot.get(application=application).select_related("user")
     bot_data = await bot.user.userdata
 
-    changes = data.dict(exclude_defaults=True)
+    changes = data.model_dump(exclude_defaults=True)
     if "icon" in changes and changes["icon"] is not None:
         img = getImage(changes["icon"])
         image = await getCDNStorage().setAppIconFromBytesIO(application.id, img)
@@ -95,10 +95,10 @@ async def edit_application(data: UpdateApplication, user: User, application: App
 @applications.patch("/<int:application_id>/bot")
 @multipleDecorators(validate_request(UpdateApplicationBot), getUser, getApplication)
 async def edit_application_bot(data: UpdateApplicationBot, user: User, application: Application):
-    bot: Bot = await Bot.objects.select_related("user").get(application=application)
+    bot: Bot = await Bot.get(application=application).select_related("user")
     bot_data = await bot.user.userdata
 
-    changes = data.dict(exclude_defaults=True)
+    changes = data.model_dump(exclude_defaults=True)
     if "avatar" in changes and changes["avatar"] is not None:
         img = getImage(changes["avatar"])
         avatar_hash = await getCDNStorage().setAvatarFromBytesIO(application.id, img)
@@ -122,7 +122,7 @@ async def reset_application_secret(user: User, application: Application):
 @applications.post("/<int:application_id>/bot/reset")
 @multipleDecorators(getUser, getApplication)
 async def reset_application_bot_token(user: User, application: Application):
-    bot: Bot = await Bot.objects.select_related("user").get(application=application)
+    bot: Bot = await Bot.get(application=application).select_related("user")
 
     new_token = gen_token_secret()
     await bot.update(token_secret=new_token)
@@ -133,7 +133,7 @@ async def reset_application_bot_token(user: User, application: Application):
 @applications.post("/<int:application_id>/delete")
 @multipleDecorators(getUser, getApplication)
 async def delete_application(user: User, application: Application):
-    bot = await Bot.objects.select_related("user").get_or_none(application=application)
+    bot = await Bot.get_or_none(application=application).select_related("user")
     await bot.user.update(deleted=True)
     data = await bot.user.data
     await data.update(discriminator=0, username=f"Deleted User {hex(bot.user.id)[2:]}", avatar=None,
@@ -147,23 +147,27 @@ async def delete_application(user: User, application: Application):
 @applications.get("/<int:application_id>/commands")
 @multipleDecorators(validate_querystring(GetCommandsQS), allowBots, getUser, getApplication)
 async def get_application_commands(query_args: GetCommandsQS, user: User, application: Application):
-    commands: list[ApplicationCommand] = await ApplicationCommand.objects.filter(application=application).all()
+    commands: list[ApplicationCommand] = await (ApplicationCommand.filter(application=application)
+                                                .select_related("application", "guild").all())
     return [command.ds_json(query_args.with_localizations) for command in commands]
 
 
 @applications.post("/<int:application_id>/commands")
 @multipleDecorators(validate_request(CreateCommand), allowBots, getUser, getApplication)
 async def create_update_application_command(data: CreateCommand, user: User, application: Application):
-    command = await ApplicationCommand.objects.get_or_none(application=application, name=data.name, type=data.type)
+    command = await (ApplicationCommand.get_or_none(application=application, name=data.name, type=data.type)
+                     .select_related("application", "guild"))
     if command is not None:
-        await command.update(**data.dict(exclude={"name", "type"}, exclude_defaults=True), version=Snowflake.makeId(False))
+        await command.update(**data.model_dump(exclude={"name", "type"}, exclude_defaults=True),
+                             version=Snowflake.makeId(False))
     else:
-        command = await ApplicationCommand.objects.create(application=application, **data.dict(exclude_defaults=True))
+        command = await ApplicationCommand.create(application=application,
+                                                  **data.model_dump(exclude_defaults=True))
     return command.ds_json()
 
 
 @applications.delete("/<int:application_id>/commands/<int:command_id>")
 @multipleDecorators(allowBots, getUser, getApplication)
 async def delete_application_command(user: User, application: Application, command_id: int):
-    await ApplicationCommand.objects.delete(application=application, id=command_id)
+    await ApplicationCommand.filter(application=application, id=command_id).delete()
     return "", 204

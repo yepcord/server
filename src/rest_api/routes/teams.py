@@ -15,29 +15,11 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-from datetime import datetime
-from os import urandom
-from random import choice
 
-from emoji import is_emoji
-from quart import Blueprint, request
-from quart_schema import validate_request, validate_querystring
+from quart import Blueprint
 
-from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck, CreateThread
-from ..utils import getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData
-from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
-    DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
-    DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
-    WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
-from ...yepcord.ctx import getCore, getCDNStorage, getGw
-from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS
-from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
-    ThreadMetadata, AuditLogEntry, Relationship
-from ...yepcord.models.applications import Application
-from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import getImage, b64encode
+from ..utils import getUser
+from ...yepcord.models import User
 
 # Base path is /api/vX/applications
 teams = Blueprint('teams', __name__)

@@ -20,6 +20,7 @@ from json import dumps as jdumps
 
 from quart import Quart, request, Response
 from quart_schema import QuartSchema, RequestSchemaValidationError
+from tortoise.contrib.quart import register_tortoise
 
 from .routes.applications import applications
 from .routes.auth import auth
@@ -40,7 +41,6 @@ from ..yepcord.config import Config
 from ..yepcord.core import Core
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.gateway_dispatcher import GatewayDispatcher
-from ..yepcord.models import database
 from ..yepcord.storage import getStorage
 from ..yepcord.utils import b64decode, b64encode
 
@@ -61,15 +61,11 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
 @app.before_serving
 async def before_serving():
-    if not database.is_connected:
-        await database.connect()
     await gateway.init()
 
 
 @app.after_serving
 async def after_serving():
-    if database.is_connected:
-        await database.disconnect()
     await gateway.stop()
 
 
@@ -145,3 +141,11 @@ async def other_api_endpoints(path):
         print(f"  Data: {await request.get_json()}")
     print("----------------")
     return "Not Implemented!", 501
+
+
+register_tortoise(
+    app,
+    db_url=Config.DB_CONNECT_STRING,
+    modules={"models": ["src.yepcord.models"]},
+    generate_schemas=False,
+)

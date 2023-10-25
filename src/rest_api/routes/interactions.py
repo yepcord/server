@@ -36,12 +36,12 @@ from ...yepcord.utils import execute_after
 interactions = Blueprint('interactions', __name__)
 
 
-async def resolve_options(interaction_options: list[InteractionDataOption], guild: Guild=None):
+async def resolve_options(interaction_options: list[InteractionDataOption], guild: Guild = None):
     result = {}
     T = ApplicationCommandOptionType
     for option in interaction_options:
         if option.type == T.USER:
-            if not (user := await getCore().getUser(option.value)):
+            if not (user := await User.y.get(option.value)):
                 continue
             if "users" not in result:
                 result["users"] = {}
@@ -74,7 +74,7 @@ async def resolve_options(interaction_options: list[InteractionDataOption], guil
 @getUser
 async def create_interaction(user: User):
     data = InteractionCreate(**(await get_multipart_json()))
-    if (application := await Application.objects.get_or_none(id=data.application_id, deleted=False)) is None:
+    if (application := await Application.get_or_none(id=data.application_id, deleted=False)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
     guild = None
     channel = await getCore().getChannel(data.channel_id)
@@ -90,16 +90,16 @@ async def create_interaction(user: User):
     if not await getCore().getUserByChannel(channel, user.id):
         raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
     if guild is not None:
-        if (await Integration.objects.get_or_none(guild=guild, application=application)) is None:
+        if (await Integration.get_or_none(guild=guild, application=application)) is None:
             raise InvalidDataErr(404, Errors.make(10002))
-    if (command := await ApplicationCommand.objects.get_or_none(id=data.data.id, application=application)) is None:
+    if (command := await ApplicationCommand.get_or_none(id=data.data.id, application=application)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
 
     settings = await user.settings
     guild_locale = guild.preferred_locale if guild is not None else None
-    int_data = data.data.dict(exclude={"version"})
+    int_data = data.data.model_dump(exclude={"version"})
     resolved = await resolve_options(data.data.options)
-    interaction = await Interaction.objects.create(
+    interaction = await Interaction.create(
         application=application, user=user, type=data.type, data=int_data, guild=guild, channel=channel,
         locale=settings.locale, guild_locale=guild_locale, nonce=data.nonce, session_id=data.session_id,
         command=command
@@ -109,7 +109,7 @@ async def create_interaction(user: User):
     await getGw().dispatch(InteractionCreateEvent(interaction, True, resolved=resolved), users=[application.id])
 
     async def wait_for_interaction():
-        await interaction.load()
+        await interaction.refresh_from_db()
         if interaction.status == InteractionStatus.PENDING:
             await interaction.delete()
             await getGw().dispatch(InteractionFailureEvent(interaction), users=[user.id], session_id=data.session_id)
@@ -128,10 +128,10 @@ async def respond_to_interaction(data: InteractionRespond, interaction: Interact
             raise InvalidDataErr(400, Errors.make(50006))
         flags = d.flags & MessageFlags.EPHEMERAL
         is_ephemeral = bool(flags)
-        bot_user = await getCore().getUser(interaction.application.id)
-        message = await Message.objects.create(id=Snowflake.makeId(), author=bot_user, content=d.content, flags=flags,
-                                               interaction=interaction, channel=interaction.channel,
-                                               ephemeral=is_ephemeral, webhook_id=interaction.id)
+        bot_user = await User.y.get(interaction.application.id)
+        message = await Message.create(id=Snowflake.makeId(), author=bot_user, content=d.content, flags=flags,
+                                       interaction=interaction, channel=interaction.channel,
+                                       ephemeral=is_ephemeral, webhook_id=interaction.id)
         message_obj = await message.ds_json() | {"nonce": interaction.nonce}
 
         kw = {"session_id": interaction.session_id} if is_ephemeral else {}

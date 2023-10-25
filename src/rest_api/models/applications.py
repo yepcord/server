@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 from typing import Optional, Literal, Union
 
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, Field, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
 from ...yepcord.enums import Locales, ApplicationCommandOptionType
 from ...yepcord.errors import InvalidDataErr, Errors
@@ -28,7 +30,7 @@ class UpdateApplication(BaseModel):
     bot_require_code_grant: bool = None
     flags: int = None
 
-    @validator("icon")
+    @field_validator("icon")
     def validate_icon(cls, value: Optional[str]):
         if value and len(value) == 32:
             value = ""
@@ -44,7 +46,7 @@ class UpdateApplicationBot(BaseModel):
     username: Optional[str] = None
     avatar: Optional[str] = ""
 
-    @validator("avatar")
+    @field_validator("avatar")
     def validate_avatar(cls, value: Optional[str]):
         if value and len(value) == 32:
             value = ""
@@ -67,14 +69,14 @@ class CommandBase(BaseModel):
     description_localizations: Optional[dict] = None
     options: list[CommandOption] = Field(default_factory=list)
 
-    @validator("name_localizations", "description_localizations")
-    def validate_localizations(cls, value: Optional[dict], values, field) -> Optional[dict]:
+    @field_validator("name_localizations", "description_localizations")
+    def validate_localizations(cls, value: Optional[dict], info: ValidationInfo) -> Optional[dict]:
         if value is not None and any(k not in Locales.values_set() for k in value):
-            raise InvalidDataErr(400, Errors.make(50035, {field.name: {
+            raise InvalidDataErr(400, Errors.make(50035, {info.field_name: {
                 "code": "ENUM_TYPE_COERCE", "message": f"Value is not a valid enum value."
             }}))
         if value is not None:
-            lim = 32 if field.name == "name_localizations" else 100
+            lim = 32 if info.field_name == "name_localizations" else 100
             if any(len(val) > lim for val in value.values()):
                 raise InvalidDataErr(400, Errors.make(50035, {"name_localizations": {
                     "code": "BASE_TYPE_BAD_LENGTH", "message": f"Must be between 1 and {lim} in length."
@@ -101,36 +103,36 @@ class CommandOption(CommandBase):
     max_length: Optional[int] = None
     autocomplete: Optional[bool] = None
 
-    @validator("choices")
-    def validate_choices(cls, value: ChoicesType, values) -> ChoicesType:
+    @field_validator("choices")
+    def validate_choices(cls, value: ChoicesType, info: ValidationInfo) -> ChoicesType:
         T = ApplicationCommandOptionType
-        if values["type"] not in {T.STRING, T.INTEGER, T.NUMBER} and value is not None:
+        if info.data["type"] not in {T.STRING, T.INTEGER, T.NUMBER} and value is not None:
             return None
         return value
 
-    @validator("channel_types")
-    def validate_channel_types(cls, value, values):
-        if values["type"] != ApplicationCommandOptionType.CHANNEL and value is not None:
+    @field_validator("channel_types")
+    def validate_channel_types(cls, value, info: ValidationInfo):
+        if info.data["type"] != ApplicationCommandOptionType.CHANNEL and value is not None:
             return None
         return value
 
-    @validator("min_value", "max_value")
-    def validate_min_max_value(cls, value: Optional[int], values) -> Optional[int]:
+    @field_validator("min_value", "max_value")
+    def validate_min_max_value(cls, value: Optional[int], info: ValidationInfo) -> Optional[int]:
         T = ApplicationCommandOptionType
-        if values["type"] not in {T.INTEGER, T.NUMBER} and value is not None:
+        if info.data["type"] not in {T.INTEGER, T.NUMBER} and value is not None:
             return None
         return value
 
-    @validator("min_length", "max_length")
-    def validate_min_max_length(cls, value: Optional[int], values, field) -> Optional[int]:
-        if values["type"] != ApplicationCommandOptionType.STRING and value is not None:
+    @field_validator("min_length", "max_length")
+    def validate_min_max_length(cls, value: Optional[int], info: ValidationInfo) -> Optional[int]:
+        if info.data["type"] != ApplicationCommandOptionType.STRING and value is not None:
             return None
         if value is not None:
             if value < 0: value = 0
             if value > 6000: value = 6000
-            if (field.name == "min_length" and value > values.get("max_length", value)) \
-                    or (field.name == "max_length" and value < values.get("min_length", value)):
-                raise InvalidDataErr(400, Errors.make(50035, {field.name: {
+            if (info.field_name == "min_length" and value > info.data.get("max_length", value)) \
+                    or (info.field_name == "max_length" and value < info.data.get("min_length", value)):
+                raise InvalidDataErr(400, Errors.make(50035, {info.field_name: {
                     "code": "BASE_TYPE_BAD_INTEGER", "message": "Bad integer."
                 }}))
         return value

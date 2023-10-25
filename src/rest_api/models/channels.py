@@ -22,7 +22,7 @@ from time import mktime
 from typing import Optional, List
 
 from dateutil.parser import parse as dparse
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..utils import makeEmbedError
 from ...yepcord.models import Channel, Message
@@ -34,7 +34,7 @@ from ...yepcord.utils import validImage, getImage
 # noinspection PyMethodParameters
 class ChannelUpdate(BaseModel):
     icon: Optional[str] = ""  # Only for GROUP_DM channel
-    owner_id: Optional[int] = Field(default=None, alias="owner")  # Only for GROUP_DM channel
+    owner_id: Optional[int] = None  # Only for GROUP_DM channel
     name: Optional[str] = None  # For any channel (except DM)
     # For guild channels:
     type: Optional[int] = None
@@ -56,54 +56,54 @@ class ChannelUpdate(BaseModel):
     invitable: Optional[bool] = None
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if value is not None:
             value = value[:100]
         return value
 
-    @validator("icon")
+    @field_validator("icon")
     def validate_icon(cls, value: Optional[str]):
         if value is not None:
             if not (img := getImage(value)) or not validImage(img):
                 value = None
         return value
 
-    @validator("topic")
+    @field_validator("topic")
     def validate_topic(cls, value: Optional[str]):
         if value is not None:
             value = value[:1024]
         return value
 
-    @validator("rate_limit")
+    @field_validator("rate_limit")
     def validate_rate_limit(cls, value: Optional[int]):
         if value is not None:
             if value < 0: value = 0
             if value > 21600: value = 21600
         return value
 
-    @validator("bitrate")
+    @field_validator("bitrate")
     def validate_bitrate(cls, value: Optional[int]):
         if value is not None:
             if value < 8000: value = 8000
         return value
 
-    @validator("user_limit")
+    @field_validator("user_limit")
     def validate_user_limit(cls, value: Optional[int]):
         if value is not None:
             if value < 0: value = 0
             if value > 99: value = 99
         return value
 
-    @validator("video_quality_mode")
+    @field_validator("video_quality_mode")
     def validate_video_quality_mode(cls, value: Optional[int]):
         if value is not None:
             if value not in (0, 1): value = None
         return value
 
-    @validator("default_auto_archive", "auto_archive_duration")
+    @field_validator("default_auto_archive", "auto_archive_duration")
     def validate_auto_archive(cls, value: Optional[int]):
         ALLOWED_DURATIONS = (60, 1440, 4320, 10080)
         if value is not None:
@@ -113,17 +113,17 @@ class ChannelUpdate(BaseModel):
 
     def to_json(self, channel_type: int) -> dict:
         if channel_type == ChannelType.GROUP_DM:
-            return self.dict(include={"name", "icon", "owner_id"}, exclude_defaults=True)
+            return self.model_dump(include={"name", "icon", "owner_id"}, exclude_defaults=True)
         elif channel_type == ChannelType.GUILD_CATEGORY:
-            return self.dict(include={"name", "position"}, exclude_defaults=True)
+            return self.model_dump(include={"name", "position"}, exclude_defaults=True)
         elif channel_type == ChannelType.GUILD_TEXT:
-            return self.dict(
+            return self.model_dump(
                 # TODO: add `type` when GUILD_NEWS channels will be added
                 include={"name", "position", "topic", "nsfw", "rate_limit", "parent_id", "default_auto_archive"},
                 exclude_defaults=True)
         elif channel_type == ChannelType.GUILD_VOICE:
-            return self.dict(include={"name", "position", "nsfw", "bitrate", "user_limit", "parent_id",
-                                      "video_quality_mode"}, exclude_defaults=True)
+            return self.model_dump(include={"name", "position", "nsfw", "bitrate", "user_limit", "parent_id",
+                                            "video_quality_mode"}, exclude_defaults=True)
 
 
 class PermissionOverwriteModel(BaseModel):
@@ -132,9 +132,9 @@ class PermissionOverwriteModel(BaseModel):
     allow: int
     deny: int
 
-    def dict(self, *args, **kwargs) -> dict:
+    def model_dump(self, *args, **kwargs) -> dict:
         kwargs["include"] = {"type", "allow", "deny"}
-        return super().dict(*args, **kwargs)
+        return super().model_dump(*args, **kwargs)
 
 
 # noinspection PyMethodParameters
@@ -142,23 +142,23 @@ class EmbedFooter(BaseModel):
     text: Optional[str] = None
     icon_url: Optional[str] = None
 
-    @validator("text")
+    @field_validator("text")
     def validate_text(cls, value: Optional[str]):
         if value is not None:
             if len(value) > 2048:
                 raise EmbedErr(makeEmbedError(27, f"footer.text", {"length": "2048"}))
         return value
 
-    @validator("icon_url")
+    @field_validator("icon_url")
     def validate_icon_url(cls, value: Optional[str]):
         if value is not None:
             if (scheme := value.split(":")[0]) not in ["http", "https"]:
                 raise EmbedErr(makeEmbedError(24, f"footer.icon_url", {"scheme": scheme}))
         return value
 
-    def dict(self, *args, **kwargs) -> dict:
+    def model_dump(self, *args, **kwargs) -> dict:
         kwargs["exclude_defaults"] = True
-        return super().dict(*args, **kwargs)
+        return super().model_dump(*args, **kwargs)
 
 
 # noinspection PyMethodParameters
@@ -167,16 +167,16 @@ class EmbedImage(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
 
-    @validator("url")
+    @field_validator("url")
     def validate_url(cls, value: Optional[str]):
         if value is not None:
             if (scheme := value.split(":")[0]) not in ["http", "https"]:
                 raise EmbedErr(makeEmbedError(24, f"url", {"scheme": scheme}))
         return value
 
-    def dict(self, *args, **kwargs) -> dict:
+    def model_dump(self, *args, **kwargs) -> dict:
         kwargs["exclude_defaults"] = True
-        return super().dict(*args, **kwargs)
+        return super().model_dump(*args, **kwargs)
 
 
 # noinspection PyMethodParameters
@@ -185,24 +185,23 @@ class EmbedAuthor(BaseModel):
     url: Optional[str] = None
     icon_url: Optional[int] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if value is not None:
             if len(value) > 256:
                 raise EmbedErr(makeEmbedError(27, f"author.name", {"length": "256"}))
         return value
 
-    @validator("url", allow_reuse=True)
-    @validator("icon_url", allow_reuse=True)
+    @field_validator("url", "icon_url")
     def validate_url(cls, value: Optional[str]):
         if value is not None:
             if (scheme := value.split(":")[0]) not in ["http", "https"]:
                 raise EmbedErr(makeEmbedError(24, f"url", {"scheme": scheme}))
         return value
 
-    def dict(self, *args, **kwargs) -> dict:
+    def model_dump(self, *args, **kwargs) -> dict:
         kwargs["exclude_defaults"] = True
-        return super().dict(*args, **kwargs)
+        return super().model_dump(*args, **kwargs)
 
 
 # noinspection PyMethodParameters
@@ -210,14 +209,14 @@ class EmbedField(BaseModel):
     name: Optional[str] = None
     value: Optional[str] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if not value:
             raise EmbedErr(makeEmbedError(23, f"fields.name"))
         if len(value) > 256:
             raise EmbedErr(makeEmbedError(27, f"fields.name", {"length": "256"}))
 
-    @validator("value")
+    @field_validator("value")
     def validate_value(cls, value: Optional[str]):
         if not value:
             raise EmbedErr(makeEmbedError(23, f"fields.value"))
@@ -240,32 +239,32 @@ class EmbedModel(BaseModel):
     author: Optional[EmbedAuthor] = None
     fields: List[EmbedField] = Field(default_factory=list)
 
-    @validator("title")
+    @field_validator("title")
     def validate_title(cls, value: str):
         if not value: raise EmbedErr(makeEmbedError(23))
         if len(value) > 256:
             raise EmbedErr(makeEmbedError(27, f"title", {"length": "256"}))
         return value
 
-    @validator("type")
+    @field_validator("type")
     def validate_type(cls, value: Optional[str]):
         return "rich"
 
-    @validator("description")
+    @field_validator("description")
     def validate_description(cls, value: Optional[str]):
         if value is not None:
             if len(value) > 4096:
                 raise EmbedErr(makeEmbedError(27, f"description", {"length": "4096"}))
         return value
 
-    @validator("url")
+    @field_validator("url")
     def validate_url(cls, value: Optional[str]):
         if value is not None:
             if (scheme := value.split(":")[0]) not in ["http", "https"]:
                 raise EmbedErr(makeEmbedError(24, f"url", {"scheme": scheme}))
         return value
 
-    @validator("timestamp")
+    @field_validator("timestamp")
     def validate_timestamp(cls, value: Optional[str]):
         if value is not None:
             try:
@@ -274,45 +273,43 @@ class EmbedModel(BaseModel):
                 raise EmbedErr(makeEmbedError(25, f"timestamp", {"value": value}))
         return value
 
-    @validator("color")
+    @field_validator("color")
     def validate_color(cls, value: Optional[int]):
         if value is not None:
             if value > 0xffffff or value < 0:
                 raise EmbedErr(makeEmbedError(26, f"color"))
         return value
 
-    @validator("footer")
+    @field_validator("footer")
     def validate_footer(cls, value: Optional[EmbedFooter]):
         if value is not None:
             if not value.text:
                 value = None
         return value
 
-    @validator("image", allow_reuse=True)
-    @validator("thumbnail", allow_reuse=True)
-    @validator("video", allow_reuse=True)
+    @field_validator("image", "thumbnail", "video")
     def validate_image(cls, value: Optional[EmbedImage]):
         if value is not None:
             if not value.url:
                 value = None
         return value
 
-    @validator("author")
+    @field_validator("author")
     def validate_author(cls, value: Optional[EmbedAuthor]):
         if value is not None:
             if not value.name:
                 value = None
         return value
 
-    @validator("fields")
+    @field_validator("fields")
     def validate_fields(cls, value: List[EmbedField]):
         if len(value) > 25:
             value = value[:25]
         return value
 
-    def dict(self, *args, **kwargs) -> dict:
+    def model_dump(self, *args, **kwargs) -> dict:
         kwargs["exclude_defaults"] = True
-        return super().dict(*args, **kwargs)
+        return super().model_dump(*args, **kwargs)
 
 
 class MessageReferenceModel(BaseModel):
@@ -321,9 +318,9 @@ class MessageReferenceModel(BaseModel):
     guild_id: Optional[int] = None
     fail_if_not_exists: Optional[int] = None
 
-    def dict(self, *args, **kwargs):
+    def model_dump(self, *args, **kwargs):
         kwargs["include"] = {"message_id", "channel_id", "guild_id"}
-        return super().dict(*args, **kwargs)
+        return super().model_dump(*args, **kwargs)
 
 
 # noinspection PyMethodParameters
@@ -335,7 +332,7 @@ class MessageCreate(BaseModel):
     message_reference: Optional[MessageReferenceModel] = None
     flags: Optional[int] = None
 
-    @validator("content")
+    @field_validator("content")
     def validate_content(cls, value: Optional[str]):
         if value is not None:
             value = value.strip()
@@ -345,7 +342,7 @@ class MessageCreate(BaseModel):
                 }}))
         return value
 
-    @validator("embeds")
+    @field_validator("embeds")
     def validate_embeds(cls, value: List[EmbedModel]):
         if len(value) > 10:
             raise InvalidDataErr(400, Errors.make(50035, {"embeds": {
@@ -353,7 +350,7 @@ class MessageCreate(BaseModel):
             }}))
         return value
 
-    @validator("sticker_ids")
+    @field_validator("sticker_ids")
     def validate_sticker_ids(cls, value: List[int]):
         if len(value) > 3:
             raise InvalidDataErr(400, Errors.make(50035, {"sticker_ids": {
@@ -383,7 +380,7 @@ class MessageCreate(BaseModel):
                                  "message": "Unknown message"}]}}))
 
     def to_json(self) -> dict:
-        data = self.dict(exclude_defaults=True)
+        data = self.model_dump(exclude_defaults=True)
         if "message_reference" in data:
             data["message_reference"]["message_id"] = str(data["message_reference"]["message_id"])
             data["message_reference"]["channel_id"] = str(data["message_reference"]["channel_id"])
@@ -397,7 +394,7 @@ class MessageUpdate(BaseModel):
     content: Optional[str] = None
     embeds: List[EmbedModel] = Field(default_factory=list)
 
-    @validator("content")
+    @field_validator("content")
     def validate_content(cls, value: Optional[str]):
         if value is not None:
             if len(value) > 2000:
@@ -407,7 +404,7 @@ class MessageUpdate(BaseModel):
         return value
 
     def to_json(self) -> dict:
-        return self.dict(exclude_defaults=True)
+        return self.model_dump(exclude_defaults=True)
 
 
 class InviteCreate(BaseModel):
@@ -419,7 +416,7 @@ class InviteCreate(BaseModel):
 class WebhookCreate(BaseModel):
     name: Optional[str] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if not value:
             raise InvalidDataErr(400,
@@ -445,7 +442,7 @@ class GetMessagesQuery(BaseModel):
     before: int = 0
     after: int = 0
 
-    @validator("limit")
+    @field_validator("limit")
     def validate_limit(cls, value: int):
         if value < 0:
             value = 50
@@ -458,7 +455,7 @@ class GetMessagesQuery(BaseModel):
 class GetReactionsQuery(BaseModel):
     limit: int = 3
 
-    @validator("limit")
+    @field_validator("limit")
     def validate_limit(cls, value: int):
         if value < 0:
             value = 3
@@ -482,11 +479,11 @@ class CreateThread(BaseModel):
 class CommandsSearchQS(BaseModel):
     type: int = 1
     limit: int = 10
-    query: Optional[str] = Field(default=None, regex=r"^[a-zA-Z]+$")
+    query: Optional[str] = Field(default=None, pattern=r"^[a-zA-Z]+$")
     include_applications: bool = False
     cursor: Optional[str] = None
 
-    @validator("type")
+    @field_validator("type")
     def validate_type(cls, value: int) -> int:
         if value not in {1, 2, 3}:
             raise InvalidDataErr(400, Errors.make(50035, {"type": {
@@ -494,7 +491,7 @@ class CommandsSearchQS(BaseModel):
             }}))
         return value
 
-    @validator("limit")
+    @field_validator("limit")
     def validate_limit(cls, value: int) -> int:
         if value > 10:
             value = 10

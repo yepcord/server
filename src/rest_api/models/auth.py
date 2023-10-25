@@ -16,21 +16,23 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
 from src.yepcord.errors import InvalidDataErr, Errors
 
 
+# noinspection PyMethodParameters
 class Register(BaseModel):
     username: str
     email: str
     password: str
     date_of_birth: str = "2000-01-01"
 
-    @validator("email", "password", "username")
-    def validate_name(cls, value: str, values, field):
+    @field_validator("email", "password", "username")
+    def validate_name(cls, value: str, info: ValidationInfo):
         if not value:
-            raise InvalidDataErr(400, Errors.make(50035, {field.name: {
+            raise InvalidDataErr(400, Errors.make(50035, {info.field_name: {
                 "_errors": [{"code": "BASE_TYPE_REQUIRED", "message": "Required field."}]}}))
         return value
 

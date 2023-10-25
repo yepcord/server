@@ -66,7 +66,7 @@ async def update_me(data: UserUpdate, user: User):
         data.username = None
     if discrim:
         if not await getCore().changeUserDiscriminator(user, discrim, bool(username)):
-            await userdata.load_all()
+            await userdata.refresh_from_db(fields=["username", "discriminator"])
             return await userdata.ds_json_full()
         data.discriminator = None
     if data.new_password is not None:
@@ -81,8 +81,9 @@ async def update_me(data: UserUpdate, user: User):
             if avatar := await getCDNStorage().setAvatarFromBytesIO(user.id, img):
                 data.avatar = avatar
 
-    await userdata.load_all()
-    changes = data.dict(include={"avatar"}, exclude_defaults=True)
+    await userdata.refresh_from_db()
+    await userdata.user.refresh_from_db()
+    changes = data.model_dump(include={"avatar"}, exclude_defaults=True)
     if changes:
         await userdata.update(**changes)
     await getGw().dispatch(UserUpdateEvent(user, userdata, await user.settings), [user.id])
@@ -98,7 +99,7 @@ async def get_my_profile(data: UserProfileUpdate, user: User):
                 data.banner = banner
 
     userdata = await user.data
-    await userdata.update(**data.dict(exclude_defaults=True))
+    await userdata.update(**data.model_dump(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return await userdata.ds_json_full()
 
@@ -138,7 +139,7 @@ async def get_settings(user: User):
 @multipleDecorators(validate_request(SettingsUpdate), getUser)
 async def update_settings(data: SettingsUpdate, user: User):
     settings = await user.settings
-    await settings.update(**data.dict(exclude_defaults=True))
+    await settings.update(**data.model_dump(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return settings.ds_json()
 
@@ -173,7 +174,7 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
 @users_me.get("/settings-proto/2")
 @getUser
 async def get_protobuf_frecency_settings(user: User):
-    proto = await FrecencySettings.objects.get_or_none(id=user.id)
+    proto = await FrecencySettings.get_or_none(id=user.id)
     return {"settings": proto if proto is not None else ""}
 
 
@@ -189,11 +190,12 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
         proto_new.ParseFromString(_b64decode(data.settings.encode("utf8")))
     except ValueError:
         raise InvalidDataErr(400, Errors.make(50104))
-    fsettings, _ = await FrecencySettings.objects.get_or_create(id=user.id, user=user, settings="")
+    fsettings, _ = await FrecencySettings.get_or_create(id=user.id, user=user, settings="")
     proto = fsettings.to_proto() if fsettings else FrecencyUserSettings()
     proto.MergeFrom(proto_new)
     proto_string = _b64encode(proto.SerializeToString()).decode("utf8")
-    await fsettings.update(settings=proto_string)
+    fsettings.settings = proto_string
+    await fsettings.save(update_fields=["settings"])
     await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto_string, 2), users=[user.id]), 1)
     return {"settings": proto_string}
 
@@ -207,11 +209,11 @@ async def get_connections(user: User):  # TODO: add connections
 @users_me.post("/relationships")
 @multipleDecorators(validate_request(RelationshipRequest), getUser)
 async def new_relationship(data: RelationshipRequest, user: User):
-    if not (target_user := await getCore().getUserByUsername(**data.dict())):
+    if not (target_user := await User.y.getByUsername(**data.model_dump())):
         raise InvalidDataErr(400, Errors.make(80004))
     if target_user == user:
         raise InvalidDataErr(400, Errors.make(80007))
-    await Relationship.objects.request(user, target_user)
+    await Relationship.utils.request(user, target_user)
 
     await getGw().dispatch(RelationshipAddEvent(user.id, await user.userdata, 3), [target_user.id])
     await getGw().dispatch(RelationshipAddEvent(target_user.id, await target_user.userdata, 4), [user.id])
@@ -228,7 +230,7 @@ async def get_relationships(user: User):
 @users_me.get("/notes/<int:target_uid>")
 @multipleDecorators(allowBots, getUser)
 async def get_notes(user: User, target_uid: int):
-    if not (target_user := await getCore().getUser(target_uid, False)):
+    if not (target_user := await User.y.get(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
     if not (note := await getCore().getUserNote(user, target_user)):
         raise InvalidDataErr(404, Errors.make(10013))
@@ -238,10 +240,10 @@ async def get_notes(user: User, target_uid: int):
 @users_me.put("/notes/<int:target_uid>")
 @multipleDecorators(validate_request(PutNote), allowBots, getUser)
 async def set_notes(data: PutNote, user: User, target_uid: int):
-    if not (target_user := await getCore().getUser(target_uid, False)):
+    if not (target_user := await User.y.get(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
     if data.note:
-        note, _ = await UserNote.objects.get_or_create(user=user, target=target_user, _defaults={"text": data.note})
+        note, _ = await UserNote.get_or_create(user=user, target=target_user, defaults={"text": data.note})
         await getGw().dispatch(UserNoteUpdateEvent(target_uid, data.note), users=[user.id])
     return "", 204
 
@@ -262,7 +264,8 @@ async def enable_mfa(data: MfaEnable, session: Session):  # TODO: Check if mfa a
         raise InvalidDataErr(400, Errors.make(60005))
     if not (code := data.code) or code not in mfa.getCodes():
         raise InvalidDataErr(400, Errors.make(60008))
-    await settings.update(mfa=secret)
+    settings.mfa = secret
+    await settings.save(update_fields=["mfa"])
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
     await getCore().setBackupCodes(user, codes)
     await execute_after(getGw().dispatch(UserUpdateEvent(user, await user.data, settings), [user.id]), 1.5)
@@ -281,12 +284,13 @@ async def disable_mfa(data: MfaDisable, session: Session):
     settings = await user.settings
     if settings.mfa is None:
         raise InvalidDataErr(404, Errors.make(60002))
-    mfa = await getCore().getMfa(user)
+    mfa = await user.mfa
     code = code.replace("-", "").replace(" ", "")
     if code not in mfa.getCodes():
         if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
             raise InvalidDataErr(400, Errors.make(60008))
-    await settings.update(mfa=None)
+    settings.mfa = None
+    await settings.save(update_fields=["mfa"])
     await getCore().clearBackupCodes(user)
     await getGw().dispatch(UserUpdateEvent(user, await user.data, settings), [user.id])
     await session.delete()
@@ -319,13 +323,13 @@ async def get_backup_codes(data: MfaCodesVerification, user: User):
 @users_me.put("/relationships/<int:user_id>")
 @multipleDecorators(validate_request(RelationshipPut), getUser)
 async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user: User):
-    if not (target_user_data := await UserData.objects.select_related("user").get_or_none(id=user_id)):
+    if not (target_user_data := await UserData.get_or_none(id=user_id).select_related("user")):
         raise InvalidDataErr(404, Errors.make(10013))
     if not data.type or data.type == 1:
         from_user = target_user_data.user
 
-        if not await Relationship.objects.accept(from_user, user):
-            await Relationship.objects.request(user, from_user)
+        if not await Relationship.utils.accept(from_user, user):
+            await Relationship.utils.request(user, from_user)
 
             await getGw().dispatch(RelationshipAddEvent(user.id, await user.userdata, 3), [from_user.id])
             await getGw().dispatch(RelationshipAddEvent(from_user.id, await from_user.userdata, 4), [user.id])
@@ -337,7 +341,7 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}), [user.id])
     elif data.type == 2:
         block_user = target_user_data.user
-        result = await Relationship.objects.block(user, block_user)
+        result = await Relationship.utils.block(user, block_user)
         for d in result["delete"]:
             await getGw().dispatch(RelationshipRemoveEvent(d["rel"], d["type"]), [d["id"]])
         if result["block"]:
@@ -349,9 +353,9 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
 @users_me.delete("/relationships/<int:user_id>")
 @getUser
 async def delete_relationship(user_id: int, user: User):
-    if (target_user := await getCore().getUser(user_id)) is None:
+    if (target_user := await User.y.get(user_id)) is None:
         return "", 204
-    result = await Relationship.objects.rdelete(user, target_user)
+    result = await Relationship.utils.delete(user, target_user)
     for d in result["delete"]:
         await getGw().dispatch(RelationshipRemoveEvent(d["rel"], d["type"]), [d["id"]])
     return "", 204
@@ -386,7 +390,7 @@ async def new_dm_channel(data: DmChannelCreate, user: User):
     recipients = data.recipients
     if user.id in recipients:
         recipients.remove(user.id)
-    recipients_users = [await getCore().getUser(recipient) for recipient in recipients]
+    recipients_users = [await User.y.get(recipient) for recipient in recipients]
     if None in recipients_users:
         raise InvalidDataErr(400, Errors.make(50033))
     if len(recipients) == 1:
@@ -416,7 +420,7 @@ async def delete_user(data: DeleteRequest, user: User):
 async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
     events = []
     for guild_id in query_args.guild_ids[:5]:
-        if not await GuildMember.objects.get_or_none(guild__id=guild_id, user__id=user.id):
+        if not await GuildMember.get_or_none(guild__id=guild_id, user__id=user.id):
             raise InvalidDataErr(403, Errors.make(50001))
         for event_id in await getCore().getSubscribedGuildEventIds(user, guild_id):
             events.append({
@@ -430,8 +434,8 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
 @users_me.post("/remote-auth/login")
 @multipleDecorators(validate_request(RemoteAuthLogin), getUser)
 async def remote_auth_login(data: RemoteAuthLogin, user: User):
-    ra_session = await RemoteAuthSession.objects.get_or_none(fingerprint=data.fingerprint, user=None,
-                                                             expires_at__gt=int(time()))
+    ra_session = await RemoteAuthSession.get_or_none(fingerprint=data.fingerprint, user=None,
+                                                     expires_at__gt=int(time()))
     if ra_session is None:
         raise InvalidDataErr(404, Errors.make(10012))
 
@@ -449,8 +453,8 @@ async def remote_auth_login(data: RemoteAuthLogin, user: User):
 @users_me.post("/remote-auth/finish")
 @multipleDecorators(validate_request(RemoteAuthFinish), getUser)
 async def remote_auth_finish(data: RemoteAuthFinish, user: User):
-    ra_session = await RemoteAuthSession.objects.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
-                                                             user=user)
+    ra_session = await RemoteAuthSession.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
+                                                     user=user)
     if ra_session is None:
         raise InvalidDataErr(404, Errors.make(10012))
 
@@ -465,8 +469,8 @@ async def remote_auth_finish(data: RemoteAuthFinish, user: User):
 @users_me.post("/remote-auth/cancel")
 @multipleDecorators(validate_request(RemoteAuthCancel), getUser)
 async def remote_auth_cancel(data: RemoteAuthCancel, user: User):
-    ra_session = await RemoteAuthSession.objects.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
-                                                             user=user)
+    ra_session = await RemoteAuthSession.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
+                                                     user=user)
     if ra_session is None:
         raise InvalidDataErr(404, Errors.make(10012))
 

@@ -17,7 +17,7 @@
 """
 
 from functools import wraps
-from json import loads as jloads, loads
+from json import loads
 from typing import Optional, Union
 
 from PIL import Image
@@ -25,9 +25,9 @@ from async_timeout import timeout
 from magic import from_buffer
 from quart import request, current_app, g
 
-from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot, Interaction
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
 from ..yepcord.errors import Errors, InvalidDataErr
+from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot, Interaction
 from ..yepcord.snowflake import Snowflake
 from ..yepcord.utils import b64decode
 
@@ -232,7 +232,7 @@ def getApplication(f):
         kw = {"id": app_id, "deleted": False}
         if not user.is_bot:
             kw["owner"] = user
-        if (app := await Application.objects.get_or_none(**kw)) is None:
+        if (app := await Application.get_or_none(**kw).select_related("owner")) is None:
             raise InvalidDataErr(404, Errors.make(10002))
         del kwargs["application_id"]
         kwargs["application"] = app
@@ -245,8 +245,8 @@ def getInteraction(f):
     async def wrapped(*args, **kwargs):
         if not (int_id := kwargs.get("interaction")) or not (token := kwargs.get("token")):
             raise InvalidDataErr(404, Errors.make(10002))
-        interaction = await (Interaction.objects.select_related(["application", "user", "channel", "command"])
-                             .get_or_none(id=int_id))
+        interaction = await (Interaction.get_or_none(id=int_id)
+                             .select_related("application", "user", "channel", "command"))
         if interaction is None or interaction.token != token:
             raise InvalidDataErr(404, Errors.make(10002))
         del kwargs["token"]
@@ -303,7 +303,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                     img = Image.open(file)
                     metadata = {"height": img.height, "width": img.width}
                     img.close()
-                att = await Attachment.objects.create(
+                att = await Attachment.create(
                     id=Snowflake.makeId(), channel=channel, message=None, filename=name, size=len(content),
                     content_type=content_type, metadata=metadata
                 )

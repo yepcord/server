@@ -44,6 +44,7 @@ if _settings:
 _defaults = {
     "DB_CONNECT_STRING": "sqlite:///db.sqlite",
     "MAIL_CONNECT_STRING": "smtp://127.0.0.1:10025?timeout=3",
+    "MIGRATIONS_DIR": "./migrations",
     "KEY": "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE=",
     "PUBLIC_HOST": "127.0.0.1:8080",
     "GATEWAY_HOST": "127.0.0.1:8001",
@@ -79,6 +80,7 @@ _defaults = {
     },
     "REDIS_URL": "",
     "GATEWAY_KEEP_ALIVE_DELAY": 45,
+    "BCRYPT_ROUNDS": 15,
 }
 
 
@@ -94,3 +96,8 @@ Config = (
 
 if Config.KEY == _defaults["KEY"]:  # pragma: no cover
     warnings.warn("It seems like KEY variable is set to default value. It should be changed in production!")
+if Config.BCRYPT_ROUNDS < 12:
+    warnings.warn("It is not recommended to set BCRYPT_ROUNDS to less than 12!")
+if Config.BCRYPT_ROUNDS < 4 or Config.BCRYPT_ROUNDS > 31:
+    Config.update({"BCRYPT_ROUNDS": 15})
+    warnings.warn("BCRYPT_ROUNDS can not be lower than 4 or higher than 31! BCRYPT_ROUNDS set to 15")

@@ -28,8 +28,8 @@ from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
 from ...yepcord.errors import Errors, InvalidDataErr
-from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry
-from ...yepcord.models.applications import Application, Bot, Authorization, Integration
+from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry, Application, Bot, Authorization, \
+    Integration
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import b64decode
 
@@ -45,9 +45,9 @@ async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user
         raise InvalidDataErr(400, Errors.make(50035,
                                               {"scope": {"code": "SCOPE_INVALID", "message": "Invalid scope"}}))
 
-    if (application := await Application.objects.get_or_none(id=query_args.client_id, deleted=False)) is None:
+    if (application := await Application.get_or_none(id=query_args.client_id, deleted=False)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
-    bot = await Bot.objects.select_related("user").get(id=application)
+    bot = await Bot.get(id=application.id).select_related("user")
 
     result = {
         "application": {
@@ -87,7 +87,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
         raise InvalidDataErr(400, Errors.make(50035,
                                               {"scope": {"code": "SCOPE_INVALID", "message": "Invalid scope"}}))
 
-    if (application := await Application.objects.get_or_none(id=query_args.client_id, deleted=False)) is None:
+    if (application := await Application.get_or_none(id=query_args.client_id, deleted=False)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
 
     if not data.authorize:
@@ -106,27 +106,27 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
             raise InvalidDataErr(403, Errors.make(50001))
 
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-        bot = await Bot.objects.select_related("user").get(id=application.id)
+        bot = await Bot.get(id=application.id).select_related("user")
         if (ban := await getCore().getGuildBan(guild, bot.user.id)) is not None:
             await ban.delete()
 
         bot_userdata = await bot.user.userdata
-        bot_member = await GuildMember.objects.create(id=Snowflake.makeId(), user=bot.user, guild=guild)
-        bot_role = await Role.objects.create(id=Snowflake.makeId(), guild=guild, name=bot_userdata.username,
-                                             tags={"bot_id": str(bot.id)}, permissions=data.permissions, managed=True)
+        bot_member = await GuildMember.create(id=Snowflake.makeId(), user=bot.user, guild=guild)
+        bot_role = await Role.create(id=Snowflake.makeId(), guild=guild, name=bot_userdata.username,
+                                     tags={"bot_id": str(bot.id)}, permissions=data.permissions, managed=True)
         await bot_member.roles.add(bot_role)
 
-        integration = await Integration.objects.create(application=application, guild=guild, user=user,
-                                                       scopes=["bot", "application.commands"])
+        integration = await Integration.create(application=application, guild=guild, user=user,
+                                               scopes=["bot", "application.commands"])
 
         await getGw().dispatch(IntegrationCreateEvent(integration), guild_id=guild.id,
                                permissions=GuildPermissions.MANAGE_GUILD)
         await getGw().dispatch(GuildRoleCreateEvent(guild.id, bot_role.ds_json()), guild_id=guild.id,
                                permissions=GuildPermissions.MANAGE_ROLES)
         entries = [
-            await AuditLogEntry.objects.role_create(user, bot_role),
-            await AuditLogEntry.objects.bot_add(user, guild, bot.user),
-            await AuditLogEntry.objects.integration_create(user, guild, bot.user),
+            await AuditLogEntry.utils.role_create(user, bot_role),
+            await AuditLogEntry.utils.bot_add(user, guild, bot.user),
+            await AuditLogEntry.utils.integration_create(user, guild, bot.user),
         ]
         for entry in entries:
             await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
@@ -135,7 +135,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
         await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=bot.user.id)), users=[bot.user.id])
         if guild.system_channel:
             sys_channel = await getCore().getChannel(guild.system_channel)
-            message = await Message.objects.create(
+            message = await Message.create(
                 id=Snowflake.makeId(), author=bot.user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                 guild=guild
             )
@@ -148,7 +148,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
         return {"location": f"https://{Config.PUBLIC_HOST}/oauth2/error?error=invalid_request&error_description="
                             f"Redirect+URI+{query_args.redirect_uri}+is+not+supported+by+client."}
 
-    authorization = await Authorization.objects.create(user=user, application=application, scope=query_args.scope)
+    authorization = await Authorization.create(user=user, application=application, scope=query_args.scope)
 
     return {"location": f"{query_args.redirect_uri}?code={authorization.code}"}
 
@@ -167,8 +167,8 @@ async def exchange_code_for_token(data: ExchangeCode):
         except (ValueError, KeyError):
             return {"error": "invalid_client"}, 401
 
-    application = await Application.objects.select_related("owner").get_or_none(id=data.client_id, deleted=False,
-                                                                                secret=data.client_secret)
+    application = await (Application.get_or_none(id=data.client_id, deleted=False, secret=data.client_secret)
+                         .select_related("owner"))
     if application is None:
         return {"error": "invalid_client"}, 401
 
@@ -183,7 +183,7 @@ async def exchange_code_for_token(data: ExchangeCode):
         except (ValueError, IndexError):
             return {"error": "invalid_grant", "error_description": "Invalid \"code\" in request."}, 400
 
-        authorization = await Authorization.objects.get_or_none(
+        authorization = await Authorization.get_or_none(
             id=authorization_id, application=application, auth_code=authorization_secret, expires_at__gt=int(time())
         )
         if authorization is None:
@@ -191,7 +191,7 @@ async def exchange_code_for_token(data: ExchangeCode):
 
         await authorization.update(auth_code=None, expires_at=int(time() + 604800))
     else:
-        authorization = await Authorization.objects.create(
+        authorization = await Authorization.create(
             user=application.owner, application=application, refresh_token=None, scope=data.scope,
             expires_at=int(time() + 604800))
 

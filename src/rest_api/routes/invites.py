@@ -58,7 +58,7 @@ async def use_invite(user: User, invite: Invite):
                 del inv[excl]
         inv["new_member"] = user not in recipients
         if inv["new_member"]:
-            message = await Message.objects.create(
+            message = await Message.create(
                 id=Snowflake.makeId(), author=channel.owner, channel=channel, content="",
                 type=MessageType.RECIPIENT_ADD, extra_data={"user": user.id}
             )
@@ -80,11 +80,11 @@ async def use_invite(user: User, invite: Invite):
             if await getCore().getGuildBan(guild, user.id) is not None:
                 raise InvalidDataErr(403, Errors.make(40007))
             inv["new_member"] = True
-            await GuildMember.objects.create(id=Snowflake.makeId(), user=user, guild=guild)
+            await GuildMember.create(id=Snowflake.makeId(), user=user, guild=guild)
             await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=user.id)), users=[user.id])
             if guild.system_channel:
                 sys_channel = await getCore().getChannel(guild.system_channel)
-                message = await Message.objects.create(
+                message = await Message.create(
                     id=Snowflake.makeId(), author=user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                     guild=guild
                 )

@@ -21,9 +21,9 @@ from io import BytesIO
 from time import time
 
 from async_timeout import timeout
-from ormar import or_, and_
 from quart import Blueprint, request, current_app
 from quart_schema import validate_request, validate_querystring
+from tortoise.expressions import Q
 
 from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUpdate, EmojiCreate, EmojiUpdate, \
     ChannelsPositionsChangeList, ChannelCreate, BanMember, RoleCreate, RoleUpdate, \
@@ -58,7 +58,7 @@ async def create_guild(data: GuildCreate, user: User):
         img = getImage(data.icon)
         if h := await getCDNStorage().setGuildIconFromBytesIO(guild_id, img):
             data.icon = h
-    guild = await getCore().createGuild(guild_id, user, **data.dict(exclude_defaults=True))
+    guild = await getCore().createGuild(guild_id, user, **data.model_dump(exclude_defaults=True))
     await getGw().dispatch(GuildCreateEvent(
         await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
     ), users=[user.id])
@@ -90,11 +90,11 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
                 setattr(data, ch, None)
             else:
                 setattr(data, ch, channel.id)
-    changes = data.dict(exclude_defaults=True)
+    changes = data.model_dump(exclude_defaults=True)
     await guild.update(**changes)
     await getGw().dispatch(GuildUpdateEvent(await guild.ds_json(user_id=0)), guild_id=guild.id)
 
-    entry = await AuditLogEntry.objects.guild_update(user, guild, changes)
+    entry = await AuditLogEntry.utils.guild_update(user, guild, changes)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -120,7 +120,7 @@ async def create_guild_template(data: TemplateCreate, user: User, guild: Guild, 
     if await getCore().getGuildTemplate(guild):
         raise InvalidDataErr(400, Errors.make(30031))
 
-    template: GuildTemplate = await GuildTemplate.objects.create(
+    template: GuildTemplate = await GuildTemplate.create(
         id=Snowflake.makeId(), guild=guild, name=data.name, description=data.description, creator=user,
         serialized_guild=await GuildTemplate.serialize_guild(guild)
     )
@@ -141,8 +141,10 @@ async def delete_guild_template(user: User, guild: Guild, member: GuildMember, t
 async def sync_guild_template(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     if template.is_dirty:
-        await template.update(
-            serialized_guild=await GuildTemplate.serialize_guild(guild), is_dirty=False, updated_at=datetime.now())
+        template.serialized_guild = await GuildTemplate.serialize_guild(guild)
+        template.is_dirty = False
+        template.updated_at = datetime.now()
+        await template.save(update_fields=["serialized_guild", "is_dirty", "updated_at"])
     return await template.ds_json()
 
 
@@ -150,7 +152,7 @@ async def sync_guild_template(user: User, guild: Guild, member: GuildMember, tem
 @multipleDecorators(validate_request(TemplateUpdate), allowBots, getUser, getGuildWM, getGuildTemplate)
 async def update_guild_template(data: TemplateUpdate, user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    await template.update(**data.dict(exclude_defaults=True))
+    await template.update(**data.model_dump(exclude_defaults=True))
     return await template.ds_json()
 
 
@@ -168,10 +170,10 @@ async def create_guild_emoji(data: EmojiCreate, user: User, guild: Guild, member
     img = getImage(data.image)
     emoji_id = Snowflake.makeId()
     result = await getCDNStorage().setEmojiFromBytesIO(emoji_id, img)
-    emoji = await Emoji.objects.create(id=emoji_id, name=data.name, user=user, guild=guild, animated=result["animated"])
+    emoji = await Emoji.create(id=emoji_id, name=data.name, user=user, guild=guild, animated=result["animated"])
     await getGw().sendGuildEmojisUpdateEvent(guild)
 
-    entry = await AuditLogEntry.objects.emoji_create(user, emoji)
+    entry = await AuditLogEntry.utils.emoji_create(user, emoji)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -184,7 +186,7 @@ async def update_guild_emoji(data: EmojiUpdate, user: User, guild: Guild, member
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if (emoji := await getCore().getEmoji(emoji)) is None or emoji.guild != guild:
         raise InvalidDataErr(400, Errors.make(10014))
-    await emoji.update(**data.dict(exclude_defaults=True))
+    await emoji.update(**data.model_dump(exclude_defaults=True))
 
     await getGw().sendGuildEmojisUpdateEvent(guild)
 
@@ -202,7 +204,7 @@ async def delete_guild_emoji(user: User, guild: Guild, member: GuildMember, emoj
     await emoji.delete()
     await getGw().sendGuildEmojisUpdateEvent(guild)
 
-    entry = await AuditLogEntry.objects.emoji_delete(user, emoji)
+    entry = await AuditLogEntry.utils.emoji_delete(user, emoji)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -224,7 +226,7 @@ async def update_channels_positions(user: User, guild: Guild, member: GuildMembe
             continue
         if change.parent_id and change.parent_id not in channels:
             change.parent_id = 0
-        change = change.dict(exclude_defaults=True, exclude={"id"})
+        change = change.model_dump(exclude_defaults=True, exclude={"id"})
         await channel.update(**change)
         await getGw().dispatch(ChannelUpdateEvent(await channel.ds_json()), guild_id=channel.guild.id)
     await getCore().setTemplateDirty(guild)
@@ -237,15 +239,15 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS)
     data_json = data.to_json(data.type)
     if data_json.get("parent_id"):
-        data_json["parent"] = await Channel.objects.get_or_none(guild=guild, id=data_json["parent_id"])
+        data_json["parent"] = await Channel.get_or_none(guild=guild, id=data_json["parent_id"])
         del data_json["parent_id"]
-    channel = await Channel.objects.create(id=Snowflake.makeId(), guild=guild, **data_json)
+    channel = await Channel.create(id=Snowflake.makeId(), guild=guild, **data_json)
     for overwrite in data.permission_overwrites:
-        await PermissionOverwrite.objects.create(**overwrite.dict(), channel=channel, target_id=overwrite.id)
+        await PermissionOverwrite.create(**overwrite.model_dump(), channel=channel, target_id=overwrite.id)
 
     await getGw().dispatch(ChannelCreateEvent(await channel.ds_json()), guild_id=guild.id)
 
-    entry = await AuditLogEntry.objects.channel_create(user, channel)
+    entry = await AuditLogEntry.utils.channel_create(user, channel)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -267,13 +269,13 @@ async def get_guild_invites(user: User, guild: Guild, member: GuildMember):
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_premium_boosts(user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    boosts = [{"ended": False, "user_id": str(guild.owner.id)}]*30
+    boosts = [{"ended": False, "user_id": str(guild.owner.id)}] * 30
     return boosts
 
 
 async def process_bot_kick(user: User, bot_member: GuildMember) -> None:
     guild = bot_member.guild
-    bot_role = [role for role in await Role.objects.filter(guild=guild, managed=True).all()
+    bot_role = [role for role in await Role.filter(guild=guild, managed=True).all()
                 if role.tags["bot_id"] == str(bot_member.user.id)]
     if bot_role:
         bot_role = bot_role[0]
@@ -281,14 +283,14 @@ async def process_bot_kick(user: User, bot_member: GuildMember) -> None:
         await getGw().dispatch(GuildRoleDeleteEvent(guild.id, bot_role.id), guild_id=guild.id,
                                permissions=GuildPermissions.MANAGE_ROLES)
 
-    await Integration.objects.delete(guild=guild, application=bot_member.user.id)
+    await Integration.filter(guild=guild, application=bot_member.user.id).delete()
 
     await getGw().dispatch(IntegrationDeleteEvent(guild.id, bot_member.user.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_GUILD)
     await getGw().dispatch(GuildIntegrationsUpdateEvent(guild.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_GUILD)
 
-    entry = await AuditLogEntry.objects.integration_delete(user, guild, bot_member.user)
+    entry = await AuditLogEntry.utils.integration_delete(user, guild, bot_member.user)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -306,7 +308,7 @@ async def kick_member(user: User, guild: Guild, member: GuildMember, user_id: in
         await process_bot_kick(user, target_member)
     await getGw().dispatch(GuildMemberRemoveEvent(guild.id, (await target_member.user.data).ds_json), users=[user_id])
     await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
-    entry = await AuditLogEntry.objects.member_kick(user, target_member)
+    entry = await AuditLogEntry.utils.member_kick(user, target_member)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
     return "", 204
@@ -329,7 +331,7 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
         await getCore().banGuildMember(target_member, reason)
         target_user = target_member.user
     else:
-        if (target_user := await getCore().getUser(user_id, False)) is None:
+        if (target_user := await User.y.get(user_id, False)) is None:
             raise InvalidDataErr(404, Errors.make(10013))
         await getCore().banGuildUser(target_user, guild, reason)
     target_user_data = await target_user.data
@@ -348,9 +350,9 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
                 await getGw().dispatch(MessageDeleteEvent(messages[0], channel_id, guild.id), channel_id=channel_id)
 
     if target_member is not None:
-        entry = await AuditLogEntry.objects.member_ban(user, target_member, reason)
+        entry = await AuditLogEntry.utils.member_ban(user, target_member, reason)
     else:
-        entry = await AuditLogEntry.objects.member_ban_user(user, user_id, guild, reason)
+        entry = await AuditLogEntry.utils.member_ban_user(user, user_id, guild, reason)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -368,12 +370,12 @@ async def get_guild_bans(user: User, guild: Guild, member: GuildMember):
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: int):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
-    await getCore().removeGuildBan(guild, user_id)
-    target_user_data: UserData = await UserData.objects.select_related("user").get(id=user_id)
+    target_user_data: UserData = await UserData.get(id=user_id).select_related("user")
+    await getCore().removeGuildBan(guild, target_user_data.user)
     await getGw().dispatch(GuildBanRemoveEvent(guild.id, target_user_data.ds_json), guild_id=guild.id,
                            permissions=GuildPermissions.BAN_MEMBERS)
 
-    entry = await AuditLogEntry.objects.member_unban(user, guild, target_user_data.user)
+    entry = await AuditLogEntry.utils.member_unban(user, guild, target_user_data.user)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
     return "", 204
@@ -383,7 +385,7 @@ async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: i
 @multipleDecorators(validate_querystring(GetIntegrationsQS), getUser, getGuildWM)
 async def get_guild_integrations(query_args: GetIntegrationsQS, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-    integrations = await Integration.objects.select_related("application").filter(guild=guild).all()
+    integrations = await Integration.filter(guild=guild).select_related("application", "user").all()
     return [await integration.ds_json(query_args.include_applications) for integration in integrations]
 
 
@@ -403,11 +405,11 @@ async def create_role(data: RoleCreate, user: User, guild: Guild, member: GuildM
         img = getImage(data.icon)
         if h := await getCDNStorage().setRoleIconFromBytesIO(role_id, img):
             data.icon = h
-    role = await Role.objects.create(id=role_id, guild=guild, **data.dict())
+    role = await Role.create(id=role_id, guild=guild, **data.model_dump())
     await getGw().dispatch(GuildRoleCreateEvent(guild.id, role.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
 
-    entry = await AuditLogEntry.objects.role_create(user, role)
+    entry = await AuditLogEntry.utils.role_create(user, role)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -428,12 +430,12 @@ async def update_role(data: RoleUpdate, user: User, guild: Guild, member: GuildM
     if role.id == guild.id:  # Only allow permissions editing for @everyone role
         changes = {"permissions": data.permissions} if data.permissions is not None else {}
     else:
-        changes = data.dict(exclude_defaults=True)
+        changes = data.model_dump(exclude_defaults=True)
     await role.update(**changes)
     await getGw().dispatch(GuildRoleUpdateEvent(guild.id, role.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
 
-    entry = await AuditLogEntry.objects.role_update(user, role, changes)
+    entry = await AuditLogEntry.utils.role_update(user, role, changes)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -485,7 +487,7 @@ async def delete_role(user: User, guild: Guild, member: GuildMember, role: Role)
     await getGw().dispatch(GuildRoleDeleteEvent(guild.id, role.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
 
-    entry = await AuditLogEntry.objects.role_delete(user, role)
+    entry = await AuditLogEntry.utils.role_delete(user, role)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -566,11 +568,11 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
             data.avatar = ""
             if av := await getCDNStorage().setGuildAvatarFromBytesIO(user.id, guild.id, img):
                 data.avatar = av
-    changes = data.dict(exclude_defaults=True)
+    changes = data.model_dump(exclude_defaults=True)
     await target_member.update(**changes)
     await getGw().dispatch(GuildMemberUpdateEvent(guild.id, await target_member.ds_json()), guild_id=guild.id)
 
-    entry = await AuditLogEntry.objects.member_update(user, target_member, changes)
+    entry = await AuditLogEntry.utils.member_update(user, target_member, changes)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
@@ -598,17 +600,19 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
     if not data.code:
         if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
             await invite.delete()
-        await guild.update(vanity_url_code=None)
+            guild.vanity_url_code = None
+        await guild.save(update_fields=["vanity_url_code"])
     else:
         if await getCore().getVanityCodeInvite(data.code):
             return {"code": guild.vanity_url_code}
         if guild.vanity_url_code and (invite := await getCore().getVanityCodeInvite(guild.vanity_url_code)):
             await invite.delete()
-        await guild.update(vanity_url_code=data.code)
+        guild.vanity_url_code = data.code
+        await guild.save(update_fields=["vanity_url_code"])
         channel = await getCore().getChannel(guild.system_channel) if guild.system_channel is not None else None
         if channel is None:
             channel = (await getCore().getGuildChannels(guild))[0]
-        await Invite.objects.create(id=Snowflake.makeId(), channel=channel, inviter=guild.owner, vanity_code=data.code)
+        await Invite.create(id=Snowflake.makeId(), channel=channel, inviter=guild.owner, vanity_code=data.code)
     await getGw().dispatch(GuildUpdateEvent(await guild.ds_json(user_id=user.id)), guild_id=guild.id)
     return {"code": guild.vanity_url_code}
 
@@ -617,12 +621,12 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
 @multipleDecorators(validate_querystring(GetAuditLogsQuery), allowBots, getUser, getGuildWM)
 async def get_audit_logs(query_args: GetAuditLogsQuery, user: User, guild: Guild, member: GuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    entries = await getCore().getAuditLogEntries(guild, **query_args.dict())
+    entries = await getCore().getAuditLogEntries(guild, **query_args.model_dump())
     userdatas = {}
     for entry in entries:
         target_id = entry.target_id
         if target_id and target_id not in userdatas:
-            if (data := await UserData.objects.get_or_none(id=target_id)) is not None:
+            if (data := await UserData.get_or_none(id=target_id).select_related("user")) is not None:
                 userdatas[target_id] = data
     userdatas = list(userdatas.values())
 
@@ -668,7 +672,7 @@ async def delete_guild(data: GuildDelete, user: User, guild: Guild):
     if user != guild.owner:
         raise InvalidDataErr(403, Errors.make(50013))
 
-    if mfa := await getCore().getMfa(user):
+    if mfa := await user.mfa:
         if not data.code:
             raise InvalidDataErr(400, Errors.make(60008))
         if data.code not in mfa.getCodes():
@@ -712,7 +716,7 @@ async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
         sticker_id = Snowflake.makeId()
         await getCDNStorage().setStickerFromBytesIO(sticker_id, img)
 
-        sticker = await Sticker.objects.create(
+        sticker = await Sticker.create(
             id=sticker_id, guild=guild, user=user, name=data.name, tags=data.tags, type=StickerType.GUILD,
             format=sticker_type, description=data.description
         )
@@ -728,7 +732,7 @@ async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, me
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if not (sticker := await getCore().getSticker(sticker_id)) or sticker.guild != guild:
         raise InvalidDataErr(404, Errors.make(10060))
-    await sticker.update(**data.dict(exclude_defaults=True))
+    await sticker.update(**data.model_dump(exclude_defaults=True))
     await getGw().sendStickersUpdateEvent(guild)
     return await sticker.ds_json()
 
@@ -761,7 +765,7 @@ async def create_scheduled_event(data: CreateEvent, user: User, guild: Guild, me
         img = await getCDNStorage().setGuildEventFromBytesIO(event_id, img)
         data.image = img
 
-    data_dict = data.dict()
+    data_dict = data.model_dump()
     if data.entity_type in (ScheduledEventEntityType.STAGE_INSTANCE, ScheduledEventEntityType.VOICE):
         if ((channel := await getCore().getChannel(data.channel_id)) is None or channel.guild != guild
                 or channel.type not in (ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE)):
@@ -771,7 +775,7 @@ async def create_scheduled_event(data: CreateEvent, user: User, guild: Guild, me
         data_dict["channel"] = channel
     del data_dict["channel_id"]
 
-    event = await GuildEvent.objects.create(id=event_id, guild=guild, creator=user, **data_dict)
+    event = await GuildEvent.create(id=event_id, guild=guild, creator=user, **data_dict)
     await getGw().dispatch(GuildScheduledEventCreateEvent(await event.ds_json()), guild_id=guild.id)
 
     await event.subscribers.add(member)
@@ -815,7 +819,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: 
                 img = h
         data.image = img
 
-    new_status = data.dict(exclude_defaults=True).get("status", event.status)
+    new_status = data.model_dump(exclude_defaults=True).get("status", event.status)
 
     valid_transition = True
     if event.status == ScheduledEventStatus.SCHEDULED:
@@ -830,7 +834,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: 
             "code": "TRANSITION_INVALID", "message": "Invalid Guild Scheduled Event Status Transition"
         }}))
 
-    await event.update(**data.dict(exclude_defaults=True))
+    await event.update(**data.model_dump(exclude_defaults=True))
     event_json = await event.ds_json()
     await getGw().dispatch(GuildScheduledEventUpdateEvent(event_json), guild_id=guild.id)
 
@@ -859,7 +863,7 @@ async def unsubscribe_from_scheduled_event(user: User, guild: Guild, member: Gui
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
         raise InvalidDataErr(404, Errors.make(10070))
 
-    if await event.subscribers.get_or_none(user__id=user.id) is not None:
+    if await event.subscribers.filter(user__id=user.id).get_or_none() is not None:
         await event.subscribers.remove(member)
         await getGw().dispatch(ScheduledEventUserRemoveEvent(user.id, event_id, guild.id),
                                guild_id=guild.id)  # TODO: Replace with list of users subscribed to event
@@ -884,12 +888,12 @@ async def delete_scheduled_event(user: User, guild: Guild, member: GuildMember, 
 @multipleDecorators(getUser, getGuildWM)
 async def get_guild_integration_commands(user: User, guild: Guild, member: GuildMember, application_id: int):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    integration = await Integration.objects.get_or_none(guild=guild, application__id=application_id)
+    integration = await Integration.get_or_none(guild=guild, application__id=application_id)
     if integration is None:
         return {"application_commands": [], "permissions": []}
 
-    commands = await ApplicationCommand.objects.filter(
-        or_(and_(guild=guild, application__id=application_id), application__id=application_id)
-    ).all()
+    commands = await ApplicationCommand.filter(
+        Q(guild=guild, application__id=application_id) | Q(application__id=application_id)
+    ).select_related("application", "guild").all()
 
     return {"application_commands": [command.ds_json() for command in commands], "permissions": []}
