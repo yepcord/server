@@ -363,7 +363,7 @@ class Core(Singleton):
     async def getReadStatesJ(self, user: User) -> list:
         states = []
         st: ReadState
-        for st in await ReadState.filter(user=user).all():
+        for st in await ReadState.filter(user=user).select_related("channel", "user").all():
             states.append(await st.ds_json())
         return states
 
@@ -649,7 +649,7 @@ class Core(Singleton):
             .select_related("guild", "parent").all()
 
     async def getUserGuilds(self, user: User) -> list[Guild]:
-        return [member.guild for member in await GuildMember.filter(user=user).select_related("guild").all()]
+        return [member.guild for member in await GuildMember.filter(user=user).select_related("guild", "guild__owner").all()]
 
     async def getGuildMemberCount(self, guild: Guild) -> int:
         return await GuildMember.filter(guild=guild).count()
@@ -769,7 +769,7 @@ class Core(Singleton):
             Q(guild=guild) &
             (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query)) #&
             #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
-        ).limit(limit).all()
+        ).select_related("user").limit(limit).all()
 
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
         return await member.roles.filter(id=role.id).exists()
@@ -902,7 +902,8 @@ class Core(Singleton):
         return await ThreadMember.filter(channel=thread).select_related("user").limit(limit).all()
 
     async def getGuildMemberThreads(self, guild: Guild, user_id: int) -> list[Channel]:
-        return await ThreadMember.filter(guild=guild, user__id=user_id).select_related("channel").all()
+        return await (ThreadMember.filter(guild=guild, user__id=user_id)
+                      .select_related("channel", "user", "guild").all())
 
     async def getThreadMember(self, thread: Channel, user_id: int) -> Optional[ThreadMember]:
         return await ThreadMember.get_or_none(channel=thread, user__id=user_id)
