@@ -98,7 +98,8 @@ async def create_interaction(user: User):
     settings = await user.settings
     guild_locale = guild.preferred_locale if guild is not None else None
     int_data = data.data.model_dump(exclude={"version"})
-    resolved = await resolve_options(data.data.options)
+    int_data["id"] = str(int_data["id"])
+    resolved = await resolve_options(data.data.options, guild)
     interaction = await Interaction.create(
         application=application, user=user, type=data.type, data=int_data, guild=guild, channel=channel,
         locale=settings.locale, guild_locale=guild_locale, nonce=data.nonce, session_id=data.session_id,

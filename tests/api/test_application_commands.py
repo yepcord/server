@@ -246,7 +246,8 @@ async def test_execute_slash_command():
     await add_bot_to_guild(client, user, guild, application)
     headers = {"Authorization": user["token"]}
     headers2 = {"Authorization": user2["token"]}
-    bot_headers = {"Authorization": f"Bot {await bot_token(client, user, application)}"}
+    bot_token_ = await bot_token(client, user, application)
+    bot_headers = {"Authorization": f"Bot {bot_token_}"}
     channel = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]
 
     resp = await client.post(f"/api/v9/applications/{application['id']}/commands", headers=bot_headers, json={

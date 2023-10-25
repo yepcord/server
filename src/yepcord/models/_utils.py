@@ -16,11 +16,13 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Any
+from typing import Any, Type, Optional
 
 import tortoise
+from tortoise import BaseDBAsyncClient
 from tortoise.exceptions import ValidationError
 from tortoise.fields import BigIntField
+from tortoise.models import MODEL
 from tortoise.validators import Validator
 
 from src.yepcord.snowflake import Snowflake
@@ -38,6 +40,7 @@ class ChoicesValidator(Validator):
 class SnowflakeField(BigIntField):
     def __init__(self, *args, **kwargs):
         kwargs["default"] = Snowflake.makeId
+        kwargs["generated"] = False
         super().__init__(*args, **kwargs)
 
 

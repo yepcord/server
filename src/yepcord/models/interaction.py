@@ -65,15 +65,15 @@ class Interaction(Model):
                 data["data"] |= {"resolved": resolved}
 
         if self.guild is not None:
-            data["guild_id"] = self.guild.id
+            data["guild_id"] = str(self.guild.id)
             member = await getCore().getGuildMember(self.guild, self.user.id)
-            data["member"] = await member.ds_json()
+            data["member"] = await member.ds_json(False)
 
             if (bot_member := await getCore().getGuildMember(self.guild, self.application.id)) is not None:
                 data["app_permissions"] = str(await bot_member.permissions)
 
         if self.channel is not None:
-            data["channel_id"] = self.channel.id
+            data["channel_id"] = str(self.channel.id)
             data["channel"] = await self.channel.ds_json()
 
         if self.message_id is not None and (message := await getCore().getMessage(self.channel, self.message_id)):
