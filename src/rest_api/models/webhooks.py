@@ -47,5 +47,5 @@ class WebhookMessageCreateQuery(BaseModel):
 
     def __init__(self, **data):
         if "wait" in data:
-            data["wait"] = data["wait"].lower() == "true"
+            data["wait"] = data["wait"].lower() in {"true", "1"}
         super().__init__(**data)

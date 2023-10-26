@@ -158,11 +158,13 @@ async def create_update_application_command(data: CreateCommand, user: User, app
     command = await (ApplicationCommand.get_or_none(application=application, name=data.name, type=data.type)
                      .select_related("application", "guild"))
     if command is not None:
-        await command.update(**data.model_dump(exclude={"name", "type"}, exclude_defaults=True),
-                             version=Snowflake.makeId(False))
+        cmd = data.model_dump(exclude={"name", "type"}, exclude_defaults=True)
+        if cmd.get("options") is None: cmd["options"] = []
+        await command.update(**cmd, version=Snowflake.makeId(False))
     else:
-        command = await ApplicationCommand.create(application=application,
-                                                  **data.model_dump(exclude_defaults=True))
+        cmd = data.model_dump(exclude_defaults=True)
+        if cmd.get("options") is None: cmd["options"] = []
+        command = await ApplicationCommand.create(application=application, **cmd)
     return command.ds_json()
 
 

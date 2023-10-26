@@ -144,7 +144,60 @@ async def test_answer_to_slash_command():
 
     resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token}/callback", json={
         "type": 4, "data": {"content": "test interaction response"}})
+    assert resp.status_code == 204
+    #json = await resp.get_json()
+    #assert json["interaction"]["user"]["id"] == user["id"]
+    #assert json["application_id"] == application["id"]
+
+
+@pt.mark.asyncio
+async def test_defer_slash_command():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test")
+    application = await create_application(client, user, "testApp")
+    await add_bot_to_guild(client, user, guild, application)
+    headers = {"Authorization": user["token"]}
+    bot_token_ = await bot_token(client, user, application)
+    bot_headers = {"Authorization": f"Bot {bot_token_}"}
+    channel = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]
+
+    resp = await client.post(f"/api/v9/applications/{application['id']}/commands", headers=bot_headers, json={
+        "type": 1, "name": "test", "description": "test"})
+    assert resp.status_code == 200
+    command = await resp.get_json()
+
+    payload = generate_slash_command_payload(application, guild, channel, command, [])
+    async with gateway_cm(gw_app):
+        gw_client = gw_app.test_client()
+        cl = GatewayClient(bot_token_)
+        async with gw_client.websocket('/') as ws:
+            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+            await cl.run(ws)
+
+            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+            assert resp.status_code == 204
+
+            event = await event_coro
+
+    int_id = event["id"]
+    int_token = event["token"]
+
+    resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token}/callback", json={"type": 5})
+    assert resp.status_code == 204
+
+    resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token}/callback", json={"type": 5})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/v9/webhooks/{application['id']}/wrong_token", json={})
+    assert resp.status_code == 404
+
+    resp = await client.post(f"/api/v9/webhooks/{application['id']}/{int_token}?wait=true", json={})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/v9/webhooks/{application['id']}/{int_token}?wait=true", json={"content": "test"})
     assert resp.status_code == 200
     json = await resp.get_json()
-    assert json["interaction"]["user"]["id"] == user["id"]
+    assert json["content"] == "test"
     assert json["application_id"] == application["id"]
+    assert json["interaction"]["user"]["id"] == user["id"]

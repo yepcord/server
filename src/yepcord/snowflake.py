@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from os import getpid
 from random import randint
 from time import time
+from typing import Union
 
 from .classes.singleton import Singleton
 
@@ -46,7 +47,7 @@ class Snowflake(Singleton):
         return snowflake
 
     @classmethod
-    def fromTimestamp(cls, timestamp: int) -> int:
+    def fromTimestamp(cls, timestamp: Union[int, float]) -> int:
         """
         Creates id from timestamp
         :param timestamp: Timestamp in seconds

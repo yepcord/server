@@ -28,7 +28,8 @@ from tortoise.expressions import Q
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
     WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS
-from ..utils import getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData, allowBots
+from ..utils import getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData, allowBots, \
+    process_stickers, validate_reply, processMessage
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
@@ -180,37 +181,8 @@ async def send_message(user: User, channel: Channel):
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-    data = await request.get_json()
-    data, attachments = await processMessageData(data, channel)
-    data = MessageCreate(**data)
 
-    message_type = MessageType.DEFAULT
-    if data.message_reference:
-        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
-    if data.message_reference:
-        message_type = MessageType.REPLY
-
-    stickers = [await getCore().getSticker(sticker_id) for sticker_id in data.sticker_ids]
-    if not data.content and not data.embeds and not attachments and not data.sticker_ids:
-        raise InvalidDataErr(400, Errors.make(50006))
-    stickers_data = {"sticker_items": [], "stickers": []}
-    for sticker in stickers:
-        stickers_data["stickers"].append(await sticker.ds_json(False))
-        stickers_data["sticker_items"].append({
-            "format_type": sticker.format,
-            "id": str(sticker.id),
-            "name": sticker.name,
-        })
-
-    data_json = data.to_json()
-    if "sticker_ids" in data_json: del data_json["sticker_ids"]
-
-    message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user, **data_json,
-                                   **stickers_data, type=message_type, guild=channel.guild)
-    message.nonce = data_json.get("nonce")
-    for attachment in attachments:
-        attachment.message = message
-        await attachment.save()
+    message = await processMessage(await request.get_json(), channel, user, MessageCreate)
 
     if channel.type == ChannelType.DM:
         other_user = await channel.other_user(user)

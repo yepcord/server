@@ -19,13 +19,13 @@
 from quart import Blueprint
 from quart_schema import validate_request
 
-from ..models.interactions import InteractionCreate, InteractionRespond, InteractionDataOption
+from ..models.interactions import InteractionCreate, InteractionRespond, InteractionDataOption, InteractionRespondData
 from ..utils import getUser, get_multipart_json, getInteraction, multipleDecorators
 from ...gateway.events import InteractionCreateEvent, InteractionFailureEvent, MessageCreateEvent, \
     InteractionSuccessEvent
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import GuildPermissions, InteractionStatus, MessageFlags, InteractionCallbackType, \
-    ApplicationCommandOptionType
+    ApplicationCommandOptionType, MessageType
 from ...yepcord.errors import Errors, InvalidDataErr
 from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild
 from ...yepcord.models.interaction import Interaction
@@ -95,6 +95,11 @@ async def create_interaction(user: User):
     if (command := await ApplicationCommand.get_or_none(id=data.data.id, application=application)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
 
+    if data.data.version != command.version:
+        raise InvalidDataErr(400, Errors.make(50035, {"data": {
+            "code": "INTERACTION_APPLICATION_COMMAND_INVALID_VERSION",
+            "message": "This command is outdated, please try again in a few minutes"}}))
+
     settings = await user.settings
     guild_locale = guild.preferred_locale if guild is not None else None
     int_data = data.data.model_dump(exclude={"version"})
@@ -120,27 +125,42 @@ async def create_interaction(user: User):
     return "", 204
 
 
+async def send_interaction_response(interaction: Interaction, flags: bool, content: str) -> Message:
+    is_ephemeral = flags & MessageFlags.EPHEMERAL == MessageFlags.EPHEMERAL
+    is_loading = flags & MessageFlags.LOADING == MessageFlags.LOADING
+
+    bot_user = await User.y.get(interaction.application.id)
+    message = await Message.create(id=Snowflake.makeId(), author=bot_user, content=content, flags=flags,
+                                   interaction=interaction, channel=interaction.channel, ephemeral=is_ephemeral,
+                                   webhook_id=interaction.id, type=MessageType.CHAT_INPUT_COMMAND)
+    message_obj = await message.ds_json() | {"nonce": str(interaction.nonce)}
+
+    kw = {"session_id": interaction.session_id} if is_ephemeral else {}
+    await getGw().dispatch(InteractionSuccessEvent(interaction), users=[interaction.user.id], **kw)
+    if is_ephemeral:
+        await getGw().dispatch(MessageCreateEvent(message_obj), users=[interaction.user.id, bot_user.id])
+    else:
+        await getGw().dispatch(MessageCreateEvent(message_obj), channel_id=interaction.channel.id)
+    await interaction.update(status=InteractionStatus.RESPONDED if not is_loading else InteractionStatus.DEFERRED)
+
+    return message
+
+
 @interactions.post("/<int:interaction>/<string:token>/callback")
 @multipleDecorators(validate_request(InteractionRespond), getInteraction)
 async def respond_to_interaction(data: InteractionRespond, interaction: Interaction):
-    if data.type == InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE:
-        d = data.data
+    T = InteractionCallbackType
+    d = data.data
+    if interaction.status != InteractionStatus.PENDING:
+        raise InvalidDataErr(400, Errors.make(40060))
+    if data.type == T.CHANNEL_MESSAGE_WITH_SOURCE:
         if not d.content:
             raise InvalidDataErr(400, Errors.make(50006))
         flags = d.flags & MessageFlags.EPHEMERAL
-        is_ephemeral = bool(flags)
-        bot_user = await User.y.get(interaction.application.id)
-        message = await Message.create(id=Snowflake.makeId(), author=bot_user, content=d.content, flags=flags,
-                                       interaction=interaction, channel=interaction.channel,
-                                       ephemeral=is_ephemeral, webhook_id=interaction.id)
-        message_obj = await message.ds_json() | {"nonce": interaction.nonce}
+        await send_interaction_response(interaction, flags, d.content)
+    elif data.type == T.DEFFERED_CHANNEL_MESSAGE_WITH_SOURCE:
+        flags = d.flags & MessageFlags.EPHEMERAL if d is not None else 0
+        flags |= MessageFlags.LOADING
+        await send_interaction_response(interaction, flags, "")
 
-        kw = {"session_id": interaction.session_id} if is_ephemeral else {}
-        await getGw().dispatch(InteractionSuccessEvent(interaction), users=[interaction.user.id], **kw)
-        await getGw().dispatch(MessageCreateEvent(message_obj), users=[interaction.user.id, bot_user.id])
-        if not is_ephemeral:
-            await getGw().dispatch(MessageCreateEvent(message_obj), channel_id=interaction.channel.id)
-        await interaction.update(status=InteractionStatus.RESPONDED)
-
-        return await message.ds_json()
     return "", 204

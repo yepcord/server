@@ -315,14 +315,14 @@ class Core(Singleton):
         if after: id_filter["id__gt"] = after
         if before: id_filter["id__lt"] = before
         messages = await (Message.filter(channel=channel, ephemeral=False, **id_filter)
-                          .select_related("thread", "channel", "author", "guild", "interaction", "interaction__user", "interaction__command")
+                          .select_related(*Message.DEFAULT_RELATED)
                           .order_by("-id").limit(limit).all())
         return messages
 
     async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
         if not message_id: return
         return await (Message.get_or_none(channel=channel, id=message_id)
-                      .select_related("author", "channel", "thread", "guild"))
+                      .select_related(*Message.DEFAULT_RELATED))
 
     async def sendMessage(self, message: Message) -> Message:
         async def _addToReadStates():

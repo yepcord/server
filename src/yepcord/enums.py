@@ -393,6 +393,7 @@ class InteractionStatus(E):
     PENDING = 1
     RESPONDED = 2
     FAILED = 3
+    DEFERRED = 4
 
 
 class MessageFlags(E):

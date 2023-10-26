@@ -15,6 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+from __future__ import annotations
 from os import urandom
 from typing import Optional
 
@@ -24,7 +25,7 @@ import src.yepcord.models as models
 from ._utils import SnowflakeField, Model
 from ..ctx import getCore
 from ..enums import InteractionType, ChannelType, InteractionStatus
-from ..utils import b64encode
+from ..utils import b64encode, b64decode
 
 
 def gen_interaction_token() -> str:
@@ -67,7 +68,7 @@ class Interaction(Model):
         if self.guild is not None:
             data["guild_id"] = str(self.guild.id)
             member = await getCore().getGuildMember(self.guild, self.user.id)
-            data["member"] = await member.ds_json(False)
+            data["member"] = await member.ds_json()
 
             if (bot_member := await getCore().getGuildMember(self.guild, self.application.id)) is not None:
                 data["app_permissions"] = str(await bot_member.permissions)
@@ -90,6 +91,27 @@ class Interaction(Model):
             data["user"] = userdata.ds_json
 
         if with_token:
-            data["token"] = self.token
+            data["token"] = self.ds_token
 
         return data
+
+    @property
+    def ds_token(self) -> str:
+        return f"int___{b64encode(f'interaction:{self.id}:{self.token}')}"
+
+    @classmethod
+    async def from_token(cls, token: str) -> Optional[Interaction]:
+        if not token.startswith("int___"):
+            return
+        token = token[6:]
+
+        try:
+            token = b64decode(token).decode("utf8")
+            interaction, interaction_id, token = token.split(":")
+            assert interaction == "interaction"
+            interaction_id = int(interaction_id)
+        except (ValueError, AssertionError):
+            return
+
+        return await (Interaction.get_or_none(id=interaction_id, token=token)
+                      .select_related("application", "command", "user", "guild", "channel"))

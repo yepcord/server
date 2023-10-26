@@ -380,7 +380,7 @@ class MessageCreate(BaseModel):
                                  "message": "Unknown message"}]}}))
 
     def to_json(self) -> dict:
-        data = self.model_dump(exclude_defaults=True)
+        data = self.model_dump(exclude_defaults=True, exclude={"flags", "sticker_ids"})
         if "message_reference" in data:
             data["message_reference"]["message_id"] = str(data["message_reference"]["message_id"])
             data["message_reference"]["channel_id"] = str(data["message_reference"]["channel_id"])

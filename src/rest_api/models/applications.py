@@ -67,7 +67,7 @@ class CommandBase(BaseModel):
     description: str = Field(max_length=100)
     name_localizations: Optional[dict] = None
     description_localizations: Optional[dict] = None
-    options: list[CommandOption] = Field(default_factory=list)
+    options: Optional[list[CommandOption]] = Field(default=None)
 
     @field_validator("name_localizations", "description_localizations")
     def validate_localizations(cls, value: Optional[dict], info: ValidationInfo) -> Optional[dict]:

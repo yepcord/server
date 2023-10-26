@@ -15,21 +15,27 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from __future__ import annotations
 from functools import wraps
 from json import loads
-from typing import Optional, Union
+from typing import Optional, Union, TYPE_CHECKING
 
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
+from pydantic import BaseModel
 from quart import request, current_app, g
 
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
+from ..yepcord.enums import MessageType
 from ..yepcord.errors import Errors, InvalidDataErr
-from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot, Interaction
+from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot, Interaction, Webhook
 from ..yepcord.snowflake import Snowflake
 from ..yepcord.utils import b64decode
+import src.yepcord.models as models
+
+if TYPE_CHECKING:
+    from .models.channels import MessageCreate
 
 
 def multipleDecorators(*decorators):
@@ -245,9 +251,11 @@ def getInteraction(f):
     async def wrapped(*args, **kwargs):
         if not (int_id := kwargs.get("interaction")) or not (token := kwargs.get("token")):
             raise InvalidDataErr(404, Errors.make(10002))
+        if not token.startswith("int___"):
+            raise InvalidDataErr(404, Errors.make(10002))
         interaction = await (Interaction.get_or_none(id=int_id)
                              .select_related("application", "user", "channel", "command"))
-        if interaction is None or interaction.token != token:
+        if interaction is None or interaction.ds_token != token:
             raise InvalidDataErr(404, Errors.make(10002))
         del kwargs["token"]
         kwargs["interaction"] = interaction
@@ -358,3 +366,60 @@ def makeEmbedError(code, path=None, replaces=None):
     elif code == 28:
         insertError([{"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or fewer in length."}])
         return base_error
+
+
+async def process_stickers(sticker_ids: list[int]):
+    stickers = [await getCore().getSticker(sticker_id) for sticker_id in sticker_ids]
+    stickers_data = {"sticker_items": [], "stickers": []}
+    for sticker in stickers:
+        if sticker is None:
+            continue
+        stickers_data["stickers"].append(await sticker.ds_json(False))
+        stickers_data["sticker_items"].append({
+            "format_type": sticker.format,
+            "id": str(sticker.id),
+            "name": sticker.name,
+        })
+    return stickers_data
+
+
+async def validate_reply(data: MessageCreate, channel: Channel) -> int:
+    message_type = MessageType.DEFAULT
+    if data.message_reference:
+        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
+    if data.message_reference:
+        message_type = MessageType.REPLY
+    return message_type
+
+
+async def processMessage(data: dict, channel: Channel, author: Optional[User], validator_class,
+                         webhook: Webhook=None) -> models.Message:
+    data, attachments = await processMessageData(data, channel)
+    w_author = {}
+    if webhook is not None:
+        w_author = {
+            "bot": True,
+            "id": str(webhook.id),
+            "username": data.get("username", webhook.name),
+            "avatar": data.get("avatar", webhook.avatar),
+            "discriminator": "0000"
+        }
+
+    data = validator_class(**data)
+
+    message_type = await validate_reply(data, channel)
+    stickers_data = await process_stickers(data.sticker_ids)
+    if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
+        raise InvalidDataErr(400, Errors.make(50006))
+
+    data_json = data.to_json()
+    message = await models.Message.create(
+        id=Snowflake.makeId(), channel=channel, author=author, **data_json, **stickers_data, type=message_type,
+        guild=channel.guild, webhook_author=w_author)
+    message.nonce = data_json.get("nonce")
+
+    for attachment in attachments:
+        attachment.message = message
+        await attachment.save()
+
+    return message

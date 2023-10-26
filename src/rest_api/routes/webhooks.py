@@ -15,19 +15,20 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from time import time
 from typing import Optional
 
 from quart import Blueprint, request
 from quart_schema import validate_request, validate_querystring
 
 from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
-from ..utils import getUser, multipleDecorators, allowWithoutUser, processMessageData, allowBots
-from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent
+from ..utils import getUser, multipleDecorators, allowWithoutUser, processMessageData, allowBots, process_stickers, \
+    validate_reply, processMessage
+from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent, MessageUpdateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
-from ...yepcord.enums import GuildPermissions, MessageType
+from ...yepcord.enums import GuildPermissions, MessageType, MessageFlags
 from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.models import User, Channel, Message
+from ...yepcord.models import User, Channel, Message, Interaction
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage
 
@@ -113,44 +114,7 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
         raise InvalidDataErr(403, Errors.make(50013))
 
     channel = webhook.channel
-    data = await request.get_json()
-    data, attachments = await processMessageData(data, channel)
-    author = {
-        "bot": True,
-        "id": str(webhook.id),
-        "username": data.get("username", webhook.name),
-        "avatar": data.get("avatar", webhook.avatar),
-        "discriminator": "0000"
-    }
-    data = WebhookMessageCreate(**data)
-
-    message_type = MessageType.DEFAULT
-    if data.message_reference:
-        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
-    if data.message_reference:
-        message_type = MessageType.REPLY
-
-    stickers = [await getCore().getSticker(sticker_id) for sticker_id in data.sticker_ids]
-    if not data.content and not data.embeds and not attachments and not data.sticker_ids:
-        raise InvalidDataErr(400, Errors.make(50006))
-    stickers_data = {"sticker_items": [], "stickers": []}
-    for sticker in stickers:
-        stickers_data["stickers"].append(await sticker.ds_json(False))
-        stickers_data["sticker_items"].append({
-            "format_type": sticker.format,
-            "id": str(sticker.id),
-            "name": sticker.name,
-        })
-
-    data_json = data.to_json()
-    if "sticker_ids" in data_json: del data_json["sticker_ids"]
-
-    message = await Message.create(id=Snowflake.makeId(), channel=webhook.channel, author=None,
-                                   guild=channel.guild, webhook_author=author, type=message_type,
-                                   **stickers_data, **data_json)
-    for attachment in attachments:
-        attachment.message = message
-        await attachment.save()
+    message = await processMessage(await request.get_json(), channel, None, WebhookMessageCreate, webhook)
 
     message_json = await message.ds_json()
     await getCore().sendMessage(message)
@@ -158,5 +122,41 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
 
     if query_args.wait:
         return message_json
+    else:
+        return "", 204
+
+
+@webhooks.post("/<int:application_id>/int___<string:token>")
+@multipleDecorators(validate_querystring(WebhookMessageCreateQuery))
+async def interaction_followup_create(query_args: WebhookMessageCreateQuery, application_id: int, token: str):
+    if not (inter := await Interaction.from_token(f"int___{token}")) or inter.application.id != application_id:
+        raise InvalidDataErr(404, Errors.make(10002))
+    message = await Message.get_or_none(interaction=inter, id__gt=Snowflake.fromTimestamp(time() - 15 * 60))\
+                           .select_related(*Message.DEFAULT_RELATED)
+    if message is None:
+        raise InvalidDataErr(404, Errors.make(10008))
+
+    channel = inter.channel
+    data = await request.get_json()
+
+    data, attachments = await processMessageData(data, channel)
+    data = WebhookMessageCreate(**data)
+
+    await validate_reply(data, channel)
+    stickers_data = await process_stickers(data.sticker_ids)
+    if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
+        raise InvalidDataErr(400, Errors.make(50006))
+
+    data_json = data.to_json() | stickers_data | {"flags": message.flags & ~MessageFlags.LOADING}
+    await message.update(**data_json)
+    message_obj = await message.ds_json()
+
+    if message.ephemeral:
+        await getGw().dispatch(MessageUpdateEvent(message_obj), users=[inter.user.id, inter.application.id])
+    else:
+        await getGw().dispatch(MessageUpdateEvent(message_obj), channel_id=inter.channel.id)
+
+    if query_args.wait:
+        return message_obj
     else:
         return "", 204

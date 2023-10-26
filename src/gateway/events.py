@@ -154,7 +154,7 @@ class ReadyEvent(DispatchEvent):
         if self.user.is_bot:
             del data["d"]["user_settings_proto"]
             del data["d"]["read_state"]
-            application = await Application.objects.get(id=self.user.id)
+            application = await Application.get(id=self.user.id)
             data["d"]["application"] = {
                 "id": str(application.id),
                 "flags": application.flags,
