@@ -142,5 +142,5 @@ async def respond_to_interaction(data: InteractionRespond, interaction: Interact
             await getGw().dispatch(MessageCreateEvent(message_obj), channel_id=interaction.channel.id)
         await interaction.update(status=InteractionStatus.RESPONDED)
 
-        return message
+        return await message.ds_json()
     return "", 204

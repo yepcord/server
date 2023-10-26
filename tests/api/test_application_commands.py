@@ -10,7 +10,7 @@ from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import b64encode
 from .utils import TestClientType, create_users, create_application, create_guild, add_bot_to_guild, bot_token, \
-    create_dm_channel, create_dm_group
+    create_dm_channel, create_dm_group, generate_slash_command_payload
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -263,20 +263,7 @@ async def test_execute_slash_command():
     assert resp.status_code == 200
     command = await resp.get_json()
 
-    payload = {
-            "type": 2,
-            "application_id": application["id"],
-            "guild_id": guild["id"],
-            "channel_id": channel["id"],
-            "session_id": "0",
-            "nonce": str(Snowflake.makeId()),
-            "data": {
-                "version": command["version"],
-                "id": command["id"],
-                "name": command["name"],
-                "type": command["type"],
-                "application_command": command,
-                "options": [
+    payload = generate_slash_command_payload(application, guild, channel, command, [
                     {"type": 3, "name": "string", "value": "asd"},
                     {"type": 4, "name": "integer", "value": "123"},
                     {"type": 10, "name": "number", "value": "123.45"},
@@ -284,10 +271,7 @@ async def test_execute_slash_command():
                     {"type": 6, "name": "user", "value": user["id"]},
                     {"type": 7, "name": "channel", "value": channel["id"]},
                     {"type": 8, "name": "role", "value": guild["id"]},
-                ],
-                "attachments": [],
-            }
-        }
+                ])
 
     resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
     assert resp.status_code == 204

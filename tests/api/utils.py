@@ -223,6 +223,26 @@ async def bot_token(app: TestClientType, user: dict, application: dict) -> str:
     return json["token"]
 
 
+def generate_slash_command_payload(application: dict, guild: dict, channel: dict, command: dict, options: list) -> dict:
+    return {
+        "type": 2,
+        "application_id": application["id"],
+        "guild_id": guild["id"],
+        "channel_id": channel["id"],
+        "session_id": "0",
+        "nonce": str(Snowflake.makeId()),
+        "data": {
+            "version": command["version"],
+            "id": command["id"],
+            "name": command["name"],
+            "type": command["type"],
+            "application_command": command,
+            "options": options,
+            "attachments": [],
+        }
+    }
+
+
 class RemoteAuthClient:
     def __init__(self, on_fingerprint=None, on_userdata=None, on_token=None, on_cancel=None):
         from cryptography.hazmat.primitives.asymmetric import rsa

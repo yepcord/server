@@ -75,7 +75,7 @@ class Message(Model):
             "embeds": self.embeds,
             "pinned": self.pinned,
             "webhook_id": self.webhook_id,
-            "application_id": self.application,
+            "application_id": str(self.interaction.application.id) if self.interaction else None,
             "type": self.type,
             "flags": self.flags,
             "thread": await self.thread.ds_json(user_id) if self.thread else None,
