@@ -24,7 +24,6 @@ from typing import Optional, Union, TYPE_CHECKING
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
-from pydantic import BaseModel
 from quart import request, current_app, g
 
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
@@ -36,7 +35,7 @@ from ..yepcord.snowflake import Snowflake
 from ..yepcord.utils import b64decode
 import src.yepcord.models as models
 
-if TYPE_CHECKING: # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover
     from .models.channels import MessageCreate
 
 

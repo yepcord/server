@@ -148,6 +148,9 @@ async def test_exchange_token():
     assert json["username"] == user["username"]
     assert "email" not in json
 
+    resp = await client.get("/api/v9/users/@me/guilds", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
 
 @pt.mark.asyncio
 async def test_client_credentials():
@@ -232,3 +235,10 @@ async def test_authorize_bot():
     assert resp.status_code == 200
     json = await resp.get_json()
     assert len(json) == 1
+
+
+@pt.mark.asyncio
+async def test_unknown_token():
+    client: TestClientType = app.test_client()
+    resp = await client.get("/api/v9/users/@me", headers={"Authorization": f"Unknown 123456789.ABCDEF"})
+    assert resp.status_code == 401

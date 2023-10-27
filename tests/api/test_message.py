@@ -185,7 +185,7 @@ async def test_message_with_stickers():
     sticker = await create_sticker(client, user, guild["id"], "yep")
     channel_id = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]["id"]
 
-    message = await create_message(client, user, channel_id, sticker_ids=[sticker["id"]])
+    message = await create_message(client, user, channel_id, sticker_ids=[sticker["id"], str(Snowflake.makeId())])
     assert len(message["stickers"]) == 1
     assert message["stickers"][0]["id"] == sticker["id"]
     assert message["sticker_items"][0]["id"] == sticker["id"]

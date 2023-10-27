@@ -17,7 +17,9 @@
 """
 
 from asyncio import get_event_loop
+from cProfile import Profile
 from io import BytesIO
+from time import time
 
 import pytest as pt
 import pytest_asyncio
@@ -40,17 +42,17 @@ TestClientType = app.test_client_class
 core = Core(b64decode(Config.KEY))
 
 
-STORAGE_SERVERS = {
-    "s3": s3_server,
-    "ftp": ftp_server,
-}
-
-
 @pt.fixture
 def event_loop():
     loop = get_event_loop()
     yield loop
     loop.close()
+
+
+@pt.fixture(scope="session", autouse=True)
+def storage_server():
+    with local_server().run_in_thread(), s3_server().run_in_thread(), ftp_server().run_in_thread():
+        yield
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -65,9 +67,7 @@ async def process_test():
 @pt.fixture(params=["local", "s3", "ftp"], name="storage")
 def _storage(request) -> _Storage:
     Config.STORAGE["type"] = request.param
-    storage_server = STORAGE_SERVERS.get(Config.STORAGE["type"], local_server)
-    with storage_server().run_in_thread():
-        yield getStorage()
+    yield getStorage()
 
 
 @pt.mark.asyncio

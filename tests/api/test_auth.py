@@ -89,6 +89,9 @@ async def test_logout():
     with pt.raises(AssertionError):
         await get_userdata(client, token)
 
+    response = await client.post('/api/v9/auth/logout', headers={"Authorization": token})
+    assert response.status_code == 401
+
 
 @pt.mark.asyncio
 async def test_resend_verification_email():
