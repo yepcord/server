@@ -94,7 +94,7 @@ ChoicesType = Optional[list[Union[str, int, float]]]
 
 class CommandOption(CommandBase):
     type: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-    required: bool = False
+    required: bool = True
     choices: ChoicesType = Field(default=None, max_items=25)
     channel_types: Optional[list[Literal[0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14]]] = None
     min_value: Optional[int] = None

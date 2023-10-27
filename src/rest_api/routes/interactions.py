@@ -19,7 +19,7 @@
 from quart import Blueprint
 from quart_schema import validate_request
 
-from ..models.interactions import InteractionCreate, InteractionRespond, InteractionDataOption, InteractionRespondData
+from ..models.interactions import InteractionCreate, InteractionRespond, InteractionDataOption as InteractionOption
 from ..utils import getUser, get_multipart_json, getInteraction, multipleDecorators
 from ...gateway.events import InteractionCreateEvent, InteractionFailureEvent, MessageCreateEvent, \
     InteractionSuccessEvent
@@ -36,7 +36,7 @@ from ...yepcord.utils import execute_after
 interactions = Blueprint('interactions', __name__)
 
 
-async def resolve_options(interaction_options: list[InteractionDataOption], guild: Guild = None):
+async def resolve_options(interaction_options: list[InteractionOption], guild: Guild = None):
     result = {}
     T = ApplicationCommandOptionType
     for option in interaction_options:
@@ -67,6 +67,21 @@ async def resolve_options(interaction_options: list[InteractionDataOption], guil
             if "roles" not in result:
                 result["roles"] = {}
             result["roles"][option.value] = role.ds_json()
+    return result
+
+
+def validate_options(user_options: list[InteractionOption], bot_options: list[dict]) -> list[InteractionOption]:
+    user_options: dict[str, InteractionOption] = {option.name: option for option in user_options}
+    result = []
+    for option in bot_options:
+        user_option = user_options.get(option["name"])
+        if (not user_option and option.get("required", True)) or (user_option and user_option.type != option["type"]):
+            raise InvalidDataErr(400, Errors.make(50035, {"data.options": {
+                "code": "INTERACTION_APPLICATION_COMMAND_OPTION_MISSING",
+                "message": "Missing interaction application command option"}}))
+        if user_option:
+            result.append(user_option)
+
     return result
 
 
@@ -102,9 +117,11 @@ async def create_interaction(user: User):
 
     settings = await user.settings
     guild_locale = guild.preferred_locale if guild is not None else None
+    data.data.options = validate_options(data.data.options, command.options)
     int_data = data.data.model_dump(exclude={"version"})
     int_data["id"] = str(int_data["id"])
     resolved = await resolve_options(data.data.options, guild)
+
     interaction = await Interaction.create(
         application=application, user=user, type=data.type, data=int_data, guild=guild, channel=channel,
         locale=settings.locale, guild_locale=guild_locale, nonce=data.nonce, session_id=data.session_id,

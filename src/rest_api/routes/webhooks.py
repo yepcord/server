@@ -106,7 +106,7 @@ async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Op
 
 
 @webhooks.post("/<int:webhook>/<string:token>")
-@multipleDecorators(validate_querystring(WebhookMessageCreateQuery))
+@validate_querystring(WebhookMessageCreateQuery)
 async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webhook: int, token: str):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
@@ -127,8 +127,7 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
 
 
 @webhooks.post("/<int:application_id>/int___<string:token>")
-@multipleDecorators(validate_querystring(WebhookMessageCreateQuery))
-async def interaction_followup_create(query_args: WebhookMessageCreateQuery, application_id: int, token: str):
+async def interaction_followup_create(application_id: int, token: str):
     if not (inter := await Interaction.from_token(f"int___{token}")) or inter.application.id != application_id:
         raise InvalidDataErr(404, Errors.make(10002))
     message = await Message.get_or_none(interaction=inter, id__gt=Snowflake.fromTimestamp(time() - 15 * 60))\
@@ -156,7 +155,4 @@ async def interaction_followup_create(query_args: WebhookMessageCreateQuery, app
     else:
         await getGw().dispatch(MessageUpdateEvent(message_obj), channel_id=inter.channel.id)
 
-    if query_args.wait:
-        return message_obj
-    else:
-        return "", 204
+    return message_obj

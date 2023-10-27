@@ -1,7 +1,11 @@
+from datetime import date
+
 import pytest as pt
 import pytest_asyncio
+from tortoise import connections
 
 from src.rest_api.main import app
+from src.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application
 from ..yep_image import YEP_IMAGE
 
@@ -154,3 +158,30 @@ async def test_application_delete():
     resp = await client.get(f"/api/v9/applications/{application['id']}",
                             headers={"Authorization": user["token"]})
     assert resp.status_code == 404
+
+
+@pt.mark.asyncio
+async def test_application_no_usernames_left():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+
+    username = str(Snowflake.makeId())
+    users = []
+    userdatas = []
+    for d in range(1, 10000):
+        uid = Snowflake.makeId()
+        users.append((uid, f"test_user_{uid}@test.yepcord.ml"))
+        userdatas.append((uid, uid, date(2000, 1, 1), username, d))
+
+    conn = connections.get("default")
+    await conn.execute_many("INSERT INTO `user`(`id`, `email`, `password`) VALUES (%s, %s, '123456')", users)
+    await conn.execute_many(
+        "INSERT INTO `userdata`(`id`, `user_id`, `birth`, `username`, `discriminator`, `flags`, `public_flags`) "
+        "VALUES (%s, %s, %s, %s, %s, 0, 0)",
+        userdatas
+    )
+
+    application = await create_application(client, user, username)
+    assert application["name"] == username
+    assert application["bot"]["id"] == application["id"]
+    assert application["bot"]["username"] == application["name"] + application["id"]
