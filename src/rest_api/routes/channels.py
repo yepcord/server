@@ -554,6 +554,7 @@ async def create_thread(data: CreateThread, user: User, channel: Channel, messag
                            guild_id=channel.guild.id)
     await getGw().dispatch(ThreadMemberUpdateEvent(thread_member.ds_json()), guild_id=channel.guild.id)
     await message.update(thread=thread, flags=message.flags | MessageFlags.HAS_THREAD)
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=message.channel.id)
     await getCore().sendMessage(thread_message)
     await getCore().sendMessage(thread_create_message)
 

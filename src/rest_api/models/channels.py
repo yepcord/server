@@ -419,9 +419,8 @@ class WebhookCreate(BaseModel):
     @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if not value:
-            raise InvalidDataErr(400,
-                                 Errors.make(50035,
-                                             {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"name": {
+                "code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         return value
 
 
@@ -472,8 +471,13 @@ class MessageAck(BaseModel):
 class CreateThread(BaseModel):
     auto_archive_duration: int
     name: str
-    type: int
-    location: str = "Message"
+
+    @field_validator("auto_archive_duration")
+    def validate_auto_archive_duration(cls, value: int) -> int:
+        ALLOWED_DURATIONS = (60, 1440, 4320, 10080)
+        if value not in ALLOWED_DURATIONS:
+            value = min(ALLOWED_DURATIONS, key=lambda x: abs(x - value))  # Take closest
+        return value
 
 
 class CommandsSearchQS(BaseModel):

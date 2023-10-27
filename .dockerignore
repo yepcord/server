@@ -17,3 +17,4 @@ tests/generated/*.py
 **/other/ip_database.mmdb.old
 **/migrations*
 **/migrations
+**/tests

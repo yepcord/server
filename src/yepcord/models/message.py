@@ -57,8 +57,8 @@ class Message(Model):
     ephemeral: bool = fields.BooleanField(default=False)
 
     nonce: Optional[str] = None
-    DEFAULT_RELATED = ("thread", "channel", "author", "guild", "interaction", "interaction__user",
-                       "interaction__command", "interaction__application")
+    DEFAULT_RELATED = ("thread", "thread__guild", "thread__parent", "thread__owner", "channel", "author", "guild",
+                       "interaction", "interaction__user", "interaction__command", "interaction__application")
 
     @property
     def created_at(self) -> datetime:
@@ -76,7 +76,7 @@ class Message(Model):
             "edited_timestamp": edit_timestamp,
             "embeds": self.embeds,
             "pinned": self.pinned,
-            "webhook_id": str(self.webhook_id),
+            "webhook_id": str(self.webhook_id) if self.webhook_id else None,
             "application_id": str(self.interaction.application.id) if self.interaction else None,
             "type": self.type,
             "flags": self.flags,
