@@ -21,9 +21,10 @@ from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.ctx import getCore
+from ..ctx import getCore
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
+from ..enums import Locales
+from ._utils import SnowflakeField, Model, ChoicesValidator
 
 
 class Guild(Model):
@@ -47,7 +48,8 @@ class Guild(Model):
     system_channel_flags: int = fields.BigIntField(default=0)
     max_members: int = fields.IntField(default=100)
     vanity_url_code: Optional[str] = fields.CharField(max_length=64, null=True, default=None)
-    preferred_locale: str = fields.CharField(max_length=8, default="en-US")
+    preferred_locale: str = fields.CharField(max_length=8, default="en-US",
+                                             validators=[ChoicesValidator(Locales.values_set())])
     premium_progress_bar_enabled: bool = fields.BooleanField(default=False)
     nsfw: bool = fields.BooleanField(default=False)
     nsfw_level: int = fields.IntField(default=0)

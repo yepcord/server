@@ -19,9 +19,9 @@
 from tortoise import fields
 
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.proto import FrecencyUserSettings
-from src.yepcord.utils import b64decode
+from ._utils import SnowflakeField, Model
+from ..proto import FrecencyUserSettings
+from ..utils import b64decode
 
 
 class FrecencySettings(Model):

@@ -18,9 +18,9 @@
 
 from tortoise import fields
 
-from src.yepcord.ctx import getCore
+from ..ctx import getCore
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
+from ._utils import SnowflakeField, Model
 
 
 class ReadState(Model):

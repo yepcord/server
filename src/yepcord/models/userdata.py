@@ -24,7 +24,7 @@ from tortoise import fields
 from tortoise.validators import MinValueValidator, MaxValueValidator
 
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
+from ._utils import SnowflakeField, Model
 
 
 class UserData(Model):

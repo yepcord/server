@@ -317,3 +317,62 @@ async def test_slash_command_wrong_resolved():
             await _resolved(7, "channel", channel2["id"])
             await _resolved(8, "role", str(Snowflake.makeId()))
             await _resolved(8, "role", guild2["id"])
+
+
+@pt.mark.asyncio
+async def test_get_update_delete_slash_command_response():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test")
+    application = await create_application(client, user, "testApp")
+    await add_bot_to_guild(client, user, guild, application)
+    headers = {"Authorization": user["token"]}
+    bot_token_ = await bot_token(client, user, application)
+    bot_headers = {"Authorization": f"Bot {bot_token_}"}
+    channel = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]
+
+    resp = await client.post(f"/api/v9/applications/{application['id']}/commands", headers=bot_headers, json={
+        "type": 1, "name": "test", "description": "test"})
+    assert resp.status_code == 200
+    command = await resp.get_json()
+
+    payload = generate_slash_command_payload(application, guild, channel, command, [])
+    async with gateway_cm(gw_app):
+        gw_client = gw_app.test_client()
+        cl = GatewayClient(bot_token_)
+        async with gw_client.websocket('/') as ws:
+            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+            await cl.run(ws)
+
+            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+            assert resp.status_code == 204
+
+            event = await event_coro
+
+    int_id = event["id"]
+    int_token = event["token"]
+
+    resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token}/callback",
+                             json={"type": 4, "data": {"content": "test", "flags": 64}})
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/webhooks/{application['id']}/{int_token}/messages/@original")
+    assert resp.status_code == 200, await resp.get_json()
+    json = await resp.get_json()
+    assert json["application_id"] == application["id"]
+    assert json["webhook_id"] == int_id
+    assert json["content"] == "test"
+    assert json["flags"] == 64
+
+    resp = await client.patch(f"/api/v9/webhooks/{application['id']}/{int_token}/messages/@original",
+                              json={"content": "changed"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["content"] == "changed"
+    assert json["flags"] == 64
+
+    resp = await client.delete(f"/api/v9/webhooks/{application['id']}/{int_token}/messages/@original")
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/webhooks/{application['id']}/{int_token}/messages/@original")
+    assert resp.status_code == 404

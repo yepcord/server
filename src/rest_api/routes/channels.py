@@ -35,7 +35,7 @@ from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEven
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
     WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
-from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS
+from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS, MessageFlags
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
     ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot
@@ -553,8 +553,7 @@ async def create_thread(data: CreateThread, user: User, channel: Channel, messag
     await getGw().dispatch(ThreadCreateEvent(await thread.ds_json() | {"newly_created": True}),
                            guild_id=channel.guild.id)
     await getGw().dispatch(ThreadMemberUpdateEvent(thread_member.ds_json()), guild_id=channel.guild.id)
-    message.thread = thread
-    await message.save(update_fields=["thread"])
+    await message.update(thread=thread, flags=message.flags | MessageFlags.HAS_THREAD)
     await getCore().sendMessage(thread_message)
     await getCore().sendMessage(thread_create_message)
 

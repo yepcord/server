@@ -22,9 +22,9 @@ from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.enums import AuditLogEntryType
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
+from ..enums import AuditLogEntryType
+from ._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
 
 import src.yepcord.models as models
 

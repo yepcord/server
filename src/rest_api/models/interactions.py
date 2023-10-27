@@ -1,8 +1,9 @@
 from typing import Literal, Optional, Any
 
-from pydantic import BaseModel, create_model, field_validator
+from pydantic import BaseModel, create_model, field_validator, Field
 from pydantic_core.core_schema import ValidationInfo
 
+from .channels import EmbedModel
 from ...yepcord.enums import ApplicationCommandOptionType
 
 OPTION_MODELS = {
@@ -54,9 +55,9 @@ class InteractionCreate(BaseModel):
 
 class InteractionRespondData(BaseModel):
     content: Optional[str] = None
-    #embeds: Optional[list] = None
+    embeds: list[EmbedModel] = Field(default_factory=list)
     flags: int = 0
-    #components: Optional[list] = None # components validation are not supported now :(
+    #components: Optional[list] = None # components validation are not supported yet :(
 
 
 class InteractionRespond(BaseModel):

@@ -20,8 +20,8 @@ from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.models._utils import ChoicesValidator, SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
+from ._utils import ChoicesValidator, SnowflakeField, Model
+from ..snowflake import Snowflake
 import src.yepcord.models as models
 
 

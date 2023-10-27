@@ -23,11 +23,11 @@ from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.ctx import getCore
-from src.yepcord.enums import GuildPermissions
-from src.yepcord.errors import InvalidDataErr, Errors
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
+from ..ctx import getCore
+from ..enums import GuildPermissions
+from ..errors import InvalidDataErr, Errors
+from ._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
 import src.yepcord.models as models
 
 

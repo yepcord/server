@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 from time import mktime
-from typing import Optional, List
+from typing import Optional
 
 from dateutil.parser import parse as dparse
 from pydantic import BaseModel, Field, field_validator
@@ -237,7 +237,7 @@ class EmbedModel(BaseModel):
     thumbnail: Optional[EmbedImage] = None
     video: Optional[EmbedImage] = None
     author: Optional[EmbedAuthor] = None
-    fields: List[EmbedField] = Field(default_factory=list)
+    fields: list[EmbedField] = Field(default_factory=list)
 
     @field_validator("title")
     def validate_title(cls, value: str):
@@ -302,7 +302,7 @@ class EmbedModel(BaseModel):
         return value
 
     @field_validator("fields")
-    def validate_fields(cls, value: List[EmbedField]):
+    def validate_fields(cls, value: list[EmbedField]):
         if len(value) > 25:
             value = value[:25]
         return value
@@ -327,8 +327,8 @@ class MessageReferenceModel(BaseModel):
 class MessageCreate(BaseModel):
     content: Optional[str] = None
     nonce: Optional[str] = None
-    embeds: List[EmbedModel] = Field(default_factory=list)
-    sticker_ids: List[int] = Field(default_factory=list)
+    embeds: list[EmbedModel] = Field(default_factory=list)
+    sticker_ids: list[int] = Field(default_factory=list)
     message_reference: Optional[MessageReferenceModel] = None
     flags: Optional[int] = None
 
@@ -343,7 +343,7 @@ class MessageCreate(BaseModel):
         return value
 
     @field_validator("embeds")
-    def validate_embeds(cls, value: List[EmbedModel]):
+    def validate_embeds(cls, value: list[EmbedModel]):
         if len(value) > 10:
             raise InvalidDataErr(400, Errors.make(50035, {"embeds": {
                 "code": "BASE_TYPE_BAD_LENGTH", "message": "Must be between 1 and 10 in length."
@@ -351,7 +351,7 @@ class MessageCreate(BaseModel):
         return value
 
     @field_validator("sticker_ids")
-    def validate_sticker_ids(cls, value: List[int]):
+    def validate_sticker_ids(cls, value: list[int]):
         if len(value) > 3:
             raise InvalidDataErr(400, Errors.make(50035, {"sticker_ids": {
                 "code": "BASE_TYPE_BAD_LENGTH", "message": "Must be between 1 and 3 in length."
@@ -392,7 +392,7 @@ class MessageCreate(BaseModel):
 # noinspection PyMethodParameters
 class MessageUpdate(BaseModel):
     content: Optional[str] = None
-    embeds: List[EmbedModel] = Field(default_factory=list)
+    embeds: list[EmbedModel] = Field(default_factory=list)
 
     @field_validator("content")
     def validate_content(cls, value: Optional[str]):

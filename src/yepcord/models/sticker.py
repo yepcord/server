@@ -21,7 +21,7 @@ from typing import Optional
 from tortoise import fields
 
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
+from ._utils import SnowflakeField, Model
 
 
 class Sticker(Model):

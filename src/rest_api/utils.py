@@ -18,6 +18,7 @@
 from __future__ import annotations
 from functools import wraps
 from json import loads
+from time import time
 from typing import Optional, Union, TYPE_CHECKING
 
 from PIL import Image
@@ -29,12 +30,13 @@ from quart import request, current_app, g
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
 from ..yepcord.enums import MessageType
 from ..yepcord.errors import Errors, InvalidDataErr
-from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot, Interaction, Webhook
+from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot, Interaction, Webhook, \
+    Message
 from ..yepcord.snowflake import Snowflake
 from ..yepcord.utils import b64decode
 import src.yepcord.models as models
 
-if TYPE_CHECKING:
+if TYPE_CHECKING: # pragma: no cover
     from .models.channels import MessageCreate
 
 
@@ -137,7 +139,7 @@ def getChannel(f):
     return wrapped
 
 
-async def _getMessage(user: User, channel: Channel, message_id: int):
+async def _getMessage(user: User, channel: Channel, message_id: int) -> Message:
     if not channel:
         raise InvalidDataErr(404, Errors.make(10003))
     if not user:
@@ -147,10 +149,22 @@ async def _getMessage(user: User, channel: Channel, message_id: int):
     return message
 
 
+async def _getMessageWebhook(webhook_id: int, message_id: int) -> Message:
+    if not message_id or not webhook_id:
+        raise InvalidDataErr(404, Errors.make(10008))
+    message = await Message.get_or_none(id=message_id, webhook_id=webhook_id).select_related(*Message.DEFAULT_RELATED)
+    if message is None:
+        raise InvalidDataErr(404, Errors.make(10008))
+    return message
+
+
 def getMessage(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        kwargs["message"] = await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))
+        if "webhook" in kwargs:
+            kwargs["message"] = await _getMessageWebhook(kwargs["webhook"].id, kwargs.get("message"))
+        else:
+            kwargs["message"] = await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))
         return await f(*args, **kwargs)
     return wrapped
 
@@ -259,6 +273,42 @@ def getInteraction(f):
             raise InvalidDataErr(404, Errors.make(10002))
         del kwargs["token"]
         kwargs["interaction"] = interaction
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
+def getWebhook(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (webhook_id := kwargs.get("webhook")) or not (token := kwargs.get("token")):
+            raise InvalidDataErr(404, Errors.make(10015))
+        webhook = await (Webhook.get_or_none(id=webhook_id).select_related("channel"))
+        if webhook is None or webhook.token != token:
+            raise InvalidDataErr(404, Errors.make(10015))
+        del kwargs["webhook"]
+        del kwargs["token"]
+        kwargs["webhook"] = webhook
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
+def getInteractionW(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (application_id := kwargs.get("application_id")) or not (token := kwargs.get("token")):
+            raise InvalidDataErr(404, Errors.make(10002))
+        if not (inter := await Interaction.from_token(f"int___{token}")) or inter.application.id != application_id:
+            raise InvalidDataErr(404, Errors.make(10002))
+        message = await Message.get_or_none(interaction=inter, id__gt=Snowflake.fromTimestamp(time() - 15 * 60)) \
+            .select_related(*Message.DEFAULT_RELATED)
+        if message is None:
+            raise InvalidDataErr(404, Errors.make(10008))
+        del kwargs["application_id"]
+        del kwargs["token"]
+        kwargs["interaction"] = inter
+        kwargs["message"] = message
         return await f(*args, **kwargs)
 
     return wrapped
@@ -413,6 +463,8 @@ async def processMessage(data: dict, channel: Channel, author: Optional[User], v
         raise InvalidDataErr(400, Errors.make(50006))
 
     data_json = data.to_json()
+    if webhook is not None:
+        data_json["webhook_id"] = webhook.id
     message = await models.Message.create(
         id=Snowflake.makeId(), channel=channel, author=author, **data_json, **stickers_data, type=message_type,
         guild=channel.guild, webhook_author=w_author)

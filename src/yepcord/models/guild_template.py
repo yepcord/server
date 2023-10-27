@@ -21,11 +21,11 @@ from typing import Optional, Union
 
 from tortoise import fields
 
-from src.yepcord.ctx import getCore
-from src.yepcord.enums import ChannelType
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import b64encode, int_size, NoneType
+from ..ctx import getCore
+from ..enums import ChannelType
+from ._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
+from ..utils import b64encode, int_size, NoneType
 
 import src.yepcord.models as models
 

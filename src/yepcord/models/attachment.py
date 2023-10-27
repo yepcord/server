@@ -20,9 +20,9 @@ from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.config import Config
+from ..config import Config
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
+from ._utils import SnowflakeField, Model
 
 
 class Attachment(Model):

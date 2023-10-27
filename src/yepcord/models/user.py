@@ -24,10 +24,10 @@ from typing import Optional
 from tortoise import fields
 
 import src.yepcord.models as models
-from src.yepcord.classes.other import MFA
-from src.yepcord.ctx import getCore
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
+from ._utils import SnowflakeField, Model
+from ..classes.other import MFA
+from ..ctx import getCore
+from ..snowflake import Snowflake
 
 
 class UserUtils:
