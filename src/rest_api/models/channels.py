@@ -183,7 +183,7 @@ class EmbedImage(BaseModel):
 class EmbedAuthor(BaseModel):
     name: Optional[str] = None
     url: Optional[str] = None
-    icon_url: Optional[int] = None
+    icon_url: Optional[str] = None
 
     @field_validator("name")
     def validate_name(cls, value: Optional[str]):
@@ -215,6 +215,7 @@ class EmbedField(BaseModel):
             raise EmbedErr(makeEmbedError(23, f"fields.name"))
         if len(value) > 256:
             raise EmbedErr(makeEmbedError(27, f"fields.name", {"length": "256"}))
+        return value
 
     @field_validator("value")
     def validate_value(cls, value: Optional[str]):
@@ -222,6 +223,7 @@ class EmbedField(BaseModel):
             raise EmbedErr(makeEmbedError(23, f"fields.value"))
         if len(value) > 1024:
             raise EmbedErr(makeEmbedError(27, f"fields.value", {"length": "1024"}))
+        return value
 
 
 # noinspection PyMethodParameters
