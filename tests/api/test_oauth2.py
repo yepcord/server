@@ -238,7 +238,16 @@ async def test_authorize_bot():
 
 
 @pt.mark.asyncio
-async def test_unknown_token():
+async def test_wrong_token():
     client: TestClientType = app.test_client()
     resp = await client.get("/api/v9/users/@me", headers={"Authorization": f"Unknown 123456789.ABCDEF"})
+    assert resp.status_code == 401
+
+    resp = await client.get("/api/v9/users/@me", headers={"Authorization": f"Bearer 123456789.ABCDEF.QWE"})
+    assert resp.status_code == 401
+
+    resp = await client.get("/api/v9/users/@me", headers={"Authorization": f"Bearer 123456789.ABCDEF"})
+    assert resp.status_code == 401
+
+    resp = await client.get("/api/v9/users/@me", headers={"Authorization": f"Bot 123456789.ABCDEF"})
     assert resp.status_code == 401

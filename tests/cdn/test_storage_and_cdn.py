@@ -96,6 +96,37 @@ async def test_avatar(storage: _Storage):
     avatar_hash = await storage.setAvatarFromBytesIO(user_id, img)
     assert avatar_hash is not None and len(avatar_hash) == 32
 
+    response = await client.get(f"/avatars/{user_id}/{avatar_hash}.jpg?size=128")
+    assert response.status_code == 200
+
+
+@pt.mark.asyncio
+async def test_avatar_animated(storage: _Storage):
+    client: TestClientType = app.test_client()
+    user_id = Snowflake.makeId()
+
+    width = height = 512
+    im1 = Image.new("RGBA", (width, height), (255, 0, 0))
+    im2 = Image.new("RGBA", (width, height), (255, 255, 0))
+    im3 = Image.new("RGBA", (width, height), (255, 255, 255))
+    img = BytesIO()
+    im1.save(img, format="GIF", save_all=True, append_images=[im2, im3], duration=100, loop=0)
+
+    avatar_hash = await storage.setAvatarFromBytesIO(user_id, img)
+    assert avatar_hash is not None and len(avatar_hash) == 34 and avatar_hash.startswith("a_")
+
+    response = await client.get(f"/avatars/{user_id}/{avatar_hash}.gif?size=240")
+    assert response.status_code == 200
+    assert response.headers["Content-Type"] == "image/gif"
+    img = Image.open(BytesIO(await response.data))
+    assert img.size[0] == 240
+
+    response = await client.get(f"/avatars/{user_id}/{avatar_hash}.gif?size=256")
+    assert response.status_code == 200
+    assert response.headers["Content-Type"] == "image/gif"
+    img = Image.open(BytesIO(await response.data))
+    assert img.size[0] == 256
+
 
 @pt.mark.asyncio
 async def test_banner(storage: _Storage):

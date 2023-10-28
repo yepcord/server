@@ -173,9 +173,6 @@ class Channel(Model):
             return data
 
     async def messages(self, limit: int=50, before: int=0, after: int=0) -> list[models.Message]:
-        limit = int(limit)
-        if limit > 100:
-            limit = 100
         return await getCore().getChannelMessages(self, limit, before, after)
 
     async def other_user(self, current_user: models.User) -> Optional[models.User]:

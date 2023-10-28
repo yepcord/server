@@ -38,7 +38,8 @@ async def test_get_and_create_commands():
                              json={"type": 1, "name": "test", "description": "desc"})
     assert resp.status_code == 200
 
-    resp = await client.get(f"/api/v9/applications/{application['id']}/commands", headers=bot_headers)
+    resp = await client.get(f"/api/v9/applications/{application['id']}/commands?with_localizations=true",
+                            headers=bot_headers)
     assert resp.status_code == 200
     assert len(await resp.get_json()) == 1
 

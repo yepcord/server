@@ -254,7 +254,7 @@ async def test_add_message_reaction():
     )
     assert resp.status_code == 204
 
-    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers=headers)
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages?limit=505", headers=headers)
     assert resp.status_code == 200
     messages = await resp.get_json()
     assert len(messages[0]["reactions"]) == 2
@@ -628,3 +628,22 @@ async def test_message_with_embed_fields_errors():
     resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
                              json={"embeds": [{"title": "test", "fields": [{"name": "k", "value": "v" * 1025}]}]})
     assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_message_pings():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    message = await create_message(client, user, channel["id"], content=f"<@!{user['id']}>")
+    assert len(message["mentions"]) == 1
+    assert message["mentions"][0]["id"] == user["id"]
+
+    message = await create_message(client, user, channel["id"], content=f"<@{Snowflake.makeId()}>")
+    assert len(message["mentions"]) == 0
+
+    message = await create_message(client, user, channel["id"], content=f"<@&{guild['id']}>")
+    assert len(message["mentions"]) == 0
+    assert len(message["mention_roles"]) == 1
+    assert message["mention_roles"][0] == guild["id"]

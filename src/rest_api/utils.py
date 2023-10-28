@@ -87,7 +87,7 @@ async def getSessionFromToken(token: str) -> Optional[Union[Session, Authorizati
     elif len(token) == 2 and token[0].lower() == "bearer" and g.get("oauth_allowed"):  # oauth2 token
         auth = await Authorization.from_token(token[1])
         oauth_scopes = g.get("oauth_scopes", set())
-        if oauth_scopes & auth.scope_set != oauth_scopes:
+        if auth is None or oauth_scopes & auth.scope_set != oauth_scopes:
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         return auth
     elif len(token) == 2 and token[0].lower() == "bot" and g.get("bots_allowed"):

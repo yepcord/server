@@ -118,3 +118,14 @@ async def test_verify_email():
     json = await resp.get_json()
     assert json["token"]
     assert json["user_id"] == user["id"]
+
+
+@pt.mark.asyncio
+async def test_wrong_token():
+    client: TestClientType = app.test_client()
+
+    response = await client.get('/api/v9/users/@me', headers={"Authorization": "123456.789abc"})
+    assert response.status_code == 401
+
+    response = await client.get('/api/v9/users/@me', headers={"Authorization": "123456.789abc.123456789"})
+    assert response.status_code == 401

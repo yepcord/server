@@ -72,19 +72,9 @@ class FClient(Client):
 
 async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str) -> bytes:
     def _resize() -> bytes:
-        orig_size = (img.size[0], img.size[1])
-        n_frames = getattr(img, 'n_frames', 1)
-
-        def resize_frame(frame_):
-            if orig_size == size:
-                return frame_
-            return frame_.resize(size)
-
-        if n_frames == 1:
-            return resize_frame(img)
         frames = []
         for frame in ImageSequence.Iterator(img):
-            frames.append(resize_frame(frame))
+            frames.append(frame.resize(size))
         b = BytesIO()
         frames[0].save(b, format=form, save_all=True, append_images=frames[1:], loop=0)
         return b.getvalue()
