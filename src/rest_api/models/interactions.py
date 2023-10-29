@@ -38,7 +38,8 @@ class InteractionCreateData(BaseModel):
     id: int  # Application command id
     name: str
     type: Literal[1, 2, 3]
-    options: list[InteractionDataOption]
+    options: list[InteractionDataOption] = Field(default_factory=list)
+    target_id: Optional[int] = None
     #application_command: dict
     #attachments: list
 

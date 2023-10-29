@@ -25,7 +25,7 @@ from ...gateway.events import InteractionCreateEvent, InteractionFailureEvent, M
     InteractionSuccessEvent
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import GuildPermissions, InteractionStatus, MessageFlags, InteractionCallbackType, \
-    ApplicationCommandOptionType, MessageType
+    ApplicationCommandOptionType, MessageType, ApplicationCommandType
 from ...yepcord.errors import Errors, InvalidDataErr
 from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild
 from ...yepcord.models.interaction import Interaction
@@ -109,18 +109,40 @@ async def create_interaction(user: User):
             raise InvalidDataErr(404, Errors.make(10002))
     if (command := await ApplicationCommand.get_or_none(id=data.data.id, application=application)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
+    message = None
+    target_member = None
+    if command.type == ApplicationCommandType.MESSAGE and \
+            (message := await getCore().getMessage(channel, data.data.target_id)) is None:
+        raise InvalidDataErr(404, Errors.make(10008))
+    if command.type == ApplicationCommandType.USER and \
+            (target_member := await getCore().getGuildMember(guild, data.data.target_id)) is None:
+        raise InvalidDataErr(404, Errors.make(10013))
 
-    if data.data.version != command.version:
+    if data.data.version != command.version or data.data.type != command.type or data.data.name != command.name:
         raise InvalidDataErr(400, Errors.make(50035, {"data": {
             "code": "INTERACTION_APPLICATION_COMMAND_INVALID_VERSION",
             "message": "This command is outdated, please try again in a few minutes"}}))
 
     settings = await user.settings
     guild_locale = guild.preferred_locale if guild is not None else None
-    data.data.options = validate_options(data.data.options, command.options)
+    resolved = {}
+    if command.type == ApplicationCommandType.CHAT_INPUT:
+        data.data.options = validate_options(data.data.options, command.options)
+        resolved = await resolve_options(data.data.options, guild)
+    elif command.type == ApplicationCommandType.MESSAGE:
+        data.data.options = []
+        resolved = {"messages": {str(message.id): await message.ds_json()}}
+    elif command.type == ApplicationCommandType.USER:
+        data.data.options = []
+        resolved = {
+            "members": {str(target_member.user.id): await target_member.ds_json()},
+            "users": {str(target_member.user.id): (await target_member.user.userdata).ds_json},
+        }
+
     int_data = data.data.model_dump(exclude={"version"})
     int_data["id"] = str(int_data["id"])
-    resolved = await resolve_options(data.data.options, guild)
+    if int_data["target_id"]:
+        int_data["target_id"] = str(int_data["target_id"])
 
     interaction = await Interaction.create(
         application=application, user=user, type=data.type, data=int_data, guild=guild, channel=channel,

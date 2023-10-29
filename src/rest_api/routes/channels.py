@@ -588,6 +588,8 @@ async def search_application_commands(query_args: CommandsSearchQS, user: User, 
 
     if query_args.query is not None:
         query = Q(name__startswith=query_args.query) & query
+    if query_args.type:
+        query = Q(type=query_args.type) & query
 
     commands = await (ApplicationCommand.filter(query).select_related("application")
                       .limit(query_args.limit).offset(cursor[0]).all())

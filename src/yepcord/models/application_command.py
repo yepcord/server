@@ -23,7 +23,8 @@ from typing import Optional
 from tortoise import fields
 
 import src.yepcord.models as models
-from ._utils import SnowflakeField, Model
+from ._utils import SnowflakeField, Model, ChoicesValidator
+from ..enums import ApplicationCommandType
 from ..snowflake import Snowflake
 
 
@@ -33,7 +34,7 @@ class ApplicationCommand(Model):
     guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", null=True, default=None)
     name: str = fields.CharField(min_length=1, max_length=32)
     description: str = fields.CharField(max_length=100)
-    type: int = fields.IntField(default=1, choices=[1, 2, 3])
+    type: int = fields.IntField(default=1, validators=[ChoicesValidator(ApplicationCommandType.values_set())])
     name_localizations: dict = fields.JSONField(null=True, default=None)
     description_localizations: dict = fields.JSONField(null=True, default=None)
     options: list[dict] = fields.JSONField(default=[])
