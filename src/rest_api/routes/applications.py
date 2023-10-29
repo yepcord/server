@@ -16,16 +16,18 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from datetime import datetime
+from typing import Optional
 
 from quart import Blueprint
 from quart_schema import validate_request, validate_querystring
 
 from ..models.applications import CreateApplication, UpdateApplication, UpdateApplicationBot, GetCommandsQS, \
     CreateCommand
-from ..utils import getUser, multipleDecorators, getApplication, allowBots
+from ..utils import getUser, multipleDecorators, getApplication, allowBots, getGuild
 from ...yepcord.ctx import getCore, getCDNStorage
+from ...yepcord.enums import ApplicationCommandType
 from ...yepcord.models import User, UserData, UserSettings, Application, Bot, gen_secret_key, gen_token_secret, \
-    ApplicationCommand
+    ApplicationCommand, Guild
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage
 
@@ -153,23 +155,26 @@ async def get_application_commands(query_args: GetCommandsQS, user: User, applic
 
 
 @applications.post("/<int:application_id>/commands")
-@multipleDecorators(validate_request(CreateCommand), allowBots, getUser, getApplication)
-async def create_update_application_command(data: CreateCommand, user: User, application: Application):
-    command = await (ApplicationCommand.get_or_none(application=application, name=data.name, type=data.type)
-                     .select_related("application", "guild"))
+@applications.post("/<int:application_id>/guilds/<int:guild>/commands")
+@multipleDecorators(validate_request(CreateCommand), allowBots, getUser, getApplication, getGuild(False, True))
+async def create_update_application_command(data: CreateCommand, user: User, application: Application,
+                                            guild: Optional[Guild]):
+    command = await (ApplicationCommand.get_or_none(application=application, name=data.name, type=data.type,
+                                                    guild=guild).select_related("application", "guild"))
     if command is not None:
         cmd = data.model_dump(exclude={"name", "type"}, exclude_defaults=True)
-        if cmd.get("options") is None: cmd["options"] = []
+        if cmd.get("options") is None or command.type != ApplicationCommandType.CHAT_INPUT: cmd["options"] = []
         await command.update(**cmd, version=Snowflake.makeId(False))
     else:
         cmd = data.model_dump(exclude_defaults=True)
-        if cmd.get("options") is None: cmd["options"] = []
-        command = await ApplicationCommand.create(application=application, **cmd)
+        if cmd.get("options") is None or data.type != ApplicationCommandType.CHAT_INPUT: cmd["options"] = []
+        command = await ApplicationCommand.create(application=application, guild=guild, **cmd)
     return command.ds_json()
 
 
 @applications.delete("/<int:application_id>/commands/<int:command_id>")
-@multipleDecorators(allowBots, getUser, getApplication)
-async def delete_application_command(user: User, application: Application, command_id: int):
-    await ApplicationCommand.filter(application=application, id=command_id).delete()
+@applications.delete("/<int:application_id>/guilds/<int:guild>/commands/<int:command_id>")
+@multipleDecorators(allowBots, getUser, getApplication, getGuild(False, True))
+async def delete_application_command(user: User, application: Application, command_id: int, guild: Optional[Guild]):
+    await ApplicationCommand.filter(application=application, id=command_id, guild=guild).delete()
     return "", 204

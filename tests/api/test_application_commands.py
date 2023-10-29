@@ -101,8 +101,10 @@ async def test_get_guild_commands():
     client: TestClientType = app.test_client()
     user = (await create_users(client, 1))[0]
     guild = await create_guild(client, user, "Test")
+    guild2 = await create_guild(client, user, "Test")
     application = await create_application(client, user, "testApp")
     await add_bot_to_guild(client, user, guild, application)
+    await add_bot_to_guild(client, user, guild2, application)
     token = await bot_token(client, user, application)
     bot_headers = {"Authorization": f"Bot {token}"}
 
@@ -111,17 +113,29 @@ async def test_get_guild_commands():
                                  json={"type": 1, "name": f"test-{i}", "description": "desc"})
         assert resp.status_code == 200
 
+    resp = await client.post(f"/api/v9/applications/{application['id']}/guilds/{guild['id']}/commands",
+                             headers=bot_headers, json={"type": 1, "name": f"test-guild", "description": "desc"})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["guild_id"] == guild["id"]
+
     resp = await client.get(f"/api/v9/guilds/{guild['id']}/application-commands/{application['id']}",
                             headers={"Authorization": user["token"]})
     assert resp.status_code == 200
     json = await resp.get_json()
-    assert len(json["application_commands"]) == 3
+    assert len(json["application_commands"]) == 4
 
     resp = await client.get(f"/api/v9/guilds/{guild['id']}/application-commands/{Snowflake.makeId()}",
                             headers={"Authorization": user["token"]})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert len(json["application_commands"]) == 0
+
+    resp = await client.get(f"/api/v9/guilds/{guild2['id']}/application-commands/{application['id']}",
+                            headers={"Authorization": user["token"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["application_commands"]) == 3
 
 
 @pt.mark.asyncio

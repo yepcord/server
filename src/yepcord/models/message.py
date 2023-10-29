@@ -133,8 +133,6 @@ class Message(Model):
                 "id": "0", "username": "Deleted User", "discriminator": "0", "avatar": None}
             data["interaction"] = {
                 "type": self.interaction.type,
-                "name": self.interaction.command.name if self.interaction.command else "unknown",
-                "id": str(self.interaction.command.id)if self.interaction.command else "0",
-                "user": userdata
-            }
+                "user": userdata,
+            } | await self.interaction.get_command_info()
         return data

@@ -18,6 +18,7 @@
 
 from quart import Blueprint
 from quart_schema import validate_request
+from tortoise.expressions import Q
 
 from ..models.interactions import InteractionCreate, InteractionRespond, InteractionDataOption as InteractionOption
 from ..utils import getUser, get_multipart_json, getInteraction, multipleDecorators
@@ -107,7 +108,8 @@ async def create_interaction(user: User):
     if guild is not None:
         if (await Integration.get_or_none(guild=guild, application=application)) is None:
             raise InvalidDataErr(404, Errors.make(10002))
-    if (command := await ApplicationCommand.get_or_none(id=data.data.id, application=application)) is None:
+    command_query = Q(id=data.data.id, application=application) & (Q(guild=guild) | Q(guild=None))
+    if (command := await ApplicationCommand.get_or_none(command_query)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
     message = None
     target_member = None

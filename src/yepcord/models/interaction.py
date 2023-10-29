@@ -51,6 +51,7 @@ class Interaction(Model):
     status: int = fields.IntField(choices=InteractionStatus.values_set(), default=InteractionStatus.PENDING)
     command: Optional[models.ApplicationCommand] = fields.ForeignKeyField("models.ApplicationCommand", null=True,
                                                                           on_delete=fields.SET_NULL, default=None)
+    saved_command_info: Optional[dict] = fields.JSONField(null=True, default=None)
 
     async def ds_json(self, with_user=False, with_token=False, resolved: dict = None) -> dict:
         data = {
@@ -115,3 +116,11 @@ class Interaction(Model):
 
         return await (Interaction.get_or_none(id=interaction_id, token=token)
                       .select_related("application", "command", "user", "guild", "channel"))
+
+    async def get_command_info(self) -> dict:
+        if self.command:
+            info = {"id": str(self.command.id), "name": self.command.name}
+            if self.saved_command_info != info:
+                await self.update(saved_command_info=info)
+            return info
+        return self.saved_command_info or {}

@@ -893,7 +893,7 @@ async def get_guild_integration_commands(user: User, guild: Guild, member: Guild
         return {"application_commands": [], "permissions": []}
 
     commands = await ApplicationCommand.filter(
-        Q(guild=guild, application__id=application_id) | Q(application__id=application_id)
+        Q(guild=guild, application__id=application_id) | Q(guild=None, application__id=application_id)
     ).select_related("application", "guild").all()
 
     return {"application_commands": [command.ds_json() for command in commands], "permissions": []}

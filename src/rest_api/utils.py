@@ -186,10 +186,12 @@ def getInvite(f):
     return wrapped
 
 
-def getGuild(with_member):
+def getGuild(with_member: bool, allow_without: bool=False):
     def _getGuild(f):
         @wraps(f)
         async def wrapped(*args, **kwargs):
+            if "guild" not in kwargs and allow_without:
+                return await f(*args, **(kwargs | {"guild": None}))
             if not (user := kwargs.get("user")):
                 raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
             if not (guild := int(kwargs.get("guild"))) or not (guild := await getCore().getGuild(guild)):

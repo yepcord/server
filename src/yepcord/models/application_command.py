@@ -61,7 +61,7 @@ class ApplicationCommand(Model):
             "contexts": None,
         }
         if self.guild:
-            data["guild_id"] = self.guild.id
+            data["guild_id"] = str(self.guild.id)
         if with_localizations:
             data["name_localizations"] = self.name_localizations
             data["description_localizations"] = self.description_localizations

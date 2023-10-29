@@ -582,7 +582,7 @@ async def search_application_commands(query_args: CommandsSearchQS, user: User, 
         guild = channel.guild
         integrations = await Integration.filter(guild=guild).select_related("application").all()
         ids = [integration.application.id for integration in integrations]
-        query = Q(guild=guild, application__id__in=ids) | Q(application__id__in=ids)
+        query = Q(guild=guild, application__id__in=ids) | Q(guild=None, application__id__in=ids)
     else:
         query = Q(dm_permission=True, application__id=dm_user.id, guild=None)
 

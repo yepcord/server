@@ -8,7 +8,7 @@ from src.rest_api.main import app
 from src.yepcord.enums import ChannelType, GatewayOp
 from src.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application, create_guild, add_bot_to_guild, bot_token, \
-    GatewayClient, gateway_cm, generate_slash_command_payload
+    GatewayClient, gateway_cm, generate_slash_command_payload, create_guild_channel
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -376,3 +376,57 @@ async def test_get_update_delete_slash_command_response():
 
     resp = await client.get(f"/api/v9/webhooks/{application['id']}/{int_token}/messages/@original")
     assert resp.status_code == 404
+
+
+@pt.mark.asyncio
+async def test_get_message_after_command_delete():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test")
+    application = await create_application(client, user, "testApp")
+    await add_bot_to_guild(client, user, guild, application)
+    headers = {"Authorization": user["token"]}
+    bot_token_ = await bot_token(client, user, application)
+    bot_headers = {"Authorization": f"Bot {bot_token_}"}
+    channel = await create_guild_channel(client, user, guild, "test-channel")
+
+    resp = await client.post(f"/api/v9/applications/{application['id']}/guilds/{guild['id']}/commands",
+                             headers=bot_headers, json={"type": 1, "name": "test", "description": "test"})
+    assert resp.status_code == 200
+    command = await resp.get_json()
+
+    payload = generate_slash_command_payload(application, guild, channel, command, [])
+    async with gateway_cm(gw_app):
+        gw_client = gw_app.test_client()
+        cl = GatewayClient(bot_token_)
+        async with gw_client.websocket('/') as ws:
+            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+            await cl.run(ws)
+
+            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+            assert resp.status_code == 204
+
+            event = await event_coro
+
+    int_id = event["id"]
+    int_token = event["token"]
+
+    resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token}/callback",
+                             json={"type": 4, "data": {"content": "test"}})
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/webhooks/{application['id']}/{int_token}/messages/@original")
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["content"] == "test"
+
+    resp = await client.delete(
+        f"/api/v9/applications/{application['id']}/guilds/{guild['id']}/commands/{command['id']}", headers=bot_headers)
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json) == 1
+    assert json[0]["interaction"]["id"] == command["id"]
+    assert json[0]["interaction"]["name"] == command["name"]
