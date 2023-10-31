@@ -83,6 +83,21 @@ class CommandBase(BaseModel):
                 }}))
         return value
 
+    @field_validator("options")
+    def validate_options(cls, value: Optional[list[CommandOption]]) -> Optional[list[CommandOption]]:
+        T = ApplicationCommandOptionType
+        if value is None:
+            return
+        not_sub = []
+        for idx, option in enumerate(value):
+            if option.type not in {T.SUB_COMMAND, T.SUB_COMMAND_GROUP}:
+                not_sub.append(idx)
+        if len(not_sub) != 0 and len(not_sub) != len(value):
+            raise InvalidDataErr(400, Errors.make(50035, {"options": {
+                "code": "APPLICATION_COMMAND_OPTIONS_TYPE_INVALID",
+                "message": "Sub-command and sub-command group option types are mutually exclusive to all other types"}}))
+        return value
+
     def __init__(self, **kwargs):
         if (options := kwargs.get("options")) and isinstance(options, list) and len(options) > 25:
             kwargs["options"] = options[:25]
@@ -135,6 +150,14 @@ class CommandOption(CommandBase):
                 raise InvalidDataErr(400, Errors.make(50035, {info.field_name: {
                     "code": "BASE_TYPE_BAD_INTEGER", "message": "Bad integer."
                 }}))
+        return value
+
+    @field_validator("options")
+    def validate_options(cls, value: Optional[list[CommandOption]], info: ValidationInfo) \
+            -> Optional[list[CommandOption]]:
+        T = ApplicationCommandOptionType
+        if info.data.get("type", 1) not in {T.SUB_COMMAND, T.SUB_COMMAND_GROUP}:
+            return None
         return value
 
 

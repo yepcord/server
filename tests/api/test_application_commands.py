@@ -70,7 +70,7 @@ async def test_create_commands():
                 "min_value": 1, "max_value": 10, "min_length": -1, "max_length": 6001}]
     resp = await client.post(f"/api/v9/applications/{application['id']}/commands", headers=bot_headers,
                              json={"type": 1, "name": "test", "description": "desc", "options": options})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, await resp.get_json()
     json = await resp.get_json()
     assert json["options"][0].get("choices") is None
     assert json["options"][0].get("channel_types") is None

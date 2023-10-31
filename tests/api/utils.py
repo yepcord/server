@@ -223,10 +223,10 @@ async def bot_token(app: TestClientType, user: dict, application: dict) -> str:
     return json["token"]
 
 
-async def create_thread(app: TestClientType, user: dict, message: dict, **kwargs) -> dict:
+async def create_thread(app: TestClientType, user: dict, message: dict, *, exp_code=200, **kwargs) -> dict:
     resp = await app.post(f"/api/v9/channels/{message['channel_id']}/messages/{message['id']}/threads",
                           headers={"Authorization": user["token"]}, json=kwargs)
-    assert resp.status_code == 200, await resp.get_json()
+    assert resp.status_code == exp_code, await resp.get_json()
     return await resp.get_json()
 
 

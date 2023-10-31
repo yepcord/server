@@ -647,3 +647,39 @@ async def test_message_pings():
     assert len(message["mentions"]) == 0
     assert len(message["mention_roles"]) == 1
     assert message["mention_roles"][0] == guild["id"]
+
+
+@pt.mark.asyncio
+async def test_get_message():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    headers = {"Authorization": user["token"]}
+
+    nonce = str(Snowflake.makeId())
+    message = await create_message(client, user, channel["id"], content="test message", nonce=nonce)
+    assert message["author"]["id"] == user['id']
+    assert message["content"] == "test message"
+    assert message["type"] == 0
+    assert message["guild_id"] == guild['id']
+
+    del message["nonce"]
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/{message['id']}", headers=headers)
+    assert resp.status_code == 200
+    assert await resp.get_json() == message
+
+
+@pt.mark.asyncio
+async def test_get_message_interaction_without_interaction():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    headers = {"Authorization": user["token"]}
+
+    message = await create_message(client, user, channel["id"], content="test message")
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/interaction-data",
+                            headers=headers)
+    assert resp.status_code == 404

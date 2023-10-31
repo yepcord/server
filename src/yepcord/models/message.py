@@ -131,8 +131,9 @@ class Message(Model):
         if self.interaction:
             userdata = (await self.interaction.user.userdata).ds_json or {
                 "id": "0", "username": "Deleted User", "discriminator": "0", "avatar": None}
-            data["interaction"] = {
+            data["interaction"] = await self.interaction.get_command_info() | {
                 "type": self.interaction.type,
+                "id": str(self.interaction.id),
                 "user": userdata,
-            } | await self.interaction.get_command_info()
+            }
         return data

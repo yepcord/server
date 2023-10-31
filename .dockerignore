@@ -18,3 +18,4 @@ tests/generated/*.py
 **/migrations*
 **/migrations
 **/tests
+**/.github

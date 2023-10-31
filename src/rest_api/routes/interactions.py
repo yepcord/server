@@ -37,8 +37,9 @@ from ...yepcord.utils import execute_after
 interactions = Blueprint('interactions', __name__)
 
 
-async def resolve_options(interaction_options: list[InteractionOption], guild: Guild = None):
-    result = {}
+async def resolve_options(interaction_options: list[InteractionOption], guild: Guild = None, result=None):
+    if result is None:
+        result = {}
     T = ApplicationCommandOptionType
     for option in interaction_options:
         if option.type == T.USER:
@@ -68,12 +69,33 @@ async def resolve_options(interaction_options: list[InteractionOption], guild: G
             if "roles" not in result:
                 result["roles"] = {}
             result["roles"][option.value] = role.ds_json()
+        elif option.type in {T.SUB_COMMAND, T.SUB_COMMAND_GROUP}:
+            await resolve_options(option.options, guild, result)
     return result
 
 
-def validate_options(user_options: list[InteractionOption], bot_options: list[dict]) -> list[InteractionOption]:
-    user_options: dict[str, InteractionOption] = {option.name: option for option in user_options}
-    result = []
+def validate_options_sub(user_options: list[InteractionOption], bot_options: dict[str, dict], result=None) \
+        -> list[InteractionOption]:
+    if len(user_options) != 1 or user_options[0].name not in bot_options:
+        raise InvalidDataErr(400, Errors.make(50035, {"data.options": {
+            "code": "INTERACTION_APPLICATION_COMMAND_OPTION_MISSING",
+            "message": "Missing interaction application command option"}}))
+    user_option = user_options[0]
+    bot_option = bot_options[user_option.name]
+    if result is None:
+        result = []
+    _options = []
+    if bot_option.get("options"):
+        validate_options(user_option.options, bot_option["options"], _options)
+    result.append(InteractionOption(type=user_options[0].type, name=user_option.name, options=_options))
+    return result
+
+
+def validate_options_nonsub(user_options: dict[str, InteractionOption], bot_options: list[dict], result=None) \
+        -> list[InteractionOption]:
+    if result is None:
+        result = []
+
     for option in bot_options:
         user_option = user_options.get(option["name"])
         if (not user_option and option.get("required", True)) or (user_option and user_option.type != option["type"]):
@@ -84,6 +106,16 @@ def validate_options(user_options: list[InteractionOption], bot_options: list[di
             result.append(user_option)
 
     return result
+
+
+def validate_options(user_options: list[InteractionOption], bot_options: list[dict], result=None) \
+        -> list[InteractionOption]:
+    T = ApplicationCommandOptionType
+    if bot_options and bot_options[0]["type"] in {T.SUB_COMMAND, T.SUB_COMMAND_GROUP}:
+        bot_options: dict[str, dict] = {option["name"]: option for option in bot_options}
+        return validate_options_sub(user_options, bot_options, result)
+    user_options: dict[str, InteractionOption] = {option.name: option for option in user_options}
+    return validate_options_nonsub(user_options, bot_options, result)
 
 
 @interactions.post("/", strict_slashes=False)

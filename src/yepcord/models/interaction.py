@@ -119,7 +119,7 @@ class Interaction(Model):
 
     async def get_command_info(self) -> dict:
         if self.command:
-            info = {"id": str(self.command.id), "name": self.command.name}
+            info = {"name": self.command.name, "type": self.command.type, "id": str(self.command.id)}
             if self.saved_command_info != info:
                 await self.update(saved_command_info=info)
             return info

@@ -4,7 +4,7 @@ import pytest_asyncio
 from src.rest_api.main import app
 from src.yepcord.enums import MessageFlags
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, \
-    create_thread
+    create_thread, create_dm_group
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -37,3 +37,13 @@ async def test_create_thread():
     assert json["flags"] & MessageFlags.HAS_THREAD == MessageFlags.HAS_THREAD
     assert json["thread"]["id"] == thread["id"]
     assert json["thread"]["name"] == thread["name"]
+
+
+@pt.mark.asyncio
+async def test_create_thread_dm_group():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    channel = await create_dm_group(client, user, [])
+    message = await create_message(client, user, channel["id"], content="test")
+
+    await create_thread(client, user, message, name="test123", auto_archive_duration=1440, exp_code=403)

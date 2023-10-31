@@ -228,6 +228,17 @@ async def edit_message(data: MessageUpdate, user: User, channel: Channel, messag
     return await message.ds_json()
 
 
+@channels.get("/<int:channel>/messages/<int:message>")
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
+async def get_message(user: User, channel: Channel, message: Message):
+    if channel.guild is not None:
+        member = await getCore().getGuildMember(channel.guild, user.id)
+        await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
+    if message.ephemeral and message.author != user:
+        raise InvalidDataErr(404, Errors.make(10008))
+    return await message.ds_json(user_id=user.id)
+
+
 @channels.post("/<int:channel>/messages/<int:message>/ack")
 @multipleDecorators(validate_request(MessageAck), getUser, getChannel)
 async def send_message_ack(data: MessageAck, user: User, channel: Channel, message: int):
@@ -622,3 +633,19 @@ async def search_application_commands(query_args: CommandsSearchQS, user: User, 
         result["cursor"]["previous"] = b64encode(dumps([cursor[0] - len(commands)]))
 
     return result
+
+
+@channels.get("/<int:channel>/messages/<int:message>/interaction-data")
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
+async def get_message_interaction(user: User, channel: Channel, message: Message):
+    if channel.guild is not None:
+        member = await getCore().getGuildMember(channel.guild, user.id)
+        await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
+    if message.ephemeral and message.author != user:
+        raise InvalidDataErr(404, Errors.make(10008))
+    if not message.interaction:
+        raise InvalidDataErr(404, Errors.make(10062))
+    return await message.interaction.get_command_info() | {
+        "application_command": None,
+        "options": (message.interaction.data or {}).get("options", [])
+    }
