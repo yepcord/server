@@ -22,7 +22,7 @@ from quart import Blueprint, request
 from quart_schema import validate_request
 
 from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmail
-from ..utils import getSession, getUser, multipleDecorators
+from ..utils import getSession, getUser, multipleDecorators, captcha
 from ...gateway.events import UserUpdateEvent
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
@@ -35,7 +35,7 @@ auth = Blueprint('auth', __name__)
 
 
 @auth.post("/register")
-@validate_request(Register)
+@multipleDecorators(captcha, validate_request(Register))
 async def register(data: Register):
     loc = getCore().getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
     sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth,
@@ -44,7 +44,7 @@ async def register(data: Register):
 
 
 @auth.post("/login")
-@validate_request(Login)
+@multipleDecorators(captcha, validate_request(Login))
 async def login(data: Login):
     sess = await getCore().login(data.login, data.password)
     user = sess.user

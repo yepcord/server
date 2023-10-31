@@ -83,7 +83,7 @@ class WsServer:
 
 
 class WsBroker:
-    def __init__(self, url: str = "ws://127.0.0.1:5055"):
+    def __init__(self, url: str = "ws://127.0.0.1:5055", **kwargs):
         self._connection: Optional[WebSocketClientProtocol] = None
         self._url = url
         self._handlers: dict[str, set[Coroutine]] = {}
@@ -178,4 +178,4 @@ def getBroker() -> Union[RabbitBroker, RedisBroker, SQSBroker, KafkaBroker, Nats
     if broker_type == "ws":
         warnings.warn("'ws' message broker type is used. This message broker type should not be used in production!")
 
-    return _brokers[broker_type](**Config.MESSAGE_BROKER[broker_type])
+    return _brokers[broker_type](**Config.MESSAGE_BROKER[broker_type], logger=None)

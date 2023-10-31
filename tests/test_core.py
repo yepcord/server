@@ -16,7 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-import pytest_asyncio
 from asyncio import get_event_loop
 from datetime import date
 from json import dumps
@@ -24,14 +23,14 @@ from random import randint, choice
 from typing import Coroutine, Any
 
 import pytest as pt
+import pytest_asyncio
 from tortoise import Tortoise, connections
-from tortoise.functions import Count
 
-from src.yepcord.config import Config
+from src.yepcord.config import Config, ConfigModel
 from src.yepcord.core import Core
 from src.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType
 from src.yepcord.errors import InvalidDataErr, MfaRequiredErr
-from src.yepcord.models import User, UserData, Session, Relationship, Channel
+from src.yepcord.models import User, UserData, Session, Relationship
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import b64decode, b64encode
 
@@ -520,3 +519,11 @@ async def test_geoip(testCore: Coroutine[Any, Any, Core]):
 
     assert testCore.getLanguageCode("255.255.255.255") == "en-US"
     assert testCore.getLanguageCode("255.255.255.255", "uk") == "uk"
+
+
+def test_config():
+    ConfigModel()  # shows key warning
+    assert ConfigModel(GATEWAY_KEEP_ALIVE_DELAY=1).GATEWAY_KEEP_ALIVE_DELAY == 5
+    assert ConfigModel(GATEWAY_KEEP_ALIVE_DELAY=151).GATEWAY_KEEP_ALIVE_DELAY == 150
+    assert ConfigModel(BCRYPT_ROUNDS=2).BCRYPT_ROUNDS == 15
+    assert ConfigModel(BCRYPT_ROUNDS=32).BCRYPT_ROUNDS == 15

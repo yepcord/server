@@ -21,67 +21,141 @@ from __future__ import annotations
 import importlib
 import warnings
 from os import environ
+from typing import Optional, Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 from .classes.singleton import Singleton
 
-_settings_modules = ["src.settings_prod", "src.settings"]
-if (env_module := environ.get("SETTINGS", "src.settings")) and env_module not in _settings_modules:  # pragma: no cover
-    _settings_modules.insert(0, env_module)
 
-_settings = None
-for _module in _settings_modules:
-    try:
-        _settings = importlib.import_module(_module)
-        print(f"Settings module '{_module}' loaded.")
-        break
-    except ImportError as e:  # pragma: no cover
-        print(f"Settings module '{_module}' not loaded: {e}.")
+def _load_config() -> dict:
+    settings_modules = ["src.settings_prod", "src.settings"]
+    if (env_mod := environ.get("SETTINGS", "src.settings")) and env_mod not in settings_modules:  # pragma: no cover
+        settings_modules.insert(0, env_mod)
 
-_variables = {}
-if _settings:
-    _variables = {k: v for k, v in vars(_settings).items() if not k.startswith("__")}
+    settings = None
+    current_module = settings_modules[0]
+    for module in settings_modules:
+        try:
+            settings = importlib.import_module(module)
+            current_module = module
+            print(f"Settings module '{module}' loaded.")
+            break
+        except ImportError as e:  # pragma: no cover
+            print(f"Settings module '{module}' not loaded: {e}.")
 
-_defaults = {
-    "DB_CONNECT_STRING": "sqlite:///db.sqlite",
-    "MAIL_CONNECT_STRING": "smtp://127.0.0.1:10025?timeout=3",
-    "MIGRATIONS_DIR": "./migrations",
-    "KEY": "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE=",
-    "PUBLIC_HOST": "127.0.0.1:8080",
-    "GATEWAY_HOST": "127.0.0.1:8001",
-    "CDN_HOST": "127.0.0.1:8003",
-    "STORAGE": {
-        "type": "local",
-        "local": {"path": "files"},
-        "s3": {"key_id": "", "access_key": "", "bucket": "", "endpoint": ""},
-        "ftp": {"host": "", "port": 21, "user": "", "password": ""}
-    },
-    "TENOR_KEY": None,
-    "GENERATE_TESTS": False,
-    "MESSAGE_BROKER": {
-        "type": "ws",
-        "redis": {
-            "url": "",
-        },
-        "rabbitmq": {
-            "url": "",
-        },
-        "sqs": {
-            "url": "",
-        },
-        "kafka": {
-            "bootstrap_servers": [],
-        },
-        "nats": {
-            "servers": [],
-        },
-        "ws": {
-            "url": "ws://127.0.0.1:5055",
-        },
-    },
-    "REDIS_URL": "",
-    "GATEWAY_KEEP_ALIVE_DELAY": 45,
-    "BCRYPT_ROUNDS": 15,
-}
+    variables = {}
+    if settings_modules:
+        variables = {k: v for k, v in vars(settings).items() if not k.startswith("__")}
+
+    variables["SETTINGS_MODULE"] = current_module
+    return variables
+
+
+class ConfigStoragesLocal(BaseModel):
+    path: str = "files"
+
+
+class ConfigStoragesS3(BaseModel):
+    key_id: str = ""
+    access_key: str = ""
+    bucket: str = ""
+    endpoint: str = ""
+
+
+class ConfigStoragesFtp(BaseModel):
+    host: str = ""
+    port: int = 21
+    user: str = ""
+    password: str = ""
+
+
+class ConfigStorage(BaseModel):
+    type: str = "local"
+    local: ConfigStoragesLocal = Field(default_factory=ConfigStoragesLocal)
+    s3: ConfigStoragesS3 = Field(default_factory=ConfigStoragesS3)
+    ftp: ConfigStoragesFtp = Field(default_factory=ConfigStoragesFtp)
+
+
+class ConfigMessageBrokerUrl(BaseModel):
+    url: str = ""
+
+
+class ConfigMessageBrokerKafka(BaseModel):
+    bootstrap_servers: list = Field(default_factory=list)
+
+
+class ConfigMessageBrokerNats(BaseModel):
+    servers: list = Field(default_factory=list)
+
+
+class ConfigMessageBrokers(BaseModel):
+    type: str = "ws"
+    redis: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
+    rabbitmq: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
+    sqs: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
+    kafka: ConfigMessageBrokerKafka = Field(default_factory=ConfigMessageBrokerKafka)
+    nats: ConfigMessageBrokerNats = Field(default_factory=ConfigMessageBrokerNats)
+    ws: ConfigMessageBrokerUrl = Field(default_factory=lambda: ConfigMessageBrokerUrl(url="ws://127.0.0.1:5055"))
+
+
+class ConfigCaptchaService(BaseModel):
+    sitekey: str = ""
+    secret: str = ""
+
+
+class ConfigCaptcha(BaseModel):
+    enabled: Literal["hcaptcha", "recaptcha", None] = None
+    hcaptcha: ConfigCaptchaService = Field(default_factory=ConfigCaptchaService)
+    recaptcha: ConfigCaptchaService = Field(default_factory=ConfigCaptchaService)
+
+
+class ConfigModel(BaseModel):
+    DB_CONNECT_STRING: str = "sqlite:///db.sqlite"
+    MAIL_CONNECT_STRING: str = "smtp://127.0.0.1:10025?timeout=3"
+    MIGRATIONS_DIR: str = "./migrations"
+    KEY: str = "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE="
+    PUBLIC_HOST: str = "127.0.0.1:8080"
+    GATEWAY_HOST: str = "127.0.0.1:8080/gateway"
+    CDN_HOST: str = "127.0.0.1:8080/media"
+    STORAGE: ConfigStorage = Field(default_factory=ConfigStorage)
+    TENOR_KEY: Optional[str] = None
+    MESSAGE_BROKER: ConfigMessageBrokers = Field(default_factory=ConfigMessageBrokers)
+    REDIS_URL: Optional[str] = None
+    GATEWAY_KEEP_ALIVE_DELAY: int = 45
+    BCRYPT_ROUNDS: int = 15
+    CAPTCHA: ConfigCaptcha = Field(default_factory=ConfigCaptcha)
+
+    @field_validator("KEY")
+    def validate_key(cls, value: str) -> str:
+        if value == cls.model_fields["KEY"].default:
+            warnings.warn("It seems like KEY variable is set to default value. It must be changed in production!")
+
+        return value
+
+    @field_validator("GATEWAY_KEEP_ALIVE_DELAY")
+    def validate_gw_keep_alive(cls, value: int) -> int:
+        if value < 5 or value > 150:
+            warnings.warn("It is not recommended to set GATEWAY_KEEP_ALIVE_DELAY to less than 5 or greater than 150!")
+        if value < 5:
+            value = 5
+        if value > 150:
+            value = 150
+
+        return value
+
+    @field_validator("BCRYPT_ROUNDS")
+    def validate_bcrypt_rounds(cls, value: int) -> int:
+        if value < 12:
+            warnings.warn("It is not recommended to set BCRYPT_ROUNDS to less than 12!")
+        if value < 4 or value > 31:
+            value = 15
+            warnings.warn("BCRYPT_ROUNDS can not be lower than 4 or higher than 31! BCRYPT_ROUNDS set to 15")
+
+        return value
+
+    class Config:
+        validate_default = True
 
 
 class _Config(Singleton):
@@ -90,14 +164,4 @@ class _Config(Singleton):
         return self
 
 
-Config = (
-    _Config().update(_defaults).update(_variables).update({"SETTINGS_MODULE": environ.get("SETTINGS", "src.settings")})
-)
-
-if Config.KEY == _defaults["KEY"]:  # pragma: no cover
-    warnings.warn("It seems like KEY variable is set to default value. It should be changed in production!")
-if Config.BCRYPT_ROUNDS < 12:
-    warnings.warn("It is not recommended to set BCRYPT_ROUNDS to less than 12!")
-if Config.BCRYPT_ROUNDS < 4 or Config.BCRYPT_ROUNDS > 31:
-    Config.update({"BCRYPT_ROUNDS": 15})
-    warnings.warn("BCRYPT_ROUNDS can not be lower than 4 or higher than 31! BCRYPT_ROUNDS set to 15")
+Config = _Config().update(ConfigModel(**_load_config()).model_dump())

@@ -21,7 +21,7 @@ from quart import Blueprint, request
 from quart_schema import validate_querystring, validate_request, DataSource
 
 from ..models.oauth2 import AppAuthorizeGetQs, ExchangeCode, AppAuthorizePostQs, AppAuthorizePost
-from ..utils import getUser, multipleDecorators
+from ..utils import getUser, multipleDecorators, captcha
 from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLogEntryCreateEvent, GuildRoleCreateEvent, \
     IntegrationCreateEvent
 from ...yepcord.config import Config
@@ -80,7 +80,7 @@ async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user
 
 
 @oauth2.post("/authorize", strict_slashes=False)
-@multipleDecorators(validate_querystring(AppAuthorizePostQs), validate_request(AppAuthorizePost), getUser)
+@multipleDecorators(captcha, validate_querystring(AppAuthorizePostQs), validate_request(AppAuthorizePost), getUser)
 async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthorizePost, user: User):
     scopes = set(query_args.scope.split(" ") if query_args.scope else [])
     if len(scopes & ApplicationScope.values_set()) != len(scopes):

@@ -18,14 +18,17 @@
 from __future__ import annotations
 from functools import wraps
 from json import loads
+from random import choice
 from time import time
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Optional, Union, TYPE_CHECKING, Literal
 
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
 from quart import request, current_app, g
 
+from ..yepcord.classes.captcha import Captcha
+from ..yepcord.config import Config
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
 from ..yepcord.enums import MessageType
 from ..yepcord.errors import Errors, InvalidDataErr
@@ -319,6 +322,26 @@ getGuildWithMember = getGuild(with_member=True)
 getGuildWithoutMember = getGuild(with_member=False)
 getGuildWM = getGuildWithMember
 getGuildWoM = getGuildWithoutMember
+
+
+def captcha(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if request.method == "GET" or (service_name := Config.CAPTCHA["enabled"]) is None:
+            return await f(*args, **kwargs)
+
+        service = Captcha.get(service_name)
+        data = await request.get_json()
+        if data is None or not (captcha_key := data.get("captcha_key")):
+            return service.error_response(["captcha-required"])
+
+        success, errors = await service.verify(captcha_key)
+        if not success:
+            return service.error_response(errors)
+
+        return await f(*args, **kwargs)
+
+    return wrapped
 
 
 # Idk
