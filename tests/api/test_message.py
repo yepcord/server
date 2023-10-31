@@ -1,3 +1,4 @@
+from datetime import datetime
 from io import BytesIO
 from json import dumps
 
@@ -9,7 +10,7 @@ from src.yepcord.enums import ChannelType
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, rel_block, \
-    create_dm_channel, create_sticker, create_emoji, create_dm_group, create_invite
+    create_dm_channel, create_sticker, create_emoji, create_dm_group, create_invite, create_webhook
 from tests.yep_image import YEP_IMAGE
 
 
@@ -95,6 +96,9 @@ async def test_messages_replying():
     assert reply["message_reference"]["channel_id"] == channel["id"]
     assert reply["referenced_message"]["id"] == message["id"]
     assert reply["referenced_message"]["content"] == message["content"]
+
+    await create_message(client, user, channel["id"], exp_code=400, content="test reply",
+                                 message_reference={'message_id': str(Snowflake.makeId()), "fail_if_not_exists": True})
 
 
 @pt.mark.asyncio
@@ -185,7 +189,7 @@ async def test_message_with_stickers():
     sticker = await create_sticker(client, user, guild["id"], "yep")
     channel_id = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]["id"]
 
-    message = await create_message(client, user, channel_id, sticker_ids=[sticker["id"]])
+    message = await create_message(client, user, channel_id, sticker_ids=[sticker["id"], str(Snowflake.makeId())])
     assert len(message["stickers"]) == 1
     assert message["stickers"][0]["id"] == sticker["id"]
     assert message["sticker_items"][0]["id"] == sticker["id"]
@@ -250,7 +254,7 @@ async def test_add_message_reaction():
     )
     assert resp.status_code == 204
 
-    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages", headers=headers)
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages?limit=505", headers=headers)
     assert resp.status_code == 200
     messages = await resp.get_json()
     assert len(messages[0]["reactions"]) == 2
@@ -435,3 +439,247 @@ async def test_message_delete_not_own_dm():
 
     resp = await client.delete(f"/api/v9/channels/{channel['id']}/messages/{message['id']}", headers=headers2)
     assert resp.status_code == 403
+
+
+@pt.mark.asyncio
+async def test_webhook_message_with_embed():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{
+                                 "title": "test",
+                                 "type": "qwe",
+                                 "description": "test embed",
+                                 "url": "https://example.com/",
+                                 "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                                 "color": 0xff0000,
+                                 "footer": {"text": "test footer", "icon_url": "http://example.com/icon.png"},
+                                 "image": {"url": "https://example.com/image.png"},
+                                 "thumbnail": {"url": "https://example.com/thumb.png"},
+                                 "video": {"url": "https://example.com/video.mp4"},
+                                 "author": {"name": "test author", "icon_url": "http://example.com/icon.png"},
+                                 "fields": [{"name": "test name 1", "value": "test value 1"},
+                                            {"name": "test name 2", "value": "test value 2"}],
+                             }]})
+    assert resp.status_code == 200
+    message = await resp.get_json()
+    assert not message["content"]
+    assert len(message["embeds"]) == 1
+    embed = message["embeds"][0]
+    assert embed["title"] == "test"
+    assert embed["type"] == "rich"
+    assert embed["description"] == "test embed"
+    assert embed["url"] == "https://example.com/"
+    assert embed["color"] == 0xff0000
+    assert embed["footer"] == {"text": "test footer", "icon_url": "http://example.com/icon.png"}
+    assert embed["image"] == {"url": "https://example.com/image.png"}
+    assert embed["thumbnail"] == {"url": "https://example.com/thumb.png"}
+    assert embed["video"] == {"url": "https://example.com/video.mp4"}
+    assert embed["author"] == {"name": "test author", "icon_url": "http://example.com/icon.png"}
+    assert embed["fields"] == [{"name": "test name 1", "value": "test value 1"},
+                               {"name": "test name 2", "value": "test value 2"}]
+
+
+@pt.mark.asyncio
+async def test_message_with_embed_errors():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test" * 256}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "description": "a" * 4097}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "url": "wrong://example.com"}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "timestamp": "not-a-timestamp"}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "color": -1}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "color": 0xffffff + 1}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test"}]*15})
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_message_with_embed_footer_errors():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "footer": {"text": ""}}]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert "footer" not in json["embeds"][0]
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "footer": {"text": "a" * 2049}}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "footer": {
+                                 "text": "a", "icon_url": "wrong://example.com/icon.png"}}]})
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_message_with_embed_media_errors():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "image": {"url": None}}]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert "image" not in json["embeds"][0]
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "thumbnail": {"url": None}}]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert "thumbnail" not in json["embeds"][0]
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "video": {"url": None}}]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert "video" not in json["embeds"][0]
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "image": {"url": "wrong://example.com/icon.png"}}]})
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_message_with_embed_author_errors():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "author": {"name": ""}}]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert "author" not in json["embeds"][0]
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "author": {"name": "a" * 257}}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "author": {"name": "a", "url": "wrong://idk"}}]})
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_message_with_embed_fields_errors():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel')
+    webhook = await create_webhook(client, user, channel["id"])
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "fields": [{"name": "k", "value": "v"}]*30}]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert len(json["embeds"][0]["fields"]) == 25
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "fields": [{"name": "", "value": "v"}]}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "fields": [{"name": "", "value": ""}]}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "fields": [{"name": "k" * 257, "value": "v"}]}]})
+    assert resp.status_code == 400
+
+    resp = await client.post(f"/api/webhooks/{webhook['id']}/{webhook['token']}?wait=true",
+                             json={"embeds": [{"title": "test", "fields": [{"name": "k", "value": "v" * 1025}]}]})
+    assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_message_pings():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    message = await create_message(client, user, channel["id"], content=f"<@!{user['id']}>")
+    assert len(message["mentions"]) == 1
+    assert message["mentions"][0]["id"] == user["id"]
+
+    message = await create_message(client, user, channel["id"], content=f"<@{Snowflake.makeId()}>")
+    assert len(message["mentions"]) == 0
+
+    message = await create_message(client, user, channel["id"], content=f"<@&{guild['id']}>")
+    assert len(message["mentions"]) == 0
+    assert len(message["mention_roles"]) == 1
+    assert message["mention_roles"][0] == guild["id"]
+
+
+@pt.mark.asyncio
+async def test_get_message():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    headers = {"Authorization": user["token"]}
+
+    nonce = str(Snowflake.makeId())
+    message = await create_message(client, user, channel["id"], content="test message", nonce=nonce)
+    assert message["author"]["id"] == user['id']
+    assert message["content"] == "test message"
+    assert message["type"] == 0
+    assert message["guild_id"] == guild['id']
+
+    del message["nonce"]
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/{message['id']}", headers=headers)
+    assert resp.status_code == 200
+    assert await resp.get_json() == message
+
+
+@pt.mark.asyncio
+async def test_get_message_interaction_without_interaction():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+    channel = await create_guild_channel(client, user, guild, "test_channel")
+    headers = {"Authorization": user["token"]}
+
+    message = await create_message(client, user, channel["id"], content="test message")
+
+    resp = await client.get(f"/api/v9/channels/{channel['id']}/messages/{message['id']}/interaction-data",
+                            headers=headers)
+    assert resp.status_code == 404

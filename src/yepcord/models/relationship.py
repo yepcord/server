@@ -22,9 +22,9 @@ from typing import Optional
 from tortoise.expressions import Q
 from tortoise import fields
 
-from src.yepcord.enums import RelationshipType, RelTypeDiscord
-from src.yepcord.errors import InvalidDataErr, Errors
-from src.yepcord.models._utils import ChoicesValidator, SnowflakeField, Model
+from ..enums import RelationshipType, RelTypeDiscord
+from ..errors import InvalidDataErr, Errors
+from ._utils import ChoicesValidator, SnowflakeField, Model
 import src.yepcord.models as models
 
 

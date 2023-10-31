@@ -22,8 +22,8 @@ from typing import Optional
 from tortoise import fields
 
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.utils import b64encode, int_size, b64decode
+from ._utils import SnowflakeField, Model
+from ..utils import b64encode, int_size, b64decode
 
 
 class Session(Model):

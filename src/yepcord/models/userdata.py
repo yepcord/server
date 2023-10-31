@@ -19,11 +19,12 @@
 from datetime import date, timedelta
 from typing import Optional
 
+from quart import g
 from tortoise import fields
 from tortoise.validators import MinValueValidator, MaxValueValidator
 
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
+from ._utils import SnowflakeField, Model
 
 
 class UserData(Model):
@@ -57,7 +58,7 @@ class UserData(Model):
 
     @property
     def ds_json(self) -> dict:
-        return {
+        data = {
             "id": str(self.id),
             "username": self.username,
             "avatar": self.avatar,
@@ -65,10 +66,14 @@ class UserData(Model):
             "discriminator": self.s_discriminator,
             "public_flags": self.public_flags
         }
+        if self.user.is_bot:
+            data["bot"] = True
+
+        return data
 
     async def ds_json_full(self) -> dict:
         settings = await self.user.settings
-        return {
+        data = {
             "id": str(self.id),
             "username": self.username,
             "avatar": self.avatar,
@@ -76,14 +81,20 @@ class UserData(Model):
             "discriminator": self.s_discriminator,
             "public_flags": self.public_flags,
             "flags": self.flags,
-            "banner": self.banner,
-            "banner_color": self.banner_color,
-            "accent_color": self.accent_color,
+            "banner": self.banner if not self.user.is_bot else None,
+            "banner_color": self.banner_color if not self.user.is_bot else None,
+            "accent_color": self.accent_color if not self.user.is_bot else None,
             "bio": self.bio,
             "locale": settings.locale,
             "nsfw_allowed": self.nsfw_allowed,
             "mfa_enabled": settings.mfa,
-            "email": self.user.email,
+            "email": self.user.email if not self.user.is_bot else None,
             "verified": self.user.verified,
             "phone": self.phone
         }
+        if self.user.is_bot:
+            data["bot"] = True
+        if isinstance(auth := g.get("auth"), models.Authorization) and "email" not in auth.scope_set:
+            del data["email"]
+
+        return data

@@ -42,7 +42,7 @@ from .errors import InvalidDataErr, MfaRequiredErr, Errors
 from .models import User, UserData, UserSettings, Session, Relationship, Channel, Message, ReadState, UserNote, \
     Attachment, FrecencySettings, Emoji, Invite, Guild, GuildMember, GuildTemplate, Reaction, Sticker, \
     PermissionOverwrite, GuildBan, AuditLogEntry, Webhook, HiddenDmChannel, MfaCode, Role, GuildEvent, \
-    ThreadMetadata, ThreadMember
+    ThreadMetadata, ThreadMember, Application
 from .snowflake import Snowflake
 from .storage import getStorage
 from .utils import b64encode, b64decode, int_size, NoneType
@@ -295,7 +295,6 @@ class Core(Singleton):
         return await self.setLastMessageIdForChannel(channel)
 
     async def getLastMessageId(self, channel: Channel) -> Optional[int]:
-
         if (last_message_id := await Message.filter(channel=channel).annotate(max_id=Max("id")).first()) is not None:
             return last_message_id.max_id
 
@@ -315,15 +314,15 @@ class Core(Singleton):
         id_filter = {}
         if after: id_filter["id__gt"] = after
         if before: id_filter["id__lt"] = before
-        messages = await (Message.filter(channel=channel, **id_filter)
-                          .select_related("thread", "channel", "author", "guild")
+        messages = await (Message.filter(channel=channel, ephemeral=False, **id_filter)
+                          .select_related(*Message.DEFAULT_RELATED)
                           .order_by("-id").limit(limit).all())
         return messages
 
     async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
         if not message_id: return
         return await (Message.get_or_none(channel=channel, id=message_id)
-                      .select_related("author", "channel", "thread", "guild"))
+                      .select_related(*Message.DEFAULT_RELATED))
 
     async def sendMessage(self, message: Message) -> Message:
         async def _addToReadStates():
@@ -364,7 +363,7 @@ class Core(Singleton):
     async def getReadStatesJ(self, user: User) -> list:
         states = []
         st: ReadState
-        for st in await ReadState.filter(user=user).all():
+        for st in await ReadState.filter(user=user).select_related("channel", "user").all():
             states.append(await st.ds_json())
         return states
 
@@ -650,7 +649,7 @@ class Core(Singleton):
             .select_related("guild", "parent").all()
 
     async def getUserGuilds(self, user: User) -> list[Guild]:
-        return [member.guild for member in await GuildMember.filter(user=user).select_related("guild").all()]
+        return [member.guild for member in await GuildMember.filter(user=user).select_related("guild", "guild__owner").all()]
 
     async def getGuildMemberCount(self, guild: Guild) -> int:
         return await GuildMember.filter(guild=guild).count()
@@ -743,10 +742,10 @@ class Core(Singleton):
     async def setMemberRolesFromList(self, member: GuildMember, roles: list[Role]) -> None:
         current_roles = await member.roles.all()
         for role in roles:
-            if role not in current_roles:
+            if role not in current_roles and not role.managed:
                 await member.roles.add(role)
         for role in current_roles:
-            if role not in roles:
+            if role not in roles and not role.managed:
                 await member.roles.remove(role)
 
     async def getMemberRoles(self, member: GuildMember, include_default: bool = False) -> list[Role]:
@@ -762,7 +761,7 @@ class Core(Singleton):
 
     async def getRoleMemberIds(self, role: Role) -> list[int]:
         role = await Role.get(id=role.id)
-        return [member.user.id for member in await role.guildmembers.all().select_related("user")]
+        return [member.user.id for member in await role.guildmembers.all().select_related("user").limit(100)]
 
     async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:
         # noinspection PyUnresolvedReferences
@@ -770,7 +769,7 @@ class Core(Singleton):
             Q(guild=guild) &
             (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query)) #&
             #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
-        ).limit(limit).all()
+        ).select_related("user").limit(limit).all()
 
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
         return await member.roles.filter(id=role.id).exists()
@@ -903,7 +902,8 @@ class Core(Singleton):
         return await ThreadMember.filter(channel=thread).select_related("user").limit(limit).all()
 
     async def getGuildMemberThreads(self, guild: Guild, user_id: int) -> list[Channel]:
-        return await ThreadMember.filter(guild=guild, user__id=user_id).select_related("channel").all()
+        return await (ThreadMember.filter(guild=guild, user__id=user_id)
+                      .select_related("channel", "user", "guild").all())
 
     async def getThreadMember(self, thread: Channel, user_id: int) -> Optional[ThreadMember]:
         return await ThreadMember.get_or_none(channel=thread, user__id=user_id)
@@ -926,6 +926,10 @@ class Core(Singleton):
         }
 
         return country_to_language.get(country_code, default)
+
+    async def getApplications(self, user: User) -> list[Application]:
+        return await (Application.filter(owner=user, deleted=False).select_related("bots", "bots__user", "owner")
+                      .all())
 
 
 ctx._getCore = lambda: Core.getInstance()

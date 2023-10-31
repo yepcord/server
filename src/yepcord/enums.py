@@ -15,18 +15,36 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+from typing import Any
 
 
 class E:
+    __values = None
+    __reversed = None
+    __values_set = None
+
     @classmethod
     def values(cls):
-        attrs = [i for i in cls.__dict__.keys() if not i.startswith("__")]
-        return {attr: getattr(cls, attr) for attr in attrs}
+        if cls.__values is None:
+            attrs = [i for i in cls.__dict__.keys() if not i.startswith("__")]
+            cls.__values = {attr: getattr(cls, attr) for attr in attrs}
+
+        return cls.__values
 
     @classmethod
     def reversed(cls):
-        values = cls.values()
-        return {v: k for k, v in values.items()}
+        if cls.__reversed is None:
+            values = cls.values()
+            cls.__reversed = {v: k for k, v in values.items()}
+
+        return cls.__reversed
+
+    @classmethod
+    def values_set(cls) -> set[Any]:
+        if cls.__values_set is None:
+            cls.__values_set = set(cls.values().values())
+
+        return cls.__values_set
 
 
 class RelationshipType(E):
@@ -276,3 +294,128 @@ class ScheduledEventStatus(E):
     ACTIVE = 2
     COMPLETED = 3
     CANCELED = 4
+
+
+class ApplicationScope(E):
+    ACTIVITIES_READ = "activities.read"
+    ACTIVITIES_WRITE = "activities.write"
+    APPLICATIONS_BUILDS_READ = "applications.builds.read"
+    APPLICATIONS_BUILDS_WRITE = "applications.builds.upload"
+    APPLICATIONS_COMMANDS = "applications.commands"
+    APPLICATIONS_COMMANDS_UPDATE = "applications.commands.update"
+    APPLICATIONS_COMMANDS_PERMISSIONS = "applications.commands.permissions.update"
+    APPLICATIONS_ENTIITLEMENTS = "applications.entitlements"
+    APPLICATIONS_STORE_UPDATE = "applications.store.update"
+    BOT = "bot"
+    CONNECTIONS = "connections"
+    DM_CHANNELS_READ = "dm_channels.read"
+    EMAIL = "email"
+    GDM_JOIN = "gdm.join"
+    GUILDS = "guilds"
+    GUILDS_JOIN = "guilds.join"
+    GUILDS_MEMBERS = "guilds.members.read"
+    IDENTIFY = "identify"
+    MESSAGES_READ = "messages.read"
+    RELATIONSHIPS_READ = "relationships.read"
+    ROLE_CONNECTIONS_WRITE = "role_connections.write"
+    RPC = "rpc"
+    RPC_ACTIVITIES_WRITE = "rpc.activities.write"
+    RPC_NOTIFICATIONS_READ = "rpc.notifications.read"
+    RPC_VOICE_READ = "rpc.voice.read"
+    RPC_VOICE_WRITE = "rpc.voice.write"
+    VOICE = "voice"
+    WEBHOOK_INCOMING = "webhook.incoming"
+
+
+class ApplicationCommandType(E):
+    CHAT_INPUT = 1
+    USER = 2
+    MESSAGE = 3
+
+
+class ApplicationCommandOptionType(E):
+    SUB_COMMAND = 1
+    SUB_COMMAND_GROUP = 2
+    STRING = 3
+    INTEGER = 4
+    BOOLEAN = 5
+    USER = 6
+    CHANNEL = 7
+    ROLE = 8
+    MENTIONABLE = 9
+    NUMBER = 10
+    ATTACHMENT = 11
+
+
+class Locales(E):
+    INDONESIAN = "id"
+    DANISH = "da"
+    GERMAN = "de"
+    ENGLISH_UK = "en-GB"
+    ENGLISH_US = "en-US"
+    SPANISH = "es-ES"
+    FRENCH = "fr"
+    CROATIAN = "hr"
+    ITALIAN = "it"
+    LITHUANIAN = "lt"
+    HUNGARIAN = "hu"
+    DUTCH = "nl"
+    NORWEGIAN = "no"
+    POLISH = "pl"
+    PORTUGUESE = "pt-BR"
+    ROMANIAN = "ro"
+    FINNISH = "fi"
+    SWEDISH = "sv-SE"
+    VIETNAMESE = "vi"
+    TURKISH = "tr"
+    CZECH = "cs"
+    GREEK = "el"
+    BULGARIAN = "bg"
+    RUSSIAN = "ru"
+    UKRAINIAN = "uk"
+    HINDI = "hi"
+    THAI = "th"
+    CHINESE_CHINA = "zh-CN"
+    JAPANESE = "ja"
+    CHINESE_TAIWAN = "zh-TW"
+    KOREAN = "ko"
+
+
+class InteractionType(E):
+    PING = 1
+    APPLICATION_COMMAND = 2
+    MESSAGE_COMPONENT = 3
+    APPLICATION_COMMAND_AUTOCOMPLETE = 4
+    MODAL_SUBMIT = 5
+
+
+class InteractionStatus(E):
+    PENDING = 1
+    RESPONDED = 2
+    FAILED = 3
+    DEFERRED = 4
+
+
+class MessageFlags(E):
+    CROSSPOSTED = 1 << 0
+    IS_CROSSPOST = 1 << 1
+    SUPPRESS_EMBEDS = 1 << 2
+    SOURCE_MESSAGE_DELETED = 1 << 3
+    URGENT = 1 << 4
+    HAS_THREAD = 1 << 5
+    EPHEMERAL = 1 << 6
+    LOADING = 1 << 7
+    FAILED_TO_MENTION_SOME_ROLES_IN_THREAD = 1 << 8
+    SUPPRESS_NOTIFICATIONS = 1 << 12
+    IS_VOICE_MESSAGE = 1 << 13
+
+
+class InteractionCallbackType:
+    PONG = 1
+    CHANNEL_MESSAGE_WITH_SOURCE = 4
+    DEFFERED_CHANNEL_MESSAGE_WITH_SOURCE = 5
+    DEFERRED_UPDATE_MESSAGE = 6
+    UPDATE_MESSAGE = 7
+    APPLICATION_COMMAND_AUTOCOMPLETE_RESULT = 8
+    MODAL = 9
+    PREMIUM_REQUIRED = 10

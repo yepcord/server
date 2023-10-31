@@ -22,13 +22,17 @@ from quart import Quart, request, Response
 from quart_schema import QuartSchema, RequestSchemaValidationError
 from tortoise.contrib.quart import register_tortoise
 
+from .routes.applications import applications
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.gifs import gifs
 from .routes.guilds import guilds
 from .routes.hypesquad import hypesquad
+from .routes.interactions import interactions
 from .routes.invites import invites
+from .routes.oauth2 import oauth2
 from .routes.other import other
+from .routes.teams import teams
 from .routes.users import users
 from .routes.users_me import users_me
 from .routes.webhooks import webhooks
@@ -115,6 +119,10 @@ app.register_blueprint(webhooks, url_prefix="/api/v9/webhooks")
 app.register_blueprint(webhooks, url_prefix="/api/webhooks", name="webhooks2")
 app.register_blueprint(gifs, url_prefix="/api/v9/gifs")
 app.register_blueprint(hypesquad, url_prefix="/api/v9/hypesquad")
+app.register_blueprint(applications, url_prefix="/api/v9/applications")
+app.register_blueprint(teams, url_prefix="/api/v9/teams")
+app.register_blueprint(oauth2, url_prefix="/api/v9/oauth2")
+app.register_blueprint(interactions, url_prefix="/api/v9/interactions")
 app.register_blueprint(other, url_prefix="/")
 
 

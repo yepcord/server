@@ -17,14 +17,16 @@
 """
 
 from __future__ import annotations
+
 from base64 import b64encode
 from time import time
 from typing import List, TYPE_CHECKING
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
+from ..yepcord.models import Emoji, Application, Integration
+from ..yepcord.models.interaction import Interaction
 from ..yepcord.snowflake import Snowflake
-from ..yepcord.models import Emoji
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
@@ -73,7 +75,7 @@ class ReadyEvent(DispatchEvent):
         userdata = await self.user.userdata
         settings = await self.user.settings
         proto = settings.proto().get()
-        return {
+        data = {
             "t": self.NAME,
             "op": self.OP,
             "d": {
@@ -111,7 +113,7 @@ class ReadyEvent(DispatchEvent):
                     "personalization": {
                         "consented": settings.personalization
                     }
-                },
+                } if not self.user.is_bot else {},
                 "country_code": "US",
                 "experiments": [],  # TODO
                 "friend_suggestion_count": 0,
@@ -124,7 +126,7 @@ class ReadyEvent(DispatchEvent):
                 "read_state": {
                     "version": 1,
                     "partial": False,
-                    "entries": await self.core.getReadStatesJ(self.user)
+                    "entries": await self.core.getReadStatesJ(self.user) if not self.user.is_bot else []
                 },
                 "resume_gateway_url": f"wss://{Config.GATEWAY_HOST}/",
                 "session_type": "normal",
@@ -144,10 +146,21 @@ class ReadyEvent(DispatchEvent):
                     "partial": False,
                     "entries": []  # TODO
                 },
-                "user_settings": settings.ds_json(),
-                "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8")
+                "user_settings": settings.ds_json() if not self.user.is_bot else {},
+                "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8") if not self.user.is_bot
+                else None
             }
         }
+        if self.user.is_bot:
+            del data["d"]["user_settings_proto"]
+            del data["d"]["read_state"]
+            application = await Application.get(id=self.user.id)
+            data["d"]["application"] = {
+                "id": str(application.id),
+                "flags": application.flags,
+            }
+
+        return data
 
 
 class ReadySupplementalEvent(DispatchEvent):
@@ -907,7 +920,7 @@ class GuildScheduledEventDeleteEvent(GuildScheduledEventCreateEvent):
 class ThreadCreateEvent(DispatchEvent):
     NAME = "THREAD_CREATE"
 
-    def __init__(self, thread_obj):
+    def __init__(self, thread_obj: dict):
         self.thread_obj = thread_obj
 
     async def json(self) -> dict:
@@ -921,7 +934,7 @@ class ThreadCreateEvent(DispatchEvent):
 class ThreadMemberUpdateEvent(DispatchEvent):
     NAME = "THREAD_MEMBER_UPDATE"
 
-    def __init__(self, member_obj):
+    def __init__(self, member_obj: dict):
         self.member_obj = member_obj
 
     async def json(self) -> dict:
@@ -930,3 +943,97 @@ class ThreadMemberUpdateEvent(DispatchEvent):
             "op": self.OP,
             "d": self.member_obj
         }
+
+
+class IntegrationCreateEvent(DispatchEvent):
+    NAME = "INTEGRATION_CREATE"
+
+    def __init__(self, integration: Integration):
+        self.integration = integration
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": await self.integration.ds_json(with_user=False, with_guild_id=True)
+        }
+
+
+class IntegrationDeleteEvent(DispatchEvent):
+    NAME = "INTEGRATION_DELETE"
+
+    def __init__(self, guild_id: int, application_id: int):
+        self.guild_id = guild_id
+        self.application_id = application_id
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "id": str(self.application_id),
+                "application_id": str(self.application_id),
+                "guild_id": self.guild_id
+            }
+        }
+
+
+class GuildIntegrationsUpdateEvent(DispatchEvent):
+    NAME = "GUILD_INTEGRATIONS_UPDATE"
+
+    def __init__(self, guild_id: int):
+        self.guild_id = guild_id
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "guild_id": self.guild_id,
+            }
+        }
+
+
+class InteractionCreateEvent(DispatchEvent):
+    NAME = "INTERACTION_CREATE"
+
+    def __init__(self, interaction: Interaction, full: bool, **interaction_kwargs):
+        self.interaction = interaction
+        self.full = full
+        self.interaction_kwargs = interaction_kwargs
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+        }
+        if not self.full:
+            return data | {"d": {
+                "nonce": str(self.interaction.nonce) if self.interaction.nonce is not None else None,
+                "id": str(self.interaction.nonce),
+            }}
+
+        return data | {"d": await self.interaction.ds_json(with_token=True, **self.interaction_kwargs)}
+
+
+class InteractionSuccessEvent(DispatchEvent):
+    NAME = "INTERACTION_SUCCESS"
+
+    def __init__(self, interaction: Interaction):
+        self.interaction = interaction
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "id": str(self.interaction.nonce),
+                "nonce": str(self.interaction.nonce) if self.interaction.nonce is not None else None,
+            },
+        }
+
+
+class InteractionFailureEvent(InteractionSuccessEvent):
+    NAME = "INTERACTION_FAILURE"
+
+

@@ -24,12 +24,13 @@ from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, In
 from protobuf_to_dict import protobuf_to_dict
 from tortoise import fields
 
-from src.yepcord.models._utils import ChoicesValidator, SnowflakeField, Model
+from ..enums import Locales
+from ._utils import ChoicesValidator, SnowflakeField, Model
 import src.yepcord.models as models
-from src.yepcord.proto import PreloadedUserSettings, Versions, UserContentSettings, VoiceAndVideoSettings, \
+from ..proto import PreloadedUserSettings, Versions, UserContentSettings, VoiceAndVideoSettings, \
     TextAndImagesSettings, PrivacySettings, StatusSettings, CustomStatus, LocalizationSettings, AppearanceSettings, \
     GuildFolders, GuildFolder, Theme
-from src.yepcord.utils import dict_get, freeze, unfreeze
+from ..utils import dict_get, freeze, unfreeze
 
 
 class UserSettings(Model):
@@ -68,7 +69,7 @@ class UserSettings(Model):
     friend_discovery_flags: int = fields.IntField(default=0)
     animate_stickers: int = fields.IntField(default=0)
     theme: str = fields.CharField(max_length=8, default="dark", validators=[ChoicesValidator({"dark", "light"})])
-    locale: str = fields.CharField(max_length=8, default="en-US")  # TODO: add choices validator
+    locale: str = fields.CharField(max_length=8, default="en-US", validators=[ChoicesValidator(Locales.values_set())])
     mfa: str = fields.CharField(max_length=64, null=True, default=None)
     render_spoilers: str = fields.CharField(max_length=16, default="ON_CLICK",
                                             validators=[ChoicesValidator({"ALWAYS", "ON_CLICK", "IF_MODERATOR"})])

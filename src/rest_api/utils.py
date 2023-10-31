@@ -15,21 +15,28 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from __future__ import annotations
 from functools import wraps
-from json import loads as jloads
-from typing import Optional
+from json import loads
+from time import time
+from typing import Optional, Union, TYPE_CHECKING
 
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
-from quart import request, current_app
+from quart import request, current_app, g
 
-from ..yepcord.models import Session, User, Channel, Attachment
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
+from ..yepcord.enums import MessageType
 from ..yepcord.errors import Errors, InvalidDataErr
+from ..yepcord.models import Session, User, Channel, Attachment, Application, Authorization, Bot, Interaction, Webhook, \
+    Message
 from ..yepcord.snowflake import Snowflake
 from ..yepcord.utils import b64decode
+import src.yepcord.models as models
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .models.channels import MessageCreate
 
 
 def multipleDecorators(*decorators):
@@ -49,13 +56,54 @@ def allowWithoutUser(f):
     return wrapped
 
 
+def allowOauth(scopes: list[str]):
+    def decorator(f):
+        @wraps(f)
+        async def wrapped(*args, **kwargs):
+            g.oauth_allowed = True
+            g.oauth_scopes = set(scopes)
+            return await f(*args, **kwargs)
+
+        return wrapped
+    return decorator
+
+
+def allowBots(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        g.bots_allowed = True
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
+async def getSessionFromToken(token: str) -> Optional[Union[Session, Authorization, Bot]]:
+    if not token:
+        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+
+    token = token.split(" ")
+    if len(token) == 1:  # Regular token
+        return await Session.from_token(token[0])
+    elif len(token) == 2 and token[0].lower() == "bearer" and g.get("oauth_allowed"):  # oauth2 token
+        auth = await Authorization.from_token(token[1])
+        oauth_scopes = g.get("oauth_scopes", set())
+        if auth is None or oauth_scopes & auth.scope_set != oauth_scopes:
+            raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        return auth
+    elif len(token) == 2 and token[0].lower() == "bot" and g.get("bots_allowed"):
+        return await Bot.from_token(token[1])
+    else:
+        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+
+
 def getUser(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
         try:
-            if not (session := await Session.from_token(request.headers.get("Authorization", ""))):
+            if not (session := await getSessionFromToken(request.headers.get("Authorization", ""))):
                 raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-            user = session.user
+            g.auth = session
+            g.user = user = session.user
         except InvalidDataErr as e:
             if e.code != 401 or not Ctx.get("allow_without_user"):
                 raise
@@ -70,6 +118,7 @@ def getSession(f):
     async def wrapped(*args, **kwargs):
         if not (session := await Session.from_token(request.headers.get("Authorization", ""))):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        g.auth = session
         kwargs["session"] = session
         return await f(*args, **kwargs)
     return wrapped
@@ -78,7 +127,7 @@ def getSession(f):
 def getChannel(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        if not (user := kwargs.get("user")):
+        if not (user := kwargs.get("user")) and not (user := g.get("user")):
             raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
         if not (channel := kwargs.get("channel")) or not (channel := await getCore().getChannel(channel)):
             raise InvalidDataErr(404, Errors.make(10003))
@@ -89,7 +138,7 @@ def getChannel(f):
     return wrapped
 
 
-async def _getMessage(user: User, channel: Channel, message_id: int):
+async def _getMessage(user: User, channel: Channel, message_id: int) -> Message:
     if not channel:
         raise InvalidDataErr(404, Errors.make(10003))
     if not user:
@@ -99,10 +148,22 @@ async def _getMessage(user: User, channel: Channel, message_id: int):
     return message
 
 
+async def _getMessageWebhook(webhook_id: int, message_id: int) -> Message:
+    if not message_id or not webhook_id:
+        raise InvalidDataErr(404, Errors.make(10008))
+    message = await Message.get_or_none(id=message_id, webhook_id=webhook_id).select_related(*Message.DEFAULT_RELATED)
+    if message is None:
+        raise InvalidDataErr(404, Errors.make(10008))
+    return message
+
+
 def getMessage(f):
     @wraps(f)
     async def wrapped(*args, **kwargs):
-        kwargs["message"] = await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))
+        if "webhook" in kwargs:
+            kwargs["message"] = await _getMessageWebhook(kwargs["webhook"].id, kwargs.get("message"))
+        else:
+            kwargs["message"] = await _getMessage(kwargs.get("user"), kwargs.get("channel"), kwargs.get("message"))
         return await f(*args, **kwargs)
     return wrapped
 
@@ -125,10 +186,12 @@ def getInvite(f):
     return wrapped
 
 
-def getGuild(with_member):
+def getGuild(with_member: bool, allow_without: bool=False):
     def _getGuild(f):
         @wraps(f)
         async def wrapped(*args, **kwargs):
+            if "guild" not in kwargs and allow_without:
+                return await f(*args, **(kwargs | {"guild": None}))
             if not (user := kwargs.get("user")):
                 raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
             if not (guild := int(kwargs.get("guild"))) or not (guild := await getCore().getGuild(guild)):
@@ -178,6 +241,80 @@ def getGuildTemplate(f):
     return wrapped
 
 
+def getApplication(f):
+    # noinspection PyUnboundLocalVariable
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (app_id := kwargs.get("application_id")) or \
+                not (user := kwargs.get("user")):
+            raise InvalidDataErr(404, Errors.make(10002))
+        if user.is_bot and app_id != user.id:
+            raise InvalidDataErr(404, Errors.make(10002))
+        kw = {"id": app_id, "deleted": False}
+        if not user.is_bot:
+            kw["owner"] = user
+        if (app := await Application.get_or_none(**kw).select_related("owner")) is None:
+            raise InvalidDataErr(404, Errors.make(10002))
+        del kwargs["application_id"]
+        kwargs["application"] = app
+        return await f(*args, **kwargs)
+    return wrapped
+
+
+def getInteraction(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (int_id := kwargs.get("interaction")) or not (token := kwargs.get("token")):
+            raise InvalidDataErr(404, Errors.make(10002))
+        if not token.startswith("int___"):
+            raise InvalidDataErr(404, Errors.make(10002))
+        interaction = await (Interaction.get_or_none(id=int_id)
+                             .select_related("application", "user", "channel", "command"))
+        if interaction is None or interaction.ds_token != token:
+            raise InvalidDataErr(404, Errors.make(10002))
+        del kwargs["token"]
+        kwargs["interaction"] = interaction
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
+def getWebhook(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (webhook_id := kwargs.get("webhook")) or not (token := kwargs.get("token")):
+            raise InvalidDataErr(404, Errors.make(10015))
+        webhook = await (Webhook.get_or_none(id=webhook_id).select_related("channel"))
+        if webhook is None or webhook.token != token:
+            raise InvalidDataErr(404, Errors.make(10015))
+        del kwargs["webhook"]
+        del kwargs["token"]
+        kwargs["webhook"] = webhook
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
+def getInteractionW(f):
+    @wraps(f)
+    async def wrapped(*args, **kwargs):
+        if not (application_id := kwargs.get("application_id")) or not (token := kwargs.get("token")):
+            raise InvalidDataErr(404, Errors.make(10002))
+        if not (inter := await Interaction.from_token(f"int___{token}")) or inter.application.id != application_id:
+            raise InvalidDataErr(404, Errors.make(10002))
+        message = await Message.get_or_none(interaction=inter, id__gt=Snowflake.fromTimestamp(time() - 15 * 60)) \
+            .select_related(*Message.DEFAULT_RELATED)
+        if message is None:
+            raise InvalidDataErr(404, Errors.make(10008))
+        del kwargs["application_id"]
+        del kwargs["token"]
+        kwargs["interaction"] = inter
+        kwargs["message"] = message
+        return await f(*args, **kwargs)
+
+    return wrapped
+
+
 getGuildWithMember = getGuild(with_member=True)
 getGuildWithoutMember = getGuild(with_member=False)
 getGuildWM = getGuildWithMember
@@ -187,6 +324,16 @@ getGuildWoM = getGuildWithoutMember
 # Idk
 
 
+async def get_multipart_json() -> dict:
+    try:
+        form = await request.form
+        if not form:
+            raise ValueError
+        return loads(form["payload_json"])
+    except (ValueError, KeyError):
+        raise InvalidDataErr(400, Errors.make(50035))
+
+
 async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[dict, list[Attachment]]:
     attachments = []
     if data is None:  # Multipart request
@@ -194,8 +341,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
             raise InvalidDataErr(400, Errors.make(50045))
         async with timeout(current_app.config["BODY_TIMEOUT"]):
             files = list((await request.files).values())
-            data = await request.form
-            data = jloads(data["payload_json"])
+            data = await get_multipart_json()
             if len(files) > 10:
                 raise InvalidDataErr(400, Errors.make(50013, {"files": {
                     "code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or less in length."
@@ -271,3 +417,62 @@ def makeEmbedError(code, path=None, replaces=None):
     elif code == 28:
         insertError([{"code": "BASE_TYPE_MAX_LENGTH", "message": "Must be 10 or fewer in length."}])
         return base_error
+
+
+async def process_stickers(sticker_ids: list[int]):
+    stickers = [await getCore().getSticker(sticker_id) for sticker_id in sticker_ids]
+    stickers_data = {"sticker_items": [], "stickers": []}
+    for sticker in stickers:
+        if sticker is None:
+            continue
+        stickers_data["stickers"].append(await sticker.ds_json(False))
+        stickers_data["sticker_items"].append({
+            "format_type": sticker.format,
+            "id": str(sticker.id),
+            "name": sticker.name,
+        })
+    return stickers_data
+
+
+async def validate_reply(data: MessageCreate, channel: Channel) -> int:
+    message_type = MessageType.DEFAULT
+    if data.message_reference:
+        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
+    if data.message_reference:
+        message_type = MessageType.REPLY
+    return message_type
+
+
+async def processMessage(data: dict, channel: Channel, author: Optional[User], validator_class,
+                         webhook: Webhook=None) -> models.Message:
+    data, attachments = await processMessageData(data, channel)
+    w_author = {}
+    if webhook is not None:
+        w_author = {
+            "bot": True,
+            "id": str(webhook.id),
+            "username": data.get("username", webhook.name),
+            "avatar": data.get("avatar", webhook.avatar),
+            "discriminator": "0000"
+        }
+
+    data = validator_class(**data)
+
+    message_type = await validate_reply(data, channel)
+    stickers_data = await process_stickers(data.sticker_ids)
+    if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
+        raise InvalidDataErr(400, Errors.make(50006))
+
+    data_json = data.to_json()
+    if webhook is not None:
+        data_json["webhook_id"] = webhook.id
+    message = await models.Message.create(
+        id=Snowflake.makeId(), channel=channel, author=author, **data_json, **stickers_data, type=message_type,
+        guild=channel.guild, webhook_author=w_author)
+    message.nonce = data_json.get("nonce")
+
+    for attachment in attachments:
+        attachment.message = message
+        await attachment.save()
+
+    return message

@@ -21,7 +21,7 @@ from typing import Optional
 from tortoise import fields
 
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
+from ._utils import SnowflakeField, Model
 
 
 class Role(Model):
@@ -37,11 +37,12 @@ class Role(Model):
     icon: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
     unicode_emoji: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
     flags: int = fields.BigIntField(default=0)
+    tags: Optional[dict] = fields.JSONField(default=None, null=True)
 
     guildmembers: fields.ReverseRelation[models.GuildMember]
 
     def ds_json(self) -> dict:
-        return {
+        data = {
             "id": str(self.id),
             "name": self.name,
             "permissions": str(self.permissions),
@@ -54,3 +55,8 @@ class Role(Model):
             "unicode_emoji": self.unicode_emoji,
             "flags": self.flags
         }
+
+        if self.tags is not None:
+            data["tags"] = self.tags
+
+        return data

@@ -15,20 +15,21 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from datetime import datetime
 from typing import Optional
 
 from quart import Blueprint, request
 from quart_schema import validate_request, validate_querystring
 
+from ..models.channels import MessageUpdate
 from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
-from ..utils import getUser, multipleDecorators, allowWithoutUser, processMessageData
-from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent
+from ..utils import getUser, multipleDecorators, allowWithoutUser, processMessageData, allowBots, process_stickers, \
+    validate_reply, processMessage, getWebhook, getMessage, getInteractionW
+from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent, MessageUpdateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
-from ...yepcord.enums import GuildPermissions, MessageType
+from ...yepcord.enums import GuildPermissions, MessageFlags
 from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.models import User, Channel, Message
-from ...yepcord.snowflake import Snowflake
+from ...yepcord.models import User, Channel, Message, Interaction, Webhook
 from ...yepcord.utils import getImage
 
 # Base path is /api/vX/webhooks
@@ -37,8 +38,8 @@ webhooks = Blueprint('webhooks', __name__)
 
 @webhooks.delete("/<int:webhook>")
 @webhooks.delete("/<int:webhook>/<string:token>")
-@multipleDecorators(allowWithoutUser, getUser)
-async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token: Optional[str] = None):
+@multipleDecorators(allowWithoutUser, allowBots, getUser)
+async def delete_webhook(user: Optional[User], webhook: int, token: Optional[str]=None):
     if webhook := await getCore().getWebhook(webhook):
         if webhook.token != token:
             guild = webhook.channel.guild
@@ -54,9 +55,8 @@ async def api_webhooks_webhook_delete(user: Optional[User], webhook: int, token:
 
 @webhooks.patch("/<int:webhook>")
 @webhooks.patch("/<int:webhook>/<string:token>")
-@multipleDecorators(validate_request(WebhookUpdate), allowWithoutUser, getUser)
-async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], webhook: int,
-                                     token: Optional[str] = None):
+@multipleDecorators(validate_request(WebhookUpdate), allowWithoutUser, allowBots, getUser)
+async def edit_webhook(data: WebhookUpdate, user: Optional[User], webhook: int, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     channel = webhook.channel
@@ -92,8 +92,8 @@ async def api_webhooks_webhook_patch(data: WebhookUpdate, user: Optional[User], 
 
 @webhooks.get("/<int:webhook>")
 @webhooks.get("/<int:webhook>/<string:token>")
-@multipleDecorators(allowWithoutUser, getUser)
-async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Optional[str] = None):
+@multipleDecorators(allowWithoutUser, allowBots, getUser)
+async def get_webhook(user: Optional[User], webhook: int, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
@@ -106,52 +106,15 @@ async def api_webhooks_webhook_get(user: Optional[User], webhook: int, token: Op
 
 
 @webhooks.post("/<int:webhook>/<string:token>")
-@multipleDecorators(validate_querystring(WebhookMessageCreateQuery))
-async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webhook: int, token: str):
+@validate_querystring(WebhookMessageCreateQuery)
+async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: int, token: str):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
         raise InvalidDataErr(403, Errors.make(50013))
 
     channel = webhook.channel
-    data = await request.get_json()
-    data, attachments = await processMessageData(data, channel)
-    author = {
-        "bot": True,
-        "id": str(webhook.id),
-        "username": data.get("username", webhook.name),
-        "avatar": data.get("avatar", webhook.avatar),
-        "discriminator": "0000"
-    }
-    data = WebhookMessageCreate(**data)
-
-    message_type = MessageType.DEFAULT
-    if data.message_reference:
-        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
-    if data.message_reference:
-        message_type = MessageType.REPLY
-
-    stickers = [await getCore().getSticker(sticker_id) for sticker_id in data.sticker_ids]
-    if not data.content and not data.embeds and not attachments and not data.sticker_ids:
-        raise InvalidDataErr(400, Errors.make(50006))
-    stickers_data = {"sticker_items": [], "stickers": []}
-    for sticker in stickers:
-        stickers_data["stickers"].append(await sticker.ds_json(False))
-        stickers_data["sticker_items"].append({
-            "format_type": sticker.format,
-            "id": str(sticker.id),
-            "name": sticker.name,
-        })
-
-    data_json = data.to_json()
-    if "sticker_ids" in data_json: del data_json["sticker_ids"]
-
-    message = await Message.create(id=Snowflake.makeId(), channel=webhook.channel, author=None,
-                                   guild=channel.guild, webhook_author=author, type=message_type,
-                                   **stickers_data, **data_json)
-    for attachment in attachments:
-        attachment.message = message
-        await attachment.save()
+    message = await processMessage(await request.get_json(), channel, None, WebhookMessageCreate, webhook)
 
     message_json = await message.ds_json()
     await getCore().sendMessage(message)
@@ -161,3 +124,71 @@ async def api_webhooks_webhook_post(query_args: WebhookMessageCreateQuery, webho
         return message_json
     else:
         return "", 204
+
+
+@webhooks.get("/<int:webhook>/<string:token>/messages/<int:message>")
+@multipleDecorators(getWebhook, getMessage)
+async def get_webhook_message(webhook: Webhook, message: Message):
+    return await message.ds_json()
+
+
+@webhooks.delete("/<int:webhook>/<string:token>/messages/<int:message>")
+@multipleDecorators(getWebhook, getMessage)
+async def delete_webhook_message(webhook: Webhook, message: Message):
+    await message.delete()
+    return "", 204
+
+
+@webhooks.patch("/<int:webhook>/<string:token>/messages/<int:message>")
+@multipleDecorators(validate_request(MessageUpdate), getWebhook, getMessage)
+async def edit_webhook_message(data: MessageUpdate, webhook: Webhook, message: Message):
+    await message.update(**data.to_json(), edit_timestamp=datetime.now())
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=webhook.channel.id)
+    return await message.ds_json()
+
+
+@webhooks.post("/<int:application_id>/int___<string:token>")
+@getInteractionW
+async def interaction_followup_create(interaction: Interaction, message: Message):
+    channel = interaction.channel
+    data = await request.get_json()
+
+    data, attachments = await processMessageData(data, channel)
+    data = WebhookMessageCreate(**data)
+
+    await validate_reply(data, channel)
+    stickers_data = await process_stickers(data.sticker_ids)
+    if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
+        raise InvalidDataErr(400, Errors.make(50006))
+
+    data_json = data.to_json() | stickers_data | {"flags": message.flags & ~MessageFlags.LOADING}
+    await message.update(**data_json)
+    message_obj = await message.ds_json()
+
+    if message.ephemeral:
+        await getGw().dispatch(MessageUpdateEvent(message_obj), users=[interaction.user.id, interaction.application.id])
+    else:
+        await getGw().dispatch(MessageUpdateEvent(message_obj), channel_id=interaction.channel.id)
+
+    return message_obj
+
+
+@webhooks.get("/<int:application_id>/int___<string:token>/messages/<string:message>")
+@getInteractionW
+async def get_interaction_message(interaction: Interaction, message: Message):
+    return await message.ds_json()
+
+
+@webhooks.delete("/<int:application_id>/int___<string:token>/messages/<string:message>")
+@getInteractionW
+async def delete_interaction_message(interaction: Interaction, message: Message):
+    await message.delete()
+    return "", 204
+
+
+@webhooks.patch("/<int:application_id>/int___<string:token>/messages/<string:message>")
+@multipleDecorators(validate_request(MessageUpdate), getInteractionW)
+async def edit_interaction_message(data: MessageUpdate, interaction: Interaction, message: Message):
+    await message.update(**data.to_json(), edit_timestamp=datetime.now())
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=interaction.channel.id)
+    return await message.ds_json()

@@ -20,7 +20,7 @@ from quart import Blueprint
 from quart_schema import validate_querystring
 
 from ..models.invites import GetInviteQuery
-from ..utils import getUser, multipleDecorators, getInvite
+from ..utils import getUser, multipleDecorators, getInvite, allowBots
 from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelRecipientAddEvent, GuildCreateEvent, \
     InviteDeleteEvent
 from ...yepcord.ctx import getCore, getGw
@@ -95,7 +95,7 @@ async def use_invite(user: User, invite: Invite):
 
 
 @invites.delete("/<string:invite>")
-@multipleDecorators(getUser, getInvite)
+@multipleDecorators(allowBots, getUser, getInvite)
 async def delete_invite(user: User, invite: Invite):
     if invite.channel.guild:
         if (member := await getCore().getGuildMember(invite.channel.guild, user.id)) is None:

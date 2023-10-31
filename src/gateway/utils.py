@@ -15,6 +15,10 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+from enum import Enum, auto
+from typing import Optional
+
+from ..yepcord.utils import b64decode
 
 
 def require_auth(func):
@@ -24,3 +28,25 @@ def require_auth(func):
         return await func(self, *args, **kwargs)
 
     return wrapped
+
+
+class TokenType(Enum):
+    USER = auto()
+    BOT = auto()
+
+
+def get_token_type(token: str) -> Optional[TokenType]:
+    if not token:
+        return
+
+    token = token.split(".")
+    if len(token) not in {2, 3}:
+        return
+
+    try:
+        user_id = int(b64decode(token[0]))
+        assert (user_id >> 22) > 0
+    except (ValueError, AssertionError):
+        return
+
+    return TokenType.USER if len(token) == 3 else TokenType.BOT

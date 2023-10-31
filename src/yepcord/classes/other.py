@@ -62,9 +62,6 @@ class JWT:
 
     @staticmethod
     def decode(token: str, secret: Union[str, bytes]) -> Optional[dict]:
-        if isinstance(secret, str):
-            secret = b64decode(secret)
-
         try:
             header, payload, signature = token.split(".")
             header_dict = loads(b64decode(header).decode("utf8"))
@@ -83,9 +80,6 @@ class JWT:
 
     @staticmethod
     def encode(payload: dict, secret: Union[str, bytes], expire_timestamp: Union[int, float] = 0) -> str:
-        if isinstance(secret, str):
-            secret = b64decode(secret)
-
         header = {
             "alg": "HS512",
             "typ": "JWT",

@@ -72,19 +72,9 @@ class FClient(Client):
 
 async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str) -> bytes:
     def _resize() -> bytes:
-        orig_size = (img.size[0], img.size[1])
-        n_frames = getattr(img, 'n_frames', 1)
-
-        def resize_frame(frame_):
-            if orig_size == size:
-                return frame_
-            return frame_.resize(size)
-
-        if n_frames == 1:
-            return resize_frame(img)
         frames = []
         for frame in ImageSequence.Iterator(img):
-            frames.append(resize_frame(frame))
+            frames.append(frame.resize(size))
         b = BytesIO()
         frames[0].save(b, format=form, save_all=True, append_images=frames[1:], loop=0)
         return b.getvalue()
@@ -171,6 +161,11 @@ class _Storage(metaclass=SingletonABCMeta):
         def_size = 480 if anim else 600
         return await self._getImage("splash", gid, banner_hash, size, fmt, def_size, lambda s: int(9*s/16))
 
+    async def getAppIcon(self, aid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+        anim = icon_hash.startswith("a_")
+        def_size = 256 if anim else 1024
+        return await self._getImage("app-icon", aid, icon_hash, size, fmt, def_size, lambda s: s)
+
     async def setAvatarFromBytesIO(self, uid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
@@ -214,6 +209,11 @@ class _Storage(metaclass=SingletonABCMeta):
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("role_icon", rid, size, lambda s: s, image)
+
+    async def setAppIconFromBytesIO(self, aid: int, image: BytesIO) -> str:
+        a = imageFrames(Image.open(image)) > 1
+        size = 256 if a else 1024
+        return await self._setImage("app-icon", aid, size, lambda s: s, image)
 
     @abstractmethod
     async def uploadAttachment(self, data, attachment: Attachment): ...  # pragma: no cover

@@ -31,3 +31,10 @@ from .role import Role
 from .message import Message
 from .attachment import Attachment
 from .reaction import Reaction
+
+from .application import Application, gen_secret_key
+from .bot import Bot, gen_token_secret
+from .authorization import Authorization
+from .integration import Integration
+from .application_command import ApplicationCommand
+from .interaction import Interaction

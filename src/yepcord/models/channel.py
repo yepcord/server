@@ -24,10 +24,10 @@ from tortoise import fields
 from tortoise.expressions import Q
 from tortoise.fields import SET_NULL
 
-from src.yepcord.ctx import getCore
-from src.yepcord.enums import ChannelType
+from ..ctx import getCore
+from ..enums import ChannelType
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
+from ._utils import SnowflakeField, Model
 
 
 class Channel(Model):
@@ -173,9 +173,6 @@ class Channel(Model):
             return data
 
     async def messages(self, limit: int=50, before: int=0, after: int=0) -> list[models.Message]:
-        limit = int(limit)
-        if limit > 100:
-            limit = 100
         return await getCore().getChannelMessages(self, limit, before, after)
 
     async def other_user(self, current_user: models.User) -> Optional[models.User]:

@@ -1,6 +1,6 @@
 import asyncio
-from asyncio import get_event_loop
 from base64 import urlsafe_b64encode, b64decode
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Optional, Union
@@ -9,7 +9,7 @@ from quart.typing import TestWebsocketConnectionProtocol
 
 from src.rest_api.main import app as _app
 from src.yepcord.classes.other import MFA
-from src.yepcord.enums import ChannelType
+from src.yepcord.enums import ChannelType, GatewayOp
 from src.yepcord.snowflake import Snowflake
 from src.yepcord.utils import getImage
 from tests.yep_image import YEP_IMAGE
@@ -202,6 +202,54 @@ async def create_event(app: TestClientType, guild: dict, user: dict, *, exp_code
     return await resp.get_json()
 
 
+async def create_application(app: TestClientType, user: dict, name: str, *, exp_code: int=200) -> dict:
+    resp = await app.post(f"/api/v9/applications", headers={"Authorization": user["token"]}, json={"name": name})
+    assert resp.status_code == exp_code
+    return await resp.get_json()
+
+
+async def add_bot_to_guild(app: TestClientType, user: dict, guild: dict, application: dict) -> None:
+    resp = await app.post(f"/api/v9/oauth2/authorize?client_id={application['id']}&scope=bot",
+                          headers={"Authorization": user["token"]},
+                          json={"authorize": True, "permissions": "8", "guild_id": guild["id"]})
+    assert resp.status_code == 200
+
+
+async def bot_token(app: TestClientType, user: dict, application: dict) -> str:
+    resp = await app.post(f"/api/v9/applications/{application['id']}/bot/reset",
+                             headers={"Authorization": user["token"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    return json["token"]
+
+
+async def create_thread(app: TestClientType, user: dict, message: dict, *, exp_code=200, **kwargs) -> dict:
+    resp = await app.post(f"/api/v9/channels/{message['channel_id']}/messages/{message['id']}/threads",
+                          headers={"Authorization": user["token"]}, json=kwargs)
+    assert resp.status_code == exp_code, await resp.get_json()
+    return await resp.get_json()
+
+
+def generate_slash_command_payload(application: dict, guild: dict, channel: dict, command: dict, options: list) -> dict:
+    return {
+        "type": 2,
+        "application_id": application["id"],
+        "guild_id": guild["id"],
+        "channel_id": channel["id"],
+        "session_id": "0",
+        "nonce": str(Snowflake.makeId()),
+        "data": {
+            "version": command["version"],
+            "id": command["id"],
+            "name": command["name"],
+            "type": command["type"],
+            "application_command": command,
+            "options": options,
+            "attachments": [],
+        }
+    }
+
+
 class RemoteAuthClient:
     def __init__(self, on_fingerprint=None, on_userdata=None, on_token=None, on_cancel=None):
         from cryptography.hazmat.primitives.asymmetric import rsa
@@ -304,3 +352,92 @@ class RemoteAuthClient:
         if self.heartbeatTask is not None:
             self.heartbeatTask.cancel()
 
+
+@asynccontextmanager
+async def gateway_cm(gw_app):
+    for func in gw_app.before_serving_funcs:
+        await gw_app.ensure_async(func)()
+    yield
+    for func in gw_app.after_serving_funcs:
+        await gw_app.ensure_async(func)()
+
+
+class GatewayClient:
+    class EventListener:
+        def __init__(self, event: GatewayOp, dispatch_event: Optional[str], future: asyncio.Future, raw: bool):
+            self.event = event
+            self.dispatch_event = dispatch_event
+            self.future = future
+            self.raw = raw
+
+    def __init__(self, token: str):
+        self.token = token
+        self.seq = 0
+
+        self.running = True
+        self.loop = asyncio.get_event_loop()
+        self.heartbeatTask: Optional[asyncio.Task] = None
+        self.mainTask: Optional[asyncio.Task] = None
+
+        self.handlers = {
+            GatewayOp.HELLO: self.handle_hello
+        }
+        self.listeners: list[GatewayClient.EventListener] = []
+
+    async def handle_hello(self, ws: TestWebsocketConnectionProtocol, data: dict) -> None:
+        await ws.send_json({"op": GatewayOp.IDENTIFY, "d": {"token": self.token}})
+
+    async def run(self, ws: TestWebsocketConnectionProtocol, task=True) -> None:
+        if task:
+            self.running = True
+            self.mainTask = self.loop.create_task(self.run(ws, False))
+            return
+
+        while self.running:
+            msg = await ws.receive_json()
+            if msg["op"] in self.handlers:
+                await self.handlers[msg["op"]](ws, msg.get("data"))
+
+            remove = []
+            for idx, listener in enumerate(self.listeners):
+                if msg["op"] != listener.event:
+                    continue
+                if msg["op"] == GatewayOp.DISPATCH and msg.get("t") != listener.dispatch_event:
+                    continue
+                future = listener.future
+                future.set_result(msg if listener.raw else msg.get("d"))
+                remove.insert(0, idx)
+
+            for idx in remove:
+                del self.listeners[idx]
+
+        if self.heartbeatTask is not None:
+            self.heartbeatTask.cancel()
+
+    def stop(self):
+        self.running = False
+        if self.mainTask is not None:
+            self.mainTask.cancel()
+            self.mainTask = None
+        if self.heartbeatTask is not None:
+            self.heartbeatTask.cancel()
+            self.heartbeatTask = None
+
+    async def wait_for(self, event: GatewayOp, dispatch_event: str=None, raw: bool=False) -> asyncio.Future:
+        if event == GatewayOp.DISPATCH and dispatch_event is None:
+            raise Exception("dispatch_event must be provided when event is DISPATCH!")
+        elif event != GatewayOp.DISPATCH and dispatch_event is not None:
+            dispatch_event = None
+
+        future = self.loop.create_future()
+        listener = self.EventListener(event, dispatch_event, future, raw)
+        self.listeners.append(listener)
+        return future
+
+    async def awaitable_wait_for(self, *args, **kwargs):
+        future = await self.wait_for(*args, **kwargs)
+
+        async def _future():
+            return await future
+
+        return _future()

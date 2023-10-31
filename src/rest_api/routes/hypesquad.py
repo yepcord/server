@@ -20,7 +20,7 @@ from quart import Blueprint
 from quart_schema import validate_request
 
 from ..models.hypesquad import HypesquadHouseChange
-from ..utils import getUser, multipleDecorators
+from ..utils import getUser, multipleDecorators, allowBots
 from ...gateway.events import UserUpdateEvent
 from ...yepcord.ctx import getGw
 from ...yepcord.classes.other import BitFlags
@@ -32,7 +32,7 @@ hypesquad = Blueprint('hypesquad', __name__)
 
 
 @hypesquad.post("/online")
-@multipleDecorators(validate_request(HypesquadHouseChange), getUser)
+@multipleDecorators(validate_request(HypesquadHouseChange), allowBots, getUser)
 async def api_hypesquad_online(data: HypesquadHouseChange, user: User):
     userdata = await user.data
     flags = BitFlags(userdata.public_flags, UserFlags)

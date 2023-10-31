@@ -22,9 +22,9 @@ from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.enums import AuditLogEntryType
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
+from ..enums import AuditLogEntryType
+from ._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
 
 import src.yepcord.models as models
 
@@ -215,6 +215,29 @@ class AuditLogEntryUtils:
         ]
         return await AuditLogEntry.create(id=Snowflake.makeId(), guild=role.guild, user=user, target_id=role.id,
                                           action_type=AuditLogEntryType.ROLE_DELETE, changes=changes)
+
+    @staticmethod
+    async def bot_add(user: models.User, guild: models.Guild, bot: models.User) -> AuditLogEntry:
+        return await AuditLogEntry.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id,
+                                 action_type=AuditLogEntryType.BOT_ADD)
+
+    @staticmethod
+    async def integration_create(user: models.User, guild: models.Guild, bot: models.User) -> AuditLogEntry:
+        changes = [
+            {"new_value": "discord", "key": "type"},
+            {"new_value": "test", "key": (await bot.userdata).username},
+        ]
+        return await AuditLogEntry.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id,
+                                          changes=changes, action_type=AuditLogEntryType.INTEGRATION_CREATE)
+
+    @staticmethod
+    async def integration_delete(user: models.User, guild: models.Guild, bot: models.User) -> AuditLogEntry:
+        changes = [
+            {"old_value": "discord", "key": "type"},
+            {"old_value": "test", "key": (await bot.userdata).username},
+        ]
+        return await AuditLogEntry.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id,
+                                          changes=changes, action_type=AuditLogEntryType.INTEGRATION_DELETE)
 
 
 class AuditLogEntry(Model):

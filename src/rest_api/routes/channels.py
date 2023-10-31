@@ -16,8 +16,10 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from datetime import datetime
+from json import loads, dumps
 from os import urandom
 from random import choice
+from typing import Any
 
 from emoji import is_emoji
 from quart import Blueprint, request
@@ -25,32 +27,33 @@ from quart_schema import validate_request, validate_querystring
 from tortoise.expressions import Q
 
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck, CreateThread
-from ..utils import getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData
+    WebhookCreate, SearchQuery, GetMessagesQuery, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS
+from ..utils import getUser, multipleDecorators, getChannel, getMessage, _getMessage, processMessageData, allowBots, \
+    process_stickers, validate_reply, processMessage
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
     WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
-from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS
+from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS, MessageFlags
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
-    ThreadMetadata, AuditLogEntry, Relationship
+    ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot
 from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import getImage, b64encode
+from ...yepcord.utils import getImage, b64encode, b64decode
 
 # Base path is /api/vX/channels
 channels = Blueprint('channels', __name__)
 
 
 @channels.get("/<channel>")
-@multipleDecorators(getUser, getChannel)
+@multipleDecorators(allowBots, getUser, getChannel)
 async def get_channel(user: User, channel: Channel):
     return await channel.ds_json()
 
 
 @channels.patch("/<int:channel>")
-@multipleDecorators(validate_request(ChannelUpdate), getUser, getChannel)
+@multipleDecorators(validate_request(ChannelUpdate), allowBots, getUser, getChannel)
 async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
     changed = []
     changes = {}
@@ -112,7 +115,7 @@ async def update_channel(data: ChannelUpdate, user: User, channel: Channel):
 
 
 @channels.delete("/<int:channel>")
-@multipleDecorators(getUser, getChannel)
+@multipleDecorators(allowBots, getUser, getChannel)
 async def delete_channel(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
         await getCore().hideDmChannel(user, channel)
@@ -157,7 +160,7 @@ async def delete_channel(user: User, channel: Channel):
 
 
 @channels.get("/<int:channel>/messages")
-@multipleDecorators(validate_querystring(GetMessagesQuery), getUser, getChannel)
+@multipleDecorators(validate_querystring(GetMessagesQuery), allowBots, getUser, getChannel)
 async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channel):
     if channel.guild is not None:
         member = await getCore().getGuildMember(channel.guild, user.id)
@@ -168,7 +171,7 @@ async def get_messages(query_args: GetMessagesQuery, user: User, channel: Channe
 
 
 @channels.post("/<int:channel>/messages")
-@multipleDecorators(getUser, getChannel)
+@multipleDecorators(allowBots, getUser, getChannel)
 async def send_message(user: User, channel: Channel):
     if channel.type == ChannelType.DM:
         oth = await channel.other_user(user)
@@ -178,37 +181,8 @@ async def send_message(user: User, channel: Channel):
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-    data = await request.get_json()
-    data, attachments = await processMessageData(data, channel)
-    data = MessageCreate(**data)
 
-    message_type = MessageType.DEFAULT
-    if data.message_reference:
-        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
-    if data.message_reference:
-        message_type = MessageType.REPLY
-
-    stickers = [await getCore().getSticker(sticker_id) for sticker_id in data.sticker_ids]
-    if not data.content and not data.embeds and not attachments and not data.sticker_ids:
-        raise InvalidDataErr(400, Errors.make(50006))
-    stickers_data = {"sticker_items": [], "stickers": []}
-    for sticker in stickers:
-        stickers_data["stickers"].append(await sticker.ds_json(False))
-        stickers_data["sticker_items"].append({
-            "format_type": sticker.format,
-            "id": str(sticker.id),
-            "name": sticker.name,
-        })
-
-    data_json = data.to_json()
-    if "sticker_ids" in data_json: del data_json["sticker_ids"]
-
-    message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user, **data_json,
-                                   **stickers_data, type=message_type, guild=channel.guild)
-    message.nonce = data_json.get("nonce")
-    for attachment in attachments:
-        attachment.message = message
-        await attachment.save()
+    message = await processMessage(await request.get_json(), channel, user, MessageCreate)
 
     if channel.type == ChannelType.DM:
         other_user = await channel.other_user(user)
@@ -225,7 +199,7 @@ async def send_message(user: User, channel: Channel):
 
 
 @channels.delete("/<int:channel>/messages/<int:message>")
-@multipleDecorators(getUser, getChannel, getMessage)
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
 async def delete_message(user: User, channel: Channel, message: Message):
     if message.author != user:
         if channel.type in GUILD_CHANNELS:
@@ -241,7 +215,7 @@ async def delete_message(user: User, channel: Channel, message: Message):
 
 
 @channels.patch("/<int:channel>/messages/<int:message>")
-@multipleDecorators(validate_request(MessageUpdate), getUser, getChannel, getMessage)
+@multipleDecorators(validate_request(MessageUpdate), allowBots, getUser, getChannel, getMessage)
 async def edit_message(data: MessageUpdate, user: User, channel: Channel, message: Message):
     if message.author != user:
         raise InvalidDataErr(403, Errors.make(50005))
@@ -252,6 +226,17 @@ async def edit_message(data: MessageUpdate, user: User, channel: Channel, messag
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
     await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=channel.id)
     return await message.ds_json()
+
+
+@channels.get("/<int:channel>/messages/<int:message>")
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
+async def get_message(user: User, channel: Channel, message: Message):
+    if channel.guild is not None:
+        member = await getCore().getGuildMember(channel.guild, user.id)
+        await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
+    if message.ephemeral and message.author != user:
+        raise InvalidDataErr(404, Errors.make(10008))
+    return await message.ds_json(user_id=user.id)
 
 
 @channels.post("/<int:channel>/messages/<int:message>/ack")
@@ -277,7 +262,7 @@ async def delete_message_ack(user: User, channel: Channel):
 
 
 @channels.post("/<int:channel>/typing")
-@multipleDecorators(getUser, getChannel)
+@multipleDecorators(allowBots, getUser, getChannel)
 async def send_typing_event(user: User, channel: Channel):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
@@ -337,7 +322,7 @@ async def delete_recipient(user: User, channel: Channel, target_user: int):
 
 
 @channels.put("/<int:channel>/pins/<int:message>")
-@multipleDecorators(getUser, getChannel, getMessage)
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
 async def pin_message(user: User, channel: Channel, message: Message):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
@@ -359,7 +344,7 @@ async def pin_message(user: User, channel: Channel, message: Message):
 
 
 @channels.delete("/<int:channel>/pins/<int:message>")
-@multipleDecorators(getUser, getChannel, getMessage)
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
 async def unpin_message(user: User, channel: Channel, message: Message):
     if channel.guild:
         member = await getCore().getGuildMember(message.guild, user.id)
@@ -372,7 +357,7 @@ async def unpin_message(user: User, channel: Channel, message: Message):
 
 
 @channels.get("/<int:channel>/pins")
-@multipleDecorators(getUser, getChannel)
+@multipleDecorators(allowBots, getUser, getChannel)
 async def get_pinned_messages(user: User, channel: Channel):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
@@ -384,7 +369,7 @@ async def get_pinned_messages(user: User, channel: Channel):
 
 
 @channels.put("/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me")
-@multipleDecorators(getUser, getChannel, getMessage)
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
 async def add_message_reaction(user: User, channel: Channel, message: Message, reaction: str):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
@@ -402,7 +387,7 @@ async def add_message_reaction(user: User, channel: Channel, message: Message, r
 
 
 @channels.delete("/<int:channel>/messages/<int:message>/reactions/<string:reaction>/@me")
-@multipleDecorators(getUser, getChannel, getMessage)
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
 async def remove_message_reaction(user: User, channel: Channel, message: Message, reaction: str):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
@@ -451,7 +436,7 @@ async def search_messages(query_args: SearchQuery, user: User, channel: Channel)
 
 
 @channels.post("/<int:channel>/invites")
-@multipleDecorators(validate_request(InviteCreate), getUser, getChannel)
+@multipleDecorators(validate_request(InviteCreate), allowBots, getUser, getChannel)
 async def create_invite(data: InviteCreate, user: User, channel: Channel):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
@@ -465,9 +450,8 @@ async def create_invite(data: InviteCreate, user: User, channel: Channel):
 
 
 @channels.put("/<int:channel>/permissions/<int:target_id>")
-@multipleDecorators(validate_request(PermissionOverwriteModel), getUser, getChannel)
-async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, user: User, channel: Channel,
-                                                target_id: int):
+@multipleDecorators(validate_request(PermissionOverwriteModel), allowBots, getUser, getChannel)
+async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, user: User, channel: Channel, target_id: int):
     if not channel.guild:
         raise InvalidDataErr(403, Errors.make(50003))
     if not (member := await getCore().getGuildMember(channel.guild, user.id)):
@@ -494,7 +478,7 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
 
 
 @channels.delete("/<int:channel>/permissions/<int:target_id>")
-@multipleDecorators(getUser, getChannel)
+@multipleDecorators(allowBots, getUser, getChannel)
 async def delete_permission_overwrite(user: User, channel: Channel, target_id: int):
     if not channel.guild:
         raise InvalidDataErr(403, Errors.make(50003))
@@ -516,7 +500,7 @@ async def delete_permission_overwrite(user: User, channel: Channel, target_id: i
 
 
 @channels.get("/<int:channel>/invites")
-@multipleDecorators(getUser, getChannel)
+@multipleDecorators(allowBots, getUser, getChannel)
 async def get_channel_invites(user: User, channel: Channel):
     if not channel.guild:
         raise InvalidDataErr(403, Errors.make(50003))
@@ -528,7 +512,7 @@ async def get_channel_invites(user: User, channel: Channel):
 
 
 @channels.post("/<int:channel>/webhooks")
-@multipleDecorators(validate_request(WebhookCreate), getUser, getChannel)
+@multipleDecorators(validate_request(WebhookCreate), allowBots, getUser, getChannel)
 async def create_webhook(data: WebhookCreate, user: User, channel: Channel):
     if not channel.guild:
         raise InvalidDataErr(403, Errors.make(50003))
@@ -544,7 +528,7 @@ async def create_webhook(data: WebhookCreate, user: User, channel: Channel):
 
 
 @channels.get("/<int:channel>/webhooks")
-@multipleDecorators(getUser, getChannel)
+@multipleDecorators(allowBots, getUser, getChannel)
 async def get_channel_webhooks(user: User, channel: Channel):
     if not channel.guild:
         raise InvalidDataErr(403, Errors.make(50003))
@@ -555,7 +539,7 @@ async def get_channel_webhooks(user: User, channel: Channel):
 
 
 @channels.post("/<int:channel>/messages/<int:message>/threads")
-@multipleDecorators(validate_request(CreateThread), getUser, getChannel, getMessage)
+@multipleDecorators(validate_request(CreateThread), allowBots, getUser, getChannel, getMessage)
 async def create_thread(data: CreateThread, user: User, channel: Channel, message: Message):
     if not channel.guild:
         raise InvalidDataErr(403, Errors.make(50003))
@@ -580,9 +564,88 @@ async def create_thread(data: CreateThread, user: User, channel: Channel, messag
     await getGw().dispatch(ThreadCreateEvent(await thread.ds_json() | {"newly_created": True}),
                            guild_id=channel.guild.id)
     await getGw().dispatch(ThreadMemberUpdateEvent(thread_member.ds_json()), guild_id=channel.guild.id)
-    message.thread = thread
-    await message.save(update_fields=["thread"])
+    await message.update(thread=thread, flags=message.flags | MessageFlags.HAS_THREAD)
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=message.channel.id)
     await getCore().sendMessage(thread_message)
     await getCore().sendMessage(thread_create_message)
 
     return await thread.ds_json()
+
+
+@channels.get("/<int:channel>/application-commands/search")
+@multipleDecorators(validate_querystring(CommandsSearchQS), getUser, getChannel)
+async def search_application_commands(query_args: CommandsSearchQS, user: User, channel: Channel):
+    dm_user = None
+    if (channel.type not in (*GUILD_CHANNELS, ChannelType.DM) or
+            (channel.type == ChannelType.DM and not (dm_user := await channel.other_user(user)).is_bot)):
+        raise InvalidDataErr(403, Errors.make(50003))
+
+    try:
+        cursor = loads(b64decode(query_args.cursor)) if query_args.cursor else [0]
+        if len(cursor) != 1:
+            raise ValueError
+        if not isinstance(cursor[0], int):
+            raise ValueError
+    except ValueError:
+        cursor = [0]
+
+    if channel.guild:
+        guild = channel.guild
+        integrations = await Integration.filter(guild=guild).select_related("application").all()
+        ids = [integration.application.id for integration in integrations]
+        query = Q(guild=guild, application__id__in=ids) | Q(guild=None, application__id__in=ids)
+    else:
+        query = Q(dm_permission=True, application__id=dm_user.id, guild=None)
+
+    if query_args.query is not None:
+        query = Q(name__startswith=query_args.query) & query
+    if query_args.type:
+        query = Q(type=query_args.type) & query
+
+    commands = await (ApplicationCommand.filter(query).select_related("application")
+                      .limit(query_args.limit).offset(cursor[0]).all())
+
+    result: dict[str, Any]
+    result = {"application_commands": [], "applications": {}, "cursor": {"next": None, "previous": None,
+                                                                         "repaired": None}}
+    comms = result["application_commands"]
+    apps = result["applications"]
+    for command in commands:
+        comms.append(command.ds_json(False))
+        if command.application.id in apps or not query_args.include_applications:
+            continue
+        app = command.application
+        bot = await Bot.get(id=app.id).select_related("user")
+        apps[app.id] = {
+            "id": str(app.id),
+            "name": app.name,
+            "description": app.description,
+            "icon": app.icon,
+            "summary": app.summary,
+            "type": None,
+            "bot": (await bot.user.userdata).ds_json
+        }
+
+    result["applications"] = list(result["applications"].values())
+    if len(commands) == query_args.limit:
+        result["cursor"]["next"] = b64encode(dumps([cursor[0] + len(commands)]))
+    if cursor[0] - len(commands) > 0:
+        result["cursor"]["previous"] = b64encode(dumps([cursor[0] - len(commands)]))
+
+    return result
+
+
+@channels.get("/<int:channel>/messages/<int:message>/interaction-data")
+@multipleDecorators(allowBots, getUser, getChannel, getMessage)
+async def get_message_interaction(user: User, channel: Channel, message: Message):
+    if channel.guild is not None:
+        member = await getCore().getGuildMember(channel.guild, user.id)
+        await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
+    if message.ephemeral and message.author != user:
+        raise InvalidDataErr(404, Errors.make(10008))
+    if not message.interaction:
+        raise InvalidDataErr(404, Errors.make(10062))
+    return await message.interaction.get_command_info() | {
+        "application_command": None,
+        "options": (message.interaction.data or {}).get("options", [])
+    }

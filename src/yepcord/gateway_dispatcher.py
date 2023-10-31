@@ -42,9 +42,13 @@ class GatewayDispatcher(Singleton):
         return self
 
     async def dispatch(self, event: DispatchEvent, users: Optional[list[int]]=None, channel_id: Optional[int]=None,
-                       guild_id: Optional[int]=None, permissions: Optional[list[int]]=None) -> None:
+                       guild_id: Optional[int]=None, permissions: Optional[list[int]]=None,
+                       session_id: Optional[str]=None) -> None:
         if not users and not channel_id and not guild_id:
             warnings.warn("users/channel_id/guild_id must be provided!")
+            return
+        if session_id is not None and not users:
+            warnings.warn("users must be provided with session_id!")
             return
         await self.broker.publish(channel="yepcord_events", message={
             "data": await event.json(),

@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 from time import mktime
-from typing import Optional, List
+from typing import Optional
 
 from dateutil.parser import parse as dparse
 from pydantic import BaseModel, Field, field_validator
@@ -183,7 +183,7 @@ class EmbedImage(BaseModel):
 class EmbedAuthor(BaseModel):
     name: Optional[str] = None
     url: Optional[str] = None
-    icon_url: Optional[int] = None
+    icon_url: Optional[str] = None
 
     @field_validator("name")
     def validate_name(cls, value: Optional[str]):
@@ -215,6 +215,7 @@ class EmbedField(BaseModel):
             raise EmbedErr(makeEmbedError(23, f"fields.name"))
         if len(value) > 256:
             raise EmbedErr(makeEmbedError(27, f"fields.name", {"length": "256"}))
+        return value
 
     @field_validator("value")
     def validate_value(cls, value: Optional[str]):
@@ -222,6 +223,7 @@ class EmbedField(BaseModel):
             raise EmbedErr(makeEmbedError(23, f"fields.value"))
         if len(value) > 1024:
             raise EmbedErr(makeEmbedError(27, f"fields.value", {"length": "1024"}))
+        return value
 
 
 # noinspection PyMethodParameters
@@ -237,7 +239,7 @@ class EmbedModel(BaseModel):
     thumbnail: Optional[EmbedImage] = None
     video: Optional[EmbedImage] = None
     author: Optional[EmbedAuthor] = None
-    fields: List[EmbedField] = Field(default_factory=list)
+    fields: list[EmbedField] = Field(default_factory=list)
 
     @field_validator("title")
     def validate_title(cls, value: str):
@@ -302,7 +304,7 @@ class EmbedModel(BaseModel):
         return value
 
     @field_validator("fields")
-    def validate_fields(cls, value: List[EmbedField]):
+    def validate_fields(cls, value: list[EmbedField]):
         if len(value) > 25:
             value = value[:25]
         return value
@@ -327,8 +329,8 @@ class MessageReferenceModel(BaseModel):
 class MessageCreate(BaseModel):
     content: Optional[str] = None
     nonce: Optional[str] = None
-    embeds: List[EmbedModel] = Field(default_factory=list)
-    sticker_ids: List[int] = Field(default_factory=list)
+    embeds: list[EmbedModel] = Field(default_factory=list)
+    sticker_ids: list[int] = Field(default_factory=list)
     message_reference: Optional[MessageReferenceModel] = None
     flags: Optional[int] = None
 
@@ -343,7 +345,7 @@ class MessageCreate(BaseModel):
         return value
 
     @field_validator("embeds")
-    def validate_embeds(cls, value: List[EmbedModel]):
+    def validate_embeds(cls, value: list[EmbedModel]):
         if len(value) > 10:
             raise InvalidDataErr(400, Errors.make(50035, {"embeds": {
                 "code": "BASE_TYPE_BAD_LENGTH", "message": "Must be between 1 and 10 in length."
@@ -351,7 +353,7 @@ class MessageCreate(BaseModel):
         return value
 
     @field_validator("sticker_ids")
-    def validate_sticker_ids(cls, value: List[int]):
+    def validate_sticker_ids(cls, value: list[int]):
         if len(value) > 3:
             raise InvalidDataErr(400, Errors.make(50035, {"sticker_ids": {
                 "code": "BASE_TYPE_BAD_LENGTH", "message": "Must be between 1 and 3 in length."
@@ -380,7 +382,7 @@ class MessageCreate(BaseModel):
                                  "message": "Unknown message"}]}}))
 
     def to_json(self) -> dict:
-        data = self.model_dump(exclude_defaults=True)
+        data = self.model_dump(exclude_defaults=True, exclude={"flags", "sticker_ids"})
         if "message_reference" in data:
             data["message_reference"]["message_id"] = str(data["message_reference"]["message_id"])
             data["message_reference"]["channel_id"] = str(data["message_reference"]["channel_id"])
@@ -392,7 +394,7 @@ class MessageCreate(BaseModel):
 # noinspection PyMethodParameters
 class MessageUpdate(BaseModel):
     content: Optional[str] = None
-    embeds: List[EmbedModel] = Field(default_factory=list)
+    embeds: list[EmbedModel] = Field(default_factory=list)
 
     @field_validator("content")
     def validate_content(cls, value: Optional[str]):
@@ -419,9 +421,8 @@ class WebhookCreate(BaseModel):
     @field_validator("name")
     def validate_name(cls, value: Optional[str]):
         if not value:
-            raise InvalidDataErr(400,
-                                 Errors.make(50035,
-                                             {"name": {"code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
+            raise InvalidDataErr(400, Errors.make(50035, {"name": {
+                "code": "BASE_TYPE_REQUIRED", "message": "Required field"}}))
         return value
 
 
@@ -472,5 +473,32 @@ class MessageAck(BaseModel):
 class CreateThread(BaseModel):
     auto_archive_duration: int
     name: str
-    type: int
-    location: str = "Message"
+
+    @field_validator("auto_archive_duration")
+    def validate_auto_archive_duration(cls, value: int) -> int:
+        ALLOWED_DURATIONS = (60, 1440, 4320, 10080)
+        if value not in ALLOWED_DURATIONS:
+            value = min(ALLOWED_DURATIONS, key=lambda x: abs(x - value))  # Take closest
+        return value
+
+
+class CommandsSearchQS(BaseModel):
+    type: int = 1
+    limit: int = 10
+    query: Optional[str] = Field(default=None, pattern=r"^[a-zA-Z]+$")
+    include_applications: bool = False
+    cursor: Optional[str] = None
+
+    @field_validator("type")
+    def validate_type(cls, value: int) -> int:
+        if value not in {1, 2, 3}:
+            raise InvalidDataErr(400, Errors.make(50035, {"type": {
+                "code": "ENUM_TYPE_COERCE", "message": f"Value \"{value}\" is not a valid enum value."
+            }}))
+        return value
+
+    @field_validator("limit")
+    def validate_limit(cls, value: int) -> int:
+        if value > 10:
+            value = 10
+        return value

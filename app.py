@@ -20,7 +20,7 @@ import os.path
 from os import environ
 import click
 
-from quart import Quart
+from quart import Quart, request
 
 app = Quart("YEPCord server")
 
@@ -42,6 +42,10 @@ def create_yepcord():
     from src.rest_api.routes import webhooks
     from src.rest_api.routes import gifs
     from src.rest_api.routes import hypesquad
+    from src.rest_api.routes import applications
+    from src.rest_api.routes import teams
+    from src.rest_api.routes import oauth2
+    from src.rest_api.routes import interactions
     from src.rest_api.routes import other
     from src.yepcord.errors import YDataError
     from src.yepcord.config import Config
@@ -73,6 +77,10 @@ def create_yepcord():
     app.register_blueprint(webhooks.webhooks, url_prefix="/api/webhooks", name="webhooks2")
     app.register_blueprint(gifs.gifs, url_prefix="/api/v9/gifs")
     app.register_blueprint(hypesquad.hypesquad, url_prefix="/api/v9/hypesquad")
+    app.register_blueprint(applications.applications, url_prefix="/api/v9/applications")
+    app.register_blueprint(teams.teams, url_prefix="/api/v9/teams")
+    app.register_blueprint(oauth2.oauth2, url_prefix="/api/v9/oauth2")
+    app.register_blueprint(interactions.interactions, url_prefix="/api/v9/interactions")
     app.register_blueprint(other.other, url_prefix="/")
 
     app.route("/api/v9/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])(rest_api.other_api_endpoints)
@@ -94,6 +102,7 @@ def create_yepcord():
     app.get("/media/stickers/<int:sticker_id>.<string:format_>")(cdn.get_sticker)
     app.get("/media/guild-events/<int:event_id>/<string:file_hash>")(cdn.get_guild_event_image)
     app.get("/media/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")(cdn.get_attachment)
+    app.get("/media/app-icons/<int:app_id>/<string:file_hash>.<string:format_>")(cdn.get_app_icon)
 
     register_tortoise(
         app,
@@ -107,7 +116,7 @@ def create_yepcord():
 
 @app.cli.command()
 @click.option("--settings", "-s", help="Settings module.", default="src.settings")
-@click.option("--location", "-s", help="Migrations directory. Config value will be used if not specified",
+@click.option("--location", "-l", help="Migrations directory. Config value will be used if not specified",
               default=None)
 def migrate(settings: str, location: str = None) -> None:
     environ["SETTINGS"] = settings

@@ -22,9 +22,9 @@ from typing import Optional
 from tortoise import fields
 
 import src.yepcord.models as models
-from src.yepcord.ctx import getCore
-from src.yepcord.enums import ScheduledEventEntityType
-from src.yepcord.models._utils import SnowflakeField, Model
+from ..ctx import getCore
+from ..enums import ScheduledEventEntityType
+from ._utils import SnowflakeField, Model
 
 
 class GuildEvent(Model):

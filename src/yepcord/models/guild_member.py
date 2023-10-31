@@ -23,11 +23,11 @@ from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.ctx import getCore
-from src.yepcord.enums import GuildPermissions
-from src.yepcord.errors import InvalidDataErr, Errors
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
+from ..ctx import getCore
+from ..enums import GuildPermissions
+from ..errors import InvalidDataErr, Errors
+from ._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
 import src.yepcord.models as models
 
 
@@ -101,9 +101,8 @@ class GuildMember(Model):
     def joined_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
 
-    async def ds_json(self) -> dict:
-        userdata = await self.user.userdata
-        return {
+    async def ds_json(self, with_user=True) -> dict:
+        data = {
             "avatar": self.avatar,
             "communication_disabled_until": self.communication_disabled_until,
             "flags": self.flags,
@@ -111,12 +110,16 @@ class GuildMember(Model):
             "nick": self.nick,
             "is_pending": False,
             "pending": False,
-            "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
             "roles": [str(role) for role in await getCore().getMemberRolesIds(self)],
-            "user": userdata.ds_json,
             "mute": self.mute,
             "deaf": self.deaf
         }
+
+        if with_user:
+            data["user"] = (await self.user.userdata).ds_json
+
+        return data
 
     @property
     def perm_checker(self) -> PermissionsChecker:
@@ -136,6 +139,8 @@ class GuildMember(Model):
 
     @property
     async def permissions(self) -> int:
+        if self.user == self.guild.owner:
+            return 562949953421311
         permissions = 0
         for role in await self.roles_w_default:
             permissions |= role.permissions

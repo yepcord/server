@@ -15,18 +15,19 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
 
 from tortoise import fields
 
-from src.yepcord.ctx import getCore
-from src.yepcord.enums import MessageType
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import ping_regex
 import src.yepcord.models as models
+from ..ctx import getCore
+from ..enums import MessageType
+from ..models._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
+from ..utils import ping_regex
 
 
 class Message(Model):
@@ -52,8 +53,12 @@ class Message(Model):
     extra_data: dict = fields.JSONField(default={})
     guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", on_delete=fields.SET_NULL,
                                                            null=True, default=None)
+    interaction: Optional[models.Interaction] = fields.ForeignKeyField("models.Interaction", null=True, default=None)
+    ephemeral: bool = fields.BooleanField(default=False)
 
     nonce: Optional[str] = None
+    DEFAULT_RELATED = ("thread", "thread__guild", "thread__parent", "thread__owner", "channel", "author", "guild",
+                       "interaction", "interaction__user", "interaction__command", "interaction__application")
 
     @property
     def created_at(self) -> datetime:
@@ -68,10 +73,11 @@ class Message(Model):
             "content": self.content,
             "timestamp": self.created_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
             "edit_timestamp": edit_timestamp,
+            "edited_timestamp": edit_timestamp,
             "embeds": self.embeds,
             "pinned": self.pinned,
-            "webhook_id": self.webhook_id,
-            "application_id": self.application,
+            "webhook_id": str(self.webhook_id) if self.webhook_id else None,
+            "application_id": str(self.interaction.application.id) if self.interaction else None,
             "type": self.type,
             "flags": self.flags,
             "thread": await self.thread.ds_json(user_id) if self.thread else None,
@@ -100,7 +106,8 @@ class Message(Model):
                 mdata = await member.data
                 data["mentions"].append(mdata.ds_json)
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
-            if (user_id := self.extra_data.get("user")) and (udata := await models.UserData.get_or_none(id=user_id)):
+            if (userid := self.extra_data.get("user")) and (udata := await models.UserData.get_or_none(id=userid)
+                    .select_related("user")):
                 data["mentions"].append(udata.ds_json)
         if self.message_reference:
             data["message_reference"] = {
@@ -120,4 +127,13 @@ class Message(Model):
             data["nonce"] = self.nonce
         if not search and (reactions := await getCore().getMessageReactionsJ(self, user_id)):
             data["reactions"] = reactions
+
+        if self.interaction:
+            userdata = (await self.interaction.user.userdata).ds_json or {
+                "id": "0", "username": "Deleted User", "discriminator": "0", "avatar": None}
+            data["interaction"] = await self.interaction.get_command_info() | {
+                "type": self.interaction.type,
+                "id": str(self.interaction.id),
+                "user": userdata,
+            }
         return data

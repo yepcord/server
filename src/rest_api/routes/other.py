@@ -196,9 +196,19 @@ async def api_users_me_settingsproto_type(t):
     }}))
 
 
-@other.get("/api/v9/gateway")
-async def api_gateway():
-    return {"url": f"wss://{Config.GATEWAY_HOST}"}
+@other.get("/api/v9/applications/<int:app_id>/skus")
+async def application_skus(app_id: int):
+    return []
+
+
+@other.get("/api/v9/applications/<int:app_id>/subscription-group-listings")
+async def application_sub_group_list(app_id: int):
+    return {"items": []}
+
+
+@other.get("/api/v9/applications/<int:app_id>/listings")
+async def application_listings(app_id: int):
+    return []
 
 
 # OAuth
@@ -218,6 +228,11 @@ async def api_stickerpacks_get():
 
 
 # Instance-related
+
+
+@other.get("/api/v9/gateway")
+async def api_gateway():
+    return {"url": f"wss://{Config.GATEWAY_HOST}"}
 
 
 @other.get("/api/v9/instance")

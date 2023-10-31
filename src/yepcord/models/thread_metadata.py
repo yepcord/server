@@ -21,8 +21,8 @@ from datetime import datetime, timedelta
 from tortoise import fields
 
 import src.yepcord.models as models
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
+from ._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
 
 
 class ThreadMetadata(Model):

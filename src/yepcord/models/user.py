@@ -24,10 +24,10 @@ from typing import Optional
 from tortoise import fields
 
 import src.yepcord.models as models
-from src.yepcord.classes.other import MFA
-from src.yepcord.ctx import getCore
-from src.yepcord.models._utils import SnowflakeField, Model
-from src.yepcord.snowflake import Snowflake
+from ._utils import SnowflakeField, Model
+from ..classes.other import MFA
+from ..ctx import getCore
+from ..snowflake import Snowflake
 
 
 class UserUtils:
@@ -51,6 +51,7 @@ class User(Model):
     password: str = fields.CharField(max_length=128)
     verified: bool = fields.BooleanField(default=False)
     deleted: bool = fields.BooleanField(default=False)
+    is_bot: bool = fields.BooleanField(default=False)
 
     @property
     async def settings(self) -> models.UserSettings:
@@ -109,5 +110,7 @@ class User(Model):
             data["mutual_friends_count"] = 0  # TODO: add mutual friends count
         if with_mutual_guilds:
             data["mutual_guilds"] = await getCore().getMutualGuildsJ(self, other_user)
+        if self.is_bot:
+            data["user"]["bot"] = True
 
         return data
