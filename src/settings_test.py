@@ -31,3 +31,15 @@ STORAGE = {
 TENOR_KEY = __environ.get("TENOR_KEY")
 
 BCRYPT_ROUNDS = 4
+
+CAPTCHA = {  # This is test captcha keys
+    "enabled": None,
+    "hcaptcha": {
+        "sitekey": "10000000-ffff-ffff-ffff-000000000001",
+        "secret": "0x0000000000000000000000000000000000000000",
+    },
+    "recaptcha": {
+        "sitekey": "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI",
+        "secret": "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe",
+    },
+}

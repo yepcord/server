@@ -75,3 +75,17 @@ REDIS_URL = ""
 GATEWAY_KEEP_ALIVE_DELAY = 45
 
 BCRYPT_ROUNDS = 15
+
+# Captcha settings, acquire your hcaptcha/recaptcha sitekey and secret and paste it here. You can disable captcha
+# completely, enable one of the services or both
+CAPTCHA = {
+    "enabled": None,  # "hcaptcha", "recaptcha" or None
+    "hcaptcha": {
+        "sitekey": "",
+        "secret": "",
+    },
+    "recaptcha": {
+        "sitekey": "",
+        "secret": "",
+    },
+}
