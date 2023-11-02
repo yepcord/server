@@ -20,7 +20,7 @@ import os.path
 from os import environ
 import click
 
-from quart import Quart, request
+from quart import Quart
 from tortoise import Tortoise
 
 app = Quart("YEPCord server")
