@@ -8,16 +8,20 @@ from src.rest_api.main import app
 from src.yepcord.enums import ChannelType, GatewayOp
 from src.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application, create_guild, add_bot_to_guild, bot_token, \
-    GatewayClient, gateway_cm, generate_slash_command_payload, create_guild_channel
+    GatewayClient, generate_slash_command_payload, create_guild_channel
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db():
     for func in app.before_serving_funcs:
         await app.ensure_async(func)()
+    for func in gw_app.before_serving_funcs:
+        await gw_app.ensure_async(func)()
     yield
     for func in app.after_serving_funcs:
         await app.ensure_async(func)()
+    for func in gw_app.after_serving_funcs:
+        await gw_app.ensure_async(func)()
 
 
 @pt.mark.asyncio
@@ -71,17 +75,16 @@ async def test_slash_command_options():
         }
     }
 
-    async with gateway_cm(gw_app):
-        gw_client = gw_app.test_client()
-        cl = GatewayClient(bot_token_)
-        async with gw_client.websocket('/') as ws:
-            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-            await cl.run(ws)
+    gw_client = gw_app.test_client()
+    cl = GatewayClient(bot_token_)
+    async with gw_client.websocket('/') as ws:
+        event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+        await cl.run(ws)
 
-            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
-            assert resp.status_code == 204
+        resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+        assert resp.status_code == 204
 
-            event = await event_coro
+        event = await event_coro
 
     assert event["type"] == 2
     assert event["version"] == 1
@@ -123,17 +126,16 @@ async def test_answer_to_slash_command():
 
     payload = generate_slash_command_payload(application, guild, channel, command, [])
 
-    async with gateway_cm(gw_app):
-        gw_client = gw_app.test_client()
-        cl = GatewayClient(bot_token_)
-        async with gw_client.websocket('/') as ws:
-            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-            await cl.run(ws)
+    gw_client = gw_app.test_client()
+    cl = GatewayClient(bot_token_)
+    async with gw_client.websocket('/') as ws:
+        event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+        await cl.run(ws)
 
-            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
-            assert resp.status_code == 204
+        resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+        assert resp.status_code == 204
 
-            event = await event_coro
+        event = await event_coro
 
     int_id = event["id"]
     int_token = event["token"]
@@ -165,17 +167,17 @@ async def test_defer_slash_command():
     command = await resp.get_json()
 
     payload = generate_slash_command_payload(application, guild, channel, command, [])
-    async with gateway_cm(gw_app):
-        gw_client = gw_app.test_client()
-        cl = GatewayClient(bot_token_)
-        async with gw_client.websocket('/') as ws:
-            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-            await cl.run(ws)
 
-            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
-            assert resp.status_code == 204
+    gw_client = gw_app.test_client()
+    cl = GatewayClient(bot_token_)
+    async with gw_client.websocket('/') as ws:
+        event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+        await cl.run(ws)
 
-            event = await event_coro
+        resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+        assert resp.status_code == 204
+
+        event = await event_coro
 
     int_id = event["id"]
     int_token = event["token"]
@@ -292,31 +294,30 @@ async def test_slash_command_wrong_resolved():
     assert resp.status_code == 200
     command = await resp.get_json()
 
-    async with gateway_cm(gw_app):
-        gw_client = gw_app.test_client()
-        cl = GatewayClient(bot_token_)
-        async with gw_client.websocket('/') as ws:
-            await cl.run(ws)
+    gw_client = gw_app.test_client()
+    cl = GatewayClient(bot_token_)
+    async with gw_client.websocket('/') as ws:
+        await cl.run(ws)
 
-            async def _resolved(type_: int, name: str, value: str, resolved_types: set[str]=None):
-                event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-                p = generate_slash_command_payload(application, guild, channel, command, [
-                    {"type": type_, "name": name, "value": value}
-                ])
-                resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(p)})
-                assert resp.status_code == 204
-                event = await event_coro
-                if resolved_types is None:
-                    assert event["data"]["resolved"] == {}
-                else:
-                    assert set(event["data"]["resolved"].keys()) == resolved_types
+        async def _resolved(type_: int, name: str, value: str, resolved_types: set[str]=None):
+            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+            p = generate_slash_command_payload(application, guild, channel, command, [
+                {"type": type_, "name": name, "value": value}
+            ])
+            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(p)})
+            assert resp.status_code == 204
+            event = await event_coro
+            if resolved_types is None:
+                assert event["data"]["resolved"] == {}
+            else:
+                assert set(event["data"]["resolved"].keys()) == resolved_types
 
-            await _resolved(6, "user", str(Snowflake.makeId()))
-            await _resolved(6, "user", user2["id"], {"users"})
-            await _resolved(7, "channel", str(Snowflake.makeId()))
-            await _resolved(7, "channel", channel2["id"])
-            await _resolved(8, "role", str(Snowflake.makeId()))
-            await _resolved(8, "role", guild2["id"])
+        await _resolved(6, "user", str(Snowflake.makeId()))
+        await _resolved(6, "user", user2["id"], {"users"})
+        await _resolved(7, "channel", str(Snowflake.makeId()))
+        await _resolved(7, "channel", channel2["id"])
+        await _resolved(8, "role", str(Snowflake.makeId()))
+        await _resolved(8, "role", guild2["id"])
 
 
 @pt.mark.asyncio
@@ -337,17 +338,17 @@ async def test_get_update_delete_slash_command_response():
     command = await resp.get_json()
 
     payload = generate_slash_command_payload(application, guild, channel, command, [])
-    async with gateway_cm(gw_app):
-        gw_client = gw_app.test_client()
-        cl = GatewayClient(bot_token_)
-        async with gw_client.websocket('/') as ws:
-            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-            await cl.run(ws)
 
-            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
-            assert resp.status_code == 204
+    gw_client = gw_app.test_client()
+    cl = GatewayClient(bot_token_)
+    async with gw_client.websocket('/') as ws:
+        event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+        await cl.run(ws)
 
-            event = await event_coro
+        resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+        assert resp.status_code == 204
+
+        event = await event_coro
 
     int_id = event["id"]
     int_token = event["token"]
@@ -408,17 +409,17 @@ async def test_get_message_after_command_delete():
     command = await resp.get_json()
 
     payload = generate_slash_command_payload(application, guild, channel, command, [])
-    async with gateway_cm(gw_app):
-        gw_client = gw_app.test_client()
-        cl = GatewayClient(bot_token_)
-        async with gw_client.websocket('/') as ws:
-            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-            await cl.run(ws)
 
-            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
-            assert resp.status_code == 204
+    gw_client = gw_app.test_client()
+    cl = GatewayClient(bot_token_)
+    async with gw_client.websocket('/') as ws:
+        event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+        await cl.run(ws)
 
-            event = await event_coro
+        resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+        assert resp.status_code == 204
+
+        event = await event_coro
 
     int_id = event["id"]
     int_token = event["token"]
@@ -489,17 +490,17 @@ async def test_slash_command_subcommands_groups():
             ]}
         ], "value": "1"}
     ])
-    async with gateway_cm(gw_app):
-        gw_client = gw_app.test_client()
-        cl = GatewayClient(bot_token_)
-        async with gw_client.websocket('/') as ws:
-            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-            await cl.run(ws)
 
-            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
-            assert resp.status_code == 204
+    gw_client = gw_app.test_client()
+    cl = GatewayClient(bot_token_)
+    async with gw_client.websocket('/') as ws:
+        event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+        await cl.run(ws)
 
-            event = await event_coro
+        resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+        assert resp.status_code == 204
+
+        event = await event_coro
 
     assert event["data"]["options"] == [
         {'name': 'group', 'type': 2, 'value': None, 'options': [

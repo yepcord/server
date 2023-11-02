@@ -30,6 +30,7 @@ from typing import Optional, Union
 
 import maxminddb
 from bcrypt import hashpw, gensalt, checkpw
+from tortoise import connections
 from tortoise.expressions import Q, Subquery
 from tortoise.functions import Count, Max
 from tortoise.transactions import atomic
@@ -271,6 +272,16 @@ class Core(Singleton):
         return await self.setLastMessageIdForChannel(channel)
 
     async def getDChannel(self, user1: User, user2: User) -> Optional[Channel]:
+        if connections.get("default").capabilities.dialect == "sqlite":
+            channel_ids = await (Channel
+                                 .filter(recipients__id__in=[user1.id, user2.id])
+                                 .annotate(user_count=Count('recipients__id', distinct=True))
+                                 .values_list('id', "user_count"))
+            for channel_id, user_count in channel_ids:
+                if user_count == 2:
+                    return await Channel.get_or_none(id=channel_id)
+            return
+
         return await Channel.get_or_none(
             id__in=Subquery(
                 Channel

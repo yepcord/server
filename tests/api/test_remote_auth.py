@@ -138,15 +138,18 @@ async def test_remote_auth_same_keys():
     cl = RemoteAuthClient()
     cl.genKeys()
 
-    async with ra_client.websocket('/') as ws:
+    async with ra_client.websocket('/') as ws, ra_client.websocket('/') as ws2:
         await ws.receive_json()
         await ws.send_json({"op": "init", "encoded_public_key": cl.pubKeyS})
-        async with ra_client.websocket('/') as ws2:
-            await ws2.receive_json()
-            await ws2.send_json({"op": "init", "encoded_public_key": cl.pubKeyS})
+        d = await ws.receive_json()
+        while d["op"] != "nonce_proof":
+            d = await ws.receive_json()
+        await cl.handle_nonce_proof(ws, d)
 
-            with pt.raises(WebsocketDisconnectError):
-                await ws2.receive_json()
+        await ws2.receive_json()
+        await ws2.send_json({"op": "init", "encoded_public_key": cl.pubKeyS})
+        with pt.raises(WebsocketDisconnectError):
+            await ws2.receive_json()
 
 
 @pt.mark.asyncio

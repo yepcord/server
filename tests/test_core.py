@@ -217,14 +217,20 @@ async def test_changeUserName_fail(testCore: Coroutine[Any, Any, Core]):
         userdatas.append((_id, _id, date(2000, 1, 1), username, d))
 
     conn = connections.get("default")
-    await conn.execute_many(
-        "INSERT INTO `user`(`id`, `email`, `password`) VALUES (%s, %s, \"123456\")", users
-    )
-    await conn.execute_many(
-       "INSERT INTO `userdata`(`id`, `user_id`, `birth`, `username`, `discriminator`, `flags`, `public_flags`) "
-             "VALUES (%s, %s, %s, %s, %s, 0, 0)",
-       userdatas
-    )
+    if conn.capabilities.dialect == "mysql":
+        await conn.execute_many("INSERT INTO `user`(`id`, `email`, `password`) VALUES (%s, %s, \"123456\")", users)
+        await conn.execute_many(
+            "INSERT INTO `userdata`(`id`, `user_id`, `birth`, `username`, `discriminator`, `flags`, `public_flags`) "
+            "VALUES (%s, %s, %s, %s, %s, 0, 0)",
+            userdatas
+        )
+    elif conn.capabilities.dialect == "sqlite":
+        await conn.execute_many("INSERT INTO `user`(`id`, `email`, `password`) VALUES (?, ?, \"123456\")", users)
+        await conn.execute_many(
+            "INSERT INTO `userdata`(`id`, `user_id`, `birth`, `username`, `discriminator`, `flags`, `public_flags`) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0)",
+            userdatas
+        )
 
     user = await User.y.get(VARS["user_id"])
     with pt.raises(InvalidDataErr):

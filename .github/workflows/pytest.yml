@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
-        database: ["mariadb"]
+        database: ["mariadb", "sqlite"]
 
     steps:
       - name: Check out repository code
@@ -29,12 +29,14 @@ jobs:
         run: poetry install --no-interaction
 
       - uses: getong/mariadb-action@v1.1
+        if: matrix.database == 'mariadb'
         with:
           mariadb version: '10.6.4'
           mysql database: 'yepcord_test'
           mysql root password: 'yepcord_test'
 
       - name: Wait for MariaDB
+        if: matrix.database == 'mariadb'
         run: |
           while ! mysqladmin ping --host=127.0.0.1 --password=yepcord_test --silent; do
             sleep 1

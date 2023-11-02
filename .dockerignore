@@ -19,3 +19,5 @@ tests/generated/*.py
 **/migrations
 **/tests
 **/.github
+**/*.sqlite
+**/*.sqlite-*
