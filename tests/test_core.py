@@ -231,6 +231,13 @@ async def test_changeUserName_fail(testCore: Coroutine[Any, Any, Core]):
             "VALUES (?, ?, ?, ?, ?, 0, 0)",
             userdatas
         )
+    elif conn.capabilities.dialect == "postgres":
+        await conn.execute_many("INSERT INTO \"user\" (id, email, password) VALUES ($1, $2, '123456')", users)
+        await conn.execute_many(
+            "INSERT INTO userdata(id, user_id, birth, username, discriminator, flags, public_flags) "
+            "VALUES ($1, $2, $3, $4, $5, 0, 0)",
+            userdatas
+        )
 
     user = await User.y.get(VARS["user_id"])
     with pt.raises(InvalidDataErr):

@@ -272,22 +272,13 @@ class Core(Singleton):
         return await self.setLastMessageIdForChannel(channel)
 
     async def getDChannel(self, user1: User, user2: User) -> Optional[Channel]:
-        if connections.get("default").capabilities.dialect == "sqlite":
-            channel_ids = await (Channel
-                                 .filter(recipients__id__in=[user1.id, user2.id])
-                                 .annotate(user_count=Count('recipients__id', distinct=True))
-                                 .values_list('id', "user_count"))
-            for channel_id, user_count in channel_ids:
-                if user_count == 2:
-                    return await Channel.get_or_none(id=channel_id)
-            return
-
         return await Channel.get_or_none(
             id__in=Subquery(
                 Channel
                 .filter(recipients__id__in=[user1.id, user2.id])
                 .annotate(user_count=Count('recipients__id', distinct=True))
                 .filter(user_count=2)
+                .group_by("id")
                 .values_list('id', flat=True)
             )
         )
@@ -306,8 +297,8 @@ class Core(Singleton):
         return await self.setLastMessageIdForChannel(channel)
 
     async def getLastMessageId(self, channel: Channel) -> Optional[int]:
-        if (last_message_id := await Message.filter(channel=channel).annotate(max_id=Max("id")).first()) is not None:
-            return last_message_id.max_id
+        if (last_message := await Message.filter(channel=channel).group_by("-id").first()) is not None:
+            return last_message.id
 
     async def setLastMessageIdForChannel(self, channel: Channel) -> Channel:
         channel.last_message_id = await self.getLastMessageId(channel)
