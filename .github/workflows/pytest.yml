@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
-        database: ["mariadb", "sqlite"]
+        database: ["mariadb", "sqlite", "mysql"]
 
     steps:
       - name: Check out repository code
@@ -28,6 +28,10 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction
 
+      - name: Shutdown Ubuntu MySQL
+        if: matrix.database == 'mariadb' || matrix.database == 'mysql'
+        run: sudo service mysql stop
+
       - uses: getong/mariadb-action@v1.1
         if: matrix.database == 'mariadb'
         with:
@@ -35,8 +39,16 @@ jobs:
           mysql database: 'yepcord_test'
           mysql root password: 'yepcord_test'
 
-      - name: Wait for MariaDB
-        if: matrix.database == 'mariadb'
+      - uses: mirromutth/mysql-action@v1.1
+        if: matrix.database == 'mysql'
+        with:
+          mariadb version: '5.7'
+          mysql database: 'yepcord_test'
+          mysql root password: 'yepcord_test'
+
+
+      - name: Wait for MariaDB/MySQL
+        if: matrix.database == 'mariadb' || matrix.database == 'mysql'
         run: |
           while ! mysqladmin ping --host=127.0.0.1 --password=yepcord_test --silent; do
             sleep 1
