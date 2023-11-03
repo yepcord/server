@@ -356,6 +356,8 @@ class RemoteAuthClient:
 @asynccontextmanager
 async def gateway_cm(gw_app):
     for func in gw_app.before_serving_funcs:
+        if func.__name__ == "init_orm":
+            continue
         await gw_app.ensure_async(func)()
     yield
     for func in gw_app.after_serving_funcs:

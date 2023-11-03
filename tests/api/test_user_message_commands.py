@@ -15,13 +15,9 @@ from .utils import TestClientType, create_users, create_application, create_guil
 async def setup_db():
     for func in app.before_serving_funcs:
         await app.ensure_async(func)()
-    for func in gw_app.before_serving_funcs:
-        await gw_app.ensure_async(func)()
     yield
     for func in app.after_serving_funcs:
         await app.ensure_async(func)()
-    for func in gw_app.after_serving_funcs:
-        await gw_app.ensure_async(func)()
 
 
 @pt.mark.asyncio
@@ -58,16 +54,17 @@ async def test_user_command():
         }
     }
 
-    gw_client = gw_app.test_client()
-    cl = GatewayClient(bot_token_)
-    async with gw_client.websocket('/') as ws:
-        event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-        await cl.run(ws)
+    async with gateway_cm(gw_app):
+        gw_client = gw_app.test_client()
+        cl = GatewayClient(bot_token_)
+        async with gw_client.websocket('/') as ws:
+            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+            await cl.run(ws)
 
-        resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
-        assert resp.status_code == 204
+            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+            assert resp.status_code == 204
 
-        event = await event_coro
+            event = await event_coro
 
     assert event["type"] == 2
     assert event["version"] == 1
@@ -118,16 +115,17 @@ async def test_message_command():
         }
     }
 
-    gw_client = gw_app.test_client()
-    cl = GatewayClient(bot_token_)
-    async with gw_client.websocket('/') as ws:
-        event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
-        await cl.run(ws)
+    async with gateway_cm(gw_app):
+        gw_client = gw_app.test_client()
+        cl = GatewayClient(bot_token_)
+        async with gw_client.websocket('/') as ws:
+            event_coro = await cl.awaitable_wait_for(GatewayOp.DISPATCH, "INTERACTION_CREATE")
+            await cl.run(ws)
 
-        resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
-        assert resp.status_code == 204
+            resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
+            assert resp.status_code == 204
 
-        event = await event_coro
+            event = await event_coro
 
     assert event["type"] == 2
     assert event["version"] == 1
