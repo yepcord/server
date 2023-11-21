@@ -554,4 +554,3 @@ async def test_slash_command_subcommands_groups_errors():
     ])
     resp = await client.post(f"/api/v9/interactions", headers=headers, form={"payload_json": dumps(payload)})
     assert resp.status_code == 400
-

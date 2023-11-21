@@ -20,7 +20,8 @@ import os.path
 from os import environ
 import click
 
-from quart import Quart, request
+from quart import Quart
+from tortoise import Tortoise
 
 app = Quart("YEPCord server")
 
@@ -135,6 +136,7 @@ def migrate(settings: str, location: str = None) -> None:
             await command.upgrade(True)
         else:
             await command.init_db(True)
+        await Tortoise.close_connections()
 
     asyncio.run(_migrate())
 

@@ -30,6 +30,7 @@ from typing import Optional, Union
 
 import maxminddb
 from bcrypt import hashpw, gensalt, checkpw
+from tortoise import connections
 from tortoise.expressions import Q, Subquery
 from tortoise.functions import Count, Max
 from tortoise.transactions import atomic
@@ -277,6 +278,7 @@ class Core(Singleton):
                 .filter(recipients__id__in=[user1.id, user2.id])
                 .annotate(user_count=Count('recipients__id', distinct=True))
                 .filter(user_count=2)
+                .group_by("id")
                 .values_list('id', flat=True)
             )
         )
@@ -295,8 +297,8 @@ class Core(Singleton):
         return await self.setLastMessageIdForChannel(channel)
 
     async def getLastMessageId(self, channel: Channel) -> Optional[int]:
-        if (last_message_id := await Message.filter(channel=channel).annotate(max_id=Max("id")).first()) is not None:
-            return last_message_id.max_id
+        if (last_message := await Message.filter(channel=channel).group_by("-id").first()) is not None:
+            return last_message.id
 
     async def setLastMessageIdForChannel(self, channel: Channel) -> Channel:
         channel.last_message_id = await self.getLastMessageId(channel)

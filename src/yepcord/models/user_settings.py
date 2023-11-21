@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Optional, Any
 
 from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, Int32Value
-from protobuf_to_dict import protobuf_to_dict
+from protobuf3_to_dict import protobuf_to_dict
 from tortoise import fields
 
 from ..enums import Locales
@@ -212,7 +212,7 @@ class UserSettingsProto:
     def _to_settings_dict(proto_dict: dict, changes: dict = None) -> dict:
         if changes is None:
             changes = {}
-        fields = [
+        fields_ = [
             ("text_and_images.inline_attachment_media.value", "inline_attachment_media"),
             ("status.show_current_game.value", "show_current_game"),
             ("text_and_images.view_nsfw_guilds.value", "view_nsfw_guilds"),
@@ -250,7 +250,7 @@ class UserSettingsProto:
             ("text_and_images.view_image_descriptions.value", "view_image_descriptions"),
         ]
 
-        for proto_path, out_name in fields:
+        for proto_path, out_name in fields_:
             dict_get(proto_dict, proto_path, output_dict=changes, output_name=out_name)
         return changes
 
