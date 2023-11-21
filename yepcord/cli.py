@@ -132,7 +132,7 @@ def migrate(settings: str, location: str = None) -> None:
 
     from pathlib import Path
     from aerich import Command
-    from yepcord.config import Config
+    from .yepcord.config import Config
 
     async def _migrate():
         command = Command({
