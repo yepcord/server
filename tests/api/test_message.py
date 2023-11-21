@@ -5,10 +5,10 @@ from json import dumps
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.enums import ChannelType
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import getImage
+from yepcord.rest_api.main import app
+from yepcord.yepcord.enums import ChannelType
+from yepcord.yepcord.snowflake import Snowflake
+from yepcord.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, rel_block, \
     create_dm_channel, create_sticker, create_emoji, create_dm_group, create_invite, create_webhook
 from tests.yep_image import YEP_IMAGE

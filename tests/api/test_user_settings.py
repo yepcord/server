@@ -4,8 +4,8 @@ import pytest as pt
 import pytest_asyncio
 from google.protobuf.wrappers_pb2 import StringValue
 
-from src.rest_api.main import app
-from src.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, FrecencyUserSettings, FavoriteStickers
+from yepcord.rest_api.main import app
+from yepcord.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, FrecencyUserSettings, FavoriteStickers
 from .utils import create_users, TestClientType, create_guild
 
 

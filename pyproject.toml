@@ -1,20 +1,48 @@
 [tool.poetry]
 name = "yepcord-server"
-version = "1.0.0b2"
+version = "1.0.0b3"
 description = "YEPCord - Free open source selfhostable fully discord-compatible chat"
 authors = ["RuslanUC <dev_ruslan_uc@protonmail.com>"]
 license = "AGPL-3.0"
 readme = "README.md"
-packages = [{include = "src"}]
+packages = [{include = "yepcord"}]
+repository = "https://github.com/yepcord/server"
+homepage = "https://github.com/yepcord/server"
+keywords = ["yepcord", "chat", "discord", "chat-server", "chat-backend", "discord-backend"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Framework :: Flask",
+    "Framework :: Pydantic",
+    "Framework :: Pydantic :: 2",
+    "Framework :: Pytest",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Communications :: Chat",
+    "Topic :: Internet",
+    "Typing :: Typed",
+]
+
+[tool.poetry.scripts]
+yepcord = "yepcord.cli:main"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-quart = "0.19.3"
+quart = "0.19.4"
 aiofiles = "23.2.1"
 jinja2 = "3.1.2"
 websockets = "12.0"
-uvicorn = "0.23.2"
-aiohttp = "3.9.0b0"
+uvicorn = "0.24.0.post1"
+aiohttp = "3.9.0"
 python-magic = "0.4.27"
 pillow = "10.1.0"
 protobuf = "4.24.4"
@@ -24,8 +52,8 @@ emoji = "2.8.0"
 pytest-asyncio = "0.21.1"
 six = "1.16.0"
 bcrypt = "4.0.1"
-quart-schema = "0.17.1"
-pydantic = "2.4.2"
+quart-schema = "0.18.0"
+pydantic = "2.5.1"
 types-protobuf = "^4.24.0.4"
 werkzeug = "3.0.1"
 aioftp = "0.21.4"
@@ -36,7 +64,7 @@ mailers = {version = "3.0.1", extras = ["smtp"]}
 propan = {version = "0.1.5.24", extras = ["async-rabbit", "async-redis"]}
 redis = ">=4.6.0"
 click = "8.1.7"
-maxminddb = ">=2.4.0,<2.5.0"
+maxminddb = "2.5.1"
 wget = "3.2"
 tortoise-orm = {extras = ["aiosqlite", "asyncmy"], version = "^0.20.0"}
 uvloop = "0.19.0"

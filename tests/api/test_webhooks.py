@@ -3,9 +3,9 @@ from json import dumps
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import getImage
+from yepcord.rest_api.main import app
+from yepcord.yepcord.snowflake import Snowflake
+from yepcord.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_webhook, \
     create_guild_channel, create_sticker, create_dm_group
 from tests.yep_image import YEP_IMAGE

@@ -1,8 +1,8 @@
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.snowflake import Snowflake
+from yepcord.rest_api.main import app
+from yepcord.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, rel_request, rel_count, rel_delete, rel_accept, rel_block
 
 

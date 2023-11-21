@@ -1,10 +1,10 @@
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.classes.other import MFA, JWT
-from src.yepcord.config import Config
-from src.yepcord.utils import b64decode
+from yepcord.rest_api.main import app
+from yepcord.yepcord.classes.other import MFA, JWT
+from yepcord.yepcord.config import Config
+from yepcord.yepcord.utils import b64decode
 from .utils import TestClientType, create_users, enable_mfa
 
 

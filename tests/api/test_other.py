@@ -1,8 +1,8 @@
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.config import Config
+from yepcord.rest_api.main import app
+from yepcord.yepcord.config import Config
 from tests.api.utils import TestClientType, create_users
 
 

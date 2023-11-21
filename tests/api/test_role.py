@@ -1,7 +1,7 @@
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
+from yepcord.rest_api.main import app
 from tests.api.utils import TestClientType, create_users, create_guild, create_role, add_user_to_guild, \
     create_application, add_bot_to_guild
 from tests.yep_image import YEP_IMAGE

@@ -6,10 +6,10 @@ from time import time
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.config import Config
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import b64decode, b64encode
+from yepcord.rest_api.main import app
+from yepcord.yepcord.config import Config
+from yepcord.yepcord.snowflake import Snowflake
+from yepcord.yepcord.utils import b64decode, b64encode
 from .utils import TestClientType, create_user, get_userdata, create_users
 
 

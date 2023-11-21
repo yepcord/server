@@ -1,8 +1,8 @@
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.enums import ChannelType
+from yepcord.rest_api.main import app
+from yepcord.yepcord.enums import ChannelType
 from .utils import TestClientType, create_users, create_guild, create_invite, create_dm_group, create_ban
 
 

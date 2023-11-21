@@ -1,10 +1,10 @@
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.classes.other import MFA
-from src.yepcord.enums import ChannelType
-from src.yepcord.snowflake import Snowflake
+from yepcord.rest_api.main import app
+from yepcord.yepcord.classes.other import MFA
+from yepcord.yepcord.enums import ChannelType
+from yepcord.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_invite, enable_mfa, create_guild_channel, \
     add_user_to_guild, create_ban, create_message, create_role, create_application, add_bot_to_guild
 from tests.yep_image import YEP_IMAGE

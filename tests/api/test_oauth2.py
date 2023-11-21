@@ -3,8 +3,8 @@ from urllib.parse import urlparse, parse_qs
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.snowflake import Snowflake
+from yepcord.rest_api.main import app
+from yepcord.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application, create_guild, create_ban, add_user_to_guild
 
 

@@ -4,8 +4,8 @@ import pytest as pt
 import pytest_asyncio
 from tortoise import connections
 
-from src.rest_api.main import app
-from src.yepcord.snowflake import Snowflake
+from yepcord.rest_api.main import app
+from yepcord.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application
 from ..yep_image import YEP_IMAGE
 

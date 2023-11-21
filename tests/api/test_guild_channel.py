@@ -1,9 +1,9 @@
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.enums import ChannelType
-from src.yepcord.snowflake import Snowflake
+from yepcord.rest_api.main import app
+from yepcord.yepcord.enums import ChannelType
+from yepcord.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_invite
 
 
