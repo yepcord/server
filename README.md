@@ -6,7 +6,7 @@ Unofficial discord backend implementation in python.
 # Setup
 **Requirements:**
  - Python 3.9+
- - Poetry
+ - Poetry (Optional)
  
 **Setup**:
 1. Clone yepcord repository:
@@ -18,11 +18,34 @@ Unofficial discord backend implementation in python.
     poetry install
     ```
 3. (Optional) Install and start redis, mysql/mariadb.
-4. Write your config variables into src/settings.py (you can also write it into src/settings_prod.py, it ignored by git).
-5. Run: 
+4. (Optional) Fill config file (example in config.example.py) with your values.
+5. Run (with your config): 
     ```bash
-    poetry run quart migrate
-    poetry run quart run_all
+    poetry run yepcord migrate -c yepcord-config.py
+    poetry run yepcord run_all -c yepcord-config.py
+    ```
+   Run (with default config): 
+    ```bash
+    poetry run yepcord migrate
+    poetry run yepcord run_all
+    ```
+   
+**Install as python package and run (simple method):**
+1. Install yepcord-server from pypi:
+    ```bash
+    pip install yepcord-server
+    ```
+2. (Optional) Install and start redis, mysql/mariadb.
+3. (Optional) Fill config file (example in config.example.py) with your values.
+4. Run (with your config): 
+    ```bash
+    yepcord migrate -c yepcord-config.py
+    yepcord run_all -c yepcord-config.py
+    ```
+   Run (with default config): 
+    ```bash
+    yepcord migrate
+    yepcord run_all
     ```
 
 

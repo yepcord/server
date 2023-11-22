@@ -18,11 +18,9 @@
 
 from __future__ import annotations
 
-import importlib
 import warnings
 from os import environ
 from os.path import exists, isdir
-from pathlib import Path
 from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -31,21 +29,21 @@ from .classes.singleton import Singleton
 
 
 def _load_config() -> dict:
-    if not (settings_path := environ.get("YEPCORD_SETTINGS", None)):  # pragma: no cover
+    if not (config_path := environ.get("YEPCORD_CONFIG", None)):  # pragma: no cover
         return {}
 
-    if not exists(settings_path) or isdir(settings_path):  # pragma: no cover
+    if not exists(config_path) or isdir(config_path):  # pragma: no cover
         return {}
 
-    with open(settings_path, encoding="utf8") as f:
-        settings_code = f.read()
+    with open(config_path, encoding="utf8") as f:
+        config_code = f.read()
 
-    settings = {}
-    exec(settings_code, globals(), settings)
+    config = {}
+    exec(config_code, globals(), config)
 
     variables = {}
-    if settings:
-        variables = {k: v for k, v in settings.items() if not k.startswith("__")}
+    if config:
+        variables = {k: v for k, v in config.items() if not k.startswith("__")}
 
     return variables
 
