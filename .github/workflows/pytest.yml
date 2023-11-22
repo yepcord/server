@@ -56,38 +56,37 @@ jobs:
 
       - name: Setup database
         run: |
-          poetry run quart migrate
+          poetry run python app.py migrate
         env:
-          QUART_APP: app:create_yepcord
-          SETTINGS: src.settings_test
+          YEPCORD_CONFIG: .github/settings_test.py
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
 
       - name: Run test suite for core
         run: |
-          poetry run pytest -x --cov-report=xml --cov-append --cov=src/yepcord --disable-warnings tests/test_core.py
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/yepcord --disable-warnings tests/test_core.py
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
-          SETTINGS: src.settings_test
+          YEPCORD_CONFIG: .github/settings_test.py
 
       - name: Run test suite for http api
         run: |
-          poetry run pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --cov=src/remote_auth --disable-warnings tests/api/
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/rest_api --cov=yepcord/yepcord --cov=yepcord/remote_auth --disable-warnings tests/api/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
           TENOR_KEY: ${{ secrets.TENOR_KEY }}
-          SETTINGS: src.settings_test
+          YEPCORD_CONFIG: .github/settings_test.py
 
       - name: Run test suite for cdn/storage
         run: |
           mkdir -p tests/files/yepcord-test
-          poetry run pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/cdn --cov=yepcord/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
-          SETTINGS: src.settings_test
+          YEPCORD_CONFIG: .github/settings_test.py
 
       - name: Print coverage report
         run: |

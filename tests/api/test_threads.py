@@ -1,8 +1,8 @@
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.enums import MessageFlags
+from yepcord.rest_api.main import app
+from yepcord.yepcord.enums import MessageFlags
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, \
     create_thread, create_dm_group
 

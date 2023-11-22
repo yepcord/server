@@ -11,7 +11,7 @@ COPY pyproject.toml pyproject.toml
 
 RUN apk update && apk add --no-cache libmagic git bash && apk add --no-cache --virtual build-deps gcc libc-dev && \
     python -m venv $POETRY_HOME && $POETRY_HOME/bin/pip install -U pip setuptools && $POETRY_HOME/bin/pip install poetry && \
-    poetry install --only main --no-interaction --no-root && \
+    poetry install --only main --no-interaction && \
     apk del build-deps && \
     rm -rf /root/.cache $POETRY_CACHE_DIR/cache $POETRY_CACHE_DIR/artifacts
 

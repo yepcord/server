@@ -5,10 +5,10 @@ from json import dumps
 import pytest as pt
 import pytest_asyncio
 
-from src.rest_api.main import app
-from src.yepcord.enums import ChannelType
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import b64encode
+from yepcord.rest_api.main import app
+from yepcord.yepcord.enums import ChannelType
+from yepcord.yepcord.snowflake import Snowflake
+from yepcord.yepcord.utils import b64encode
 from .utils import TestClientType, create_users, create_application, create_guild, add_bot_to_guild, bot_token, \
     create_dm_channel, create_dm_group, generate_slash_command_payload
 

@@ -7,11 +7,11 @@ from typing import Optional, Union
 
 from quart.typing import TestWebsocketConnectionProtocol
 
-from src.rest_api.main import app as _app
-from src.yepcord.classes.other import MFA
-from src.yepcord.enums import ChannelType, GatewayOp
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import getImage
+from yepcord.rest_api.main import app as _app
+from yepcord.yepcord.classes.other import MFA
+from yepcord.yepcord.enums import ChannelType, GatewayOp
+from yepcord.yepcord.snowflake import Snowflake
+from yepcord.yepcord.utils import getImage
 from tests.yep_image import YEP_IMAGE
 
 TestClientType = _app.test_client_class

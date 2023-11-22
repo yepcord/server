@@ -21,3 +21,4 @@ tests/generated/*.py
 **/.github
 **/*.sqlite
 **/*.sqlite-*
+**/dist

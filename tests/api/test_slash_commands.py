@@ -3,10 +3,10 @@ from json import dumps
 import pytest as pt
 import pytest_asyncio
 
-from src.gateway.main import app as gw_app
-from src.rest_api.main import app
-from src.yepcord.enums import ChannelType, GatewayOp
-from src.yepcord.snowflake import Snowflake
+from yepcord.gateway.main import app as gw_app
+from yepcord.rest_api.main import app
+from yepcord.yepcord.enums import ChannelType, GatewayOp
+from yepcord.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application, create_guild, add_bot_to_guild, bot_token, \
     GatewayClient, gateway_cm, generate_slash_command_payload, create_guild_channel
 

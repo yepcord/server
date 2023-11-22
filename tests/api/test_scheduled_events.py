@@ -6,10 +6,10 @@ import pytest as pt
 import pytest_asyncio
 from PIL import Image
 
-from src.rest_api.main import app
-from src.yepcord.enums import ChannelType, ScheduledEventStatus
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import getImage
+from yepcord.rest_api.main import app
+from yepcord.yepcord.enums import ChannelType, ScheduledEventStatus
+from yepcord.yepcord.snowflake import Snowflake
+from yepcord.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_event
 from tests.yep_image import YEP_IMAGE
 

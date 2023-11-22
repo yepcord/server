@@ -2,9 +2,9 @@ import pytest as pt
 import pytest_asyncio
 from quart.testing.connections import WebsocketDisconnectError
 
-from src.remote_auth.main import app as ra_app
-from src.rest_api.main import app
-from src.yepcord.utils import b64encode
+from yepcord.remote_auth.main import app as ra_app
+from yepcord.rest_api.main import app
+from yepcord.yepcord.utils import b64encode
 from .utils import TestClientType, create_users, RemoteAuthClient
 
 

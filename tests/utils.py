@@ -21,8 +21,8 @@ from hmac import new
 from json import dumps
 from time import time
 
-from src.yepcord.classes.other import JWT
-from src.yepcord.utils import b64encode, b64decode
+from yepcord.yepcord.classes.other import JWT
+from yepcord.yepcord.utils import b64encode, b64decode
 
 
 def generateEmailVerificationToken(user_id: int, email: str, key: bytes):

@@ -26,13 +26,13 @@ import pytest as pt
 import pytest_asyncio
 from tortoise import Tortoise, connections
 
-from src.yepcord.config import Config, ConfigModel
-from src.yepcord.core import Core
-from src.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType
-from src.yepcord.errors import InvalidDataErr, MfaRequiredErr
-from src.yepcord.models import User, UserData, Session, Relationship
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import b64decode, b64encode
+from yepcord.yepcord.config import Config, ConfigModel
+from yepcord.yepcord.core import Core
+from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType
+from yepcord.yepcord.errors import InvalidDataErr, MfaRequiredErr
+from yepcord.yepcord.models import User, UserData, Session, Relationship
+from yepcord.yepcord.snowflake import Snowflake
+from yepcord.yepcord.utils import b64decode, b64encode
 
 EMAIL_ID = Snowflake.makeId()
 VARS = {
@@ -51,7 +51,7 @@ def event_loop():
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db():
-    await Tortoise.init(db_url=Config.DB_CONNECT_STRING, modules={"models": ["src.yepcord.models"]})
+    await Tortoise.init(db_url=Config.DB_CONNECT_STRING, modules={"models": ["yepcord.yepcord.models"]})
     yield
     await Tortoise.close_connections()
 
