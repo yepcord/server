@@ -58,7 +58,7 @@ jobs:
         run: |
           poetry run python app.py migrate
         env:
-          YEPCORD_SETTINGS: .github/settings_test.py
+          YEPCORD_CONFIG: .github/settings_test.py
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
 
@@ -68,7 +68,7 @@ jobs:
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
-          YEPCORD_SETTINGS: .github/settings_test.py
+          YEPCORD_CONFIG: .github/settings_test.py
 
       - name: Run test suite for http api
         run: |
@@ -77,7 +77,7 @@ jobs:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
           TENOR_KEY: ${{ secrets.TENOR_KEY }}
-          YEPCORD_SETTINGS: .github/settings_test.py
+          YEPCORD_CONFIG: .github/settings_test.py
 
       - name: Run test suite for cdn/storage
         run: |
@@ -86,7 +86,7 @@ jobs:
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
-          YEPCORD_SETTINGS: .github/settings_test.py
+          YEPCORD_CONFIG: .github/settings_test.py
 
       - name: Print coverage report
         run: |
