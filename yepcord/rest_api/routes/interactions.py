@@ -184,14 +184,14 @@ async def create_interaction(user: User):
         command=command
     )
 
-    await getGw().dispatch(InteractionCreateEvent(interaction, False), users=[user.id], session_id=data.session_id)
-    await getGw().dispatch(InteractionCreateEvent(interaction, True, resolved=resolved), users=[application.id])
+    await getGw().dispatch(InteractionCreateEvent(interaction, False), session_id=data.session_id)
+    await getGw().dispatch(InteractionCreateEvent(interaction, True, resolved=resolved), user_ids=[application.id])
 
     async def wait_for_interaction():
         await interaction.refresh_from_db()
         if interaction.status == InteractionStatus.PENDING:
             await interaction.delete()
-            await getGw().dispatch(InteractionFailureEvent(interaction), users=[user.id], session_id=data.session_id)
+            await getGw().dispatch(InteractionFailureEvent(interaction), session_id=data.session_id)
 
     await execute_after(wait_for_interaction(), 3)
 
@@ -209,11 +209,11 @@ async def send_interaction_response(interaction: Interaction, flags: bool, conte
     message_obj = await message.ds_json() | {"nonce": str(interaction.nonce)}
 
     kw = {"session_id": interaction.session_id} if is_ephemeral else {}
-    await getGw().dispatch(InteractionSuccessEvent(interaction), users=[interaction.user.id], **kw)
+    await getGw().dispatch(InteractionSuccessEvent(interaction), **kw)
     if is_ephemeral:
-        await getGw().dispatch(MessageCreateEvent(message_obj), users=[interaction.user.id, bot_user.id])
+        await getGw().dispatch(MessageCreateEvent(message_obj), user_ids=[interaction.user.id, bot_user.id])
     else:
-        await getGw().dispatch(MessageCreateEvent(message_obj), channel_id=interaction.channel.id)
+        await getGw().dispatch(MessageCreateEvent(message_obj), channel=interaction.channel)
     await interaction.update(status=InteractionStatus.RESPONDED if not is_loading else InteractionStatus.DEFERRED)
 
     return message

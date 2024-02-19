@@ -122,13 +122,13 @@ async def create_webhook(app: TestClientType, user: dict, channel_id: str, name=
     return await resp.get_json()
 
 
-async def create_role(app: TestClientType, user: dict, guild_id: str, name="new role", icon: str=None, perms: int=None) -> dict:
-    kw = {}
+async def create_role(app: TestClientType, user: dict, guild_id: str, name="new role", icon: str=None, perms: int=None,
+                      *, exp_code=200, **kw) -> dict:
     if icon is not None: kw["icon"] = icon
     if perms is not None: kw["permissions"] = perms
     resp = await app.post(f"/api/v9/guilds/{guild_id}/roles", headers={"Authorization": user["token"]},
                           json={'name': name, **kw})
-    assert resp.status_code == 200
+    assert resp.status_code == exp_code
     return await resp.get_json()
 
 
@@ -177,9 +177,9 @@ async def create_dm_group(app: TestClientType, user: dict, recipient_ids: list[s
     return await resp.get_json()
 
 
-async def create_ban(app: TestClientType, user: dict, guild: dict, target_id: str, seconds: int=0, *, exp_code=204) -> dict:
+async def create_ban(app: TestClientType, user: dict, guild: dict, target_id: str, seconds: int=0, _f=False, *, exp_code=204) -> dict:
     resp = await app.put(f"/api/v9/guilds/{guild['id']}/bans/{target_id}", headers={"Authorization": user["token"]},
-                         json=({} if not seconds else {"delete_message_seconds": seconds}))
+                         json=({} if not seconds and not _f else {"delete_message_seconds": seconds}))
     assert resp.status_code == exp_code
     return await resp.get_json()
 

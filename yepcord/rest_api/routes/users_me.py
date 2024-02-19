@@ -167,7 +167,7 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
     settings_proto = UserSettingsProto(settings)
     await settings_proto.update(proto)
     proto = _b64encode(settings_proto.get().SerializeToString()).decode("utf8")
-    await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto, 1), users=[user.id]), 1)
+    await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto, 1), user_ids=[user.id]), 1)
     return {"settings": proto}
 
 
@@ -196,10 +196,11 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
     proto_string = _b64encode(proto.SerializeToString()).decode("utf8")
     fsettings.settings = proto_string
     await fsettings.save(update_fields=["settings"])
-    await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto_string, 2), users=[user.id]), 1)
+    await execute_after(getGw().dispatch(UserSettingsProtoUpdateEvent(proto_string, 2), user_ids=[user.id]), 1)
     return {"settings": proto_string}
 
 
+# noinspection PyUnusedLocal
 @users_me.get("/connections")
 @multipleDecorators(allowOauth(["connections"]), getUser)
 async def get_connections(user: User):  # TODO: add connections
@@ -244,13 +245,13 @@ async def set_notes(data: PutNote, user: User, target_uid: int):
         raise InvalidDataErr(404, Errors.make(10013))
     if data.note:
         note, _ = await UserNote.get_or_create(user=user, target=target_user, defaults={"text": data.note})
-        await getGw().dispatch(UserNoteUpdateEvent(target_uid, data.note), users=[user.id])
+        await getGw().dispatch(UserNoteUpdateEvent(target_uid, data.note), user_ids=[user.id])
     return "", 204
 
 
 @users_me.post("/mfa/totp/enable")
 @multipleDecorators(validate_request(MfaEnable), getSession)
-async def enable_mfa(data: MfaEnable, session: Session):  # TODO: Check if mfa already enabled
+async def enable_mfa(data: MfaEnable, session: Session):
     user = session.user
     settings = await user.settings
     if settings.mfa is not None:
@@ -361,6 +362,7 @@ async def delete_relationship(user_id: int, user: User):
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @users_me.get("/harvest")
 @getUser
 async def api_users_me_harvest(user: User):
@@ -372,9 +374,13 @@ async def api_users_me_harvest(user: User):
 async def leave_guild(user: User, guild: Guild, member: GuildMember):
     if user == guild.owner:
         raise InvalidDataErr(400, Errors.make(50055))
+    await getGw().dispatchUnsub([user.id], guild.id)
+    for role in await member.roles.all():
+        await getGw().dispatchUnsub([user.id], role_id=role.id)
+
     await member.delete()
-    await getGw().dispatch(GuildMemberRemoveEvent(guild.id, (await user.data).ds_json), users=[user.id])
-    await getGw().dispatch(GuildDeleteEvent(guild.id), users=[member.id])
+    await getGw().dispatch(GuildMemberRemoveEvent(guild.id, (await user.data).ds_json), user_ids=[user.id])
+    await getGw().dispatch(GuildDeleteEvent(guild.id), user_ids=[member.id])
     return "", 204
 
 
@@ -399,7 +405,7 @@ async def new_dm_channel(data: DmChannelCreate, user: User):
         channel = await getCore().createDMGroupChannel(user, [], data.name)
     else:
         channel = await getCore().createDMGroupChannel(user, recipients_users, data.name)
-    await getGw().dispatch(DMChannelCreateEvent(channel), channel_id=channel.id)
+    await getGw().dispatch(DMChannelCreateEvent(channel), channel=channel)
     return await channel.ds_json(with_ids=False, user_id=user.id)
 
 
@@ -411,7 +417,7 @@ async def delete_user(data: DeleteRequest, user: User):
     if await getCore().getUserOwnedGuilds(user) or await getCore().getUserOwnedGroups(user):
         raise InvalidDataErr(400, Errors.make(40011))
     await getCore().deleteUser(user)
-    await getGw().dispatch(UserDeleteEvent(user.id), users=[user.id])
+    await getGw().dispatch(UserDeleteEvent(user.id), user_ids=[user.id])
     return "", 204
 
 

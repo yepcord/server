@@ -363,7 +363,7 @@ async def test_ban_member():
                               json={"roles": [admin_role["id"]]})
     assert resp.status_code == 200
 
-    await create_ban(client, user3, guild, user1["id"], exp_code=403)
+    await create_ban(client, user3, guild, user1["id"], seconds=None, _f=True, exp_code=403)
 
     await create_message(client, user3, channel1["id"], content="1")
     await create_message(client, user3, channel1["id"], content="2")

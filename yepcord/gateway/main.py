@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Quart, websocket
+from quart import Quart, websocket, Websocket
 from tortoise.contrib.quart import register_tortoise
 
 from ..yepcord.config import Config
@@ -60,16 +60,14 @@ async def set_cors_headers(response):
 @app.websocket("/")
 async def ws_gateway():
     # noinspection PyProtectedMember,PyUnresolvedReferences
-    ws = websocket._get_current_object()
+    ws: Websocket = websocket._get_current_object()
     setattr(ws, "zlib", ZlibCompressor() if websocket.args.get("compress") == "zlib-stream" else None)
-    setattr(ws, "ws_connected", True)
     await gw.add_client(ws)
     while True:
         try:
             data = await ws.receive()
             await gw.process(ws, jloads(data))
         except CancelledError:
-            setattr(ws, "ws_connected", False)
             await gw.disconnect(ws)
             raise
 

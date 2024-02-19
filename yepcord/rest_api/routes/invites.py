@@ -64,11 +64,12 @@ async def use_invite(user: User, invite: Invite):
             )
             await channel.recipients.add(user)
             await getGw().dispatch(ChannelRecipientAddEvent(channel.id, (await user.data).ds_json),
-                                   users=[recipient.id for recipient in recipients])
+                                   user_ids=[recipient.id for recipient in recipients])
             await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()),
-                                   users=[recipient.id for recipient in recipients])
-        await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}), users=[user.id])
+                                   user_ids=[recipient.id for recipient in recipients])
+        await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}),
+                               user_ids=[user.id])
         await getCore().useInvite(invite)
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_NEWS):
         inv = await invite.ds_json()
@@ -81,7 +82,7 @@ async def use_invite(user: User, invite: Invite):
                 raise InvalidDataErr(403, Errors.make(40007))
             inv["new_member"] = True
             await GuildMember.create(id=Snowflake.makeId(), user=user, guild=guild)
-            await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=user.id)), users=[user.id])
+            await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=user.id)), user_ids=[user.id])
             if guild.system_channel:
                 sys_channel = await getCore().getChannel(guild.system_channel)
                 message = await Message.create(
@@ -89,8 +90,9 @@ async def use_invite(user: User, invite: Invite):
                     guild=guild
                 )
                 await getCore().sendMessage(message)
-                await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel_id=sys_channel.id)
+                await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel)
             await getCore().useInvite(invite)
+            await getGw().dispatchSub([user.id], guild_id=guild.id)
     return inv
 
 

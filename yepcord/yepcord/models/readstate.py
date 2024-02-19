@@ -31,9 +31,11 @@ class ReadState(Model):
     count: int = fields.IntField()
 
     async def ds_json(self) -> dict:
+        last_pin = await getCore().getLastPinnedMessage(self.channel)
+        last_pin_ts = last_pin.pinned_timestamp.strftime("%Y-%m-%dT%H:%M:%S+00:00") if last_pin is not None else None
         return {
             "mention_count": self.count,
-            "last_pin_timestamp": await getCore().getLastPinTimestamp(self.channel),
+            "last_pin_timestamp": last_pin_ts,
             "last_message_id": str(self.last_read_id),
             "id": str(self.channel.id),
         }

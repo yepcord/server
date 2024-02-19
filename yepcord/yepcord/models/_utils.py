@@ -16,13 +16,11 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Any, Type, Optional
+from typing import Any
 
 import tortoise
-from tortoise import BaseDBAsyncClient
 from tortoise.exceptions import ValidationError
 from tortoise.fields import BigIntField
-from tortoise.models import MODEL
 from tortoise.validators import Validator
 
 from yepcord.yepcord.snowflake import Snowflake

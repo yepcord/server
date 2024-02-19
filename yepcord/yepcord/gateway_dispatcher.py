@@ -18,12 +18,14 @@
 
 from __future__ import annotations
 
-import warnings
 from datetime import datetime
 from typing import Optional
 
-from .models import Channel, Guild
+from tortoise.expressions import RawSQL, Q
+
 from .classes.singleton import Singleton
+from .enums import ChannelType
+from .models import Channel, Guild, PermissionOverwrite, Role
 from .mq_broker import getBroker
 from ..gateway.events import DispatchEvent, ChannelPinsUpdateEvent, MessageAckEvent, GuildEmojisUpdate, \
     StickersUpdateEvent
@@ -41,22 +43,40 @@ class GatewayDispatcher(Singleton):
         await self.broker.close()
         return self
 
-    async def dispatch(self, event: DispatchEvent, users: Optional[list[int]]=None, channel_id: Optional[int]=None,
-                       guild_id: Optional[int]=None, permissions: Optional[list[int]]=None,
-                       session_id: Optional[str]=None) -> None:
-        if not users and not channel_id and not guild_id:
-            warnings.warn("users/channel_id/guild_id must be provided!")
+    async def dispatch(self, event: DispatchEvent, user_ids: Optional[list[int]]=None, guild_id: Optional[int]=None,
+                       role_ids: Optional[list[int]]=None, session_id: Optional[str]=None,
+                       channel: Optional[Channel] = None, permissions: Optional[int] = None) -> None:
+        if not user_ids and not guild_id and not role_ids and not session_id and not channel:
             return
-        if session_id is not None and not users:
-            warnings.warn("users must be provided with session_id!")
-            return
-        await self.broker.publish(channel="yepcord_events", message={
+        data = {
             "data": await event.json(),
             "event": event.NAME,
-            "users": users,
-            "channel_id": channel_id,
+            "user_ids": user_ids,
+            "guild_id": guild_id,  # TODO: if permissions is not None, replace guild_id with role_ids (with these permissions)
+            "role_ids": role_ids,
+            "session_id": session_id,
+        }
+        if channel is not None:
+            data |= await self.getChannelFilter(channel, permissions)
+        await self.broker.publish(channel="yepcord_events", message=data)
+
+    async def dispatchSys(self, event: str, data: dict) -> None:
+        data |= {"event": event}
+        await self.broker.publish(channel="yepcord_sys_events", message=data)
+
+    async def dispatchSub(self, user_ids: list[int], guild_id: int = None, role_id: int = None) -> None:
+        await self.dispatchSys("sub", {
+            "user_ids": user_ids,
             "guild_id": guild_id,
-            "permissions": permissions,
+            "role_id": role_id,
+        })
+
+    async def dispatchUnsub(self, user_ids: list[int], guild_id: int = None, role_id: int = None, delete = False) -> None:
+        await self.dispatchSys("unsub", {
+            "user_ids": user_ids,
+            "guild_id": guild_id,
+            "role_id": role_id,
+            "delete": delete,
         })
 
     async def dispatchRA(self, op: str, data: dict) -> None:
@@ -77,14 +97,14 @@ class GatewayDispatcher(Singleton):
         if manual:
             ack["manual"] = True
             ack["ack_type"] = 0
-        await self.dispatch(MessageAckEvent(ack), users=[uid])
+        await self.dispatch(MessageAckEvent(ack), user_ids=[uid])
 
     async def sendPinsUpdateEvent(self, channel: Channel) -> None:
-        ts = 0
+        ts = datetime(year=1970, month=1, day=1)
         if message := await c.getCore().getLastPinnedMessage(channel):
-            ts = message.extra_data["pinned_at"]
-        ts = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-        await self.dispatch(ChannelPinsUpdateEvent(channel.id, ts), channel_id=channel.id)
+            ts = message.pinned_timestamp
+        ts = ts.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        await self.dispatch(ChannelPinsUpdateEvent(channel.id, ts), **(await self.getChannelFilter(channel)))
 
     async def sendGuildEmojisUpdateEvent(self, guild: Guild) -> None:
         emojis = [await emoji.ds_json() for emoji in await c.getCore().getEmojis(guild.id)]
@@ -94,6 +114,13 @@ class GatewayDispatcher(Singleton):
         stickers = await c.getCore().getGuildStickers(guild)
         stickers = [await sticker.ds_json() for sticker in stickers]
         await self.dispatch(StickersUpdateEvent(guild.id, stickers), guild_id=guild.id)
+
+    async def getChannelFilter(self, channel: Channel, permissions: int = 0) -> dict:
+        if channel.type in {ChannelType.DM, ChannelType.GROUP_DM}:
+            print("??")
+            return {"user_ids": await channel.recipients.all().values_list("id", flat=True)}
+
+        return {"role_ids": [channel.guild.id]}  # TODO: return role_ids/user_ids based on channel permission overwrites
 
 
 import yepcord.yepcord.ctx as c

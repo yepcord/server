@@ -103,7 +103,7 @@ class GuildTemplate(Model):
             serialized_permission_overwrites = []
             for overwrite in await getCore().getPermissionOverwrites(channel):
                 if overwrite.type == 0:  # Overwrite for role
-                    role_id = replaced_ids[overwrite.target_id]
+                    role_id = replaced_ids[overwrite.target.id]
                     if role_id is None:
                         continue
                     overwrite = overwrite.ds_json()

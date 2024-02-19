@@ -18,7 +18,7 @@
 
 from typing import Optional, Literal
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel
 
 from ...yepcord.errors import InvalidDataErr, Errors
 

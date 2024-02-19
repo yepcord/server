@@ -1,10 +1,10 @@
 import pytest as pt
 import pytest_asyncio
 
+from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_invite
 from yepcord.rest_api.main import app
 from yepcord.yepcord.enums import ChannelType
 from yepcord.yepcord.snowflake import Snowflake
-from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_invite
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -201,3 +201,32 @@ async def test_channel_get():
     json = await resp.get_json()
     assert json["id"] == channel["id"]
     assert json["name"] == channel["name"]
+
+
+@pt.mark.asyncio
+async def test_create_not_guild_channels():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+
+    text = await create_guild_channel(client, user, guild, 'test_text_channel', 1)
+    assert text["type"] == 0
+    assert text["name"] == "test_text_channel"
+    assert text["guild_id"] == guild["id"]
+
+
+@pt.mark.asyncio
+async def test_channel_validation():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    guild = await create_guild(client, user, "Test Guild")
+
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel', 0, topic="a" * 1025,
+                                         rate_limit=-200, bitrate=0, user_limit=-1, video_quality_mode=3,
+                                         default_auto_archive=61)
+    assert channel["topic"] == "a" * 1024
+    assert channel["rate_limit_per_user"] == 0
+
+    channel = await create_guild_channel(client, user, guild, 'test_text_channel', 0, rate_limit=21699,
+                                         user_limit=100)
+    assert channel["rate_limit_per_user"] == 21600

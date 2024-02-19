@@ -132,7 +132,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
             await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                                    permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-        await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=bot.user.id)), users=[bot.user.id])
+        await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=bot.user.id)), user_ids=[bot.user.id])
         if guild.system_channel:
             sys_channel = await getCore().getChannel(guild.system_channel)
             message = await Message.create(
@@ -140,7 +140,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
                 guild=guild
             )
             await getCore().sendMessage(message)
-            await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel_id=sys_channel.id)
+            await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel)
 
         return {"location": f"https://{Config.PUBLIC_HOST}/oauth2/authorized"}
 
