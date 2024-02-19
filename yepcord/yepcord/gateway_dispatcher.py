@@ -117,9 +117,9 @@ class GatewayDispatcher(Singleton):
 
     async def getChannelFilter(self, channel: Channel, permissions: int = 0) -> dict:
         if channel.type in {ChannelType.DM, ChannelType.GROUP_DM}:
-            print("??")
             return {"user_ids": await channel.recipients.all().values_list("id", flat=True)}
 
+        await channel.fetch_related("guild")
         return {"role_ids": [channel.guild.id]}  # TODO: return role_ids/user_ids based on channel permission overwrites
 
 
