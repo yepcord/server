@@ -25,6 +25,7 @@ from tortoise.expressions import RawSQL, Q
 
 from .classes.singleton import Singleton
 from .enums import ChannelType
+from .errors import InvalidDataErr
 from .models import Channel, Guild, PermissionOverwrite, Role
 from .mq_broker import getBroker
 from ..gateway.events import DispatchEvent, ChannelPinsUpdateEvent, MessageAckEvent, GuildEmojisUpdate, \
@@ -45,7 +46,7 @@ class GatewayDispatcher(Singleton):
 
     async def dispatch(self, event: DispatchEvent, user_ids: Optional[list[int]]=None, guild_id: Optional[int]=None,
                        role_ids: Optional[list[int]]=None, session_id: Optional[str]=None,
-                       channel: Optional[Channel] = None, permissions: Optional[int] = None) -> None:
+                       channel: Optional[Channel] = None, permissions: Optional[int] = 0) -> None:
         if not user_ids and not guild_id and not role_ids and not session_id and not channel:
             return
         data = {
@@ -55,7 +56,11 @@ class GatewayDispatcher(Singleton):
             "guild_id": guild_id,  # TODO: if permissions is not None, replace guild_id with role_ids (with these permissions)
             "role_ids": role_ids,
             "session_id": session_id,
+            "exclude": [],
         }
+        if guild_id is not None and permissions is not None:
+            data["guild_id"] = None
+            data["role_ids"] = await self.getRolesByPermissions(guild_id, permissions)
         if channel is not None:
             data |= await self.getChannelFilter(channel, permissions)
         await self.broker.publish(channel="yepcord_events", message=data)
@@ -119,8 +124,42 @@ class GatewayDispatcher(Singleton):
         if channel.type in {ChannelType.DM, ChannelType.GROUP_DM}:
             return {"user_ids": await channel.recipients.all().values_list("id", flat=True)}
 
-        await channel.fetch_related("guild")
-        return {"role_ids": [channel.guild.id]}  # TODO: return role_ids/user_ids based on channel permission overwrites
+        await channel.fetch_related("guild", "guild__owner")
+        roles = {role.id: role.permissions for role in await c.getCore().getRoles(channel.guild)}
+
+        user_ids = set()
+        excluded_user_ids = set()
+        overwrites = await c.getCore().getPermissionOverwrites(channel)
+        for overwrite in overwrites:
+            if overwrite.type == 0:
+                role_id = overwrite.target_role.id
+                if role_id not in roles:
+                    continue
+                roles[role_id] &= ~overwrite.deny
+                roles[role_id] |= overwrite.allow
+            else:
+                if not (member := await c.getCore().getGuildMember(channel.guild, overwrite.target_user.id)):
+                    continue
+                try:
+                    await member.checkPermission(permissions, channel=channel)
+                    user_ids.add(member.user.id)
+                except InvalidDataErr:
+                    excluded_user_ids.add(member.user.id)
+
+        result_roles = []
+        for role_id, perms in roles.items():
+            if perms & permissions == permissions or perms & 8 == 8:
+                result_roles.append(role_id)
+
+        user_ids.add(channel.guild.owner.id)
+        if channel.guild.owner.id in excluded_user_ids:
+            excluded_user_ids.remove(channel.guild.owner.id)
+
+        return {"role_ids": result_roles, "user_ids": list(user_ids), "exclude": list(excluded_user_ids)}
+
+    async def getRolesByPermissions(self, guild_id: int, permissions: int = 0) -> list[int]:
+        return await Role.filter(guild__id=guild_id).annotate(perms=RawSQL(f"permissions & {permissions}"))\
+            .filter(perms=permissions).values_list("id", flat=True)
 
 
 import yepcord.yepcord.ctx as c

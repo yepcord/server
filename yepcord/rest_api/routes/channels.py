@@ -192,7 +192,8 @@ async def send_message(user: User, channel: Channel):
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": other_user.id}),
                                    user_ids=[other_user.id])
     await getCore().sendMessage(message)
-    await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
+    await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     await getCore().setReadState(user, channel, 0, message.id)
     await getGw().dispatch(MessageAckEvent({"version_id": 1, "message_id": str(message.id),
                                             "channel_id": str(message.channel.id)}), user_ids=[user.id])

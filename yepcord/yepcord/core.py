@@ -327,7 +327,7 @@ class Core(Singleton):
 
     async def sendMessage(self, message: Message) -> Message:
         async def _addToReadStates():
-            users = await self.getRelatedUsersToChannel(message.channel)
+            users = await self.getRelatedUsersToChannel(message.channel, False)
             if message.author.id in users:
                 users.remove(message.author.id)
             for user in users:
@@ -349,9 +349,9 @@ class Core(Singleton):
             if ids: return [recipient.id for recipient in await channel.recipients.all()]
             return await channel.recipients.all()
         elif channel.type in GUILD_CHANNELS:
-            return [member.user.id for member in await self.getGuildMembers(channel.guild)]
+            return [member.user.id if ids else member.user for member in await self.getGuildMembers(channel.guild)]
         elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
-            return [member.user.id for member in await self.getThreadMembers(channel)]
+            return [member.user.id if ids else member.user for member in await self.getThreadMembers(channel)]
 
     async def setReadState(self, user: User, channel: Channel, count: int, last: int) -> None:
         read_state, _ = await ReadState.get_or_create(

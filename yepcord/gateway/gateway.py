@@ -199,26 +199,35 @@ class GatewayEvents:
             "guild_id": None,
             "permissions": None,
         })
-        await self.sendToUsers(RawDispatchEventWrapper(event), users)
+        await self.sendToUsers(RawDispatchEventWrapper(event), users, set())
 
     async def _send(self, client: GatewayClient, event: RawDispatchEvent) -> None:
         if client.is_bot and event.data.get("t") in self.BOTS_EVENTS_BLACKLIST:
             return
         await client.esend(event)
 
-    async def sendToUsers(self, event: RawDispatchEvent, user_ids: list[int]) -> None:
+    async def sendToUsers(self, event: RawDispatchEvent, user_ids: list[int], sent: set) -> None:
         for user_id in user_ids:
             for client in self.gw.store.get(user_id=user_id):
+                if client in sent:
+                    continue
                 await self._send(client, event)
+                sent.add(client)
 
-    async def sendToGuild(self, event: RawDispatchEvent, guild_id: int) -> None:
+    async def sendToGuild(self, event: RawDispatchEvent, guild_id: int, exclude_users: set[int], sent: set) -> None:
         for client in self.gw.store.get(guild_id=guild_id):
+            if client.user_id in exclude_users or client in sent:
+                continue
             await self._send(client, event)
+            sent.add(client)
 
-    async def sendToRoles(self, event: RawDispatchEvent, role_ids: list[int]) -> None:
+    async def sendToRoles(self, event: RawDispatchEvent, role_ids: list[int], exclude_users: set[int], sent: set) -> None:
         for role_id in role_ids:
             for client in self.gw.store.get(role_id=role_id):
+                if client.user_id in exclude_users or client in sent:
+                    continue
                 await self._send(client, event)
+                sent.add(client)
 
 
 class WsStore:
@@ -309,12 +318,13 @@ class Gateway:
 
     async def mcl_yepcordEventsCallback(self, body: dict) -> None:
         event = RawDispatchEvent(body["data"])
+        sent = set()
         if body["user_ids"] is not None:
-            await self.ev.sendToUsers(event, body["user_ids"])
+            await self.ev.sendToUsers(event, body["user_ids"], sent)
         if body["guild_id"] is not None:
-            await self.ev.sendToGuild(event, body["guild_id"])
+            await self.ev.sendToGuild(event, body["guild_id"], set(body.get("exclude", [])), sent)
         if body["role_ids"] is not None:
-            await self.ev.sendToRoles(event, body["role_ids"])
+            await self.ev.sendToRoles(event, body["role_ids"], set(body.get("exclude", [])), sent)
         if body["session_id"] is not None:
             if client := self.store.get(session_id=body["session_id"]):
                 await list(client)[0].esend(event)
