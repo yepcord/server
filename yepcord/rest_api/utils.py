@@ -16,17 +16,18 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from __future__ import annotations
+
 from functools import wraps
 from json import loads
-from random import choice
 from time import time
-from typing import Optional, Union, TYPE_CHECKING, Literal
+from typing import Optional, Union, TYPE_CHECKING
 
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
 from quart import request, current_app, g
 
+import yepcord.yepcord.models as models
 from ..yepcord.classes.captcha import Captcha
 from ..yepcord.config import Config
 from ..yepcord.ctx import Ctx, getCore, getCDNStorage
@@ -36,7 +37,6 @@ from ..yepcord.models import Session, User, Channel, Attachment, Application, Au
     Message
 from ..yepcord.snowflake import Snowflake
 from ..yepcord.utils import b64decode
-import yepcord.yepcord.models as models
 
 if TYPE_CHECKING:  # pragma: no cover
     from .models.channels import MessageCreate

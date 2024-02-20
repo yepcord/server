@@ -28,9 +28,11 @@ from tortoise import Tortoise, connections
 
 from yepcord.yepcord.config import Config, ConfigModel
 from yepcord.yepcord.core import Core
-from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType
+from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType, GuildPermissions
 from yepcord.yepcord.errors import InvalidDataErr, MfaRequiredErr
-from yepcord.yepcord.models import User, UserData, Session, Relationship
+from yepcord.yepcord.gateway_dispatcher import GatewayDispatcher
+from yepcord.yepcord.models import User, UserData, Session, Relationship, Guild, Channel, Role, PermissionOverwrite, \
+    GuildMember
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import b64decode, b64encode
 
@@ -96,15 +98,13 @@ async def test_login_fail(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_getUser_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getUser_success():
     user = await User.y.get(VARS["user_id"])
     assert user is not None, "User not found: ???"
 
 
 @pt.mark.asyncio
-async def test_getUser_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getUser_fail():
     user = await User.y.get(VARS["user_id"] + 1)
     assert user is None, f"User with id {VARS['user_id'] + 1} doesn't exists: must return None!"
 
@@ -180,9 +180,9 @@ async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core])
 
     # Register 2 users with same nickname
     session1 = await testCore.register(VARS["user_id"] + 100000, "Test", f"{EMAIL_ID}_test1@yepcord.ml", "password",
-                                   "2000-01-01")
+                                       "2000-01-01")
     session2 = await testCore.register(VARS["user_id"] + 200000, "Test", f"{EMAIL_ID}_test2@yepcord.ml", "password",
-                                   "2000-01-01")
+                                       "2000-01-01")
     user1 = await User.y.get(session1.user.id)
     user2 = await User.y.get(session2.user.id)
     userdata2 = await user2.userdata
@@ -245,8 +245,7 @@ async def test_changeUserName_fail(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_getUserByUsername_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getUserByUsername_success():
     userdata = await UserData.get(user__id=VARS["user_id"])
     user = await User.y.getByUsername(userdata.username, userdata.discriminator)
     assert user is not None
@@ -254,28 +253,27 @@ async def test_getUserByUsername_success(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_getUserByUsername_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getUserByUsername_fail():
     user = await User.y.getByUsername("ThisUserDoesNotExist", 9999)
     assert user is None
 
 
 @pt.mark.asyncio
-async def test_checkRelationShipAvailable_success(testCore: Coroutine[Any, Any, Core]):
+async def test_checkRelationShipAvailable_success():
     user1 = await User.get(id=VARS["user_id"] + 100000)
     user2 = await User.get(id=VARS["user_id"] + 200000)
     assert await Relationship.utils.available(user1, user2)
 
 
 @pt.mark.asyncio
-async def test_reqRelationship_success(testCore: Coroutine[Any, Any, Core]):
+async def test_reqRelationship_success():
     user1 = await User.get(id=VARS["user_id"] + 100000)
     user2 = await User.get(id=VARS["user_id"] + 200000)
     assert await Relationship.utils.request(user2, user1)
 
 
 @pt.mark.asyncio
-async def test_checkRelationShipAvailable_fail(testCore: Coroutine[Any, Any, Core]):
+async def test_checkRelationShipAvailable_fail():
     user1 = await User.get(id=VARS["user_id"] + 100000)
     user2 = await User.get(id=VARS["user_id"] + 200000)
     with pt.raises(InvalidDataErr):
@@ -301,13 +299,13 @@ async def test_getRelationships_fail(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_getRelationship_success(testCore: Coroutine[Any, Any, Core]):
+async def test_getRelationship_success():
     assert await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100000),
                                            await User.get(id=VARS["user_id"] + 200000))
 
 
 @pt.mark.asyncio
-async def test_getRelationship_fail(testCore: Coroutine[Any, Any, Core]):
+async def test_getRelationship_fail():
     assert not await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100001),
                                                await User.get(id=VARS["user_id"] + 200000))
     assert not await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100001),
@@ -324,7 +322,7 @@ async def test_getRelatedUsers_success(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_accRelationship_success(testCore: Coroutine[Any, Any, Core]):
+async def test_accRelationship_success():
     user = await User.get(id=VARS["user_id"] + 100000)
     user2 = await User.get(id=VARS["user_id"] + 200000)
     await Relationship.utils.accept(user2, user)
@@ -335,7 +333,7 @@ async def test_accRelationship_success(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_delRelationship_success(testCore: Coroutine[Any, Any, Core]):
+async def test_delRelationship_success():
     user = await User.get(id=VARS["user_id"] + 100000)
     user2 = await User.get(id=VARS["user_id"] + 200000)
     await Relationship.utils.delete(user, user2)
@@ -362,8 +360,7 @@ async def test_logoutUser_success(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_getMfa(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getMfa():
     user = await User.y.get(VARS["user_id"])
     settings = await user.settings
     if settings.mfa:
@@ -446,8 +443,7 @@ async def test_generateUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
 
 
 @pt.mark.asyncio
-async def test_verifyUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_verifyUserMfaNonce():
     user = await User.y.get(VARS["user_id"])
     nonce, regenerate_nonce = VARS["mfa_nonce"]
     await core.verifyUserMfaNonce(user, nonce, False)
@@ -540,3 +536,35 @@ def test_config():
     assert ConfigModel(GATEWAY_KEEP_ALIVE_DELAY=151).GATEWAY_KEEP_ALIVE_DELAY == 150
     assert ConfigModel(BCRYPT_ROUNDS=2).BCRYPT_ROUNDS == 15
     assert ConfigModel(BCRYPT_ROUNDS=32).BCRYPT_ROUNDS == 15
+
+
+@pt.mark.asyncio
+async def test_gw_channel_filter():
+    user = await User.y.get(VARS["user_id"])
+    user2 = await User.y.get(VARS["user_id"] + 100000)
+    guild = await Guild.create(owner=user, name="test")
+    await GuildMember.create(guild=guild, user=user)
+    role = await Role.create(id=guild.id, name="@everyone", guild=guild)
+    role1 = await Role.create(name="1", guild=guild, permissions=0)
+    channel = await Channel.create(guild=guild, name="test", type=ChannelType.GUILD_TEXT)
+
+    gw = GatewayDispatcher.getInstance()
+
+    assert await gw.getChannelFilter(channel, GuildPermissions.VIEW_CHANNEL) == \
+           {"role_ids": [role.id], "user_ids": [user.id], "exclude": []}
+
+    await PermissionOverwrite.create(channel=channel, target_role=role,
+                                     deny=GuildPermissions.VIEW_CHANNEL, type=0, allow=0)
+
+    assert await gw.getChannelFilter(channel, GuildPermissions.VIEW_CHANNEL) == \
+           {"role_ids": [], "user_ids": [user.id], "exclude": []}
+
+    await PermissionOverwrite.create(channel=channel, target_role=role1,
+                                     allow=GuildPermissions.VIEW_CHANNEL, type=0, deny=0)
+    await PermissionOverwrite.create(channel=channel, target_user=user,
+                                     deny=GuildPermissions.VIEW_CHANNEL, type=1, allow=0)
+    await PermissionOverwrite.create(channel=channel, target_user=user2,
+                                     deny=GuildPermissions.VIEW_CHANNEL, type=1, allow=0)
+
+    assert await gw.getChannelFilter(channel, GuildPermissions.VIEW_CHANNEL) == \
+           {"role_ids": [role1.id], "user_ids": [user.id], "exclude": []}

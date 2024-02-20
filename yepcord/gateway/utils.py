@@ -18,6 +18,9 @@
 from enum import Enum, auto
 from typing import Optional
 
+from redis.asyncio import Redis
+
+from ..yepcord.config import Config
 from ..yepcord.utils import b64decode
 
 
@@ -50,3 +53,13 @@ def get_token_type(token: str) -> Optional[TokenType]:
         return
 
     return TokenType.USER if len(token) == 3 else TokenType.BOT
+
+
+async def init_redis_pool() -> Optional[Redis]:
+    if not Config.REDIS_URL:
+        return
+    return Redis.from_url(
+        Config.REDIS_URL,
+        encoding="utf-8",
+        decode_responses=True,
+    )

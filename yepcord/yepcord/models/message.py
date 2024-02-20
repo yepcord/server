@@ -38,7 +38,7 @@ class Message(Model):
     content: Optional[str] = fields.TextField(max_length=2000, null=True, default=None)
     edit_timestamp: Optional[datetime] = fields.DatetimeField(null=True, default=None)
     embeds: list = fields.JSONField(default=[])
-    pinned: bool = fields.BooleanField(default=False)
+    pinned_timestamp: datetime = fields.DatetimeField(null=True, default=None)
     webhook_id: Optional[int] = fields.BigIntField(null=True, default=None)
     webhook_author: dict = fields.JSONField(default={})
     application: Optional[int] = fields.BigIntField(null=True, default=None)
@@ -63,6 +63,10 @@ class Message(Model):
     @property
     def created_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
+
+    @property
+    def pinned(self) -> bool:
+        return self.pinned_timestamp is not None
 
     async def ds_json(self, user_id: int = None, search: bool = False) -> dict:
         edit_timestamp = self.edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00") if self.edit_timestamp else None

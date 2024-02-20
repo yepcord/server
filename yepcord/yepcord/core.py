@@ -30,11 +30,11 @@ from typing import Optional, Union
 
 import maxminddb
 from bcrypt import hashpw, gensalt, checkpw
-from tortoise import connections
 from tortoise.expressions import Q, Subquery
-from tortoise.functions import Count, Max
+from tortoise.functions import Count
 from tortoise.transactions import atomic
 
+from . import ctx
 from .classes.other import EmailMsg, JWT, MFA
 from .classes.singleton import Singleton
 from .config import Config
@@ -48,7 +48,6 @@ from .snowflake import Snowflake
 from .storage import getStorage
 from .utils import b64encode, b64decode, int_size, NoneType
 from ..gateway.events import DMChannelCreateEvent
-from . import ctx
 
 
 # noinspection PyMethodMayBeStatic
@@ -266,7 +265,9 @@ class Core(Singleton):
         await code.save(update_fields=["used"])
         return True
 
-    async def getChannel(self, channel_id: int) -> Optional[Channel]:
+    async def getChannel(self, channel_id: Optional[int]) -> Optional[Channel]:
+        if channel_id is None:
+            return None
         if (channel := await Channel.get_or_none(id=channel_id).select_related("guild", "owner", "parent")) is None:
             return
         return await self.setLastMessageIdForChannel(channel)
@@ -293,7 +294,7 @@ class Core(Singleton):
 
         if await self.isDmChannelHidden(user1, channel):
             await self.unhideDmChannel(user1, channel)
-            await ctx.getGw().dispatch(DMChannelCreateEvent(channel), users=[user1.id])
+            await ctx.getGw().dispatch(DMChannelCreateEvent(channel), user_ids=[user1.id])
         return await self.setLastMessageIdForChannel(channel)
 
     async def getLastMessageId(self, channel: Channel) -> Optional[int]:
@@ -328,7 +329,7 @@ class Core(Singleton):
 
     async def sendMessage(self, message: Message) -> Message:
         async def _addToReadStates():
-            users = await self.getRelatedUsersToChannel(message.channel)
+            users = await self.getRelatedUsersToChannel(message.channel, False)
             if message.author.id in users:
                 users.remove(message.author.id)
             for user in users:
@@ -350,9 +351,9 @@ class Core(Singleton):
             if ids: return [recipient.id for recipient in await channel.recipients.all()]
             return await channel.recipients.all()
         elif channel.type in GUILD_CHANNELS:
-            return [member.user.id for member in await self.getGuildMembers(channel.guild)]
+            return [member.user.id if ids else member.user for member in await self.getGuildMembers(channel.guild)]
         elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
-            return [member.user.id for member in await self.getThreadMembers(channel)]
+            return [member.user.id if ids else member.user for member in await self.getThreadMembers(channel)]
 
     async def setReadState(self, user: User, channel: Channel, count: int, last: int) -> None:
         read_state, _ = await ReadState.get_or_create(
@@ -453,23 +454,18 @@ class Core(Singleton):
         return channel
 
     async def pinMessage(self, message: Message) -> None:
-        if await Message.filter(pinned=True, channel=message.channel).count() >= 50:
+        if await Message.filter(pinned_timestamp__not_isnull=True, channel=message.channel).count() >= 50:
             raise InvalidDataErr(400, Errors.make(30003))
-        message.extra_data["pinned_at"] = int(time())
-        message.pinned = True
-        await message.save(update_fields=["extra_data", "pinned"])
+        message.pinned_timestamp = datetime.now()
+        await message.save(update_fields=["pinned_timestamp"])
 
     async def getLastPinnedMessage(self, channel: Channel) -> Optional[Message]:
-        # TODO: order by pinned timestamp
-        return await Message.filter(pinned=True, channel=channel).order_by("-id").get_or_none()
-
-    async def getLastPinTimestamp(self, channel: Channel) -> str:
-        last = await self.getLastPinnedMessage(channel)
-        last_ts = last.extra_data["pinned_at"] if last is not None else 0
-        return datetime.utcfromtimestamp(last_ts).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        return await (Message.filter(pinned_timestamp__not_isnull=True, channel=channel).order_by("-pinned_timestamp")
+                      .limit(1).get_or_none())
 
     async def getPinnedMessages(self, channel: Channel) -> list[Message]:
-        return await Message.filter(pinned=True, channel=channel).select_related("channel", "author", "guild").all()
+        return await (Message.filter(pinned_timestamp__not_isnull=True, channel=channel)
+                      .select_related("channel", "author", "guild").all())
 
     async def addReaction(self, message: Message, user: User, emoji: Emoji, emoji_name: str) -> Reaction:
         return (await Reaction.get_or_create(user=user, message=message, emoji=emoji, emoji_name=emoji_name))[0]
@@ -577,12 +573,13 @@ class Core(Singleton):
         serialized["icon"] = icon
         replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None, 0: guild_id}
         channels = {}
+        roles = {}
 
         for role in serialized["roles"]:
             if role["id"] not in replaced_ids:
                 replaced_ids[role["id"]] = Snowflake.makeId()
             role["id"] = replaced_ids[role["id"]]
-            await Role.create(guild=guild, **role)
+            roles[role["id"]] = await Role.create(guild=guild, **role)
 
         for channel in serialized["channels"]:
             if channel["id"] not in replaced_ids:
@@ -608,7 +605,7 @@ class Core(Singleton):
 
             channels[channel_id] = await Channel.create(guild=guild, **channel)
             for overwrite in permission_overwrites:
-                overwrite["target_id"] = replaced_ids[overwrite["id"]]
+                overwrite["target_role"] = roles[replaced_ids[overwrite["id"]]]
                 overwrite["channel"] = channels[channel_id]
                 del overwrite["id"]
                 await PermissionOverwrite.create(**overwrite)
@@ -695,15 +692,15 @@ class Core(Singleton):
         return await GuildBan.filter(guild=guild).select_related("user", "guild").all()
 
     async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> dict[
-        int, list[int]]:
+        Channel, list[int]]:
         messages = await (Message.filter(guild=guild, author__id=user_id, id__gt=after_id).select_related("channel")
                           .limit(500).all())
         result = {}
         messages_ids = []
         for message in messages:
-            if message.channel.id not in result:
-                result[message.channel.id] = []
-            result[message.channel.id].append(message.id)
+            if message.channel not in result:
+                result[message.channel] = []
+            result[message.channel].append(message.id)
             messages_ids.append(message.id)
 
         await Message.filter(id__in=messages_ids).delete()
@@ -741,14 +738,20 @@ class Core(Singleton):
             roles_ids.append(member.guild.id)
         return roles_ids
 
-    async def setMemberRolesFromList(self, member: GuildMember, roles: list[Role]) -> None:
+    async def setMemberRolesFromList(self, member: GuildMember, roles: list[Role]) -> tuple[list, list]:
         current_roles = await member.roles.all()
+        add = []
+        remove = []
         for role in roles:
             if role not in current_roles and not role.managed:
+                add.append(role.id)
                 await member.roles.add(role)
         for role in current_roles:
             if role not in roles and not role.managed:
+                remove.append(role.id)
                 await member.roles.remove(role)
+
+        return add, remove
 
     async def getMemberRoles(self, member: GuildMember, include_default: bool = False) -> list[Role]:
         roles = await member.roles.all()
@@ -776,15 +779,16 @@ class Core(Singleton):
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
         return await member.roles.filter(id=role.id).exists()
 
-    async def getPermissionOverwrite(self, channel: Channel, target_id: int) -> Optional[PermissionOverwrite]:
-        return await (PermissionOverwrite.get_or_none(channel=channel, target_id=target_id)
-                      .select_related("channel", "channel__guild"))
+    async def getPermissionOverwrite(self, channel: Channel, target: Union[Role, User]) -> Optional[PermissionOverwrite]:
+        kw = {"target_role": target} if isinstance(target, Role) else {"target_user": target}
+        return await (PermissionOverwrite.get_or_none(channel=channel, **kw)
+                      .select_related("channel", "channel__guild", "target_role", "target_user"))
 
     async def getPermissionOverwrites(self, channel: Channel) -> list[PermissionOverwrite]:
-        return await PermissionOverwrite.filter(channel=channel).all()
+        return await PermissionOverwrite.filter(channel=channel).select_related("target_role", "target_user").all()
 
-    async def deletePermissionOverwrite(self, channel: Channel, target_id: int) -> None:
-        if (overwrite := await self.getPermissionOverwrite(channel, target_id)) is not None:
+    async def deletePermissionOverwrite(self, channel: Channel, target: Union[Role, User]) -> None:
+        if (overwrite := await self.getPermissionOverwrite(channel, target)) is not None:
             await overwrite.delete()
 
     async def getOverwritesForMember(self, channel: Channel, member: GuildMember) -> list[PermissionOverwrite]:
@@ -795,7 +799,7 @@ class Core(Singleton):
         overwrites.sort(key=lambda r: r.type)
         result = []
         for overwrite in overwrites:
-            if overwrite.target_id in roles or overwrite.target_id == member.user.id:
+            if overwrite.target.id in roles or overwrite.target == member.user:
                 result.append(overwrite)
         return result
 

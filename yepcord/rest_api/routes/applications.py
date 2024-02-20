@@ -60,12 +60,14 @@ async def create_application(data: CreateApplication, user: User):
     return await app.ds_json()
 
 
+# noinspection PyUnusedLocal
 @applications.get("/<int:application_id>")
 @multipleDecorators(getUser, getApplication)
 async def get_application(user: User, application: Application):
     return await application.ds_json()
 
 
+# noinspection PyUnusedLocal
 @applications.patch("/<int:application_id>")
 @multipleDecorators(validate_request(UpdateApplication), getUser, getApplication)
 async def edit_application(data: UpdateApplication, user: User, application: Application):
@@ -94,6 +96,7 @@ async def edit_application(data: UpdateApplication, user: User, application: App
     return await application.ds_json()
 
 
+# noinspection PyUnusedLocal
 @applications.patch("/<int:application_id>/bot")
 @multipleDecorators(validate_request(UpdateApplicationBot), getUser, getApplication)
 async def edit_application_bot(data: UpdateApplicationBot, user: User, application: Application):
@@ -112,6 +115,7 @@ async def edit_application_bot(data: UpdateApplicationBot, user: User, applicati
     return await bot_data.ds_json_full()
 
 
+# noinspection PyUnusedLocal
 @applications.post("/<int:application_id>/reset")
 @multipleDecorators(getUser, getApplication)
 async def reset_application_secret(user: User, application: Application):
@@ -121,6 +125,7 @@ async def reset_application_secret(user: User, application: Application):
     return {"secret": new_secret}
 
 
+# noinspection PyUnusedLocal
 @applications.post("/<int:application_id>/bot/reset")
 @multipleDecorators(getUser, getApplication)
 async def reset_application_bot_token(user: User, application: Application):
@@ -132,6 +137,7 @@ async def reset_application_bot_token(user: User, application: Application):
     return {"token": bot.token}
 
 
+# noinspection PyUnusedLocal
 @applications.post("/<int:application_id>/delete")
 @multipleDecorators(getUser, getApplication)
 async def delete_application(user: User, application: Application):
@@ -146,6 +152,7 @@ async def delete_application(user: User, application: Application):
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @applications.get("/<int:application_id>/commands")
 @multipleDecorators(validate_querystring(GetCommandsQS), allowBots, getUser, getApplication)
 async def get_application_commands(query_args: GetCommandsQS, user: User, application: Application):
@@ -154,6 +161,7 @@ async def get_application_commands(query_args: GetCommandsQS, user: User, applic
     return [command.ds_json(query_args.with_localizations) for command in commands]
 
 
+# noinspection PyUnusedLocal
 @applications.post("/<int:application_id>/commands")
 @applications.post("/<int:application_id>/guilds/<int:guild>/commands")
 @multipleDecorators(validate_request(CreateCommand), allowBots, getUser, getApplication, getGuild(False, True))
@@ -172,6 +180,7 @@ async def create_update_application_command(data: CreateCommand, user: User, app
     return command.ds_json()
 
 
+# noinspection PyUnusedLocal
 @applications.delete("/<int:application_id>/commands/<int:command_id>")
 @applications.delete("/<int:application_id>/guilds/<int:guild>/commands/<int:command_id>")
 @multipleDecorators(allowBots, getUser, getApplication, getGuild(False, True))

@@ -36,7 +36,7 @@ class Channel(Model):
     guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", null=True, default=None)
     position: Optional[int] = fields.IntField(null=True, default=None)
     name: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
-    topic: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
+    topic: Optional[str] = fields.CharField(max_length=1536, null=True, default=None)
     nsfw: Optional[bool] = fields.BooleanField(null=True, default=None)
     bitrate: Optional[int] = fields.IntField(null=True, default=None)
     user_limit: Optional[int] = fields.IntField(null=True, default=None)

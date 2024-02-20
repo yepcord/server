@@ -118,7 +118,7 @@ async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: i
 
     message_json = await message.ds_json()
     await getCore().sendMessage(message)
-    await getGw().dispatch(MessageCreateEvent(message_json), channel_id=channel.id)
+    await getGw().dispatch(MessageCreateEvent(message_json), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL)
 
     if query_args.wait:
         return message_json
@@ -126,12 +126,14 @@ async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: i
         return "", 204
 
 
+# noinspection PyUnusedLocal
 @webhooks.get("/<int:webhook>/<string:token>/messages/<int:message>")
 @multipleDecorators(getWebhook, getMessage)
 async def get_webhook_message(webhook: Webhook, message: Message):
     return await message.ds_json()
 
 
+# noinspection PyUnusedLocal
 @webhooks.delete("/<int:webhook>/<string:token>/messages/<int:message>")
 @multipleDecorators(getWebhook, getMessage)
 async def delete_webhook_message(webhook: Webhook, message: Message):
@@ -143,7 +145,8 @@ async def delete_webhook_message(webhook: Webhook, message: Message):
 @multipleDecorators(validate_request(MessageUpdate), getWebhook, getMessage)
 async def edit_webhook_message(data: MessageUpdate, webhook: Webhook, message: Message):
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
-    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=webhook.channel.id)
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=webhook.channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     return await message.ds_json()
 
 
@@ -166,19 +169,23 @@ async def interaction_followup_create(interaction: Interaction, message: Message
     message_obj = await message.ds_json()
 
     if message.ephemeral:
-        await getGw().dispatch(MessageUpdateEvent(message_obj), users=[interaction.user.id, interaction.application.id])
+        await getGw().dispatch(MessageUpdateEvent(message_obj),
+                               user_ids=[interaction.user.id, interaction.application.id])
     else:
-        await getGw().dispatch(MessageUpdateEvent(message_obj), channel_id=interaction.channel.id)
+        await getGw().dispatch(MessageUpdateEvent(message_obj), channel=interaction.channel,
+                               permissions=GuildPermissions.VIEW_CHANNEL)
 
     return message_obj
 
 
+# noinspection PyUnusedLocal
 @webhooks.get("/<int:application_id>/int___<string:token>/messages/<string:message>")
 @getInteractionW
 async def get_interaction_message(interaction: Interaction, message: Message):
     return await message.ds_json()
 
 
+# noinspection PyUnusedLocal
 @webhooks.delete("/<int:application_id>/int___<string:token>/messages/<string:message>")
 @getInteractionW
 async def delete_interaction_message(interaction: Interaction, message: Message):
@@ -190,5 +197,6 @@ async def delete_interaction_message(interaction: Interaction, message: Message)
 @multipleDecorators(validate_request(MessageUpdate), getInteractionW)
 async def edit_interaction_message(data: MessageUpdate, interaction: Interaction, message: Message):
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
-    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel_id=interaction.channel.id)
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=interaction.channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     return await message.ds_json()

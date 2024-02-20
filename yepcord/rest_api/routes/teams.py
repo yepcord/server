@@ -27,5 +27,5 @@ teams = Blueprint('teams', __name__)
 
 @teams.get("/", strict_slashes=False)
 @getUser
-async def get_channel(user: User):
+async def get_teams(user: User):
     return []

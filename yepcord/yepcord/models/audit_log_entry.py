@@ -64,19 +64,20 @@ class AuditLogEntryUtils:
     @staticmethod
     async def overwrite_create(user: models.User, overwrite: models.PermissionOverwrite) -> AuditLogEntry:
         changes = [
-            {"new_value": str(overwrite.target_id), "key": "id"},
+            {"new_value": str(overwrite.target.id), "key": "id"},
             {"new_value": str(overwrite.type), "key": "type"},
             {"new_value": str(overwrite.allow), "key": "allow"},
             {"new_value": str(overwrite.deny), "key": "deny"}
         ]
         options = {
             "type": str(overwrite.type),
-            "id": str(overwrite.target_id)
+            "id": str(overwrite.target.id)
         }
-        if overwrite.type == 0 and (role := await models.Role.get_or_none(id=overwrite.target_id)) is not None:
+        await overwrite.fetch_related("target_role", "target_user")
+        if (role := overwrite.target_role) is not None:
             options["role_name"] = role.name
         return await AuditLogEntry.create(id=Snowflake.makeId(), guild=overwrite.channel.guild, user=user,
-                                          changes=changes, target_id=overwrite.id, options=options,
+                                          changes=changes, target_id=overwrite.target.id, options=options,
                                           action_type=AuditLogEntryType.CHANNEL_OVERWRITE_CREATE)
 
     @staticmethod
@@ -89,9 +90,9 @@ class AuditLogEntryUtils:
             changes.append({"new_value": str(new.deny), "old_value": str(old.deny), "key": "deny"})
         options = {
             "type": str(new.type),
-            "id": str(new.target_id)
+            "id": str(new.target.id)
         }
-        if new.type == 0 and (role := await models.Role.get_or_none(id=new.target_id)) is not None:
+        if (role := new.target_role) is not None:
             options["role_name"] = role.name
         return await AuditLogEntry.create(id=Snowflake.makeId(), guild=old.channel.guild, changes=changes, user=user,
                                           options=options, target_id=old.id,
@@ -100,16 +101,16 @@ class AuditLogEntryUtils:
     @staticmethod
     async def overwrite_delete(user: models.User, overwrite: models.PermissionOverwrite) -> AuditLogEntry:
         changes = [
-            {"old_value": str(overwrite.target_id), "key": "id"},
+            {"old_value": str(overwrite.target.id), "key": "id"},
             {"old_value": str(overwrite.type), "key": "type"},
             {"old_value": str(overwrite.allow), "key": "allow"},
             {"old_value": str(overwrite.deny), "key": "deny"}
         ]
         options = {
             "type": str(overwrite.type),
-            "id": str(overwrite.target_id)
+            "id": str(overwrite.target.id)
         }
-        if overwrite.type == 0 and (role := await models.Role.get_or_none(id=overwrite.target_id)) is not None:
+        if (role := overwrite.target_role) is not None:
             options["role_name"] = role.name
         return await AuditLogEntry.create(id=Snowflake.makeId(), guild=overwrite.channel.guild, user=user,
                                           changes=changes, target_id=overwrite.id, options=options,

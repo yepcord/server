@@ -61,7 +61,9 @@ async def create_guild(data: GuildCreate, user: User):
     guild = await getCore().createGuild(guild_id, user, **data.model_dump(exclude_defaults=True))
     await getGw().dispatch(GuildCreateEvent(
         await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
-    ), users=[user.id])
+    ), user_ids=[user.id])
+    await getGw().dispatchSub([user.id], guild.id)
+
     return await guild.ds_json(user_id=user.id, with_members=False, with_channels=True)
 
 
@@ -103,6 +105,7 @@ async def update_guild(data: GuildUpdate, user: User, guild: Guild, member: Guil
     return await guild.ds_json(user_id=user.id)
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/templates")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_guild_templates(user: User, guild: Guild, member: GuildMember):
@@ -128,6 +131,7 @@ async def create_guild_template(data: TemplateCreate, user: User, guild: Guild, 
     return await template.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.delete("/<int:guild>/templates/<string:template>")
 @multipleDecorators(allowBots, getUser, getGuildWM, getGuildTemplate)
 async def delete_guild_template(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
@@ -136,6 +140,7 @@ async def delete_guild_template(user: User, guild: Guild, member: GuildMember, t
     return await template.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.put("/<int:guild>/templates/<string:template>")
 @multipleDecorators(allowBots, getUser, getGuildWM, getGuildTemplate)
 async def sync_guild_template(user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
@@ -148,6 +153,7 @@ async def sync_guild_template(user: User, guild: Guild, member: GuildMember, tem
     return await template.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.patch("/<int:guild>/templates/<string:template>")
 @multipleDecorators(validate_request(TemplateUpdate), allowBots, getUser, getGuildWM, getGuildTemplate)
 async def update_guild_template(data: TemplateUpdate, user: User, guild: Guild, member: GuildMember, template: GuildTemplate):
@@ -156,6 +162,7 @@ async def update_guild_template(data: TemplateUpdate, user: User, guild: Guild, 
     return await template.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/emojis")
 @multipleDecorators(allowBots, getUser, getGuildWoM)
 async def get_guild_emojis(user: User, guild: Guild):
@@ -180,6 +187,7 @@ async def create_guild_emoji(data: EmojiCreate, user: User, guild: Guild, member
     return await emoji.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.patch("/<int:guild>/emojis/<int:emoji>")
 @multipleDecorators(validate_request(EmojiUpdate), allowBots, getUser, getGuildWM)
 async def update_guild_emoji(data: EmojiUpdate, user: User, guild: Guild, member: GuildMember, emoji: int):
@@ -211,6 +219,7 @@ async def delete_guild_emoji(user: User, guild: Guild, member: GuildMember, emoj
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @guilds.patch("/<int:guild>/channels")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def update_channels_positions(user: User, guild: Guild, member: GuildMember):
@@ -243,7 +252,11 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
         del data_json["parent_id"]
     channel = await Channel.create(id=Snowflake.makeId(), guild=guild, **data_json)
     for overwrite in data.permission_overwrites:
-        await PermissionOverwrite.create(**overwrite.model_dump(), channel=channel, target_id=overwrite.id)
+        target = await getCore().getRole(overwrite.id) if data.type == 0 else await User.get_or_none(id=overwrite.id)
+        if target is None:
+            raise InvalidDataErr(404, Errors.make(10011 if data.type == 0 else 10013))
+        kw = {"target_role": target} if isinstance(target, Role) else {"target_user": target}
+        await PermissionOverwrite.create(**overwrite.model_dump(), channel=channel, **kw)
 
     await getGw().dispatch(ChannelCreateEvent(await channel.ds_json()), guild_id=guild.id)
 
@@ -256,6 +269,7 @@ async def create_channel(data: ChannelCreate, user: User, guild: Guild, member: 
     return await channel.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/invites")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_guild_invites(user: User, guild: Guild, member: GuildMember):
@@ -265,6 +279,7 @@ async def get_guild_invites(user: User, guild: Guild, member: GuildMember):
     return invites
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/premium/subscriptions")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_premium_boosts(user: User, guild: Guild, member: GuildMember):
@@ -303,11 +318,14 @@ async def kick_member(user: User, guild: Guild, member: GuildMember, user_id: in
         return "", 204
     if not await member.perm_checker.canKickOrBan(target_member):
         raise InvalidDataErr(403, Errors.make(50013))
+    await getGw().dispatchUnsub([target_member.user.id], guild.id)
+    for role in await target_member.roles.all():
+        await getGw().dispatchUnsub([target_member.user.id], role_id=role.id)
     await target_member.delete()
     if target_member.user.is_bot:
         await process_bot_kick(user, target_member)
-    await getGw().dispatch(GuildMemberRemoveEvent(guild.id, (await target_member.user.data).ds_json), users=[user_id])
-    await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
+    await getGw().dispatch(GuildMemberRemoveEvent(guild.id, (await target_member.user.data).ds_json), user_ids=[user_id])
+    await getGw().dispatch(GuildDeleteEvent(guild.id), user_ids=[target_member.id])
     entry = await AuditLogEntry.utils.member_kick(user, target_member)
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
@@ -325,6 +343,9 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
         return "", 204
     reason = request.headers.get("x-audit-log-reason")
     if target_member is not None:
+        await getGw().dispatchUnsub([target_member.user.id], guild.id)
+        for role in await target_member.roles.all():
+            await getGw().dispatchUnsub([target_member.user.id], role_id=role.id)
         await target_member.delete()
         if target_member.user.is_bot:
             await process_bot_kick(user, target_member)
@@ -336,18 +357,20 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
         await getCore().banGuildUser(target_user, guild, reason)
     target_user_data = await target_user.data
     if target_member is not None:
-        await getGw().dispatch(GuildMemberRemoveEvent(guild.id, target_user_data.ds_json), users=[user_id])
-        await getGw().dispatch(GuildDeleteEvent(guild.id), users=[target_member.id])
+        await getGw().dispatch(GuildMemberRemoveEvent(guild.id, target_user_data.ds_json), user_ids=[user_id])
+        await getGw().dispatch(GuildDeleteEvent(guild.id), user_ids=[target_member.id])
     await getGw().dispatch(GuildBanAddEvent(guild.id, target_user_data.ds_json), guild_id=guild.id,
                            permissions=GuildPermissions.BAN_MEMBERS)
     if (delete_message_seconds := data.delete_message_seconds) > 0:
         after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
         deleted_messages = await getCore().bulkDeleteGuildMessagesFromBanned(guild, user_id, after)
-        for channel_id, messages in deleted_messages.items():
+        for channel, messages in deleted_messages.items():
             if len(messages) > 1:
-                await getGw().dispatch(MessageBulkDeleteEvent(guild.id, channel_id, messages))
+                await getGw().dispatch(MessageBulkDeleteEvent(guild.id, channel.id, messages), channel=channel,
+                                       permissions=GuildPermissions.VIEW_CHANNEL)
             elif len(messages) == 1:
-                await getGw().dispatch(MessageDeleteEvent(messages[0], channel_id, guild.id), channel_id=channel_id)
+                await getGw().dispatch(MessageDeleteEvent(messages[0], channel.id, guild.id), channel=channel,
+                                       permissions=GuildPermissions.VIEW_CHANNEL)
 
     if target_member is not None:
         entry = await AuditLogEntry.utils.member_ban(user, target_member, reason)
@@ -359,6 +382,7 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/bans")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_guild_bans(user: User, guild: Guild, member: GuildMember):
@@ -381,6 +405,7 @@ async def unban_member(user: User, guild: Guild, member: GuildMember, user_id: i
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/integrations")
 @multipleDecorators(validate_querystring(GetIntegrationsQS), getUser, getGuildWM)
 async def get_guild_integrations(query_args: GetIntegrationsQS, user: User, guild: Guild, member: GuildMember):
@@ -389,6 +414,7 @@ async def get_guild_integrations(query_args: GetIntegrationsQS, user: User, guil
     return [await integration.ds_json(query_args.include_applications) for integration in integrations]
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/roles")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_roles(user: User, guild: Guild, member: GuildMember):
@@ -444,6 +470,7 @@ async def update_role(data: RoleUpdate, user: User, guild: Guild, member: GuildM
     return role.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.patch("/<int:guild>/roles")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def update_roles_positions(user: User, guild: Guild, member: GuildMember):
@@ -493,9 +520,12 @@ async def delete_role(user: User, guild: Guild, member: GuildMember, role: Role)
 
     await getCore().setTemplateDirty(guild)
 
+    await getGw().dispatchUnsub([], role_id=role.id, delete=True)
+
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/roles/<int:role>/connections/configuration")
 @multipleDecorators(allowBots, getUser, getGuildWM, getRole)
 async def get_connections_configuration(user: User, guild: Guild, member: GuildMember, role: Role):
@@ -503,6 +533,7 @@ async def get_connections_configuration(user: User, guild: Guild, member: GuildM
     return []
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/roles/member-counts")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_role_member_count(user: User, guild: Guild, member: GuildMember):
@@ -510,6 +541,7 @@ async def get_role_member_count(user: User, guild: Guild, member: GuildMember):
     return await getCore().getRolesMemberCounts(guild)
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/roles/<int:role>/member-ids")
 @multipleDecorators(allowBots, getUser, getGuildWoM, getRole)
 async def get_role_members(user: User, guild: Guild, role: Role):
@@ -531,7 +563,9 @@ async def add_role_members(data: AddRoleMembers, user: User, guild: Guild, membe
             await target_member.roles.add(role)
             target_member_json = await target_member.ds_json()
             await getGw().dispatch(GuildMemberUpdateEvent(guild.id, target_member_json), guild_id=guild.id)
-            members[str(target_member.id)] = target_member_json
+            members[str(target_member.user.id)] = target_member_json
+
+    await getGw().dispatchSub([int(user_id) for user_id in members], role_id=role.id)
     return members
 
 
@@ -551,7 +585,11 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
         for role in roles:
             if guild_roles[role.id].position >= user_top_role.position and member.user != guild.owner:
                 raise InvalidDataErr(403, Errors.make(50013))
-        await getCore().setMemberRolesFromList(target_member, roles)
+        add, remove = await getCore().setMemberRolesFromList(target_member, roles)
+        for role_id in add:
+            await getGw().dispatchSub([target_user], role_id=role_id)
+        for role_id in remove:
+            await getGw().dispatchUnsub([target_user], role_id=role_id)
         data.roles = None
     if data.nick is not None:
         await member.checkPermission(
@@ -579,6 +617,7 @@ async def update_member(data: MemberUpdate, user: User, guild: Guild, member: Gu
     return await target_member.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/vanity-url")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_vanity_url(user: User, guild: Guild, member: GuildMember):
@@ -617,6 +656,7 @@ async def update_vanity_url(data: SetVanityUrl, user: User, guild: Guild, member
     return {"code": guild.vanity_url_code}
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/audit-logs")
 @multipleDecorators(validate_querystring(GetAuditLogsQuery), allowBots, getUser, getGuildWM)
 async def get_audit_logs(query_args: GetAuditLogsQuery, user: User, guild: Guild, member: GuildMember):
@@ -661,7 +701,8 @@ async def create_from_template(data: GuildCreateFromTemplate, user: User, templa
     guild = await getCore().createGuildFromTemplate(guild_id, user, template, data.name, data.icon)
     await getGw().dispatch(GuildCreateEvent(
         await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
-    ), users=[user.id])
+    ), user_ids=[user.id])
+    await getGw().dispatchSub([user.id], guild.id)
 
     return await guild.ds_json(user_id=user.id, with_members=False, with_channels=True)
 
@@ -679,12 +720,19 @@ async def delete_guild(data: GuildDelete, user: User, guild: Guild):
             if not (len(data.code) == 8 and await getCore().useMfaCode(user, data.code)):
                 raise InvalidDataErr(400, Errors.make(60008))
 
+    role_ids = [role.id for role in await getCore().getRoles(guild, True)]
+
     await guild.delete()
-    await getGw().dispatch(GuildDeleteEvent(guild.id), users=[user.id])
+    await getGw().dispatch(GuildDeleteEvent(guild.id), user_ids=[user.id])
+
+    await getGw().dispatchUnsub([], guild.id, delete=True)
+    for role_id in role_ids:
+        await getGw().dispatchUnsub([], role_id=role_id, delete=True)
 
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/webhooks")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def get_guild_webhooks(user: User, guild: Guild, member: GuildMember):
@@ -692,6 +740,7 @@ async def get_guild_webhooks(user: User, guild: Guild, member: GuildMember):
     return [await webhook.ds_json() for webhook in await getCore().getWebhooks(guild)]
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/stickers")
 @multipleDecorators(allowBots, getUser, getGuildWoM)
 async def get_guild_stickers(user: User, guild: Guild):
@@ -726,6 +775,7 @@ async def upload_guild_stickers(user: User, guild: Guild, member: GuildMember):
     return await sticker.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.patch("/<int:guild>/stickers/<int:sticker_id>")
 @multipleDecorators(validate_request(UpdateSticker), allowBots, getUser, getGuildWM)
 async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, member: GuildMember, sticker_id: int):
@@ -737,6 +787,7 @@ async def update_guild_sticker(data: UpdateSticker, user: User, guild: Guild, me
     return await sticker.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.delete("/<int:guild>/stickers/<int:sticker_id>")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def delete_guild_sticker(user: User, guild: Guild, member: GuildMember, sticker_id: int):
@@ -785,6 +836,7 @@ async def create_scheduled_event(data: CreateEvent, user: User, guild: Guild, me
     return await event.ds_json()
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/scheduled-events/<int:event_id>")
 @multipleDecorators(validate_querystring(GetScheduledEvent), allowBots, getUser, getGuildWoM)
 async def get_scheduled_event(query_args: GetScheduledEvent, user: User, guild: Guild, event_id: int):
@@ -794,6 +846,7 @@ async def get_scheduled_event(query_args: GetScheduledEvent, user: User, guild: 
     return await event.ds_json(with_user_count=query_args.with_user_count)
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/scheduled-events")
 @multipleDecorators(validate_querystring(GetScheduledEvent), allowBots, getUser, getGuildWoM)
 async def get_scheduled_events(query_args: GetScheduledEvent, user: User, guild: Guild):
@@ -801,6 +854,7 @@ async def get_scheduled_events(query_args: GetScheduledEvent, user: User, guild:
     return [await event.ds_json(with_user_count=query_args.with_user_count) for event in events]
 
 
+# noinspection PyUnusedLocal
 @guilds.patch("/<int:guild>/scheduled-events/<int:event_id>")
 @multipleDecorators(validate_request(UpdateScheduledEvent), allowBots, getUser, getGuildWM)
 async def update_scheduled_event(data: UpdateScheduledEvent, user: User, guild: Guild, member: GuildMember, event_id: int):
@@ -871,6 +925,7 @@ async def unsubscribe_from_scheduled_event(user: User, guild: Guild, member: Gui
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @guilds.delete("/<int:guild>/scheduled-events/<int:event_id>")
 @multipleDecorators(allowBots, getUser, getGuildWM)
 async def delete_scheduled_event(user: User, guild: Guild, member: GuildMember, event_id: int):
@@ -884,6 +939,7 @@ async def delete_scheduled_event(user: User, guild: Guild, member: GuildMember, 
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/application-commands/<int:application_id>")
 @multipleDecorators(getUser, getGuildWM)
 async def get_guild_integration_commands(user: User, guild: Guild, member: GuildMember, application_id: int):

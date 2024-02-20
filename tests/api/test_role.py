@@ -22,12 +22,15 @@ async def test_create_role():
     user = (await create_users(client, 1))[0]
     guild = await create_guild(client, user, "Test Guild")
 
-    role = await create_role(client, user, guild["id"])
+    role = await create_role(client, user, guild["id"], name="")
     assert role["name"] == "new role"
 
     role = await create_role(client, user, guild["id"], icon=YEP_IMAGE)
     assert role["name"] == "new role"
     assert len(role["icon"]) == 32
+
+    await create_role(client, user, guild["id"], icon="not-image", exp_code=400)
+    await create_role(client, user, guild["id"], unicode_emoji="")
 
 
 @pt.mark.asyncio
@@ -38,7 +41,7 @@ async def test_change_roles_positions():
     role = await create_role(client, user, guild["id"])
 
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}/roles", headers={"Authorization": user["token"]},
-                              json=[{'id': role["id"], 'position': 1}])
+                              json=[{'id': role["id"], 'position': 1}, {'id': 123, 'position': None}])
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json[0]["id"] == guild["id"]
@@ -96,12 +99,23 @@ async def test_edit_role():
     assert json["permissions"] == "268436496"
     assert json["color"] == 15277667
     assert len(json["icon"]) == 32
+    role.update(json)
 
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}/roles/{guild['id']}", json={"name": "test role"},
                               headers={"Authorization": user["token"]})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["name"] == "@everyone"
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/roles/{role['id']}", json={"icon": "not image"},
+                              headers={"Authorization": user["token"]})
+    assert resp.status_code == 400
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/roles/{role['id']}", json={"name": "", "unicode_emoji": ""},
+                              headers={"Authorization": user["token"]})
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["name"] == role["name"]
 
 
 @pt.mark.asyncio
