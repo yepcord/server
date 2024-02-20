@@ -265,7 +265,9 @@ class Core(Singleton):
         await code.save(update_fields=["used"])
         return True
 
-    async def getChannel(self, channel_id: int) -> Optional[Channel]:
+    async def getChannel(self, channel_id: Optional[int]) -> Optional[Channel]:
+        if channel_id is None:
+            return None
         if (channel := await Channel.get_or_none(id=channel_id).select_related("guild", "owner", "parent")) is None:
             return
         return await self.setLastMessageIdForChannel(channel)

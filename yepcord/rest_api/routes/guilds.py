@@ -366,9 +366,11 @@ async def ban_member(data: BanMember, user: User, guild: Guild, member: GuildMem
         deleted_messages = await getCore().bulkDeleteGuildMessagesFromBanned(guild, user_id, after)
         for channel, messages in deleted_messages.items():
             if len(messages) > 1:
-                await getGw().dispatch(MessageBulkDeleteEvent(guild.id, channel.id, messages))
+                await getGw().dispatch(MessageBulkDeleteEvent(guild.id, channel.id, messages), channel=channel,
+                                       permissions=GuildPermissions.VIEW_CHANNEL)
             elif len(messages) == 1:
-                await getGw().dispatch(MessageDeleteEvent(messages[0], channel.id, guild.id), channel=channel)
+                await getGw().dispatch(MessageDeleteEvent(messages[0], channel.id, guild.id), channel=channel,
+                                       permissions=GuildPermissions.VIEW_CHANNEL)
 
     if target_member is not None:
         entry = await AuditLogEntry.utils.member_ban(user, target_member, reason)

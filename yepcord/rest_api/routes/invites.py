@@ -90,7 +90,8 @@ async def use_invite(user: User, invite: Invite):
                     guild=guild
                 )
                 await getCore().sendMessage(message)
-                await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel)
+                await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel,
+                                       permissions=GuildPermissions.VIEW_CHANNEL)
             await getCore().useInvite(invite)
             await getGw().dispatchSub([user.id], guild_id=guild.id)
     return inv

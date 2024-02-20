@@ -118,7 +118,7 @@ async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: i
 
     message_json = await message.ds_json()
     await getCore().sendMessage(message)
-    await getGw().dispatch(MessageCreateEvent(message_json), channel=channel)
+    await getGw().dispatch(MessageCreateEvent(message_json), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL)
 
     if query_args.wait:
         return message_json
@@ -145,7 +145,8 @@ async def delete_webhook_message(webhook: Webhook, message: Message):
 @multipleDecorators(validate_request(MessageUpdate), getWebhook, getMessage)
 async def edit_webhook_message(data: MessageUpdate, webhook: Webhook, message: Message):
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
-    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=webhook.channel)
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=webhook.channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     return await message.ds_json()
 
 
@@ -171,7 +172,8 @@ async def interaction_followup_create(interaction: Interaction, message: Message
         await getGw().dispatch(MessageUpdateEvent(message_obj),
                                user_ids=[interaction.user.id, interaction.application.id])
     else:
-        await getGw().dispatch(MessageUpdateEvent(message_obj), channel=interaction.channel)
+        await getGw().dispatch(MessageUpdateEvent(message_obj), channel=interaction.channel,
+                               permissions=GuildPermissions.VIEW_CHANNEL)
 
     return message_obj
 
@@ -195,5 +197,6 @@ async def delete_interaction_message(interaction: Interaction, message: Message)
 @multipleDecorators(validate_request(MessageUpdate), getInteractionW)
 async def edit_interaction_message(data: MessageUpdate, interaction: Interaction, message: Message):
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
-    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=interaction.channel)
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=interaction.channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     return await message.ds_json()

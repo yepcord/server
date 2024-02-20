@@ -212,7 +212,8 @@ async def delete_message(user: User, channel: Channel, message: Message):
             raise InvalidDataErr(403, Errors.make(50003))
     guild_id = channel.guild.id if channel.guild else None
     await message.delete()
-    await getGw().dispatch(MessageDeleteEvent(message.id, channel.id, guild_id), channel=channel)
+    await getGw().dispatch(MessageDeleteEvent(message.id, channel.id, guild_id), channel=channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
 
 
@@ -226,7 +227,8 @@ async def edit_message(data: MessageUpdate, user: User, channel: Channel, messag
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
-    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=channel)
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     return await message.ds_json()
 
 
@@ -269,7 +271,7 @@ async def send_typing_event(user: User, channel: Channel):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
-    await getGw().dispatch(TypingEvent(user.id, channel.id), channel=channel)
+    await getGw().dispatch(TypingEvent(user.id, channel.id), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
 
 
@@ -341,7 +343,8 @@ async def pin_message(user: User, channel: Channel, message: Message):
         )
 
         await getCore().sendMessage(msg)
-        await getGw().dispatch(MessageCreateEvent(await msg.ds_json()), channel=msg.channel)
+        await getGw().dispatch(MessageCreateEvent(await msg.ds_json()), channel=msg.channel,
+                               permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
 
 
@@ -384,7 +387,8 @@ async def add_message_reaction(user: User, channel: Channel, message: Message, r
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
     }
     await getCore().addReaction(message, user, **emoji)
-    await getGw().dispatch(MessageReactionAddEvent(user.id, message.id, channel.id, emoji), channel=channel)
+    await getGw().dispatch(MessageReactionAddEvent(user.id, message.id, channel.id, emoji), channel=channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
 
 
@@ -402,7 +406,8 @@ async def remove_message_reaction(user: User, channel: Channel, message: Message
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
     }
     await getCore().removeReaction(message, user, **emoji)
-    await getGw().dispatch(MessageReactionRemoveEvent(user.id, message.id, channel.id, emoji), channel=channel)
+    await getGw().dispatch(MessageReactionRemoveEvent(user.id, message.id, channel.id, emoji), channel=channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
 
 
@@ -571,7 +576,8 @@ async def create_thread(data: CreateThread, user: User, channel: Channel, messag
                            guild_id=channel.guild.id)
     await getGw().dispatch(ThreadMemberUpdateEvent(thread_member.ds_json()), guild_id=channel.guild.id)
     await message.update(thread=thread, flags=message.flags | MessageFlags.HAS_THREAD)
-    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=message.channel)
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=message.channel,
+                           permissions=GuildPermissions.VIEW_CHANNEL)
     await getCore().sendMessage(thread_message)
     await getCore().sendMessage(thread_create_message)
 
