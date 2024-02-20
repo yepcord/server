@@ -21,12 +21,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from tortoise.expressions import RawSQL, Q
+from tortoise.expressions import RawSQL
 
 from .classes.singleton import Singleton
 from .enums import ChannelType
 from .errors import InvalidDataErr
-from .models import Channel, Guild, PermissionOverwrite, Role
+from .models import Channel, Guild, Role
 from .mq_broker import getBroker
 from ..gateway.events import DispatchEvent, ChannelPinsUpdateEvent, MessageAckEvent, GuildEmojisUpdate, \
     StickersUpdateEvent
@@ -53,7 +53,7 @@ class GatewayDispatcher(Singleton):
             "data": await event.json(),
             "event": event.NAME,
             "user_ids": user_ids,
-            "guild_id": guild_id,  # TODO: if permissions is not None, replace guild_id with role_ids (with these permissions)
+            "guild_id": guild_id,
             "role_ids": role_ids,
             "session_id": session_id,
             "exclude": [],

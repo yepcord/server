@@ -8,7 +8,7 @@ class Singleton:
 
     @classmethod
     def getInstance(cls):
-        return cls._instance
+        return cls._instance or cls()
 
 
 class SingletonMeta(type):
