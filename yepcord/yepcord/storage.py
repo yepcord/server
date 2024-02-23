@@ -20,10 +20,12 @@ from __future__ import annotations
 from abc import abstractmethod, ABCMeta
 from asyncio import get_event_loop, gather
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from hashlib import md5
 from io import BytesIO
 from os import makedirs
 from os.path import join as pjoin, isfile
+from pathlib import Path
 from typing import Optional, Tuple, Union
 
 from PIL import Image, ImageSequence
@@ -113,12 +115,46 @@ class SingletonABCMeta(ABCMeta, SingletonMeta):
 class _Storage(metaclass=SingletonABCMeta):
 
     @abstractmethod
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
-        bytes]: ...  # pragma: no cover
+    async def _read(self, path: str) -> Optional[bytes]: ...  # pragma: no cover
 
     @abstractmethod
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO,
-                        def_hash: str = None) -> str: ...  # pragma: no cover
+    async def _write(self, path: str, data: bytes) -> int: ...  # pragma: no cover
+
+    async def _getResizeImage(self, paths: list[str], size: tuple[int, int], anim: bool, fmt: str):
+        for i, path in enumerate(paths):
+            if read := await self._read(path):
+                if i == 0:
+                    return read
+                image = Image.open(BytesIO(read))
+                coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
+                data = await coro
+                await self._write(paths[0], data)
+                return data
+
+    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
+        bytes]:
+        anim = hash.startswith("a_")
+        def_fmt = "gif" if anim else "png"
+        paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
+        paths = [f"{type}s/{id}/{name}" for name in paths]
+        return await self._getResizeImage(paths, (size, size_f(size)), anim, fmt)
+
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
+        if def_hash is not None:
+            hash = def_hash
+        else:
+            hash = md5()
+            hash.update(image.getvalue())
+            hash = hash.hexdigest()
+        image = Image.open(image)
+        anim = imageFrames(image) > 1
+        form = "gif" if anim else "png"
+        hash = f"a_{hash}" if anim else hash
+        size = (size, size_f(size))
+        coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
+        data = await coro
+        await self._write(f"{type}s/{id}/{hash}_{size[0]}.{form}", data)
+        return hash
 
     async def getAvatar(self, uid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = avatar_hash.startswith("a_")
@@ -147,8 +183,11 @@ class _Storage(metaclass=SingletonABCMeta):
     async def getGuildEvent(self, event_id: int, event_hash: str, size: int, fmt: str) -> Optional[bytes]:
         return await self._getImage("guild_event", event_id, event_hash, size, fmt, 600, lambda s: int(9 * s / 16))
 
-    @abstractmethod
-    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]: ...  # pragma: no cover
+    async def getEmoji(self, emoji_id: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
+        def_fmt = "gif" if anim else "png"
+        paths = [(f"{emoji_id}", f"{size}.{fmt}"), (f"{emoji_id}", f"56.{fmt}"), (f"{emoji_id}", f"56.{def_fmt}")]
+        paths = [f"emojis/{'/'.join(name)}" for name in paths]
+        return await self._getResizeImage(paths, (size, size), anim, fmt)
 
     async def getRoleIcon(self, rid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = icon_hash.startswith("a_")
@@ -206,8 +245,14 @@ class _Storage(metaclass=SingletonABCMeta):
     async def setGuildEventFromBytesIO(self, event_id: int, image: BytesIO) -> str:
         return await self._setImage(f"guild_event", event_id, 600, lambda s: int(9 * s / 16), image)
 
-    @abstractmethod
-    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict: ...  # pragma: no cover
+    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
+        image = Image.open(image)
+        anim = imageFrames(image) > 1
+        form = "gif" if anim else "png"
+        coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
+        data = await coro
+        await self._write(f"emojis/{emoji_id}/56.{form}", data)
+        return {"animated": anim}
 
     async def setRoleIconFromBytesIO(self, rid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
@@ -219,11 +264,11 @@ class _Storage(metaclass=SingletonABCMeta):
         size = 256 if a else 1024
         return await self._setImage("app-icon", aid, size, lambda s: s, image)
 
-    @abstractmethod
-    async def uploadAttachment(self, data, attachment: Attachment): ...  # pragma: no cover
+    async def uploadAttachment(self, data: bytes, attachment: Attachment):
+        return await self._write(f"attachments/{attachment.channel.id}/{attachment.id}/{attachment.filename}", data)
 
-    @abstractmethod
-    async def getAttachment(self, channel_id, attachment_id, name): ...  # pragma: no cover
+    async def getAttachment(self, channel_id: int, attachment_id: int, name: str) -> Optional[bytes]:
+        return await self._read(f"attachments/{channel_id}/{attachment_id}/{name}")
 
 
 # noinspection PyShadowingBuiltins
@@ -232,86 +277,18 @@ class FileStorage(_Storage):
         self.root = path
         makedirs(self.root, exist_ok=True)
 
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
-        bytes]:
-        anim = hash.startswith("a_")
-        def_fmt = "gif" if anim else "png"
-        paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
-        paths = [pjoin(self.root, f"{type}s", str(id), name) for name in paths]
-        size = (size, size_f(size))
-        for i, p in enumerate(paths):
-            if isfile(p):
-                if i == 0:
-                    async with aopen(p, "rb") as f:
-                        return await f.read()
-                else:
-                    image = Image.open(p)
-                    coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
-                    data = await coro
-                    async with aopen(paths[0], "wb") as f:
-                        await f.write(data)
-                    return data
-
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
-        if def_hash is not None:
-            hash = def_hash
-        else:
-            hash = md5()
-            hash.update(image.getvalue())
-            hash = hash.hexdigest()
-        image = Image.open(image)
-        anim = imageFrames(image) > 1
-        form = "gif" if anim else "png"
-        hash = f"a_{hash}" if anim else hash
-        makedirs(pjoin(self.root, f"{type}s", str(id)), exist_ok=True)
-        size = (size, size_f(size))
-        coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
-        data = await coro
-        async with aopen(pjoin(self.root, f"{type}s", str(id), f"{hash}_{size[0]}.{form}"), "wb") as f:
-            await f.write(data)
-        return hash
-
-    async def getEmoji(self, emoji_id: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
-        def_fmt = "gif" if anim else "png"
-        paths = [(f"{emoji_id}", f"{size}.{fmt}"), (f"{emoji_id}", f"56.{fmt}"), (f"{emoji_id}", f"56.{def_fmt}")]
-        paths = [pjoin(self.root, f"emojis", *name) for name in paths]
-        size = (size, size)
-        for i, p in enumerate(paths):
-            if isfile(p):
-                if i == 0:
-                    async with aopen(p, "rb") as f:
-                        return await f.read()
-                else:
-                    image = Image.open(p)
-                    coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
-                    data = await coro
-                    async with aopen(paths[0], "wb") as f:
-                        await f.write(data)
-                    return data
-
-    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
-        image = Image.open(image)
-        anim = imageFrames(image) > 1
-        form = "gif" if anim else "png"
-        makedirs(pjoin(self.root, f"emojis", str(emoji_id)), exist_ok=True)
-        coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
-        data = await coro
-        async with aopen(pjoin(self.root, f"emojis", str(emoji_id), f"56.{form}"), "wb") as f:
-            await f.write(data)
-        return {"animated": anim}
-
-    async def uploadAttachment(self, data: bytes, attachment: Attachment) -> int:
-        fpath = pjoin(self.root, "attachments", str(attachment.channel.id), str(attachment.id))
-        makedirs(fpath, exist_ok=True)
-        async with aopen(pjoin(fpath, attachment.filename), "wb") as f:
-            return await f.write(data)
-
-    async def getAttachment(self, channel_id: int, attachment_id: int, name: str) -> Optional[bytes]:
-        fpath = pjoin(self.root, "attachments", str(channel_id), str(attachment_id), name)
-        if not isfile(fpath):
+    async def _read(self, path: str) -> Optional[bytes]:
+        path = pjoin(self.root, path)
+        if not isfile(path):
             return
-        async with aopen(fpath, "rb") as f:
+        async with aopen(path, "rb") as f:
             return await f.read()
+
+    async def _write(self, path: str, data: bytes) -> int:
+        path = pjoin(self.root, path)
+        makedirs(Path(path).parent, exist_ok=True)
+        async with aopen(path, "wb") as f:
+            return await f.write(data)
 
 
 # noinspection PyShadowingBuiltins
@@ -322,94 +299,16 @@ class S3Storage(_Storage):
         self.bucket = bucket
         self._s3 = S3Client(key_id, access_key, endpoint)
 
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
-        bytes]:
-        anim = hash.startswith("a_")
-        def_fmt = "gif" if anim else "png"
-        paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
-        paths = [f"{type}s/{id}/{name}" for name in paths]
-        size = (size, size_f(size))
-        for i, path in enumerate(paths):
-            try:
-                f = await self._s3.download_file(self.bucket, path, in_memory=True)
-            except S3Exception as ce:
-                if ce.code != "NoSuchKey":  # pragma: no cover
-                    raise
-                continue
-            else:
-                if i == 0:
-                    return f.getvalue()
-                image = Image.open(f)
-                coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
-                data = await coro
-                await self._s3.upload_file(self.bucket, paths[0], BytesIO(data))
-                return data
-
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
-        if def_hash is not None:
-            hash = def_hash
-        else:
-            hash = md5()
-            hash.update(image.getvalue())
-            hash = hash.hexdigest()
-        image = Image.open(image)
-        anim = imageFrames(image) > 1
-        form = "gif" if anim else "png"
-        hash = f"a_{hash}" if anim else hash
-        size = (size, size_f(size))
-        coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
-        data = await coro
-        await self._s3.upload_file(self.bucket, f"{type}s/{id}/{hash}_{size[0]}.{form}", BytesIO(data))
-
-        return hash
-
-    async def getEmoji(self, emoji_id: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
-        def_fmt = "gif" if anim else "png"
-        paths = [(f"{emoji_id}", f"{size}.{fmt}"), (f"{emoji_id}", f"56.{fmt}"), (f"{emoji_id}", f"56.{def_fmt}")]
-        paths = [f"emojis/{'/'.join(name)}" for name in paths]
-        size = (size, size)
-        for i, path in enumerate(paths):
-            try:
-                f = await self._s3.download_file(self.bucket, path, in_memory=True)
-            except S3Exception as ce:
-                if ce.code != "NoSuchKey":  # pragma: no cover
-                    raise
-                continue
-            else:
-                if i == 0:
-                    return f.getvalue()
-                image = Image.open(f)
-                coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
-                data = await coro
-                await self._s3.upload_file(self.bucket, paths[0], BytesIO(data))
-                return data
-
-    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
-        image = Image.open(image)
-        anim = imageFrames(image) > 1
-        form = "gif" if anim else "png"
-        coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
-        data = await coro
-        await self._s3.upload_file(self.bucket, f"emojis/{emoji_id}/56.{form}", BytesIO(data))
-        return {"animated": anim}
-
-    async def uploadAttachment(self, data, attachment: Attachment):
-        await self._s3.upload_file(
-            self.bucket,
-            f"attachments/{attachment.channel.id}/{attachment.id}/{attachment.filename}",
-            BytesIO(data)
-        )
-        return len(data)
-
-    async def getAttachment(self, channel_id: int, attachment_id: int, name: str) -> Optional[bytes]:
+    async def _read(self, path: str) -> Optional[bytes]:
         try:
-            f = await self._s3.download_file(self.bucket, f"attachments/{channel_id}/{attachment_id}/{name}",
-                                             in_memory=True)
+            return (await self._s3.download_file(self.bucket, path, in_memory=True)).getvalue()
         except S3Exception as ce:
             if ce.code != "NoSuchKey":  # pragma: no cover
                 raise
-        else:
-            return f.getvalue()
+
+    async def _write(self, path: str, data: bytes) -> int:
+        await self._s3.upload_file(self.bucket, path, BytesIO(data))
+        return len(data)
 
 
 # noinspection PyShadowingBuiltins
@@ -423,99 +322,55 @@ class FTPStorage(_Storage):
         self.password = password
         self.port = port
 
+        self.session: ContextVar[FClient] = ContextVar("session")
+
+    async def _read(self, path: str) -> Optional[bytes]:
+        ftp = self.session.get()
+
+        try:
+            return await ftp.s_download(path)
+        except StatusCodeError as sce:
+            if "550" not in sce.received_codes:  # pragma: no cover
+                raise
+
+    async def _write(self, path: str, data: bytes) -> int:
+        ftp = self.session.get()
+        await ftp.s_upload(path, data)
+        return len(data)
+
     def _getClient(self) -> FClient:
         return FClient.context(self.host, user=self.user, password=self.password, port=self.port)
 
     async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
         bytes]:
         async with self._getClient() as ftp:
-            anim = hash.startswith("a_")
-            def_fmt = "gif" if anim else "png"
-            paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
-            paths = [f"{type}s/{id}/{name}" for name in paths]
-            size = (size, size_f(size))
-            for i, p in enumerate(paths):
-                f = BytesIO()
-                try:
-                    f.write(await ftp.s_download(p))
-                except StatusCodeError as sce:
-                    if "550" not in sce.received_codes:  # pragma: no cover
-                        raise
-                    continue
-                else:
-                    if i == 0:
-                        return f.getvalue()
-                    else:
-                        image = Image.open(f)
-                        coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
-                        data = await coro
-                        await ftp.s_upload(paths[0], data)
-                        return data
+            self.session.set(ftp)
+            return await super()._getImage(type, id, hash, size, fmt, def_size, size_f)
 
     async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
         async with self._getClient() as ftp:
-            if def_hash is not None:
-                hash = def_hash
-            else:
-                hash = md5()
-                hash.update(image.getvalue())
-                hash = hash.hexdigest()
-            image = Image.open(image)
-            anim = imageFrames(image) > 1
-            form = "gif" if anim else "png"
-            hash = f"a_{hash}" if anim else hash
-            size = (size, size_f(size))
-            coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
-            data = await coro
-            await ftp.s_upload(f"{type}s/{id}/{hash}_{size[0]}.{form}", data)
-        return hash
+            self.session.set(ftp)
+            return await super()._setImage(type, id, size, size_f, image, def_hash)
 
     async def getEmoji(self, emoji_id: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
         async with self._getClient() as ftp:
-            def_fmt = "gif" if anim else "png"
-            paths = [(f"{emoji_id}", f"{size}.{fmt}"), (f"{emoji_id}", f"56.{fmt}"), (f"{emoji_id}", f"56.{def_fmt}")]
-            paths = [f"emojis/{'/'.join(name)}" for name in paths]
-            size = (size, size)
-            for i, p in enumerate(paths):
-                f = BytesIO()
-                try:
-                    f.write(await ftp.s_download(p))
-                except StatusCodeError as sce:
-                    if "550" not in sce.received_codes:  # pragma: no cover
-                        raise
-                    continue
-                else:
-                    if i == 0:
-                        return f.getvalue()
-                    else:
-                        image = Image.open(f)
-                        coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
-                        data = await coro
-                        await ftp.s_upload(paths[0], data)
-                        return data
+            self.session.set(ftp)
+            return await super().getEmoji(emoji_id, size, fmt, anim)
 
     async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
         async with self._getClient() as ftp:
-            image = Image.open(image)
-            anim = imageFrames(image) > 1
-            form = "gif" if anim else "png"
-            coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
-            data = await coro
-            await ftp.s_upload(f"emojis/{emoji_id}/56.{form}", data)
-            return {"animated": anim}
+            self.session.set(ftp)
+            return await super().setEmojiFromBytesIO(emoji_id, image)
 
     async def uploadAttachment(self, data: bytes, attachment: Attachment) -> int:
         async with self._getClient() as ftp:
-            await ftp.s_upload(f"attachments/{attachment.channel.id}/{attachment.id}/{attachment.filename}", data)
-            return len(data)
+            self.session.set(ftp)
+            return await super().uploadAttachment(data, attachment)
 
     async def getAttachment(self, channel_id: int, attachment_id: int, name: str) -> Optional[bytes]:
         async with self._getClient() as ftp:
-            try:
-                return await ftp.s_download(f"attachments/{channel_id}/{attachment_id}/{name}")
-            except StatusCodeError as sce:
-                if "550" not in sce.received_codes:  # pragma: no cover
-                    raise
+            self.session.set(ftp)
+            return await super().getAttachment(channel_id, attachment_id, name)
 
 
 def getStorage() -> _Storage:
