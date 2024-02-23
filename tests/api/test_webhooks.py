@@ -288,6 +288,9 @@ async def test_get_delete_webhook_message():
     json = await resp.get_json()
     assert json == message
 
+    resp = await client.get(f"/api/webhooks/{webhook['id']}/{webhook['token']}1/messages/{message['id']}")
+    assert resp.status_code == 401
+
     resp = await client.delete(f"/api/webhooks/{webhook['id']}/{webhook['token']}/messages/{message['id']}")
     assert resp.status_code == 204
 

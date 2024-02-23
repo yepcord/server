@@ -142,6 +142,13 @@ async def test_answer_to_slash_command():
         "type": 4, "data": {"flags": 0}})
     assert resp.status_code == 400
 
+    resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token.replace('int___', '')}/callback", json={
+        "type": 4, "data": {"flags": 0}})
+    assert resp.status_code == 404
+    resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token}1/callback", json={
+        "type": 4, "data": {"flags": 0}})
+    assert resp.status_code == 404
+
     resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token}/callback", json={
         "type": 4, "data": {"content": "test interaction response"}})
     assert resp.status_code == 204
@@ -355,6 +362,9 @@ async def test_get_update_delete_slash_command_response():
     resp = await client.post(f"/api/v9/interactions/{int_id}/{int_token}/callback",
                              json={"type": 4, "data": {"content": "test", "flags": 64}})
     assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v9/webhooks/{application['id']}1/{int_token}/messages/@original")
+    assert resp.status_code == 404
 
     resp = await client.get(f"/api/v9/webhooks/{application['id']}/{int_token}/messages/@original")
     assert resp.status_code == 200, await resp.get_json()
