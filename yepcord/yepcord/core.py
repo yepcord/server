@@ -267,7 +267,7 @@ class Core(Singleton):
 
     async def getChannel(self, channel_id: Optional[int]) -> Optional[Channel]:
         if channel_id is None:
-            return None
+            return
         if (channel := await Channel.get_or_none(id=channel_id).select_related("guild", "owner", "parent")) is None:
             return
         return await self.setLastMessageIdForChannel(channel)
@@ -623,8 +623,11 @@ class Core(Singleton):
 
         return guild
 
-    async def getRole(self, role_id: int) -> Role:
-        return await Role.get_or_none(id=role_id).select_related("guild")
+    async def getRole(self, role_id: int, guild: Optional[Guild] = None) -> Role:
+        q = {"id": role_id}
+        if guild is not None:
+            q["guild"] = guild
+        return await Role.get_or_none(**q).select_related("guild")
 
     async def getRoles(self, guild: Guild, exclude_default=False) -> list[Role]:
         query = Role.filter(guild=guild).select_related("guild")
@@ -784,6 +787,11 @@ class Core(Singleton):
         return await (PermissionOverwrite.get_or_none(channel=channel, **kw)
                       .select_related("channel", "channel__guild", "target_role", "target_user"))
 
+    async def getPermissionOverwriteUnk(self, channel: Channel, target_id: int) -> Optional[PermissionOverwrite]:
+        q = Q(target_role__id=target_id) | Q(target_user__id=target_id)
+        return await (PermissionOverwrite.filter(channel=channel).get_or_none(q)
+                      .select_related("channel", "channel__guild", "target_role", "target_user"))
+
     async def getPermissionOverwrites(self, channel: Channel) -> list[PermissionOverwrite]:
         return await PermissionOverwrite.filter(channel=channel).select_related("target_role", "target_user").all()
 
@@ -830,8 +838,11 @@ class Core(Singleton):
     async def getGuildTemplate(self, guild: Guild) -> Optional[GuildTemplate]:
         return await GuildTemplate.get_or_none(guild=guild).select_related("creator", "guild")
 
-    async def getGuildTemplateById(self, template_id: int) -> Optional[GuildTemplate]:
-        return await GuildTemplate.get_or_none(id=template_id).select_related("guild", "creator")
+    async def getGuildTemplateById(self, template_id: int, guild: Optional[Guild] = None) -> Optional[GuildTemplate]:
+        q = {"id": template_id}
+        if guild is not None:
+            q["guild"] = guild
+        return await GuildTemplate.get_or_none(**q).select_related("guild", "creator")
 
     async def setTemplateDirty(self, guild: Guild) -> None:
         if not (template := await self.getGuildTemplate(guild)):

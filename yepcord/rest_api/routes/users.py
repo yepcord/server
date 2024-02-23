@@ -16,21 +16,18 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Blueprint
-from quart_schema import validate_querystring
-
+from ..dependencies import DepUser
 from ..models.users import UserProfileQuery
-from ..utils import getUser, multipleDecorators
+from ..y_blueprint import YBlueprint
 from ...yepcord.ctx import getCore
 from ...yepcord.models import User
 
 # Base path is /api/vX/users
-users = Blueprint('users', __name__)
+users = YBlueprint('users', __name__)
 
 
-@users.get("/<string:target_user>/profile")
-@multipleDecorators(validate_querystring(UserProfileQuery), getUser)
-async def get_user_profile(query_args: UserProfileQuery, user: User, target_user: str):
+@users.get("/<string:target_user>/profile", qs_cls=UserProfileQuery)
+async def get_user_profile(query_args: UserProfileQuery, target_user: str, user: User = DepUser):
     if target_user == "@me":
         target_user = user.id
     target_user = int(target_user)

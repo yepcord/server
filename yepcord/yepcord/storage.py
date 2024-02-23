@@ -16,6 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from __future__ import annotations
+
 from abc import abstractmethod, ABCMeta
 from asyncio import get_event_loop, gather
 from concurrent.futures import ThreadPoolExecutor
@@ -42,13 +43,12 @@ except ImportError:  # pragma: no cover
     _SUPPORT_FTP = False
 
 try:
-    from aioboto3 import Session
-    from botocore.exceptions import ClientError
+    from s3lite import Client as S3Client, S3Exception
 
     _SUPPORT_S3 = True
 except ImportError:  # pragma: no cover
-    Session = object
-    ClientError = None
+    S3Client = object
+    S3Exception = None
     _SUPPORT_S3 = False
 
 
@@ -78,6 +78,7 @@ async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str) -> bytes
         b = BytesIO()
         frames[0].save(b, format=form, save_all=True, append_images=frames[1:], loop=0)
         return b.getvalue()
+
     with ThreadPoolExecutor() as pool:
         res = await gather(get_event_loop().run_in_executor(pool, lambda: _resize()))
     return res[0]
@@ -94,6 +95,7 @@ async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
             save_all = False
         img.save(b, format=form_, save_all=save_all)
         return b.getvalue()
+
     with ThreadPoolExecutor() as pool:
         res = await gather(get_event_loop().run_in_executor(pool, _resize, form))
     return res[0]
@@ -111,10 +113,12 @@ class SingletonABCMeta(ABCMeta, SingletonMeta):
 class _Storage(metaclass=SingletonABCMeta):
 
     @abstractmethod
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]: ...  # pragma: no cover
+    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
+        bytes]: ...  # pragma: no cover
 
     @abstractmethod
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str: ...  # pragma: no cover
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO,
+                        def_hash: str = None) -> str: ...  # pragma: no cover
 
     async def getAvatar(self, uid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = avatar_hash.startswith("a_")
@@ -159,7 +163,7 @@ class _Storage(metaclass=SingletonABCMeta):
     async def getGuildSplash(self, gid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = banner_hash.startswith("a_")
         def_size = 480 if anim else 600
-        return await self._getImage("splash", gid, banner_hash, size, fmt, def_size, lambda s: int(9*s/16))
+        return await self._getImage("splash", gid, banner_hash, size, fmt, def_size, lambda s: int(9 * s / 16))
 
     async def getAppIcon(self, aid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = icon_hash.startswith("a_")
@@ -179,7 +183,7 @@ class _Storage(metaclass=SingletonABCMeta):
     async def setGuildSplashFromBytesIO(self, gid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 480 if a else 600
-        return await self._setImage("splash", gid, size, lambda s: int(9*s/16), image)
+        return await self._setImage("splash", gid, size, lambda s: int(9 * s / 16), image)
 
     async def setChannelIconFromBytesIO(self, cid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
@@ -228,7 +232,8 @@ class FileStorage(_Storage):
         self.root = path
         makedirs(self.root, exist_ok=True)
 
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]:
+    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
+        bytes]:
         anim = hash.startswith("a_")
         def_fmt = "gif" if anim else "png"
         paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
@@ -247,7 +252,7 @@ class FileStorage(_Storage):
                         await f.write(data)
                     return data
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
         if def_hash is not None:
             hash = def_hash
         else:
@@ -266,9 +271,9 @@ class FileStorage(_Storage):
             await f.write(data)
         return hash
 
-    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
+    async def getEmoji(self, emoji_id: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
         def_fmt = "gif" if anim else "png"
-        paths = [(f"{eid}", f"{size}.{fmt}"), (f"{eid}", f"56.{fmt}"), (f"{eid}", f"56.{def_fmt}")]
+        paths = [(f"{emoji_id}", f"{size}.{fmt}"), (f"{emoji_id}", f"56.{fmt}"), (f"{emoji_id}", f"56.{def_fmt}")]
         paths = [pjoin(self.root, f"emojis", *name) for name in paths]
         size = (size, size)
         for i, p in enumerate(paths):
@@ -284,24 +289,24 @@ class FileStorage(_Storage):
                         await f.write(data)
                     return data
 
-    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
+    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
         image = Image.open(image)
         anim = imageFrames(image) > 1
         form = "gif" if anim else "png"
-        makedirs(pjoin(self.root, f"emojis", str(eid)), exist_ok=True)
+        makedirs(pjoin(self.root, f"emojis", str(emoji_id)), exist_ok=True)
         coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
         data = await coro
-        async with aopen(pjoin(self.root, f"emojis", str(eid), f"56.{form}"), "wb") as f:
+        async with aopen(pjoin(self.root, f"emojis", str(emoji_id), f"56.{form}"), "wb") as f:
             await f.write(data)
         return {"animated": anim}
 
-    async def uploadAttachment(self, data, attachment: Attachment):
+    async def uploadAttachment(self, data: bytes, attachment: Attachment) -> int:
         fpath = pjoin(self.root, "attachments", str(attachment.channel.id), str(attachment.id))
         makedirs(fpath, exist_ok=True)
         async with aopen(pjoin(fpath, attachment.filename), "wb") as f:
             return await f.write(data)
 
-    async def getAttachment(self, channel_id, attachment_id, name):
+    async def getAttachment(self, channel_id: int, attachment_id: int, name: str) -> Optional[bytes]:
         fpath = pjoin(self.root, "attachments", str(channel_id), str(attachment_id), name)
         if not isfile(fpath):
             return
@@ -313,117 +318,103 @@ class FileStorage(_Storage):
 class S3Storage(_Storage):
     def __init__(self, endpoint: str, key_id: str, access_key: str, bucket: str):
         if not _SUPPORT_S3:  # pragma: no cover
-            raise RuntimeError("S3 module not found! To use s3 storage type, install dependencies "
-                               "from requirements-s3.txt")
-        self.endpoint = endpoint
-        self.key_id = key_id
-        self.access_key = access_key
+            raise RuntimeError("S3 module not found! To use s3 storage type, install s3lite")
         self.bucket = bucket
-        self._sess = Session()
-        self._args = {
-            "endpoint_url": self.endpoint,
-            "aws_access_key_id": self.key_id,
-            "aws_secret_access_key": self.access_key
-        }
+        self._s3 = S3Client(key_id, access_key, endpoint)
 
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]:
-        async with self._sess.client("s3", **self._args) as s3:
-            anim = hash.startswith("a_")
-            def_fmt = "gif" if anim else "png"
-            paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
-            paths = [f"{type}s/{id}/{name}" for name in paths]
-            size = (size, size_f(size))
-            for i, p in enumerate(paths):
-                f = BytesIO()
-                try:
-                    await s3.download_fileobj(self.bucket, p, f)
-                except ClientError as ce:
-                    if "(404)" not in str(ce):  # pragma: no cover
-                        raise
-                    continue
-                else:
-                    if i == 0:
-                        return f.getvalue()
-                    else:
-                        image = Image.open(f)
-                        coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
-                        data = await coro
-                        await s3.upload_fileobj(BytesIO(data), self.bucket, paths[0])
-                        return data
-
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
-        async with self._sess.client("s3", **self._args) as s3:
-            if def_hash is not None:
-                hash = def_hash
+    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
+        bytes]:
+        anim = hash.startswith("a_")
+        def_fmt = "gif" if anim else "png"
+        paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
+        paths = [f"{type}s/{id}/{name}" for name in paths]
+        size = (size, size_f(size))
+        for i, path in enumerate(paths):
+            try:
+                f = await self._s3.download_file(self.bucket, path, in_memory=True)
+            except S3Exception as ce:
+                if ce.code != "NoSuchKey":  # pragma: no cover
+                    raise
+                continue
             else:
-                hash = md5()
-                hash.update(image.getvalue())
-                hash = hash.hexdigest()
-            image = Image.open(image)
-            anim = imageFrames(image) > 1
-            form = "gif" if anim else "png"
-            hash = f"a_{hash}" if anim else hash
-            size = (size, size_f(size))
-            coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
-            data = await coro
-            await s3.upload_fileobj(BytesIO(data), self.bucket, f"{type}s/{id}/{hash}_{size[0]}.{form}")
+                if i == 0:
+                    return f.getvalue()
+                image = Image.open(f)
+                coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
+                data = await coro
+                await self._s3.upload_file(self.bucket, paths[0], BytesIO(data))
+                return data
+
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
+        if def_hash is not None:
+            hash = def_hash
+        else:
+            hash = md5()
+            hash.update(image.getvalue())
+            hash = hash.hexdigest()
+        image = Image.open(image)
+        anim = imageFrames(image) > 1
+        form = "gif" if anim else "png"
+        hash = f"a_{hash}" if anim else hash
+        size = (size, size_f(size))
+        coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
+        data = await coro
+        await self._s3.upload_file(self.bucket, f"{type}s/{id}/{hash}_{size[0]}.{form}", BytesIO(data))
+
         return hash
 
-    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
-        async with self._sess.client("s3", **self._args) as s3:
-            def_fmt = "gif" if anim else "png"
-            paths = [(f"{eid}", f"{size}.{fmt}"), (f"{eid}", f"56.{fmt}"), (f"{eid}", f"56.{def_fmt}")]
-            paths = [f"emojis/{'/'.join(name)}" for name in paths]
-            size = (size, size)
-            for i, p in enumerate(paths):
-                f = BytesIO()
-                try:
-                    await s3.download_fileobj(self.bucket, p, f)
-                except ClientError as ce:
-                    if "(404)" not in str(ce):  # pragma: no cover
-                        raise
-                    continue
-                else:
-                    if i == 0:
-                        return f.getvalue()
-                    else:
-                        image = Image.open(f)
-                        coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
-                        data = await coro
-                        await s3.upload_fileobj(BytesIO(data), self.bucket, paths[0])
-                        return data
+    async def getEmoji(self, emoji_id: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
+        def_fmt = "gif" if anim else "png"
+        paths = [(f"{emoji_id}", f"{size}.{fmt}"), (f"{emoji_id}", f"56.{fmt}"), (f"{emoji_id}", f"56.{def_fmt}")]
+        paths = [f"emojis/{'/'.join(name)}" for name in paths]
+        size = (size, size)
+        for i, path in enumerate(paths):
+            try:
+                f = await self._s3.download_file(self.bucket, path, in_memory=True)
+            except S3Exception as ce:
+                if ce.code != "NoSuchKey":  # pragma: no cover
+                    raise
+                continue
+            else:
+                if i == 0:
+                    return f.getvalue()
+                image = Image.open(f)
+                coro = resizeImage(image, size, fmt) if not anim else resizeAnimImage(image, size, fmt)
+                data = await coro
+                await self._s3.upload_file(self.bucket, paths[0], BytesIO(data))
+                return data
 
-    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
-        async with self._sess.client("s3", **self._args) as s3:
-            image = Image.open(image)
-            anim = imageFrames(image) > 1
-            form = "gif" if anim else "png"
-            coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
-            data = await coro
-            await s3.upload_fileobj(BytesIO(data), self.bucket, f"emojis/{eid}/56.{form}")
-            return {"animated": anim}
+    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
+        image = Image.open(image)
+        anim = imageFrames(image) > 1
+        form = "gif" if anim else "png"
+        coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
+        data = await coro
+        await self._s3.upload_file(self.bucket, f"emojis/{emoji_id}/56.{form}", BytesIO(data))
+        return {"animated": anim}
 
     async def uploadAttachment(self, data, attachment: Attachment):
-        async with self._sess.client("s3", **self._args) as s3:
-            await s3.upload_fileobj(BytesIO(data), self.bucket,
-                                    f"attachments/{attachment.channel.id}/{attachment.id}/{attachment.filename}")
-            return len(data)
+        await self._s3.upload_file(
+            self.bucket,
+            f"attachments/{attachment.channel.id}/{attachment.id}/{attachment.filename}",
+            BytesIO(data)
+        )
+        return len(data)
 
-    async def getAttachment(self, channel_id, attachment_id, name):
-        async with self._sess.client("s3", **self._args) as s3:
-            f = BytesIO()
-            try:
-                await s3.download_fileobj(self.bucket, f"attachments/{channel_id}/{attachment_id}/{name}", f)
-            except ClientError as ce:
-                if "(404)" not in str(ce):  # pragma: no cover
-                    raise
-            else:
-                return f.getvalue()
+    async def getAttachment(self, channel_id: int, attachment_id: int, name: str) -> Optional[bytes]:
+        try:
+            f = await self._s3.download_file(self.bucket, f"attachments/{channel_id}/{attachment_id}/{name}",
+                                             in_memory=True)
+        except S3Exception as ce:
+            if ce.code != "NoSuchKey":  # pragma: no cover
+                raise
+        else:
+            return f.getvalue()
 
 
 # noinspection PyShadowingBuiltins
 class FTPStorage(_Storage):
-    def __init__(self, host: str, user: str, password: str, port: int=21):
+    def __init__(self, host: str, user: str, password: str, port: int = 21):
         if not _SUPPORT_FTP:  # pragma: no cover
             raise RuntimeError("Ftp module not found! To use ftp storage type, install dependencies "
                                "from requirements-ftp.txt")
@@ -435,7 +426,8 @@ class FTPStorage(_Storage):
     def _getClient(self) -> FClient:
         return FClient.context(self.host, user=self.user, password=self.password, port=self.port)
 
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[bytes]:
+    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
+        bytes]:
         async with self._getClient() as ftp:
             anim = hash.startswith("a_")
             def_fmt = "gif" if anim else "png"
@@ -460,7 +452,7 @@ class FTPStorage(_Storage):
                         await ftp.s_upload(paths[0], data)
                         return data
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str=None) -> str:
+    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
         async with self._getClient() as ftp:
             if def_hash is not None:
                 hash = def_hash
@@ -478,10 +470,10 @@ class FTPStorage(_Storage):
             await ftp.s_upload(f"{type}s/{id}/{hash}_{size[0]}.{form}", data)
         return hash
 
-    async def getEmoji(self, eid: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
+    async def getEmoji(self, emoji_id: int, size: int, fmt: str, anim: bool) -> Optional[bytes]:
         async with self._getClient() as ftp:
             def_fmt = "gif" if anim else "png"
-            paths = [(f"{eid}", f"{size}.{fmt}"), (f"{eid}", f"56.{fmt}"), (f"{eid}", f"56.{def_fmt}")]
+            paths = [(f"{emoji_id}", f"{size}.{fmt}"), (f"{emoji_id}", f"56.{fmt}"), (f"{emoji_id}", f"56.{def_fmt}")]
             paths = [f"emojis/{'/'.join(name)}" for name in paths]
             size = (size, size)
             for i, p in enumerate(paths):
@@ -502,22 +494,22 @@ class FTPStorage(_Storage):
                         await ftp.s_upload(paths[0], data)
                         return data
 
-    async def setEmojiFromBytesIO(self, eid: int, image: BytesIO) -> dict:
+    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
         async with self._getClient() as ftp:
             image = Image.open(image)
             anim = imageFrames(image) > 1
             form = "gif" if anim else "png"
             coro = resizeImage(image, (56, 56), form) if not anim else resizeAnimImage(image, (56, 56), form)
             data = await coro
-            await ftp.s_upload(f"emojis/{eid}/56.{form}", data)
+            await ftp.s_upload(f"emojis/{emoji_id}/56.{form}", data)
             return {"animated": anim}
 
-    async def uploadAttachment(self, data, attachment: Attachment):
+    async def uploadAttachment(self, data: bytes, attachment: Attachment) -> int:
         async with self._getClient() as ftp:
             await ftp.s_upload(f"attachments/{attachment.channel.id}/{attachment.id}/{attachment.filename}", data)
             return len(data)
 
-    async def getAttachment(self, channel_id, attachment_id, name):
+    async def getAttachment(self, channel_id: int, attachment_id: int, name: str) -> Optional[bytes]:
         async with self._getClient() as ftp:
             try:
                 return await ftp.s_download(f"attachments/{channel_id}/{attachment_id}/{name}")
@@ -528,7 +520,7 @@ class FTPStorage(_Storage):
 
 def getStorage() -> _Storage:
     storage_type = Config.STORAGE["type"]
-    assert storage_type in ("local", "s3", "ftp",), "STORAGE.type must be one of ('local', 's3', 'ftp')"
+    assert storage_type in {"local", "s3", "ftp"}, "STORAGE.type must be one of ('local', 's3', 'ftp')"
     storage = Config.STORAGE[storage_type]
 
     if storage_type == "s3":

@@ -16,12 +16,12 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Blueprint
-from quart_schema import validate_request
 from tortoise.expressions import Q
 
+from ..dependencies import DepUser, DepInteraction
 from ..models.interactions import InteractionCreate, InteractionRespond, InteractionDataOption as InteractionOption
-from ..utils import getUser, get_multipart_json, getInteraction, multipleDecorators
+from ..utils import get_multipart_json
+from ..y_blueprint import YBlueprint
 from ...gateway.events import InteractionCreateEvent, InteractionFailureEvent, MessageCreateEvent, \
     InteractionSuccessEvent
 from ...yepcord.ctx import getCore, getGw
@@ -34,7 +34,7 @@ from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import execute_after
 
 # Base path is /api/vX/interactions
-interactions = Blueprint('interactions', __name__)
+interactions = YBlueprint('interactions', __name__)
 
 
 async def resolve_options(interaction_options: list[InteractionOption], guild: Guild = None, result=None):
@@ -119,8 +119,7 @@ def validate_options(user_options: list[InteractionOption], bot_options: list[di
 
 
 @interactions.post("/", strict_slashes=False)
-@getUser
-async def create_interaction(user: User):
+async def create_interaction(user: User = DepUser):
     data = InteractionCreate(**(await get_multipart_json()))
     if (application := await Application.get_or_none(id=data.application_id, deleted=False)) is None:
         raise InvalidDataErr(404, Errors.make(10002))
@@ -219,9 +218,8 @@ async def send_interaction_response(interaction: Interaction, flags: bool, conte
     return message
 
 
-@interactions.post("/<int:interaction>/<string:token>/callback")
-@multipleDecorators(validate_request(InteractionRespond), getInteraction)
-async def respond_to_interaction(data: InteractionRespond, interaction: Interaction):
+@interactions.post("/<int:interaction>/<string:token>/callback", body_cls=InteractionRespond)
+async def respond_to_interaction(data: InteractionRespond, interaction: Interaction = DepInteraction):
     T = InteractionCallbackType
     d = data.data
     if interaction.status != InteractionStatus.PENDING:

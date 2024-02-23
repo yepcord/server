@@ -19,14 +19,13 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from random import choice
 from time import time
+from typing import Union
 
-from quart import Blueprint
-from quart_schema import validate_request, validate_querystring
-
+from ..dependencies import DepUser, DepSession, DepGuildMember, DepGuild
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, PutNote, \
     RelationshipRequest, SettingsProtoUpdate, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, \
     DmChannelCreate, DeleteRequest, GetScheduledEventsQuery, RemoteAuthLogin, RemoteAuthFinish, RemoteAuthCancel
-from ..utils import getUser, multipleDecorators, getSession, getGuildWM, allowOauth, allowBots
+from ..y_blueprint import YBlueprint
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
     UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent
 from ...yepcord.classes.other import MFA
@@ -34,24 +33,22 @@ from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import RelationshipType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, \
-    GuildMember, RemoteAuthSession, Relationship
+    GuildMember, RemoteAuthSession, Relationship, Authorization, Bot
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import execute_after, validImage, getImage
 
 # Base path is /api/vX/users/@me
-users_me = Blueprint('users_@me', __name__)
+users_me = YBlueprint('users_@me', __name__)
 
 
-@users_me.get("/", strict_slashes=False)
-@multipleDecorators(allowOauth(["identify"]), allowBots, getUser)
-async def get_me(user: User):
+@users_me.get("/", strict_slashes=False, allow_bots=True, oauth_scopes=["identify"])
+async def get_me(session: Union[Session, Authorization, Bot] = DepSession, user: User = DepUser):
     userdata = await user.data
-    return await userdata.ds_json_full()
+    return await userdata.ds_json_full(isinstance(session, Authorization) and "email" not in session.scope_set)
 
 
-@users_me.patch("/", strict_slashes=False)
-@multipleDecorators(validate_request(UserUpdate), getUser)
-async def update_me(data: UserUpdate, user: User):
+@users_me.patch("/", strict_slashes=False, body_cls=UserUpdate)
+async def update_me(data: UserUpdate, user: User = DepUser):
     userdata = await user.data
     discrim = data.discriminator if data.discriminator and data.discriminator != userdata.discriminator else None
     username = data.username if data.username and data.username != userdata.username else None
@@ -90,9 +87,8 @@ async def update_me(data: UserUpdate, user: User):
     return await userdata.ds_json_full()
 
 
-@users_me.patch("/profile")
-@multipleDecorators(validate_request(UserProfileUpdate), getUser)
-async def get_my_profile(data: UserProfileUpdate, user: User):
+@users_me.patch("/profile", body_cls=UserProfileUpdate)
+async def get_my_profile(data: UserProfileUpdate, user: User = DepUser):
     if data.banner != "" and data.banner is not None:
         if (img := getImage(data.banner)) and validImage(img):
             if banner := await getCDNStorage().setBannerFromBytesIO(user.id, img):
@@ -105,15 +101,13 @@ async def get_my_profile(data: UserProfileUpdate, user: User):
 
 
 @users_me.get("/consent")
-@getUser
-async def get_consent_settings(user: User):
+async def get_consent_settings(user: User = DepUser):
     settings = await user.settings
     return settings.ds_json_consent()
 
 
-@users_me.post("/consent")
-@multipleDecorators(validate_request(ConsentSettingsUpdate), getUser)
-async def update_consent_settings(data: ConsentSettingsUpdate, user: User):
+@users_me.post("/consent", body_cls=ConsentSettingsUpdate)
+async def update_consent_settings(data: ConsentSettingsUpdate, user: User = DepUser):
     ALLOWED_SETTINGS = ("personalization", "usage_statistics")
     settings = await user.settings
     if data.grant or data.revoke:
@@ -129,15 +123,13 @@ async def update_consent_settings(data: ConsentSettingsUpdate, user: User):
 
 
 @users_me.get("/settings")
-@getUser
-async def get_settings(user: User):
+async def get_settings(user: User = DepUser):
     settings = await user.settings
     return settings.ds_json()
 
 
-@users_me.patch("/settings")
-@multipleDecorators(validate_request(SettingsUpdate), getUser)
-async def update_settings(data: SettingsUpdate, user: User):
+@users_me.patch("/settings", body_cls=SettingsUpdate)
+async def update_settings(data: SettingsUpdate, user: User = DepUser):
     settings = await user.settings
     await settings.update(**data.model_dump(exclude_defaults=True))
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
@@ -145,15 +137,13 @@ async def update_settings(data: SettingsUpdate, user: User):
 
 
 @users_me.get("/settings-proto/1")
-@getUser
-async def get_protobuf_settings(user: User):
+async def get_protobuf_settings(user: User = DepUser):
     proto = UserSettingsProto(await user.settings).get()
     return {"settings": _b64encode(proto.SerializeToString()).decode("utf8")}
 
 
-@users_me.patch("/settings-proto/1")
-@multipleDecorators(validate_request(SettingsProtoUpdate), getUser)
-async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
+@users_me.patch("/settings-proto/1", body_cls=SettingsProtoUpdate)
+async def update_protobuf_settings(data: SettingsProtoUpdate, user: User = DepUser):
     if not data.settings:
         raise InvalidDataErr(400, Errors.make(50035, {"settings": {
             "code": "BASE_TYPE_REQUIRED", "message": "Required field."
@@ -172,15 +162,13 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User):
 
 
 @users_me.get("/settings-proto/2")
-@getUser
-async def get_protobuf_frecency_settings(user: User):
+async def get_protobuf_frecency_settings(user: User = DepUser):
     proto = await FrecencySettings.get_or_none(id=user.id)
     return {"settings": proto if proto is not None else ""}
 
 
-@users_me.patch("/settings-proto/2")
-@multipleDecorators(validate_request(SettingsProtoUpdate), getUser)
-async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: User):
+@users_me.patch("/settings-proto/2", body_cls=SettingsProtoUpdate)
+async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: User = DepUser):
     if not data.settings:
         raise InvalidDataErr(400, Errors.make(50035, {"settings": {
             "code": "BASE_TYPE_REQUIRED", "message": "Required field."
@@ -201,15 +189,13 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
 
 
 # noinspection PyUnusedLocal
-@users_me.get("/connections")
-@multipleDecorators(allowOauth(["connections"]), getUser)
-async def get_connections(user: User):  # TODO: add connections
+@users_me.get("/connections", oauth_scopes=["connections"])
+async def get_connections(user: User = DepUser):  # TODO: add connections
     return []
 
 
-@users_me.post("/relationships")
-@multipleDecorators(validate_request(RelationshipRequest), getUser)
-async def new_relationship(data: RelationshipRequest, user: User):
+@users_me.post("/relationships", body_cls=RelationshipRequest)
+async def new_relationship(data: RelationshipRequest, user: User = DepUser):
     if not (target_user := await User.y.getByUsername(**data.model_dump())):
         raise InvalidDataErr(400, Errors.make(80004))
     if target_user == user:
@@ -222,15 +208,13 @@ async def new_relationship(data: RelationshipRequest, user: User):
     return "", 204
 
 
-@users_me.get("/relationships")
-@multipleDecorators(allowOauth(["relationships.read"]), getUser)
-async def get_relationships(user: User):
+@users_me.get("/relationships", oauth_scopes=["relationships.read"])
+async def get_relationships(user: User = DepUser):
     return await getCore().getRelationships(user, with_data=True)
 
 
-@users_me.get("/notes/<int:target_uid>")
-@multipleDecorators(allowBots, getUser)
-async def get_notes(user: User, target_uid: int):
+@users_me.get("/notes/<int:target_uid>", allow_bots=True)
+async def get_notes(target_uid: int, user: User = DepUser):
     if not (target_user := await User.y.get(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
     if not (note := await getCore().getUserNote(user, target_user)):
@@ -238,9 +222,8 @@ async def get_notes(user: User, target_uid: int):
     return note.ds_json()
 
 
-@users_me.put("/notes/<int:target_uid>")
-@multipleDecorators(validate_request(PutNote), allowBots, getUser)
-async def set_notes(data: PutNote, user: User, target_uid: int):
+@users_me.put("/notes/<int:target_uid>", body_cls=PutNote, allow_bots=True)
+async def set_notes(data: PutNote, target_uid: int, user: User = DepUser):
     if not (target_user := await User.y.get(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
     if data.note:
@@ -249,9 +232,8 @@ async def set_notes(data: PutNote, user: User, target_uid: int):
     return "", 204
 
 
-@users_me.post("/mfa/totp/enable")
-@multipleDecorators(validate_request(MfaEnable), getSession)
-async def enable_mfa(data: MfaEnable, session: Session):
+@users_me.post("/mfa/totp/enable", body_cls=MfaEnable)
+async def enable_mfa(data: MfaEnable, session: Session = DepSession):
     user = session.user
     settings = await user.settings
     if settings.mfa is not None:
@@ -276,9 +258,8 @@ async def enable_mfa(data: MfaEnable, session: Session):
     return {"token": session.token, "backup_codes": codes}
 
 
-@users_me.post("/mfa/totp/disable")
-@multipleDecorators(validate_request(MfaDisable), getSession)
-async def disable_mfa(data: MfaDisable, session: Session):
+@users_me.post("/mfa/totp/disable", body_cls=MfaDisable)
+async def disable_mfa(data: MfaDisable, session: Session = DepSession):
     if not (code := data.code):
         raise InvalidDataErr(400, Errors.make(60008))
     user = session.user
@@ -299,9 +280,8 @@ async def disable_mfa(data: MfaDisable, session: Session):
     return {"token": session.token}
 
 
-@users_me.post("/mfa/codes-verification")
-@multipleDecorators(validate_request(MfaCodesVerification), getUser)
-async def get_backup_codes(data: MfaCodesVerification, user: User):
+@users_me.post("/mfa/codes-verification", body_cls=MfaCodesVerification)
+async def get_backup_codes(data: MfaCodesVerification, user: User = DepUser):
     if not (nonce := data.nonce):
         raise InvalidDataErr(400, Errors.make(60011))
     if not (key := data.key):
@@ -321,9 +301,8 @@ async def get_backup_codes(data: MfaCodesVerification, user: User):
     return {"backup_codes": codes}
 
 
-@users_me.put("/relationships/<int:user_id>")
-@multipleDecorators(validate_request(RelationshipPut), getUser)
-async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user: User):
+@users_me.put("/relationships/<int:user_id>", body_cls=RelationshipPut)
+async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user: User = DepUser):
     if not (target_user_data := await UserData.get_or_none(id=user_id).select_related("user")):
         raise InvalidDataErr(404, Errors.make(10013))
     if not data.type or data.type == 1:
@@ -352,8 +331,7 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
 
 
 @users_me.delete("/relationships/<int:user_id>")
-@getUser
-async def delete_relationship(user_id: int, user: User):
+async def delete_relationship(user_id: int, user: User = DepUser):
     if (target_user := await User.y.get(user_id)) is None:
         return "", 204
     result = await Relationship.utils.delete(user, target_user)
@@ -362,16 +340,13 @@ async def delete_relationship(user_id: int, user: User):
     return "", 204
 
 
-# noinspection PyUnusedLocal
 @users_me.get("/harvest")
-@getUser
-async def api_users_me_harvest(user: User):
+async def api_users_me_harvest():
     return "", 204
 
 
-@users_me.delete("/guilds/<int:guild>")
-@multipleDecorators(allowBots, getUser, getGuildWM)
-async def leave_guild(user: User, guild: Guild, member: GuildMember):
+@users_me.delete("/guilds/<int:guild>", allow_bots=True)
+async def leave_guild(user: User = DepUser, guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     if user == guild.owner:
         raise InvalidDataErr(400, Errors.make(50055))
     await getGw().dispatchUnsub([user.id], guild.id)
@@ -385,14 +360,12 @@ async def leave_guild(user: User, guild: Guild, member: GuildMember):
 
 
 @users_me.get("/channels")
-@getUser
-async def get_dm_channels(user: User):
+async def get_dm_channels(user: User = DepUser):
     return [await channel.ds_json(user_id=user.id) for channel in await getCore().getPrivateChannels(user)]
 
 
-@users_me.post("/channels")
-@multipleDecorators(validate_request(DmChannelCreate), getUser)
-async def new_dm_channel(data: DmChannelCreate, user: User):
+@users_me.post("/channels", body_cls=DmChannelCreate)
+async def new_dm_channel(data: DmChannelCreate, user: User = DepUser):
     recipients = data.recipients
     if user.id in recipients:
         recipients.remove(user.id)
@@ -409,9 +382,8 @@ async def new_dm_channel(data: DmChannelCreate, user: User):
     return await channel.ds_json(with_ids=False, user_id=user.id)
 
 
-@users_me.post("/delete")
-@multipleDecorators(validate_request(DeleteRequest), getUser)
-async def delete_user(data: DeleteRequest, user: User):
+@users_me.post("/delete", body_cls=DeleteRequest)
+async def delete_user(data: DeleteRequest, user: User = DepUser):
     if not await getCore().checkUserPassword(user, data.password):
         raise InvalidDataErr(400, Errors.make(50018))
     if await getCore().getUserOwnedGuilds(user) or await getCore().getUserOwnedGroups(user):
@@ -421,9 +393,8 @@ async def delete_user(data: DeleteRequest, user: User):
     return "", 204
 
 
-@users_me.get("/scheduled-events")
-@multipleDecorators(validate_querystring(GetScheduledEventsQuery), getUser)
-async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
+@users_me.get("/scheduled-events", qs_cls=GetScheduledEventsQuery)
+async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User = DepUser):
     events = []
     for guild_id in query_args.guild_ids[:5]:
         if not await GuildMember.get_or_none(guild__id=guild_id, user__id=user.id):
@@ -437,9 +408,8 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User):
     return events
 
 
-@users_me.post("/remote-auth/login")
-@multipleDecorators(validate_request(RemoteAuthLogin), getUser)
-async def remote_auth_login(data: RemoteAuthLogin, user: User):
+@users_me.post("/remote-auth/login", body_cls=RemoteAuthLogin)
+async def remote_auth_login(data: RemoteAuthLogin, user: User = DepUser):
     ra_session = await RemoteAuthSession.get_or_none(fingerprint=data.fingerprint, user=None,
                                                      expires_at__gt=int(time()))
     if ra_session is None:
@@ -456,9 +426,8 @@ async def remote_auth_login(data: RemoteAuthLogin, user: User):
     return {"handshake_token": str(ra_session.id)}
 
 
-@users_me.post("/remote-auth/finish")
-@multipleDecorators(validate_request(RemoteAuthFinish), getUser)
-async def remote_auth_finish(data: RemoteAuthFinish, user: User):
+@users_me.post("/remote-auth/finish", body_cls=RemoteAuthFinish)
+async def remote_auth_finish(data: RemoteAuthFinish, user: User = DepUser):
     ra_session = await RemoteAuthSession.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
                                                      user=user)
     if ra_session is None:
@@ -472,9 +441,8 @@ async def remote_auth_finish(data: RemoteAuthFinish, user: User):
     return "", 204
 
 
-@users_me.post("/remote-auth/cancel")
-@multipleDecorators(validate_request(RemoteAuthCancel), getUser)
-async def remote_auth_cancel(data: RemoteAuthCancel, user: User):
+@users_me.post("/remote-auth/cancel", body_cls=RemoteAuthCancel)
+async def remote_auth_cancel(data: RemoteAuthCancel, user: User = DepUser):
     ra_session = await RemoteAuthSession.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
                                                      user=user)
     if ra_session is None:
@@ -487,9 +455,8 @@ async def remote_auth_cancel(data: RemoteAuthCancel, user: User):
     return "", 204
 
 
-@users_me.get("/guilds")
-@multipleDecorators(allowOauth(["guilds"]), allowBots, getUser)
-async def get_guilds(user: User):
+@users_me.get("/guilds", allow_bots=True, oauth_scopes=["guilds"])
+async def get_guilds(user: User = DepUser):
     async def ds_json(guild: Guild) -> dict:
         member = await getCore().getGuildMember(guild, user.id)
         return {

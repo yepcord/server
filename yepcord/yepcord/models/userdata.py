@@ -71,7 +71,7 @@ class UserData(Model):
 
         return data
 
-    async def ds_json_full(self) -> dict:
+    async def ds_json_full(self, without_email: bool = False) -> dict:
         settings = await self.user.settings
         data = {
             "id": str(self.id),
@@ -94,7 +94,7 @@ class UserData(Model):
         }
         if self.user.is_bot:
             data["bot"] = True
-        if isinstance(auth := g.get("auth"), models.Authorization) and "email" not in auth.scope_set:
+        if without_email:
             del data["email"]
 
         return data

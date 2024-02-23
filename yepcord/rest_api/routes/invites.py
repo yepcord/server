@@ -16,11 +16,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Blueprint
-from quart_schema import validate_querystring
-
+from ..dependencies import DepInvite, DepUser
 from ..models.invites import GetInviteQuery
-from ..utils import getUser, multipleDecorators, getInvite, allowBots
+from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelRecipientAddEvent, GuildCreateEvent, \
     InviteDeleteEvent
 from ...yepcord.ctx import getCore, getGw
@@ -30,12 +28,11 @@ from ...yepcord.models import Invite, User, Message, GuildMember
 from ...yepcord.snowflake import Snowflake
 
 # Base path is /api/vX/invites
-invites = Blueprint('invites', __name__)
+invites = YBlueprint('invites', __name__)
 
 
-@invites.get("/<string:invite>")
-@multipleDecorators(validate_querystring(GetInviteQuery), getInvite)
-async def get_invite(query_args: GetInviteQuery, invite: Invite):
+@invites.get("/<string:invite>", qs_cls=GetInviteQuery)
+async def get_invite(query_args: GetInviteQuery, invite: Invite = DepInvite):
     invite = await invite.ds_json(with_counts=query_args.with_counts)
     for excl in ["max_age", "created_at"]:  # Remove excluded fields
         if excl in invite:
@@ -44,8 +41,7 @@ async def get_invite(query_args: GetInviteQuery, invite: Invite):
 
 
 @invites.post("/<string:invite>")
-@multipleDecorators(getUser, getInvite)
-async def use_invite(user: User, invite: Invite):
+async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
     channel = invite.channel
     inv = None
     if channel.type == ChannelType.GROUP_DM:
@@ -97,9 +93,8 @@ async def use_invite(user: User, invite: Invite):
     return inv
 
 
-@invites.delete("/<string:invite>")
-@multipleDecorators(allowBots, getUser, getInvite)
-async def delete_invite(user: User, invite: Invite):
+@invites.delete("/<string:invite>", allow_bots=True)
+async def delete_invite(user: User = DepUser, invite: Invite = DepInvite):
     if invite.channel.guild:
         if (member := await getCore().getGuildMember(invite.channel.guild, user.id)) is None:
             raise InvalidDataErr(403, Errors.make(50001))

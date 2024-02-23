@@ -16,24 +16,21 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Blueprint
-from quart_schema import validate_request
-
+from ..dependencies import DepUser
 from ..models.hypesquad import HypesquadHouseChange
-from ..utils import getUser, multipleDecorators, allowBots
+from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
-from ...yepcord.ctx import getGw
 from ...yepcord.classes.other import BitFlags
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import UserFlags
 from ...yepcord.models import User
 
 # Base path is /api/vX/hypesquad
-hypesquad = Blueprint('hypesquad', __name__)
+hypesquad = YBlueprint('hypesquad', __name__)
 
 
-@hypesquad.post("/online")
-@multipleDecorators(validate_request(HypesquadHouseChange), allowBots, getUser)
-async def api_hypesquad_online(data: HypesquadHouseChange, user: User):
+@hypesquad.post("/online", body_cls=HypesquadHouseChange, allow_bots=True)
+async def api_hypesquad_online(data: HypesquadHouseChange, user: User = DepUser):
     userdata = await user.data
     flags = BitFlags(userdata.public_flags, UserFlags)
     for f in (UserFlags.HYPESQUAD_ONLINE_HOUSE_1, UserFlags.HYPESQUAD_ONLINE_HOUSE_2, UserFlags.HYPESQUAD_ONLINE_HOUSE_3):
