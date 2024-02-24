@@ -24,7 +24,7 @@ async def create_user(app: TestClientType, email: str, password: str, username: 
         "password": password,
         "date_of_birth": "2000-01-01",
     })
-    assert response.status_code == exp_code
+    assert response.status_code == exp_code, (response.status_code, await response.get_json())
     if exp_code < 400:
         json = await response.get_json()
         assert "token" in json
@@ -35,7 +35,7 @@ async def get_userdata(app: TestClientType, token: str) -> dict:
     response = await app.get("/api/v9/users/@me", headers={
         "Authorization": token
     })
-    assert response.status_code == 200
+    assert response.status_code == 200, (response.status_code, await response.get_json())
     return await response.get_json()
 
 
@@ -56,7 +56,7 @@ async def create_users(app: TestClientType, count: int = 1) -> list[dict]:
 async def enable_mfa(app: TestClientType, user: dict, mfa: MFA) -> None:
     resp = await app.post("/api/v9/users/@me/mfa/totp/enable", headers={"Authorization": user["token"]},
                           json={"code": mfa.getCode(), "secret": mfa.key, "password": user["password"]})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     json = await resp.get_json()
     assert json["token"]
     user["token"] = json["token"]
@@ -94,7 +94,7 @@ async def rel_block(app: TestClientType, from_: dict, to_: dict) -> int:
 
 async def create_guild(app: TestClientType, user: dict, name: str, icon: str = None) -> dict:
     resp = await app.post("/api/v9/guilds", headers={"Authorization": user["token"]}, json={'name': name, 'icon': icon})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
@@ -102,7 +102,7 @@ async def create_guild_channel(app: TestClientType, user: dict, guild: dict, nam
                                parent: str = None, **kwargs) -> dict:
     resp = await app.post(f"/api/v9/guilds/{guild['id']}/channels", headers={"Authorization": user["token"]},
                           json={'type': type_, 'name': name, 'parent_id': parent, **kwargs})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     channel = await resp.get_json()
     guild["channels"].append(channel)
     return channel
@@ -111,14 +111,14 @@ async def create_guild_channel(app: TestClientType, user: dict, guild: dict, nam
 async def create_invite(app: TestClientType, user: dict, channel_id: str, max_age=604800, max_uses=0) -> dict:
     resp = await app.post(f"/api/v9/channels/{channel_id}/invites", headers={"Authorization": user["token"]},
                           json={'max_age': max_age, 'max_uses': max_uses})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
 async def create_webhook(app: TestClientType, user: dict, channel_id: str, name="Captain Hook") -> dict:
     resp = await app.post(f"/api/v9/channels/{channel_id}/webhooks", headers={"Authorization": user["token"]},
                           json={'name': name})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
@@ -128,14 +128,14 @@ async def create_role(app: TestClientType, user: dict, guild_id: str, name="new 
     if perms is not None: kw["permissions"] = perms
     resp = await app.post(f"/api/v9/guilds/{guild_id}/roles", headers={"Authorization": user["token"]},
                           json={'name': name, **kw})
-    assert resp.status_code == exp_code
+    assert resp.status_code == exp_code, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
 async def create_emoji(app: TestClientType, user: dict, guild_id: str, name: str, image=YEP_IMAGE, *, exp_code=200) -> dict:
     resp = await app.post(f"/api/v9/guilds/{guild_id}/emojis", headers={"Authorization": user["token"]},
                           json={'image': image, 'name': name})
-    assert resp.status_code == exp_code, await resp.get_json()
+    assert resp.status_code == exp_code, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
@@ -152,35 +152,35 @@ async def create_sticker(app: TestClientType, user: dict, guild_id: str, name: s
         "tags": tags
     })
 
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
 async def create_message(app: TestClientType, user: dict, channel_id: str, *, exp_code=200, **kwargs) -> dict:
     resp = await app.post(f"/api/v9/channels/{channel_id}/messages", headers={"Authorization": user["token"]},
                           json=kwargs)
-    assert resp.status_code == exp_code
+    assert resp.status_code == exp_code, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
 async def create_dm_channel(app: TestClientType, user1: dict, user2: dict) -> dict:
     resp = await app.post(f"/api/v9/users/@me/channels", headers={"Authorization": user1["token"]},
                           json={"recipients": [user1["id"], user2["id"]]})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
 async def create_dm_group(app: TestClientType, user: dict, recipient_ids: list[str], *, exp_code=200) -> dict:
     resp = await app.post(f"/api/v9/users/@me/channels", headers={"Authorization": user["token"]},
                           json={"recipients": recipient_ids})
-    assert resp.status_code == exp_code
+    assert resp.status_code == exp_code, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
 async def create_ban(app: TestClientType, user: dict, guild: dict, target_id: str, seconds: int=0, _f=False, *, exp_code=204) -> dict:
     resp = await app.put(f"/api/v9/guilds/{guild['id']}/bans/{target_id}", headers={"Authorization": user["token"]},
                          json=({} if not seconds and not _f else {"delete_message_seconds": seconds}))
-    assert resp.status_code == exp_code
+    assert resp.status_code == exp_code, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
@@ -189,7 +189,7 @@ async def add_user_to_guild(app: TestClientType, guild: dict, owner: dict, targe
     invite = await create_invite(app, owner, channel["id"])
 
     resp = await app.post(f"/api/v9/invites/{invite['code']}", headers={"Authorization": target["token"]})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
 
 
 async def create_event(app: TestClientType, guild: dict, user: dict, *, exp_code: int=200, **kwargs) -> dict:
@@ -198,13 +198,13 @@ async def create_event(app: TestClientType, guild: dict, user: dict, *, exp_code
         kwargs["scheduled_start_time"] = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     resp = await app.post(f"/api/v9/guilds/{guild['id']}/scheduled-events", headers={"Authorization": user["token"]},
                           json={**kwargs})
-    assert resp.status_code == exp_code
+    assert resp.status_code == exp_code, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
 async def create_application(app: TestClientType, user: dict, name: str, *, exp_code: int=200) -> dict:
     resp = await app.post(f"/api/v9/applications", headers={"Authorization": user["token"]}, json={"name": name})
-    assert resp.status_code == exp_code
+    assert resp.status_code == exp_code, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 
@@ -212,13 +212,13 @@ async def add_bot_to_guild(app: TestClientType, user: dict, guild: dict, applica
     resp = await app.post(f"/api/v9/oauth2/authorize?client_id={application['id']}&scope=bot",
                           headers={"Authorization": user["token"]},
                           json={"authorize": True, "permissions": "8", "guild_id": guild["id"]})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
 
 
 async def bot_token(app: TestClientType, user: dict, application: dict) -> str:
     resp = await app.post(f"/api/v9/applications/{application['id']}/bot/reset",
                              headers={"Authorization": user["token"]})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     json = await resp.get_json()
     return json["token"]
 
@@ -226,7 +226,7 @@ async def bot_token(app: TestClientType, user: dict, application: dict) -> str:
 async def create_thread(app: TestClientType, user: dict, message: dict, *, exp_code=200, **kwargs) -> dict:
     resp = await app.post(f"/api/v9/channels/{message['channel_id']}/messages/{message['id']}/threads",
                           headers={"Authorization": user["token"]}, json=kwargs)
-    assert resp.status_code == exp_code, await resp.get_json()
+    assert resp.status_code == exp_code, (resp.status_code, await resp.get_json())
     return await resp.get_json()
 
 

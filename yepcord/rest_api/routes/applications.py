@@ -18,12 +18,10 @@
 from datetime import datetime
 from typing import Optional
 
-from quart import Blueprint
-from quart_schema import validate_request, validate_querystring
-
+from ..dependencies import DepApplication, DepUser, DepGuildO
 from ..models.applications import CreateApplication, UpdateApplication, UpdateApplicationBot, GetCommandsQS, \
     CreateCommand
-from ..utils import getUser, multipleDecorators, getApplication, allowBots, getGuild
+from ..y_blueprint import YBlueprint
 from ...yepcord.ctx import getCore, getCDNStorage
 from ...yepcord.enums import ApplicationCommandType
 from ...yepcord.models import User, UserData, UserSettings, Application, Bot, gen_secret_key, gen_token_secret, \
@@ -32,19 +30,17 @@ from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage
 
 # Base path is /api/vX/applications
-applications = Blueprint('applications', __name__)
+applications = YBlueprint('applications', __name__)
 
 
 @applications.get("/", strict_slashes=False)
-@getUser
-async def get_applications(user: User):
+async def get_applications(user: User = DepUser):
     apps = await getCore().getApplications(user)
     return [await app.ds_json() for app in apps]
 
 
-@applications.post("/", strict_slashes=False)
-@multipleDecorators(validate_request(CreateApplication), getUser)
-async def create_application(data: CreateApplication, user: User):
+@applications.post("/", strict_slashes=False, body_cls=CreateApplication)
+async def create_application(data: CreateApplication, user: User = DepUser):
     app_id = Snowflake.makeId()
     name = username = data.name
     disc = await getCore().getRandomDiscriminator(username)
@@ -60,17 +56,13 @@ async def create_application(data: CreateApplication, user: User):
     return await app.ds_json()
 
 
-# noinspection PyUnusedLocal
 @applications.get("/<int:application_id>")
-@multipleDecorators(getUser, getApplication)
-async def get_application(user: User, application: Application):
+async def get_application(application: Application = DepApplication):
     return await application.ds_json()
 
 
-# noinspection PyUnusedLocal
-@applications.patch("/<int:application_id>")
-@multipleDecorators(validate_request(UpdateApplication), getUser, getApplication)
-async def edit_application(data: UpdateApplication, user: User, application: Application):
+@applications.patch("/<int:application_id>", body_cls=UpdateApplication)
+async def edit_application(data: UpdateApplication, application: Application = DepApplication):
     bot = await Bot.get(application=application).select_related("user")
     bot_data = await bot.user.userdata
 
@@ -96,10 +88,8 @@ async def edit_application(data: UpdateApplication, user: User, application: App
     return await application.ds_json()
 
 
-# noinspection PyUnusedLocal
-@applications.patch("/<int:application_id>/bot")
-@multipleDecorators(validate_request(UpdateApplicationBot), getUser, getApplication)
-async def edit_application_bot(data: UpdateApplicationBot, user: User, application: Application):
+@applications.patch("/<int:application_id>/bot", body_cls=UpdateApplicationBot)
+async def edit_application_bot(data: UpdateApplicationBot, application: Application = DepApplication):
     bot: Bot = await Bot.get(application=application).select_related("user")
     bot_data = await bot.user.userdata
 
@@ -115,20 +105,16 @@ async def edit_application_bot(data: UpdateApplicationBot, user: User, applicati
     return await bot_data.ds_json_full()
 
 
-# noinspection PyUnusedLocal
 @applications.post("/<int:application_id>/reset")
-@multipleDecorators(getUser, getApplication)
-async def reset_application_secret(user: User, application: Application):
+async def reset_application_secret(application: Application = DepApplication):
     new_secret = gen_secret_key()
     await application.update(secret=new_secret)
 
     return {"secret": new_secret}
 
 
-# noinspection PyUnusedLocal
 @applications.post("/<int:application_id>/bot/reset")
-@multipleDecorators(getUser, getApplication)
-async def reset_application_bot_token(user: User, application: Application):
+async def reset_application_bot_token(application: Application = DepApplication):
     bot: Bot = await Bot.get(application=application).select_related("user")
 
     new_token = gen_token_secret()
@@ -137,10 +123,8 @@ async def reset_application_bot_token(user: User, application: Application):
     return {"token": bot.token}
 
 
-# noinspection PyUnusedLocal
 @applications.post("/<int:application_id>/delete")
-@multipleDecorators(getUser, getApplication)
-async def delete_application(user: User, application: Application):
+async def delete_application(application: Application = DepApplication):
     bot = await Bot.get_or_none(application=application).select_related("user")
     await bot.user.update(deleted=True)
     data = await bot.user.data
@@ -152,21 +136,17 @@ async def delete_application(user: User, application: Application):
     return "", 204
 
 
-# noinspection PyUnusedLocal
-@applications.get("/<int:application_id>/commands")
-@multipleDecorators(validate_querystring(GetCommandsQS), allowBots, getUser, getApplication)
-async def get_application_commands(query_args: GetCommandsQS, user: User, application: Application):
+@applications.get("/<int:application_id>/commands", qs_cls=GetCommandsQS, allow_bots=True)
+async def get_application_commands(query_args: GetCommandsQS, application: Application = DepApplication):
     commands: list[ApplicationCommand] = await (ApplicationCommand.filter(application=application)
                                                 .select_related("application", "guild").all())
     return [command.ds_json(query_args.with_localizations) for command in commands]
 
 
-# noinspection PyUnusedLocal
 @applications.post("/<int:application_id>/commands")
-@applications.post("/<int:application_id>/guilds/<int:guild>/commands")
-@multipleDecorators(validate_request(CreateCommand), allowBots, getUser, getApplication, getGuild(False, True))
-async def create_update_application_command(data: CreateCommand, user: User, application: Application,
-                                            guild: Optional[Guild]):
+@applications.post("/<int:application_id>/guilds/<int:guild>/commands", body_cls=CreateCommand, allow_bots=True)
+async def create_update_application_command(data: CreateCommand, application: Application = DepApplication,
+                                            guild: Optional[Guild] = DepGuildO):
     command = await (ApplicationCommand.get_or_none(application=application, name=data.name, type=data.type,
                                                     guild=guild).select_related("application", "guild"))
     if command is not None:
@@ -180,10 +160,9 @@ async def create_update_application_command(data: CreateCommand, user: User, app
     return command.ds_json()
 
 
-# noinspection PyUnusedLocal
 @applications.delete("/<int:application_id>/commands/<int:command_id>")
-@applications.delete("/<int:application_id>/guilds/<int:guild>/commands/<int:command_id>")
-@multipleDecorators(allowBots, getUser, getApplication, getGuild(False, True))
-async def delete_application_command(user: User, application: Application, command_id: int, guild: Optional[Guild]):
+@applications.delete("/<int:application_id>/guilds/<int:guild>/commands/<int:command_id>", allow_bots=True)
+async def delete_application_command(command_id: int, application: Application = DepApplication,
+                                     guild: Optional[Guild] = DepGuildO):
     await ApplicationCommand.filter(application=application, id=command_id, guild=guild).delete()
     return "", 204

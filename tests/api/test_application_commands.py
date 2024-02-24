@@ -59,6 +59,38 @@ async def test_get_and_create_commands():
 
 
 @pt.mark.asyncio
+async def test_application_get_commands_different_bot():
+    client: TestClientType = app.test_client()
+    user = (await create_users(client, 1))[0]
+    application1 = await create_application(client, user, "testApp1")
+    application2 = await create_application(client, user, "testApp2")
+
+    resp = await client.post(f"/api/v9/applications/{application1['id']}/bot/reset",
+                             headers={"Authorization": user["token"]})
+    token1 = (await resp.get_json())["token"]
+
+    resp = await client.post(f"/api/v9/applications/{application2['id']}/bot/reset",
+                             headers={"Authorization": user["token"]})
+    token2 = (await resp.get_json())["token"]
+
+    resp = await client.get(f"/api/v9/applications/{application1['id']}/commands",
+                            headers={"Authorization": f"Bot {token1}"})
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/applications/{application2['id']}/commands",
+                            headers={"Authorization": f"Bot {token2}"})
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/applications/{application1['id']}/commands",
+                            headers={"Authorization": f"Bot {token2}"})
+    assert resp.status_code == 404
+
+    resp = await client.get(f"/api/v9/applications/{application2['id']}/commands",
+                            headers={"Authorization": f"Bot {token1}"})
+    assert resp.status_code == 404
+
+
+@pt.mark.asyncio
 async def test_create_commands():
     client: TestClientType = app.test_client()
     user = (await create_users(client, 1))[0]

@@ -8,6 +8,7 @@ from yepcord.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_invite, enable_mfa, create_guild_channel, \
     add_user_to_guild, create_ban, create_message, create_role, create_application, add_bot_to_guild
 from tests.yep_image import YEP_IMAGE
+from yepcord.yepcord.utils import b64encode
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -78,9 +79,15 @@ async def test_guild_templates_empty():
 @pt.mark.asyncio
 async def test_edit_guild():
     client: TestClientType = app.test_client()
-    user = (await create_users(client, 1))[0]
+    user, user2 = await create_users(client, 2)
     guild = await create_guild(client, user, "Test Guild")
     headers = {"Authorization": user["token"]}
+    headers2 = {"Authorization": user2["token"]}
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers2, json={"name": "Test"})
+    assert resp.status_code == 403
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}1", headers=headers, json={"name": "Test"})
+    assert resp.status_code == 404
 
     resp = await client.patch(f"/api/v9/guilds/{guild['id']}", headers=headers, json={
         "name": "Test Guild Renamed", "afk_channel_id": None, "afk_timeout": 900,
@@ -233,6 +240,9 @@ async def test_delete_guild_template():
                              json={'name': 'test', 'description': 'test template'})
     assert resp.status_code == 200
     json = await resp.get_json()
+
+    resp = await client.delete(f"/api/v9/guilds/{guild['id']}/templates/{b64encode('1')}", headers=headers)
+    assert resp.status_code == 404
 
     resp = await client.delete(f"/api/v9/guilds/{guild['id']}/templates/{json['code']}", headers=headers)
     assert resp.status_code == 200
@@ -534,6 +544,10 @@ async def test_create_guild_from_template():
     code = json["code"]
 
     resp = await client.post(f"/api/v9/guilds/templates/{Snowflake.makeId()}", headers=headers, json={"name": "yep"})
+    assert resp.status_code == 404
+
+    resp = await client.post(f"/api/v9/guilds/templates/{b64encode(str(Snowflake.makeId()))}", headers=headers,
+                             json={"name": "yep"})
     assert resp.status_code == 404
 
     resp = await client.post(f"/api/v9/guilds/templates/{code}", headers=headers, json={"icon": YEP_IMAGE, "name": "_"})

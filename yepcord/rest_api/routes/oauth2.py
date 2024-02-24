@@ -17,11 +17,13 @@
 """
 from time import time
 
-from quart import Blueprint, request
-from quart_schema import validate_querystring, validate_request, DataSource
+from quart import request
+from quart_schema import DataSource
 
+from ..dependencies import DepUser
 from ..models.oauth2 import AppAuthorizeGetQs, ExchangeCode, AppAuthorizePostQs, AppAuthorizePost
-from ..utils import getUser, multipleDecorators, captcha
+from ..utils import captcha
+from ..y_blueprint import YBlueprint
 from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLogEntryCreateEvent, GuildRoleCreateEvent, \
     IntegrationCreateEvent
 from ...yepcord.config import Config
@@ -34,12 +36,11 @@ from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import b64decode
 
 # Base path is /api/vX/oauth2
-oauth2 = Blueprint('oauth2', __name__)
+oauth2 = YBlueprint('oauth2', __name__)
 
 
-@oauth2.get("/authorize", strict_slashes=False)
-@multipleDecorators(validate_querystring(AppAuthorizeGetQs), getUser)
-async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user: User):
+@oauth2.get("/authorize", strict_slashes=False, qs_cls=AppAuthorizeGetQs)
+async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user: User = DepUser):
     scopes = set(query_args.scope.split(" ") if query_args.scope else [])
     if len(scopes & ApplicationScope.values_set()) != len(scopes):
         raise InvalidDataErr(400, Errors.make(50035,
@@ -79,9 +80,9 @@ async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user
     return result
 
 
-@oauth2.post("/authorize", strict_slashes=False)
-@multipleDecorators(captcha, validate_querystring(AppAuthorizePostQs), validate_request(AppAuthorizePost), getUser)
-async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthorizePost, user: User):
+@oauth2.post("/authorize", strict_slashes=False, body_cls=AppAuthorizePost, qs_cls=AppAuthorizePostQs)
+@captcha
+async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthorizePost, user: User = DepUser):
     scopes = set(query_args.scope.split(" ") if query_args.scope else [])
     if len(scopes & ApplicationScope.values_set()) != len(scopes):
         raise InvalidDataErr(400, Errors.make(50035,
@@ -153,8 +154,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
     return {"location": f"{query_args.redirect_uri}?code={authorization.code}"}
 
 
-@oauth2.post("/token", strict_slashes=False)
-@validate_request(ExchangeCode, source=DataSource.FORM)
+@oauth2.post("/token", strict_slashes=False, body_cls=ExchangeCode, body_cls_source=DataSource.FORM)
 async def exchange_code_for_token(data: ExchangeCode):
     if not request.authorization and (not data.client_id or not data.client_secret):
         return {"error": "invalid_client"}, 401

@@ -16,16 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Blueprint
-
-from ..utils import getUser
+from ..dependencies import DepUser
+from ..y_blueprint import YBlueprint
 from ...yepcord.models import User
 
 # Base path is /api/vX/applications
-teams = Blueprint('teams', __name__)
+teams = YBlueprint('teams', __name__)
 
 
 @teams.get("/", strict_slashes=False)
-@getUser
-async def get_teams(user: User):
+async def get_teams(user: User = DepUser):
     return []

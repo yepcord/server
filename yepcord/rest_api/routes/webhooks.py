@@ -18,32 +18,31 @@
 from datetime import datetime
 from typing import Optional
 
-from quart import Blueprint, request
-from quart_schema import validate_request, validate_querystring
+from quart import request
 
+from ..dependencies import DepUserO, DepMessage, DepWebhook, DepInteractionW
 from ..models.channels import MessageUpdate
 from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessageCreateQuery
-from ..utils import getUser, multipleDecorators, allowWithoutUser, processMessageData, allowBots, process_stickers, \
-    validate_reply, processMessage, getWebhook, getMessage, getInteractionW
+from ..utils import processMessageData, process_stickers, validate_reply, processMessage
+from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent, MessageUpdateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageFlags
 from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.models import User, Channel, Message, Interaction, Webhook
+from ...yepcord.models import User, Channel, Message, Webhook
 from ...yepcord.utils import getImage
 
 # Base path is /api/vX/webhooks
-webhooks = Blueprint('webhooks', __name__)
+webhooks = YBlueprint('webhooks', __name__)
 
 
 @webhooks.delete("/<int:webhook>")
-@webhooks.delete("/<int:webhook>/<string:token>")
-@multipleDecorators(allowWithoutUser, allowBots, getUser)
-async def delete_webhook(user: Optional[User], webhook: int, token: Optional[str]=None):
+@webhooks.delete("/<int:webhook>/<string:token>", allow_bots=True)
+async def delete_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
     if webhook := await getCore().getWebhook(webhook):
         if webhook.token != token:
             guild = webhook.channel.guild
-            if not (member := await getCore().getGuildMember(guild, user.id)):
+            if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
                 raise InvalidDataErr(403, Errors.make(50013))
             await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
         await webhook.delete()
@@ -54,19 +53,18 @@ async def delete_webhook(user: Optional[User], webhook: int, token: Optional[str
 
 
 @webhooks.patch("/<int:webhook>")
-@webhooks.patch("/<int:webhook>/<string:token>")
-@multipleDecorators(validate_request(WebhookUpdate), allowWithoutUser, allowBots, getUser)
-async def edit_webhook(data: WebhookUpdate, user: Optional[User], webhook: int, token: Optional[str]=None):
+@webhooks.patch("/<int:webhook>/<string:token>", body_cls=WebhookUpdate, allow_bots=True)
+async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     channel = webhook.channel
     guild = channel.guild
     if webhook.token != token:
-        if not (member := await getCore().getGuildMember(guild, user.id)):
+        if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
             raise InvalidDataErr(403, Errors.make(50013))
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
     if data.channel_id:
-        if user.id == 0:
+        if user is None:
             data.channel_id = None
         else:
             channel = await Channel.get_or_none(guild=webhook.channel.guild, id=data.channel_id).select_related("guild")
@@ -91,22 +89,20 @@ async def edit_webhook(data: WebhookUpdate, user: Optional[User], webhook: int, 
 
 
 @webhooks.get("/<int:webhook>")
-@webhooks.get("/<int:webhook>/<string:token>")
-@multipleDecorators(allowWithoutUser, allowBots, getUser)
-async def get_webhook(user: Optional[User], webhook: int, token: Optional[str]=None):
+@webhooks.get("/<int:webhook>/<string:token>", allow_bots=True)
+async def get_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:
         guild = webhook.channel.guild
-        if not (member := await getCore().getGuildMember(guild, user.id)):
+        if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
             raise InvalidDataErr(403, Errors.make(50013))
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
     return await webhook.ds_json()
 
 
-@webhooks.post("/<int:webhook>/<string:token>")
-@validate_querystring(WebhookMessageCreateQuery)
+@webhooks.post("/<int:webhook>/<string:token>", qs_cls=WebhookMessageCreateQuery)
 async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: int, token: str):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
@@ -126,24 +122,19 @@ async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: i
         return "", 204
 
 
-# noinspection PyUnusedLocal
 @webhooks.get("/<int:webhook>/<string:token>/messages/<int:message>")
-@multipleDecorators(getWebhook, getMessage)
-async def get_webhook_message(webhook: Webhook, message: Message):
+async def get_webhook_message(message: Message = DepMessage):
     return await message.ds_json()
 
 
-# noinspection PyUnusedLocal
 @webhooks.delete("/<int:webhook>/<string:token>/messages/<int:message>")
-@multipleDecorators(getWebhook, getMessage)
-async def delete_webhook_message(webhook: Webhook, message: Message):
+async def delete_webhook_message(message: Message = DepMessage):
     await message.delete()
     return "", 204
 
 
-@webhooks.patch("/<int:webhook>/<string:token>/messages/<int:message>")
-@multipleDecorators(validate_request(MessageUpdate), getWebhook, getMessage)
-async def edit_webhook_message(data: MessageUpdate, webhook: Webhook, message: Message):
+@webhooks.patch("/<int:webhook>/<string:token>/messages/<int:message>", body_cls=MessageUpdate)
+async def edit_webhook_message(data: MessageUpdate, webhook: Webhook = DepWebhook, message: Message = DepMessage):
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
     await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=webhook.channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
@@ -151,8 +142,8 @@ async def edit_webhook_message(data: MessageUpdate, webhook: Webhook, message: M
 
 
 @webhooks.post("/<int:application_id>/int___<string:token>")
-@getInteractionW
-async def interaction_followup_create(interaction: Interaction, message: Message):
+async def interaction_followup_create(message: Message = DepInteractionW):
+    interaction = message.interaction
     channel = interaction.channel
     data = await request.get_json()
 
@@ -172,31 +163,26 @@ async def interaction_followup_create(interaction: Interaction, message: Message
         await getGw().dispatch(MessageUpdateEvent(message_obj),
                                user_ids=[interaction.user.id, interaction.application.id])
     else:
-        await getGw().dispatch(MessageUpdateEvent(message_obj), channel=interaction.channel,
+        await getGw().dispatch(MessageUpdateEvent(message_obj), channel=message.channel,
                                permissions=GuildPermissions.VIEW_CHANNEL)
 
     return message_obj
 
 
-# noinspection PyUnusedLocal
 @webhooks.get("/<int:application_id>/int___<string:token>/messages/<string:message>")
-@getInteractionW
-async def get_interaction_message(interaction: Interaction, message: Message):
+async def get_interaction_message(message: Message = DepInteractionW):
     return await message.ds_json()
 
 
-# noinspection PyUnusedLocal
 @webhooks.delete("/<int:application_id>/int___<string:token>/messages/<string:message>")
-@getInteractionW
-async def delete_interaction_message(interaction: Interaction, message: Message):
+async def delete_interaction_message(message: Message = DepInteractionW):
     await message.delete()
     return "", 204
 
 
-@webhooks.patch("/<int:application_id>/int___<string:token>/messages/<string:message>")
-@multipleDecorators(validate_request(MessageUpdate), getInteractionW)
-async def edit_interaction_message(data: MessageUpdate, interaction: Interaction, message: Message):
+@webhooks.patch("/<int:application_id>/int___<string:token>/messages/<string:message>", body_cls=MessageUpdate)
+async def edit_interaction_message(data: MessageUpdate, message: Message = DepInteractionW):
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
-    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=interaction.channel,
+    await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=message.channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
     return await message.ds_json()
