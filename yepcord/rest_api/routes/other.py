@@ -242,6 +242,7 @@ async def instance_info():
         "features": [
             "OLD_USERNAMES",
             "REMOTE_AUTH_V1",
+            "REMOTE_AUTH_V2",
             "SETTINGS_PROTO",
         ],
     }

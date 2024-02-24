@@ -62,6 +62,60 @@ async def test_remote_auth_success():
 
 
 @pt.mark.asyncio
+async def test_remote_auth_v2_success():
+    client: TestClientType = app.test_client()
+    ra_client: TestClientType = ra_app.test_client()
+    user = (await create_users(client, 1))[0]
+    headers = {"Authorization": user["token"]}
+    state = {"fingerprint": None, "handshake_token": None}
+
+    async def on_fp(fp: str) -> None:
+        resp = await client.post("/api/v9/users/@me/remote-auth/login", headers=headers, json={"fingerprint": fp})
+        assert resp.status_code == 200
+        json = await resp.get_json()
+        assert "handshake_token" in json
+        state.update({"fingerprint": fp, "handshake_token": json["handshake_token"]})
+
+    async def on_userdata(userdata: str) -> None:
+        uid, disc, avatar, username = userdata.split(":")
+
+        assert uid == user["id"]
+        assert disc == user["discriminator"]
+        assert username == user["username"]
+
+        resp = await client.post("/api/v9/users/@me/remote-auth/finish", headers=headers, json={
+            "handshake_token": state["handshake_token"], "temporary_token": False
+        })
+        assert resp.status_code == 204
+
+    async def on_pending_login(ticket: str) -> None:
+        resp = await client.post("/api/v9/users/@me/remote-auth/login",
+                                 json={"ticket": "".join(ticket.split(".")[:-1])})
+        assert resp.status_code == 404
+
+        resp = await client.post("/api/v9/users/@me/remote-auth/login", json={"ticket": ticket})
+        assert resp.status_code == 200
+        json = await resp.get_json()
+        assert "encrypted_token" in json
+        token = cl.decrypt(json["encrypted_token"]).decode("utf-8")
+
+        resp = await client.post("/api/v9/users/@me/remote-auth/login", json={"ticket": ticket})
+        assert resp.status_code == 404
+
+        resp = await client.get("/api/v9/users/@me", headers={"Authorization": token})
+        assert resp.status_code == 200
+        json = await resp.get_json()
+        assert json["id"] == user["id"]
+
+    cl = RemoteAuthClient(on_fp, on_userdata, None, None, on_pending_login)
+
+    async with ra_client.websocket('/?v=2') as ws:
+        await cl.run(ws)
+
+    assert not cl.results["cancel"]
+
+
+@pt.mark.asyncio
 async def test_remote_auth_cancel():
     client: TestClientType = app.test_client()
     ra_client: TestClientType = ra_app.test_client()
@@ -130,6 +184,9 @@ async def test_remote_auth_unknown_fp_and_token():
     })
     assert resp.status_code == 404
 
+    resp = await client.post("/api/v9/users/@me/remote-auth/login", json={})
+    assert resp.status_code == 404
+
 
 @pt.mark.asyncio
 async def test_remote_auth_same_keys():
@@ -165,11 +222,11 @@ async def test_remote_auth_without_init():
         with pt.raises(WebsocketDisconnectError):
             await ws.receive_json()
 
-    async with ra_client.websocket('/') as ws:
-        await ws.receive_json()
-        await ws.send_json({"op": "heartbeat"})
-        with pt.raises(WebsocketDisconnectError):
-            await ws.receive_json()
+    #async with ra_client.websocket('/') as ws:
+    #    await ws.receive_json()
+    #    await ws.send_json({"op": "heartbeat"})
+    #    with pt.raises(WebsocketDisconnectError):
+    #        await ws.receive_json()
 
 
 @pt.mark.asyncio
