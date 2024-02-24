@@ -15,11 +15,9 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
 from asyncio import CancelledError
-from json import loads as jloads
 
-from quart import Quart, websocket
+from quart import Quart, websocket, Websocket
 from tortoise.contrib.quart import register_tortoise
 
 from .gateway import Gateway
@@ -56,16 +54,17 @@ async def set_cors_headers(response):  # pragma: no cover
 
 @app.websocket("/")
 async def ws_gateway():
+    version = websocket.args.get("v", "")
+    version = int(version) if version.isdigit() else 1
+
     # noinspection PyProtectedMember,PyUnresolvedReferences
-    ws = websocket._get_current_object()
-    setattr(ws, "connected", True)
-    await gw.sendHello(ws)
+    ws: Websocket = websocket._get_current_object()
+    await gw.connect(ws, version)
     while True:
         try:
-            data = await ws.receive()
-            await gw.process(ws, jloads(data))
+            data = await ws.receive_json()
+            await gw.process(ws, data)
         except CancelledError:
-            setattr(ws, "connected", False)
             await gw.disconnect(ws)
             raise
 

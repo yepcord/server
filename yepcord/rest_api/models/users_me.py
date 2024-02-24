@@ -159,10 +159,13 @@ class GetScheduledEventsQuery(BaseModel):
 
 # noinspection PyMethodParameters
 class RemoteAuthLogin(BaseModel):
-    fingerprint: str
+    fingerprint: Optional[str] = None
+    ticket: Optional[str] = None
 
     @field_validator("fingerprint")
-    def validate_fingerprint(cls, value: str) -> str:
+    def validate_fingerprint(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return
         try:
             assert len(b64decode(value)) == 32
         except (ValueError, AssertionError):

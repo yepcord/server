@@ -34,3 +34,6 @@ class RemoteAuthSession(Model):
     fingerprint: str = fields.CharField(max_length=64, unique=True)
     user: Optional[models.User] = fields.ForeignKeyField("models.User", null=True, default=None)
     expires_at: int = fields.IntField(default=time_plus_150s)
+    version: int = fields.SmallIntField(default=1)
+    v2_session: Optional[models.Session] = fields.ForeignKeyField("models.Session", null=True, default=None)
+    v2_encrypted_token: Optional[str] = fields.TextField(null=True, default=None)
