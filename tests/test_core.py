@@ -17,26 +17,31 @@
 """
 
 from asyncio import get_event_loop
+from datetime import date
 from json import dumps
 from random import randint, choice
 from typing import Coroutine, Any
 
 import pytest as pt
+import pytest_asyncio
+from tortoise import Tortoise, connections
 
-from src.yepcord.classes.user import Session, UserId, UserSettings, UserData
-from src.yepcord.config import Config
-from src.yepcord.core import Core
-from src.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType
-from src.yepcord.errors import InvalidDataErr, MfaRequiredErr
-from src.yepcord.snowflake import Snowflake
-from src.yepcord.utils import b64decode, b64encode
+from yepcord.yepcord.config import Config, ConfigModel
+from yepcord.yepcord.core import Core
+from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType, GuildPermissions
+from yepcord.yepcord.errors import InvalidDataErr, MfaRequiredErr
+from yepcord.yepcord.gateway_dispatcher import GatewayDispatcher
+from yepcord.yepcord.models import User, UserData, Session, Relationship, Guild, Channel, Role, PermissionOverwrite, \
+    GuildMember
+from yepcord.yepcord.snowflake import Snowflake
+from yepcord.yepcord.utils import b64decode, b64encode
 
 EMAIL_ID = Snowflake.makeId()
 VARS = {
     "user_id": Snowflake.makeId()
 }
 
-core = Core(b64decode(Config("KEY")))
+core = Core(b64decode(Config.KEY))
 
 
 @pt.fixture
@@ -46,34 +51,34 @@ def event_loop():
     loop.close()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def setup_db():
+    await Tortoise.init(db_url=Config.DB_CONNECT_STRING, modules={"models": ["yepcord.yepcord.models"]})
+    yield
+    await Tortoise.close_connections()
+
+
 @pt.fixture(name='testCore')
 async def _setup_db():
-    await core.initDB(
-        host=Config("DB_HOST"),
-        port=3306,
-        user=Config("DB_USER"),
-        password=Config("DB_PASS"),
-        db=Config("DB_NAME"),
-        autocommit=True
-    )
     return core
 
 
 @pt.mark.asyncio
 async def test_register_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    session = await testCore.register(VARS["user_id"], "Test Login", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
+    session = await testCore.register(VARS["user_id"], "Test Login", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd",
+                                      "2000-01-01")
     assert session is not None, "Account not registered: maybe you using already used database?"
+
+    await core.register(VARS["user_id"] + 200001, "Test", f"{EMAIL_ID}_test2_1@yepcord.ml", "password", "2000-01-01")
 
 
 @pt.mark.asyncio
 async def test_register_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    try:
-        await testCore.register(VARS["user_id"], "Test Login 2", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
-        assert False, "Account already registered: must raise error!"
-    except InvalidDataErr:
-        pass  # Ok
+    with pt.raises(InvalidDataErr):
+        await testCore.register(VARS["user_id"], "Test Login 2", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd",
+                                "2000-01-01")
 
 
 @pt.mark.asyncio
@@ -86,141 +91,36 @@ async def test_login_success(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_login_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    try:
+    with pt.raises(InvalidDataErr):
         await testCore.login(f"{EMAIL_ID}_test@yepcord.ml", "wrong_password")
+    with pt.raises(InvalidDataErr):
         await testCore.login(f"{EMAIL_ID}_test123@yepcord.ml", "test_passw0rd")
-        assert False, "Wrong login or password: must raise Error!"
-    except InvalidDataErr:
-        pass  # Ok
 
 
 @pt.mark.asyncio
-async def test_getUser_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"])
+async def test_getUser_success():
+    user = await User.y.get(VARS["user_id"])
     assert user is not None, "User not found: ???"
 
 
 @pt.mark.asyncio
-async def test_getUser_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"] + 1)
+async def test_getUser_fail():
+    user = await User.y.get(VARS["user_id"] + 1)
     assert user is None, f"User with id {VARS['user_id'] + 1} doesn't exists: must return None!"
 
 
 @pt.mark.asyncio
-async def test_validSession_success(testCore: Coroutine[Any, Any, Core]):
+async def test_createSession_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     session = await testCore.createSession(VARS["user_id"])
-    assert await testCore.validSession(session)
+    assert session is not None
 
 
 @pt.mark.asyncio
-async def test_validSession_fail(testCore: Coroutine[Any, Any, Core]):
+async def test_createSession_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    session = Session(Snowflake.makeId(), 123456, "test123")
-    assert not await testCore.validSession(session)
-
-
-@pt.mark.asyncio
-async def test_getUserSettings_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    assert await testCore.getUserSettings(UserId(VARS["user_id"])) is not None
-
-
-@pt.mark.asyncio
-async def test_getUserSettings_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    assert await testCore.getUserSettings(UserId(VARS["user_id"] + 1)) is None
-
-
-@pt.mark.asyncio
-async def test_getUserData_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    assert await testCore.getUserData(UserId(VARS["user_id"])) is not None
-
-
-@pt.mark.asyncio
-async def test_getUserData_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    assert await testCore.getUserData(UserId(VARS["user_id"] + 1)) is None
-
-
-def changeSettings(settings: UserSettings) -> None:
-    settings.inline_attachment_media = not settings.inline_attachment_media
-    settings.show_current_game = not settings.show_current_game
-    settings.view_nsfw_guilds = not settings.view_nsfw_guilds
-    settings.enable_tts_command = not settings.enable_tts_command
-    settings.render_reactions = not settings.render_reactions
-    settings.gif_auto_play = not settings.gif_auto_play
-    settings.stream_notifications_enabled = not settings.stream_notifications_enabled
-    settings.animate_emoji = not settings.animate_emoji
-    settings.afk_timeout = randint(0, 600)
-    settings.view_nsfw_commands = not settings.view_nsfw_commands
-    settings.detect_platform_accounts = not settings.detect_platform_accounts
-    settings.explicit_content_filter = randint(0, 2)
-    settings.default_guilds_restricted = not settings.default_guilds_restricted
-    settings.allow_accessibility_detection = not settings.allow_accessibility_detection
-    settings.native_phone_integration_enabled = not settings.native_phone_integration_enabled
-    settings.friend_discovery_flags = randint(0, 6)
-    settings.contact_sync_enabled = not settings.contact_sync_enabled
-    settings.disable_games_tab = not settings.disable_games_tab
-    settings.developer_mode = not settings.developer_mode
-    settings.render_embeds = not settings.render_embeds
-    settings.animate_stickers = randint(0, 1)
-    settings.message_display_compact = not settings.message_display_compact
-    settings.convert_emoticons = not settings.convert_emoticons
-    settings.passwordless = not settings.passwordless
-    settings.personalization = not settings.personalization
-    settings.usage_statistics = not settings.usage_statistics
-    settings.inline_embed_media = not settings.inline_embed_media
-    settings.use_thread_sidebar = not settings.use_thread_sidebar
-    settings.use_rich_chat_input = not settings.use_rich_chat_input
-    settings.expression_suggestions_enabled = not settings.expression_suggestions_enabled
-    settings.view_image_descriptions = not settings.view_image_descriptions
-    settings.status = "invisible" if settings.status == "online" else "online"
-    settings.custom_status = {"text": f"test_{randint(0, 1000)}"}
-    settings.theme = "light" if settings.theme == "dark" else "dark"
-    settings.locale = "uk" if settings.locale == "en-US" else "en-US"
-    settings.timezone_offset = randint(-600, 600)
-    settings.activity_restricted_guild_ids = [randint(0, Snowflake.makeId())]
-    settings.friend_source_flags = {"all": False, "mutual_friends": True, "mutual_guilds": False} \
-        if settings.friend_source_flags["all"] == True else {"all": True}
-    settings.guild_positions = [randint(0, Snowflake.makeId()), randint(0, Snowflake.makeId())]
-    settings.guild_folders = [randint(0, Snowflake.makeId()), randint(0, Snowflake.makeId())]
-    settings.restricted_guilds = [randint(0, Snowflake.makeId())]
-    settings.render_spoilers = "IF_MODERATOR" if settings.render_spoilers == "ALWAYS" else "ALWAYS"
-
-
-@pt.mark.asyncio
-async def test_setSettings_success(testCore: Coroutine[Any, Any, Core]):
-    """
-    Test almost every field in UserSettings
-    :param testCore:
-    :return:
-    """
-    testCore = await testCore
-    settings = await testCore.getUserSettings(UserId(VARS["user_id"]))
-    changeSettings(settings)
-    await testCore.setSettings(settings)
-    new_settings = await testCore.getUserSettings(UserId(VARS["user_id"]))
-    assert settings.getDiff(new_settings) == {}
-
-
-@pt.mark.asyncio
-async def test_setSettingsDiff_success(testCore: Coroutine[Any, Any, Core]):
-    """
-        Test almost every field in UserSettings
-        :param testCore:
-        :return:
-        """
-    testCore = await testCore
-    settings = await testCore.getUserSettings(UserId(VARS["user_id"]))
-    changed_settings = settings.copy()
-    changeSettings(changed_settings)
-    await testCore.setSettingsDiff(settings, changed_settings)
-    new_settings = await testCore.getUserSettings(UserId(VARS["user_id"]))
-    assert changed_settings.getDiff(new_settings) == {}
+    session = await testCore.createSession(Snowflake.makeId())
+    assert session is None
 
 
 def changeUserData(data: UserData) -> None:
@@ -239,50 +139,38 @@ def changeUserData(data: UserData) -> None:
 
 
 @pt.mark.asyncio
-async def test_setUserdata_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    userdata = await testCore.getUserData(UserId(VARS["user_id"]))
-    changeUserData(userdata)
-    await testCore.setUserdata(userdata)
-    new_userdata = await testCore.getUserData(UserId(VARS["user_id"]))
-    assert userdata.getDiff(new_userdata) == {}
-
-
-@pt.mark.asyncio
 async def test_getUserProfile_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await testCore.getUserProfile(VARS["user_id"], UserId(0))
-    assert user is not None and user.id == VARS["user_id"]
+    _user = await User.get(id=VARS["user_id"])
+    user = await testCore.getUserProfile(VARS["user_id"], _user)
+    assert user is not None and user == _user
 
 
 @pt.mark.asyncio
 async def test_getUserProfile_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    try:
-        await testCore.getUserProfile(VARS["user_id"] + 1, UserId(0))
-        assert False
-    except InvalidDataErr:
-        pass  # Ok
+    with pt.raises(InvalidDataErr):
+        await testCore.getUserProfile(VARS["user_id"] + 1, await User.get(id=VARS["user_id"]))
 
 
 @pt.mark.asyncio
 async def test_checkUserPassword_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"])
+    user = await User.y.get(VARS["user_id"])
     assert await testCore.checkUserPassword(user, "test_passw0rd")
 
 
 @pt.mark.asyncio
 async def test_checkUserPassword_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"])
+    user = await User.y.get(VARS["user_id"])
     assert not await testCore.checkUserPassword(user, "wrong_password")
 
 
 @pt.mark.asyncio
 async def test_changeUserDiscriminator_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await core.getUser(VARS["user_id"])
+    user = await User.y.get(VARS["user_id"])
     assert await testCore.changeUserDiscriminator(user, randint(1, 9999))
 
 
@@ -291,27 +179,26 @@ async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core])
     testCore = await testCore
 
     # Register 2 users with same nickname
-    session1 = await core.register(VARS["user_id"] + 100000, "Test", f"{EMAIL_ID}_test1@yepcord.ml", "password", "2000-01-01")
-    session2 = await core.register(VARS["user_id"] + 200000, "Test", f"{EMAIL_ID}_test2@yepcord.ml", "password", "2000-01-01")
-    user1 = await core.getUser(session1.id)
-    user2 = await core.getUser(session2.id)
+    session1 = await testCore.register(VARS["user_id"] + 100000, "Test", f"{EMAIL_ID}_test1@yepcord.ml", "password",
+                                       "2000-01-01")
+    session2 = await testCore.register(VARS["user_id"] + 200000, "Test", f"{EMAIL_ID}_test2@yepcord.ml", "password",
+                                       "2000-01-01")
+    user1 = await User.y.get(session1.user.id)
+    user2 = await User.y.get(session2.user.id)
     userdata2 = await user2.userdata
 
     # Try to change first user discriminator to second user discriminator
     assert not await testCore.changeUserDiscriminator(user1, userdata2.discriminator, True)
-    try:
+    with pt.raises(InvalidDataErr):
         await testCore.changeUserDiscriminator(user1, userdata2.discriminator, False)
-        assert False
-    except InvalidDataErr:
-        pass
 
 
 @pt.mark.asyncio
 async def test_changeUserName_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await core.getUser(VARS["user_id"])
+    user = await User.y.get(VARS["user_id"])
     await testCore.changeUserName(user, f"{EMAIL_ID}_UserName")
-    userdata = await testCore.getUserData(user)
+    userdata = await user.data
     assert userdata.username == f"{EMAIL_ID}_UserName"
 
 
@@ -320,65 +207,84 @@ async def test_changeUserName_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
 
     # Insert in userdata table 9999 users to trigger USERNAME_TOO_MANY_USERS error
+    username = f"NoDiscriminatorsLeft_{Snowflake.makeId()}"
+
+    users = []
     userdatas = []
     for d in range(1, 10000):
-        userdatas.append((VARS["user_id"] + 100000 + d, d))
-    async with testCore.db() as db:
-        await db.cur.executemany(f'INSERT INTO `users`(`id`, `email`, `password`, `key`) VALUES '
-                                 f'(%s, "", %s, "");', userdatas)
-        await db.cur.executemany(f'INSERT INTO `userdata`(`uid`, `birth`, `username`, `discriminator`) VALUES '
-                                 f'(%s, "2000-01-01", "NoDiscriminatorsLeft", %s);', userdatas)
+        _id = VARS["user_id"] + 100000 + d
+        users.append((_id, f"test_user_{_id}@test.yepcord.ml"))
+        userdatas.append((_id, _id, date(2000, 1, 1), username, d))
 
-    user = await core.getUser(VARS["user_id"])
-    try:
-        await testCore.changeUserName(user, "NoDiscriminatorsLeft")
-        assert False
-    except InvalidDataErr:
-        pass  # ok
+    conn = connections.get("default")
+    if conn.capabilities.dialect == "mysql":
+        await conn.execute_many("INSERT INTO `user`(`id`, `email`, `password`) VALUES (%s, %s, \"123456\")", users)
+        await conn.execute_many(
+            "INSERT INTO `userdata`(`id`, `user_id`, `birth`, `username`, `discriminator`, `flags`, `public_flags`) "
+            "VALUES (%s, %s, %s, %s, %s, 0, 0)",
+            userdatas
+        )
+    elif conn.capabilities.dialect == "sqlite":
+        await conn.execute_many("INSERT INTO `user`(`id`, `email`, `password`) VALUES (?, ?, \"123456\")", users)
+        await conn.execute_many(
+            "INSERT INTO `userdata`(`id`, `user_id`, `birth`, `username`, `discriminator`, `flags`, `public_flags`) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0)",
+            userdatas
+        )
+    elif conn.capabilities.dialect == "postgres":
+        await conn.execute_many("INSERT INTO \"user\" (id, email, password) VALUES ($1, $2, '123456')", users)
+        await conn.execute_many(
+            "INSERT INTO userdata(id, user_id, birth, username, discriminator, flags, public_flags) "
+            "VALUES ($1, $2, $3, $4, $5, 0, 0)",
+            userdatas
+        )
+
+    user = await User.y.get(VARS["user_id"])
+    with pt.raises(InvalidDataErr):
+        await testCore.changeUserName(user, username)
 
 
 @pt.mark.asyncio
-async def test_getUserByUsername_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    userdata = await core.getUserData(UserId(VARS["user_id"]))
-    user = await testCore.getUserByUsername(userdata.username, userdata.discriminator)
+async def test_getUserByUsername_success():
+    userdata = await UserData.get(user__id=VARS["user_id"])
+    user = await User.y.getByUsername(userdata.username, userdata.discriminator)
     assert user is not None
     assert user.id == VARS["user_id"]
 
 
 @pt.mark.asyncio
-async def test_getUserByUsername_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await testCore.getUserByUsername("ThisUserDoesNotExist", 9999)
+async def test_getUserByUsername_fail():
+    user = await User.y.getByUsername("ThisUserDoesNotExist", 9999)
     assert user is None
 
 
 @pt.mark.asyncio
-async def test_checkRelationShipAvailable_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    await testCore.checkRelationShipAvailable(UserId(VARS["user_id"] + 100000), UserId(VARS["user_id"] + 200000))
+async def test_checkRelationShipAvailable_success():
+    user1 = await User.get(id=VARS["user_id"] + 100000)
+    user2 = await User.get(id=VARS["user_id"] + 200000)
+    assert await Relationship.utils.available(user1, user2)
 
 
 @pt.mark.asyncio
-async def test_reqRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    await testCore.reqRelationship(UserId(VARS["user_id"] + 100000), UserId(VARS["user_id"] + 200000))
+async def test_reqRelationship_success():
+    user1 = await User.get(id=VARS["user_id"] + 100000)
+    user2 = await User.get(id=VARS["user_id"] + 200000)
+    assert await Relationship.utils.request(user2, user1)
 
 
 @pt.mark.asyncio
-async def test_checkRelationShipAvailable_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    try:
-        await testCore.checkRelationShipAvailable(UserId(VARS["user_id"] + 100000), UserId(VARS["user_id"] + 200000))
-        assert False
-    except InvalidDataErr:
-        pass  # Ok
+async def test_checkRelationShipAvailable_fail():
+    user1 = await User.get(id=VARS["user_id"] + 100000)
+    user2 = await User.get(id=VARS["user_id"] + 200000)
+    with pt.raises(InvalidDataErr):
+        await Relationship.utils.available(user1, user2, raise_=True)
 
 
 @pt.mark.asyncio
 async def test_getRelationships_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    rels = await testCore.getRelationships(UserId(VARS["user_id"] + 100000))
+    user = await User.get(id=VARS["user_id"] + 100000)
+    rels = await testCore.getRelationships(user)
     assert len(rels) == 1
     assert rels[0]["type"] == 3
     assert rels[0]["user_id"] == str(VARS["user_id"] + 200000)
@@ -387,57 +293,60 @@ async def test_getRelationships_success(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_getRelationships_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    rels = await testCore.getRelationships(UserId(0))
+    user = await User.get(id=VARS["user_id"] + 100001)
+    rels = await testCore.getRelationships(user)
     assert len(rels) == 0
 
 
 @pt.mark.asyncio
-async def test_getRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    rel = await testCore.getRelationship(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
-    assert rel is not None
+async def test_getRelationship_success():
+    assert await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100000),
+                                           await User.get(id=VARS["user_id"] + 200000))
 
 
 @pt.mark.asyncio
-async def test_getRelationship_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    rel = await testCore.getRelationship(VARS["user_id"] + 100001, VARS["user_id"] + 200000)
-    assert rel is None
-    rel = await testCore.getRelationship(VARS["user_id"] + 100001, VARS["user_id"] + 200001)
-    assert rel is None
+async def test_getRelationship_fail():
+    assert not await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100001),
+                                               await User.get(id=VARS["user_id"] + 200000))
+    assert not await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100001),
+                                               await User.get(id=VARS["user_id"] + 200001))
 
 
 @pt.mark.asyncio
 async def test_getRelatedUsers_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    users = await testCore.getRelatedUsers(UserId(VARS["user_id"] + 100000), True)
+    user = await User.get(id=VARS["user_id"] + 100000)
+    users = await testCore.getRelatedUsers(user, True)
     assert len(users) == 1
     assert users[0] == VARS["user_id"] + 200000
 
 
 @pt.mark.asyncio
-async def test_accRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    await testCore.accRelationship(UserId(VARS["user_id"] + 100000), VARS["user_id"] + 200000)
-    rel = await testCore.getRelationship(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
+async def test_accRelationship_success():
+    user = await User.get(id=VARS["user_id"] + 100000)
+    user2 = await User.get(id=VARS["user_id"] + 200000)
+    await Relationship.utils.accept(user2, user)
+    rel = await Relationship.utils.get(await User.get(id=VARS["user_id"] + 100000),
+                                       await User.get(id=VARS["user_id"] + 200000))
     assert rel is not None
     assert rel.type == RelationshipType.FRIEND
 
 
 @pt.mark.asyncio
-async def test_delRelationship_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    await testCore.delRelationship(UserId(VARS["user_id"] + 100000), VARS["user_id"] + 200000)
-    rel = await testCore.getRelationship(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
-    assert rel is None
+async def test_delRelationship_success():
+    user = await User.get(id=VARS["user_id"] + 100000)
+    user2 = await User.get(id=VARS["user_id"] + 200000)
+    await Relationship.utils.delete(user, user2)
+    assert not await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100000),
+                                               await User.get(id=VARS["user_id"] + 200000))
 
 
 @pt.mark.asyncio
 async def test_changeUserPassword_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"])
+    user = await User.y.get(VARS["user_id"])
     await testCore.changeUserPassword(user, "test_password123")
-    user = await testCore.getUser(VARS["user_id"])
+    user = await User.y.get(VARS["user_id"])
     assert await testCore.checkUserPassword(user, "test_password123")
 
 
@@ -445,36 +354,39 @@ async def test_changeUserPassword_success(testCore: Coroutine[Any, Any, Core]):
 async def test_logoutUser_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     session = await testCore.createSession(VARS["user_id"])
-    assert await testCore.validSession(session)
-    await testCore.logoutUser(session)
-    assert not await testCore.validSession(session)
+    assert await Session.get_or_none(id=session.id) is not None
+    await session.delete()
+    assert await Session.get_or_none(id=session.id) is None
 
 
 @pt.mark.asyncio
-async def test_getMfa(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"])
+async def test_getMfa():
+    user = await User.y.get(VARS["user_id"])
     settings = await user.settings
     if settings.mfa:
-        await testCore.setSettingsDiff(settings, settings.copy(mfa=None))
-        settings = await testCore.getUserSettings(user)
+        settings.mfa = None
+        await settings.save(update_fields=["mfa"])
 
-    assert await testCore.getMfa(user) is None
+    assert await user.mfa is None
 
-    await testCore.setSettingsDiff(settings, settings.copy(mfa="a"*16))
-    user = await testCore.getUser(VARS["user_id"])
-    settings = await testCore.getUserSettings(user)
-    mfa = await testCore.getMfa(user)
+    settings.mfa = "a" * 16
+    await settings.save(update_fields=["mfa"])
+    user = await User.y.get(VARS["user_id"])
+    settings = await user.settings
+    mfa = await user.mfa
     assert mfa is not None
-    assert mfa.key.lower() == "a"*16
-    await testCore.setSettingsDiff(settings, settings.copy(mfa=None))
+    assert mfa.key.lower() == "a" * 16
+    settings.mfa = None
+    await settings.save(update_fields=["mfa"])
+
 
 @pt.mark.asyncio
 async def test_setBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
+    user = await User.get(id=VARS["user_id"])
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
-    await testCore.setBackupCodes(UserId(VARS["user_id"]), codes)
-    db_codes = [code[0] for code in await testCore.getBackupCodes(UserId(VARS["user_id"]))]
+    await testCore.setBackupCodes(user, codes)
+    db_codes = [code.code for code in await testCore.getBackupCodes(user)]
     assert len(db_codes) == 10
     assert set(codes) == set(db_codes)
 
@@ -482,28 +394,31 @@ async def test_setBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_clearBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    await testCore.clearBackupCodes(UserId(VARS["user_id"]))
-    codes = await testCore.getBackupCodes(UserId(VARS["user_id"]))
+    user = await User.get(id=VARS["user_id"])
+    await testCore.clearBackupCodes(user)
+    codes = await testCore.getBackupCodes(user)
     assert len(codes) == 0
 
 
 @pt.mark.asyncio
 async def test_getBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    assert len(await testCore.getBackupCodes(UserId(VARS["user_id"]))) == 0
+    user = await User.get(id=VARS["user_id"])
+    assert len(await testCore.getBackupCodes(user)) == 0
     codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
-    await testCore.setBackupCodes(UserId(VARS["user_id"]), codes)
-    assert len(db_codes := await testCore.getBackupCodes(UserId(VARS["user_id"]))) == 10
-    db_codes = [code[0] for code in db_codes]
+    await testCore.setBackupCodes(user, codes)
+    assert len(db_codes := await testCore.getBackupCodes(user)) == 10
+    db_codes = [code.code for code in db_codes]
     assert set(codes) == set(db_codes)
 
 
 @pt.mark.asyncio
 async def test_getMfaFromTicket_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"])
+    user = await User.y.get(VARS["user_id"])
     settings = await user.settings
-    await testCore.setSettingsDiff(settings, settings.copy(mfa="b" * 16))
+    settings.mfa = "b" * 16
+    await settings.save(update_fields=["mfa"])
 
     try:
         await testCore.login(user.email, "test_password123")
@@ -519,36 +434,34 @@ async def test_getMfaFromTicket_success(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_generateUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"])
+    user = await User.y.get(VARS["user_id"])
     settings = await user.settings
-    await testCore.setSettingsDiff(settings, settings.copy(mfa="c" * 16))
-    user = await testCore.getUser(VARS["user_id"])
+    settings.mfa = "c" * 16
+    await settings.save(update_fields=["mfa"])
+    user = await User.y.get(VARS["user_id"])
     VARS["mfa_nonce"] = await testCore.generateUserMfaNonce(user)
 
 
 @pt.mark.asyncio
-async def test_verifyUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await testCore.getUser(VARS["user_id"])
+async def test_verifyUserMfaNonce():
+    user = await User.y.get(VARS["user_id"])
     nonce, regenerate_nonce = VARS["mfa_nonce"]
     await core.verifyUserMfaNonce(user, nonce, False)
     await core.verifyUserMfaNonce(user, regenerate_nonce, True)
     for args in ((nonce, True), (regenerate_nonce, False)):
-        try:
+        with pt.raises(InvalidDataErr):
             await core.verifyUserMfaNonce(user, *args)
-            assert False
-        except InvalidDataErr:
-            pass # Ok
     del VARS["mfa_nonce"]
 
 
 @pt.mark.asyncio
 async def test_useMfaCode_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    codes = list(await testCore.getBackupCodes(UserId(VARS["user_id"])))
-    assert await testCore.useMfaCode(VARS["user_id"], codes[0][0])
-    codes[0] = (codes[0][0], True)
-    db_codes = await testCore.getBackupCodes(UserId(VARS["user_id"]))
+    user = await User.y.get(VARS["user_id"])
+    codes = list(await testCore.getBackupCodes(user))
+    assert await testCore.useMfaCode(user, codes[0].code)
+    codes[0].used = True
+    db_codes = await testCore.getBackupCodes(user)
     assert len(db_codes) == 10
     assert set(codes) == set(db_codes)
 
@@ -556,16 +469,21 @@ async def test_useMfaCode_success(testCore: Coroutine[Any, Any, Core]):
 @pt.mark.asyncio
 async def test_useMfaCode_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    assert not await testCore.useMfaCode(VARS["user_id"], "invalid_code")
+    user = await User.y.get(VARS["user_id"])
+    assert not await testCore.useMfaCode(user, "invalid_code")
 
 
 @pt.mark.asyncio
 async def test_getDMChannelOrCreate_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    channel = await testCore.getDMChannelOrCreate(VARS["user_id"] + 100000, VARS["user_id"] + 200000)
+    user1 = await User.y.get(VARS["user_id"] + 100000)
+    user2 = await User.y.get(VARS["user_id"] + 200000)
+    channel = await testCore.getDMChannelOrCreate(user1, user2)
+    channel2 = await testCore.getDMChannelOrCreate(user1, user2)
     assert channel is not None
     assert channel.type == ChannelType.DM
-    assert set(channel.recipients) == {VARS["user_id"] + 100000, VARS["user_id"] + 200000}
+    assert channel.id == channel2.id
+    assert set(await channel.recipients.all()) == {user1, user2}
     VARS["channel_id"] = channel.id
 
 
@@ -588,7 +506,6 @@ async def test_getChannel_fail(testCore: Coroutine[Any, Any, Core]):
 async def test_getLastMessageIdForChannel_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     channel = await testCore.getChannel(VARS["channel_id"])
-    await testCore.getLastMessageIdForChannel(channel)
     assert channel.last_message_id is None or channel.last_message_id > 0
 
 
@@ -596,4 +513,58 @@ async def test_getLastMessageIdForChannel_success(testCore: Coroutine[Any, Any, 
 async def test_getChannelMessagesCount_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     channel = await testCore.getChannel(VARS["channel_id"])
-    assert await testCore.getChannelMessagesCount(channel, Snowflake.makeId(False), 0) == 0
+    assert await testCore.getChannelMessagesCount(channel) == 0
+
+
+@pt.mark.asyncio
+async def test_geoip(testCore: Coroutine[Any, Any, Core]):
+    testCore = await testCore
+
+    assert testCore.getLanguageCode("1.1.1.1") == "en-US"
+    assert testCore.getLanguageCode("134.249.127.127") == "uk"
+    assert testCore.getLanguageCode("103.21.236.200") == "de"
+    assert testCore.getLanguageCode("109.241.127.127") == "pl"
+    assert testCore.getLanguageCode("5.65.127.127") == "en-GB"
+
+    assert testCore.getLanguageCode("255.255.255.255") == "en-US"
+    assert testCore.getLanguageCode("255.255.255.255", "uk") == "uk"
+
+
+def test_config():
+    ConfigModel()  # shows key warning
+    assert ConfigModel(GATEWAY_KEEP_ALIVE_DELAY=1).GATEWAY_KEEP_ALIVE_DELAY == 5
+    assert ConfigModel(GATEWAY_KEEP_ALIVE_DELAY=151).GATEWAY_KEEP_ALIVE_DELAY == 150
+    assert ConfigModel(BCRYPT_ROUNDS=2).BCRYPT_ROUNDS == 15
+    assert ConfigModel(BCRYPT_ROUNDS=32).BCRYPT_ROUNDS == 15
+
+
+@pt.mark.asyncio
+async def test_gw_channel_filter():
+    user = await User.y.get(VARS["user_id"])
+    user2 = await User.y.get(VARS["user_id"] + 100000)
+    guild = await Guild.create(owner=user, name="test")
+    await GuildMember.create(guild=guild, user=user)
+    role = await Role.create(id=guild.id, name="@everyone", guild=guild)
+    role1 = await Role.create(name="1", guild=guild, permissions=0)
+    channel = await Channel.create(guild=guild, name="test", type=ChannelType.GUILD_TEXT)
+
+    gw = GatewayDispatcher.getInstance()
+
+    assert await gw.getChannelFilter(channel, GuildPermissions.VIEW_CHANNEL) == \
+           {"role_ids": [role.id], "user_ids": [user.id], "exclude": []}
+
+    await PermissionOverwrite.create(channel=channel, target_role=role,
+                                     deny=GuildPermissions.VIEW_CHANNEL, type=0, allow=0)
+
+    assert await gw.getChannelFilter(channel, GuildPermissions.VIEW_CHANNEL) == \
+           {"role_ids": [], "user_ids": [user.id], "exclude": []}
+
+    await PermissionOverwrite.create(channel=channel, target_role=role1,
+                                     allow=GuildPermissions.VIEW_CHANNEL, type=0, deny=0)
+    await PermissionOverwrite.create(channel=channel, target_user=user,
+                                     deny=GuildPermissions.VIEW_CHANNEL, type=1, allow=0)
+    await PermissionOverwrite.create(channel=channel, target_user=user2,
+                                     deny=GuildPermissions.VIEW_CHANNEL, type=1, allow=0)
+
+    assert await gw.getChannelFilter(channel, GuildPermissions.VIEW_CHANNEL) == \
+           {"role_ids": [role1.id], "user_ids": [user.id], "exclude": []}

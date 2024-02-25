@@ -10,122 +10,87 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        python-version: ["3.9", "3.10"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        database: ["mariadb", "sqlite", "mysql"]
 
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Shutdown Ubuntu MySQL
+        if: matrix.database == 'mariadb' || matrix.database == 'mysql'
+        run: sudo service mysql stop
+
       - uses: getong/mariadb-action@v1.1
+        if: matrix.database == 'mariadb'
         with:
           mariadb version: '10.6.4'
           mysql database: 'yepcord_test'
-          mysql root password: ${{ secrets.DB_PASS }}
+          mysql root password: 'yepcord_test'
 
-      - name: Wait for MySQL
+      - uses: mirromutth/mysql-action@v1.1
+        if: matrix.database == 'mysql'
+        with:
+          mariadb version: '5.7'
+          mysql database: 'yepcord_test'
+          mysql root password: 'yepcord_test'
+
+
+      - name: Wait for MariaDB/MySQL
+        if: matrix.database == 'mariadb' || matrix.database == 'mysql'
         run: |
-          while ! mysqladmin ping --host=127.0.0.1 --password=${{ secrets.DB_PASS }} --silent; do
+          while ! mysqladmin ping --host=127.0.0.1 --password=yepcord_test --silent; do
             sleep 1
           done
 
       - name: Setup database
         run: |
-          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_PASS }} yepcord_test < database.sql
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade wheel
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-ftp.txt
-          python -m pip install -r requirements-s3.txt
-          python -m pip install pytest pytest-asyncio pytest-cov
+          poetry run python app.py migrate
+        env:
+          YEPCORD_CONFIG: .github/settings_test.py
+          DB_TYPE: ${{ matrix.database }}
+          KEY: ${{ secrets.KEY }}
 
       - name: Run test suite for core
         run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/yepcord --disable-warnings tests/test_core.py
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/yepcord --disable-warnings tests/test_core.py
         env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
+          DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
+          YEPCORD_CONFIG: .github/settings_test.py
 
-      - name: Run test suite for http
+      - name: Run test suite for http api
         run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/rest_api --cov=src/yepcord --disable-warnings tests/test_http.py
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/rest_api --cov=yepcord/yepcord --cov=yepcord/remote_auth --disable-warnings tests/api/
         env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
+          DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
           TENOR_KEY: ${{ secrets.TENOR_KEY }}
+          YEPCORD_CONFIG: .github/settings_test.py
 
-      - name: Run test suite for cdn and file storage
+      - name: Run test suite for cdn/storage
         run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
-        env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
-          KEY: ${{ secrets.KEY }}
-          STORAGE_TYPE: local
-          STORAGE_PATH: tests/files
-
-      - name: Run s3 server
-        run: |
-          python -m pip install fake-s3
           mkdir -p tests/files/yepcord-test
-          python -m fake_s3 --host 0.0.0.0 --port 10001 --root tests/files &
-
-      - name: Run test suite for cdn and s3 storage
-        run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/cdn --cov=yepcord/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
         env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
+          DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
-          STORAGE_TYPE: s3
-          S3_ENDPOINT: http://127.0.0.1:10001
-          S3_KEYID: 1
-          S3_ACCESSKEY: 1
-          S3_BUCKET: yepcord-test
-
-      - name: Run ftp server
-        run: |
-          python -m pip install pyftpdlib
-          python -c "exec('''\nfrom pyftpdlib.authorizers import DummyAuthorizer\nfrom pyftpdlib.handlers import FTPHandler\nfrom pyftpdlib.servers import FTPServer\nauthorizer = DummyAuthorizer()\nauthorizer.add_user('root', '123456', 'tests/files/', perm='elradfmwMT')\nhandler = FTPHandler\nhandler.authorizer = authorizer\nserver = FTPServer(('127.0.0.1', 9021), handler)\nserver.serve_forever()\n''')" &
-
-      - name: Wait for Ftp server
-        run: |
-          while ! wget -O /dev/null -q ftp://root:123456@127.0.0.1:9021; do sleep 1; done
-
-      - name: Run test suite for cdn and ftp storage
-        run: |
-          pytest -x --cov-report=xml --cov-append --cov=src/cdn --cov=src/yepcord --cov-config=.coveragerc --disable-warnings tests/test_storage_cdn.py
-        env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: ${{ secrets.DB_PASS }}
-          DB_NAME: yepcord_test
-          KEY: ${{ secrets.KEY }}
-          STORAGE_TYPE: ftp
-          FTP_HOST: 127.0.0.1
-          FTP_PORT: 9021
-          FTP_USER: root
-          FTP_PASSWORD: 123456
+          YEPCORD_CONFIG: .github/settings_test.py
 
       - name: Print coverage report
         run: |
-          coverage report
+          poetry run coverage report
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
