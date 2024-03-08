@@ -23,6 +23,7 @@ import yepcord.rest_api.main as rest_api
 import yepcord.gateway.main as gateway
 import yepcord.cdn.main as cdn
 import yepcord.remote_auth.main as remote_auth
+import yepcord.voice_gateway.main as voice_gateway
 from yepcord.rest_api.routes import auth
 from yepcord.rest_api.routes import users_me
 from yepcord.rest_api.routes import users
@@ -77,8 +78,8 @@ app.register_blueprint(other.other, url_prefix="/")
 app.route("/api/v9/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])(rest_api.other_api_endpoints)
 
 app.websocket("/gateway", strict_slashes=False)(gateway.ws_gateway)
-remote_auth.ws_gateway.__name__ = "ws_ra_gateway"
-app.websocket("/remote-auth", strict_slashes=False)(remote_auth.ws_gateway)
+app.websocket("/remote-auth", strict_slashes=False)(remote_auth.ws_gateway_remote_auth)
+app.websocket("/voice", strict_slashes=False)(voice_gateway.ws_gateway_voice)
 
 app.get("/media/avatars/<int:user_id>/<string:file_hash>.<string:format_>")(cdn.get_avatar)
 app.get("/media/banners/<int:user_id>/<string:file_hash>.<string:format_>")(cdn.get_banner)

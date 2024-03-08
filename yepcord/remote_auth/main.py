@@ -55,7 +55,7 @@ async def set_cors_headers(response):  # pragma: no cover
 
 
 @app.websocket("/")
-async def ws_gateway():
+async def ws_gateway_remote_auth():
     # noinspection PyProtectedMember,PyUnresolvedReferences
     ws = websocket._get_current_object()
     setattr(ws, "connected", True)

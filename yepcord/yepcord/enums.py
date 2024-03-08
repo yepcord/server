@@ -296,6 +296,26 @@ class ScheduledEventStatus(E):
     CANCELED = 4
 
 
+# https://discord.com/developers/docs/topics/opcodes-and-status-codes#voice-voice-opcodes
+class VoiceGatewayOp(E):
+    IDENTIFY = 0
+    SELECT_PROTOCOL = 1
+    READY = 2
+    HEARTBEAT = 3
+    SESSION_DESCRIPTION = 4
+    SPEAKING = 5
+    HEARTBEAT_ACK = 6
+    RESUME = 7
+    HELLO = 8
+    RESUMED = 9
+    CLIENT_DISCONNECT = 13
+    UNKNOWN = 12
+    SESSION_UPDATE = 14
+    MEDIA_SINK_WANTS = 15
+    VOICE_BACKEND_VERSION = 16
+    CHANNEL_OPTIONS_UPDATE = 17
+
+
 class ApplicationScope(E):
     ACTIVITIES_READ = "activities.read"
     ACTIVITIES_WRITE = "activities.write"

@@ -175,6 +175,28 @@ class GatewayClient:
         presences = []  # TODO: add presences
         await self.esend(GuildMembersChunkEvent(members, presences, guild_id))
 
+    @require_auth
+    async def handle_VOICE_STATE(self, data: dict) -> None:
+        self_mute = bool(data.get("self_mute"))
+        self_deaf = bool(data.get("self_deaf"))
+
+        if not (channel := await getCore().getChannel(data.get("channel_id"))): return
+        if not await getCore().getUserByChannel(channel, self.user_id): return
+
+        guild = None
+        member = None
+        if guild_id := data.get("guild_id"):
+            if (guild := await getCore().getGuild(guild_id)) is None \
+                    or (member := await getCore().getGuildMember(guild, self.user_id)) is None:
+                return
+
+        print(f"Connecting to voice with session_id={self.sid}")
+
+        await self.esend(VoiceStateUpdate(
+            self.id, self.sid, channel, guild, member, self_mute=self_mute, self_deaf=self_deaf
+        ))
+        await self.esend(VoiceServerUpdate(channel, guild))
+
 
 class GatewayEvents:
     BOTS_EVENTS_BLACKLIST = {"MESSAGE_ACK"}

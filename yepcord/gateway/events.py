@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from base64 import b64encode
 from time import time
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Optional
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
@@ -29,7 +29,7 @@ from ..yepcord.models.interaction import Interaction
 from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Guild
     from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence
@@ -1037,3 +1037,56 @@ class InteractionFailureEvent(InteractionSuccessEvent):
     NAME = "INTERACTION_FAILURE"
 
 
+class VoiceStateUpdate(DispatchEvent):
+    NAME = "VOICE_STATE_UPDATE"
+
+    def __init__(self, user_id: int, session_id: str, channel: Channel, guild: Optional[Guild],
+                 member: Optional[GuildMember], **kwargs):
+        self.user_id = user_id
+        self.session_id = session_id
+        self.channel = channel
+        self.guild = guild
+        self.member = member
+        self.kwargs = kwargs
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id),
+                "channel_id": str(self.channel.id),
+                "deaf": False,
+                "mute": False,
+                "session_id": self.session_id,
+                **self.kwargs
+            }
+        }
+        if self.guild:
+            data["d"]["guild_id"] = str(self.guild.id)
+            data["d"]["member"] = await self.member.ds_json()
+        return data
+
+
+class VoiceServerUpdate(DispatchEvent):
+    NAME = "VOICE_SERVER_UPDATE"
+
+    def __init__(self, channel: Channel, guild: Optional[Guild]):
+        self.channel = channel
+        self.guild = guild
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "token": "idk_token",
+                "endpoint": "127.0.0.1:8000/voice"
+            }
+        }
+        if self.guild:
+            data["d"]["guild_id"] = str(self.guild.id)
+        if self.channel:
+            data["d"]["channel_id"] = str(self.channel.id)
+
+        return data
