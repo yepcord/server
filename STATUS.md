@@ -46,7 +46,7 @@
     - [x] Notes
     - [ ] Connections:
       - [ ] PayPal
-      - [ ] Reddit
+      - [x] Reddit
       - [ ] Steam
       - [ ] TikTok
       - [ ] Twitter

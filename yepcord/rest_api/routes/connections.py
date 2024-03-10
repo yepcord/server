@@ -15,7 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from base64 import b64encode
 from typing import Optional
 from urllib.parse import quote
 
@@ -58,7 +58,7 @@ def parse_state(state: str) -> tuple[Optional[int], Optional[int]]:
 @connections.get("/github/authorize")
 async def connection_github_authorize(user: User = DepUser):
     client_id = get_service_settings("github", "client_id")["client_id"]
-    callback_url = quote(f"https://{Config.PUBLIC_HOST}/connections/github/callback")
+    callback_url = quote(f"https://{Config.PUBLIC_HOST}/connections/github/callback", safe="")
 
     conn, _ = await ConnectedAccount.get_or_create(user=user, type="github", verified=False)
 
@@ -97,6 +97,56 @@ async def connection_github_callback(data: ConnectionCallback):
         return "", 204
 
     await conn.update(service_id=j["id"], name=j["login"], access_token=access_token, verified=True)
+
+    await getGw().dispatch(UserConnectionsUpdate(conn), user_ids=[user_id])
+
+    return "", 204
+
+
+@connections.get("/reddit/authorize")
+async def connection_reddit_authorize(user: User = DepUser):
+    client_id = get_service_settings("reddit", "client_id")["client_id"]
+    callback_url = quote(f"https://{Config.PUBLIC_HOST}/connections/reddit/callback", safe="")
+
+    conn, _ = await ConnectedAccount.get_or_create(user=user, type="reddit", verified=False)
+
+    url = (f"https://www.reddit.com/api/v1/authorize?client_id={client_id}&redirect_uri={callback_url}"
+           f"&scope=identity&state={user.id}.{conn.state}&response_type=code")
+
+    return {"url": url}
+
+
+@connections.post("/reddit/callback", body_cls=ConnectionCallback)
+async def connection_reddit_callback(data: ConnectionCallback):
+    callback_url = quote(f"https://{Config.PUBLIC_HOST}/connections/reddit/callback", safe="")
+    settings = get_service_settings("reddit", "client_id")
+    client_id = settings["client_id"]
+    client_secret = settings["client_secret"]
+    user_id, state = parse_state(data.state)
+    if user_id is None:
+        return "", 204
+    if (conn := await ConnectedAccount.get_or_none(user__id=user_id, state=state, verified=False, type="reddit")) \
+            is None:
+        return "", 204
+
+    async with AsyncClient() as cl:
+        resp = await cl.post(f"https://www.reddit.com/api/v1/access_token", auth=(client_id, client_secret),
+                             headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
+                             content=f"grant_type=authorization_code&code={data.code}&redirect_uri={callback_url}")
+        if resp.status_code >= 400 or "error" in (j := resp.json()):
+            raise InvalidDataErr(400, Errors.make(0))
+
+        access_token = j["access_token"]
+
+        resp = await cl.get("https://oauth.reddit.com/api/v1/me", headers={"Authorization": f"Bearer {access_token}"})
+        if resp.status_code >= 400:
+            raise InvalidDataErr(400, Errors.make(0))
+        j = resp.json()
+
+    if await ConnectedAccount.filter(type="reddit", service_id=j["id"]).exists():
+        return "", 204
+
+    await conn.update(service_id=j["id"], name=j["name"], access_token=access_token, verified=True)
 
     await getGw().dispatch(UserConnectionsUpdate(conn), user_ids=[user_id])
 

@@ -94,5 +94,9 @@ CONNECTIONS = {
     "github": {
         "client_id": None,
         "client_secret": None,
-    }
+    },
+    "reddit": {
+        "client_id": None,
+        "client_secret": None,
+    },
 }

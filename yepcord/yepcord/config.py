@@ -106,13 +106,14 @@ class ConfigCaptcha(BaseModel):
     recaptcha: ConfigCaptchaService = Field(default_factory=ConfigCaptchaService)
 
 
-class ConfigConnectionGithub(BaseModel):
+class ConfigConnectionBase(BaseModel):
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
 
 
 class ConfigConnections(BaseModel):
-    github: ConfigConnectionGithub = Field(default_factory=ConfigConnectionGithub)
+    github: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
+    reddit: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
 
 
 class ConfigModel(BaseModel):
