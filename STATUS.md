@@ -60,7 +60,7 @@
       - [x] Github
       - [ ] League of Legends
       - [ ] Riot Games
-      - [ ] Twitch
+      - [x] Twitch
       - [ ] YouTube
   - [x] OAuth2
   - [ ] Bots:

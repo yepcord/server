@@ -76,6 +76,7 @@ def run_all(config: str, host: str, port: int, reload: bool, ssl: bool) -> None:
         "forwarded_allow_ips": "'*'",
         "host": host,
         "port": port,
+        "timeout_graceful_shutdown": 1,
     }
 
     if reload:

@@ -99,4 +99,8 @@ CONNECTIONS = {
         "client_id": None,
         "client_secret": None,
     },
+    "twitch": {
+        "client_id": None,
+        "client_secret": None,
+    },
 }
