@@ -89,3 +89,10 @@ CAPTCHA = {
         "secret": "",
     },
 }
+
+CONNECTIONS = {
+    "github": {
+        "client_id": None,
+        "client_secret": None,
+    }
+}

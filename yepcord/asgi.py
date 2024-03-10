@@ -23,7 +23,7 @@ import yepcord.rest_api.main as rest_api
 import yepcord.gateway.main as gateway
 import yepcord.cdn.main as cdn
 import yepcord.remote_auth.main as remote_auth
-from yepcord.rest_api.routes import auth
+from yepcord.rest_api.routes import auth, connections
 from yepcord.rest_api.routes import users_me
 from yepcord.rest_api.routes import users
 from yepcord.rest_api.routes import channels
@@ -72,6 +72,7 @@ app.register_blueprint(applications.applications, url_prefix="/api/v9/applicatio
 app.register_blueprint(teams.teams, url_prefix="/api/v9/teams")
 app.register_blueprint(oauth2.oauth2, url_prefix="/api/v9/oauth2")
 app.register_blueprint(interactions.interactions, url_prefix="/api/v9/interactions")
+app.register_blueprint(connections.connections, url_prefix="/api/v9/connections")
 app.register_blueprint(other.other, url_prefix="/")
 
 app.route("/api/v9/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])(rest_api.other_api_endpoints)

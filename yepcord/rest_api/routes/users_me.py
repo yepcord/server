@@ -24,16 +24,19 @@ from typing import Union, Optional
 from ..dependencies import DepUser, DepSession, DepGuildMember, DepGuild, DepUserO
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, PutNote, \
     RelationshipRequest, SettingsProtoUpdate, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, \
-    DmChannelCreate, DeleteRequest, GetScheduledEventsQuery, RemoteAuthLogin, RemoteAuthFinish, RemoteAuthCancel
+    DmChannelCreate, DeleteRequest, GetScheduledEventsQuery, RemoteAuthLogin, RemoteAuthFinish, RemoteAuthCancel, \
+    EditConnection
 from ..y_blueprint import YBlueprint
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
-    UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent
+    UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent, \
+    UserConnectionsUpdate
 from ...yepcord.classes.other import MFA
+from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import RelationshipType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, \
-    GuildMember, RemoteAuthSession, Relationship, Authorization, Bot
+    GuildMember, RemoteAuthSession, Relationship, Authorization, Bot, ConnectedAccount
 from ...yepcord.models.remote_auth_session import time_plus_150s
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import execute_after, validImage, getImage
@@ -189,10 +192,44 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
     return {"settings": proto_string}
 
 
-# noinspection PyUnusedLocal
 @users_me.get("/connections", oauth_scopes=["connections"])
-async def get_connections(user: User = DepUser):  # TODO: add connections
-    return []
+async def get_connections(user: User = DepUser):
+    connections = await ConnectedAccount.filter(user=user)
+    return [conn.ds_json() for conn in connections]
+
+
+@users_me.patch("/connections/<string:service>/<string:ext_id>", body_cls=EditConnection)
+async def edit_connection(service: str, ext_id: str, data: EditConnection, user: User = DepUser):
+    if service not in {"github"}:
+        raise InvalidDataErr(400, Errors.make(50035, {"provider_id": {
+            "code": "ENUM_TYPE_COERCE", "message": f"Value '{service}' is not a valid enum value."
+        }}))
+
+    connection = await ConnectedAccount.get_or_none(user=user, service_id=ext_id, type=service, verified=True)
+    if connection is None:
+        raise InvalidDataErr(404, Errors.make(10017))
+
+    await connection.update(**data.model_dump())
+
+    await getGw().dispatch(UserConnectionsUpdate(connection), user_ids=[user.id])
+    return connection.ds_json()
+
+
+@users_me.delete("/connections/<string:service>/<string:ext_id>")
+async def delete_connection(service: str, ext_id: str, user: User = DepUser):
+    if service not in Config.CONNECTIONS:
+        raise InvalidDataErr(400, Errors.make(50035, {"provider_id": {
+            "code": "ENUM_TYPE_COERCE", "message": f"Value '{service}' is not a valid enum value."
+        }}))
+
+    connection = await ConnectedAccount.get_or_none(user=user, service_id=ext_id, type=service, verified=True)
+    if connection is None:
+        raise InvalidDataErr(404, Errors.make(10017))
+
+    await connection.delete()
+    await getGw().dispatch(UserConnectionsUpdate(connection), user_ids=[user.id])
+
+    return "", 204
 
 
 @users_me.post("/relationships", body_cls=RelationshipRequest)

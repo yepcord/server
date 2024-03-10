@@ -106,6 +106,15 @@ class ConfigCaptcha(BaseModel):
     recaptcha: ConfigCaptchaService = Field(default_factory=ConfigCaptchaService)
 
 
+class ConfigConnectionGithub(BaseModel):
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+
+
+class ConfigConnections(BaseModel):
+    github: ConfigConnectionGithub = Field(default_factory=ConfigConnectionGithub)
+
+
 class ConfigModel(BaseModel):
     DB_CONNECT_STRING: str = "sqlite:///db.sqlite"
     MAIL_CONNECT_STRING: str = "smtp://127.0.0.1:10025?timeout=3"
@@ -121,6 +130,7 @@ class ConfigModel(BaseModel):
     GATEWAY_KEEP_ALIVE_DELAY: int = 45
     BCRYPT_ROUNDS: int = 15
     CAPTCHA: ConfigCaptcha = Field(default_factory=ConfigCaptcha)
+    CONNECTIONS: ConfigConnections = Field(default_factory=ConfigConnections)
 
     @field_validator("KEY")
     def validate_key(cls, value: str) -> str:

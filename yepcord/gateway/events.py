@@ -24,7 +24,7 @@ from typing import List, TYPE_CHECKING
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
-from ..yepcord.models import Emoji, Application, Integration
+from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount
 from ..yepcord.models.interaction import Interaction
 from ..yepcord.snowflake import Snowflake
 
@@ -108,7 +108,9 @@ class ReadyEvent(DispatchEvent):
                 "session_id": self.client.sid,
                 "presences": [],  # TODO
                 "relationships": await self.core.getRelationships(self.user),
-                "connected_accounts": [],  # TODO
+                "connected_accounts": [
+                    conn.ds_json() for conn in await ConnectedAccount.filter(user=self.user, verified=True)
+                ],
                 "consents": {
                     "personalization": {
                         "consented": settings.personalization
@@ -1037,3 +1039,18 @@ class InteractionFailureEvent(InteractionSuccessEvent):
     NAME = "INTERACTION_FAILURE"
 
 
+class UserConnectionsUpdate(DispatchEvent):
+    NAME = "USER_CONNECTIONS_UPDATE"
+
+    def __init__(self, connection: ConnectedAccount):
+        self.connection = connection
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                **self.connection.ds_json(),
+                "token_data": None,
+            }
+        }

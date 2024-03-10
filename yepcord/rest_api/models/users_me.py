@@ -198,3 +198,7 @@ class RemoteAuthCancel(BaseModel):
         except ValueError:
             raise InvalidDataErr(404, Errors.make(10012))
         return value
+
+
+class EditConnection(BaseModel):
+    visibility: bool
