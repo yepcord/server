@@ -153,3 +153,27 @@ class ConnectionTwitch(BaseConnection):
     @classmethod
     async def get_user_info(cls, access_token: str) -> dict:
         return (await super(cls, ConnectionTwitch).get_user_info(access_token))["data"][0]
+
+
+class ConnectionSpotify(BaseConnection):
+    SERVICE_NAME = "spotify"
+    AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
+    TOKEN_URL = "https://accounts.spotify.com/api/token"
+    USER_URL = "https://api.spotify.com/v1/me"
+    SCOPE: list[str] = ["user-read-private", "user-read-playback-state", "user-modify-playback-state",
+                        "user-read-currently-playing"]
+
+    @classmethod
+    async def authorize_url(cls, user: User) -> str:
+        return f"{await super(cls, ConnectionSpotify).authorize_url(user)}&response_type=code"
+
+    @classmethod
+    def exchange_code_req(cls, code: str, settings: dict[str, str]) -> tuple[str, dict]:
+        callback_url = quote(f"https://{Config.PUBLIC_HOST}/connections/spotify/callback", safe="")
+        kwargs = {
+            "auth": (settings["client_id"], settings["client_secret"]),
+            "headers": {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
+            "content": f"grant_type=authorization_code&code={code}&redirect_uri={callback_url}",
+        }
+
+        return cls.TOKEN_URL, kwargs

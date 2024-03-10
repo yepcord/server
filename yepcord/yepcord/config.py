@@ -115,6 +115,7 @@ class ConfigConnections(BaseModel):
     github: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
     reddit: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
     twitch: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
+    spotify: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
 
 
 class ConfigModel(BaseModel):

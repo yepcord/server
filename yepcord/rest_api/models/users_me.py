@@ -201,4 +201,5 @@ class RemoteAuthCancel(BaseModel):
 
 
 class EditConnection(BaseModel):
-    visibility: bool
+    visibility: Optional[bool] = None
+    show_activity: Optional[bool] = None

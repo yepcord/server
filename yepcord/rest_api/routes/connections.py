@@ -20,7 +20,8 @@ from ..dependencies import DepUser
 from ..models.connections import ConnectionCallback
 from ..y_blueprint import YBlueprint
 from ...gateway.events import UserConnectionsUpdate
-from ...yepcord.classes.connections import ConnectionGithub, ConnectionReddit, ConnectionTwitch, BaseConnection
+from ...yepcord.classes.connections import ConnectionGithub, ConnectionReddit, ConnectionTwitch, BaseConnection, \
+    ConnectionSpotify
 from ...yepcord.ctx import getGw
 from ...yepcord.models import User, ConnectedAccount
 
@@ -74,3 +75,13 @@ async def connection_twitch_authorize(user: User = DepUser):
 @connections.post("/twitch/callback", body_cls=ConnectionCallback)
 async def connection_twitch_callback(data: ConnectionCallback):
     return await unified_callback(ConnectionTwitch, data)
+
+
+@connections.get("/spotify/authorize")
+async def connection_spotify_authorize(user: User = DepUser):
+    return {"url": await ConnectionSpotify.authorize_url(user)}
+
+
+@connections.post("/spotify/callback", body_cls=ConnectionCallback)
+async def connection_spotify_callback(data: ConnectionCallback):
+    return await unified_callback(ConnectionSpotify, data, "display_name")

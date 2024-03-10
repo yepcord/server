@@ -103,4 +103,8 @@ CONNECTIONS = {
         "client_id": None,
         "client_secret": None,
     },
+    "spotify": {
+        "client_id": None,
+        "client_secret": None,
+    },
 }

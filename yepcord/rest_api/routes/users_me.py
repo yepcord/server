@@ -200,7 +200,7 @@ async def get_connections(user: User = DepUser):
 
 @users_me.patch("/connections/<string:service>/<string:ext_id>", body_cls=EditConnection)
 async def edit_connection(service: str, ext_id: str, data: EditConnection, user: User = DepUser):
-    if service not in {"github"}:
+    if service not in Config.CONNECTIONS:
         raise InvalidDataErr(400, Errors.make(50035, {"provider_id": {
             "code": "ENUM_TYPE_COERCE", "message": f"Value '{service}' is not a valid enum value."
         }}))
@@ -209,7 +209,7 @@ async def edit_connection(service: str, ext_id: str, data: EditConnection, user:
     if connection is None:
         raise InvalidDataErr(404, Errors.make(10017))
 
-    await connection.update(**data.model_dump())
+    await connection.update(**data.model_dump(exclude_none=True))
 
     await getGw().dispatch(UserConnectionsUpdate(connection), user_ids=[user.id])
     return connection.ds_json()

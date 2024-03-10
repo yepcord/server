@@ -52,7 +52,7 @@
       - [ ] Twitter
       - [ ] eBay
       - [ ] PlayStation Network
-      - [ ] Spotify
+      - [x] Spotify
       - [ ] Xbox
       - [ ] Battle.net
       - [ ] Epic Games
