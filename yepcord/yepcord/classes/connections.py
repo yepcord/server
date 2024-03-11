@@ -80,7 +80,7 @@ class BaseConnection(ABC):
         url, kwargs = cls.user_info_req(access_token)
         async with AsyncClient() as cl:
             resp = await cl.get(url, **kwargs)
-            if resp.status_code >= 400:
+            if resp.status_code >= 400:  # pragma: no cover
                 raise InvalidDataErr(400, Errors.make(0))
             return resp.json()
 

@@ -194,7 +194,7 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
 
 @users_me.get("/connections", oauth_scopes=["connections"])
 async def get_connections(user: User = DepUser):
-    connections = await ConnectedAccount.filter(user=user)
+    connections = await ConnectedAccount.filter(user=user, verified=True)
     return [conn.ds_json() for conn in connections]
 
 

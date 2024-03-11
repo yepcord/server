@@ -34,8 +34,7 @@ async def unified_callback(connection_cls: type[BaseConnection], data: Connectio
     if (conn := await connection_cls.get_connection_from_state(data.state)) is None:
         return "", 204
 
-    if (access_token := await connection_cls.exchange_code(data.code)) is None:
-        return "", 204
+    access_token = await connection_cls.exchange_code(data.code)
 
     user_info = await connection_cls.get_user_info(access_token)
     if await ConnectedAccount.filter(type=connection_cls.SERVICE_NAME, service_id=user_info["id"]).exists():
