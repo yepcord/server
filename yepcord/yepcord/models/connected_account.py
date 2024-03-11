@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -21,16 +21,17 @@ from typing import Optional
 from tortoise import fields
 
 from ._utils import ChoicesValidator, SnowflakeField, Model
+from ..config import Config
 from ..snowflake import Snowflake
 import yepcord.yepcord.models as models
 
 
 class ConnectedAccount(Model):
     id: int = SnowflakeField(pk=True)
-    service_id: str = fields.CharField(max_length=128, unique=True)
+    service_id: str = fields.CharField(max_length=255, index=True, null=True, default=None)
     user: models.User = fields.ForeignKeyField("models.User")
-    name: str = fields.TextField()
-    type: str = fields.CharField(max_length=64, validators=[ChoicesValidator(set())])
+    name: str = fields.TextField(null=True, default=None)
+    type: str = fields.CharField(max_length=64, validators=[ChoicesValidator({*Config.CONNECTIONS.keys()})])
     revoked: bool = fields.BooleanField(default=False)
     show_activity: bool = fields.BooleanField(default=True)
     verified: bool = fields.BooleanField(default=False)
@@ -38,6 +39,8 @@ class ConnectedAccount(Model):
     metadata_visibility: int = fields.IntField(default=1, validators=[ChoicesValidator({0, 1})])
     metadata: dict = fields.JSONField(default={})
     access_token: Optional[str] = fields.TextField(null=True, default=None)
+    refresh_token: Optional[str] = fields.TextField(null=True, default=None)
+    token_expires_at: Optional[int] = fields.BigIntField(null=True, default=None)
     state: int = fields.BigIntField(default=Snowflake.makeId)
 
     def ds_json(self) -> dict:
@@ -52,4 +55,5 @@ class ConnectedAccount(Model):
             "metadata_visibility": self.metadata_visibility,
             "id": self.service_id,
             "friend_sync": False,
+            "integrations": [],
         }

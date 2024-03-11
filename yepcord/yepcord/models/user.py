@@ -80,6 +80,7 @@ class User(Model):
                            guild_id: int = None) -> dict:
         data = await self.data
         premium_since = self.created_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        connections = await models.ConnectedAccount.filter(user=self, verified=True, visibility=1)
         data = {
             "user": {
                 "id": str(self.id),
@@ -94,7 +95,7 @@ class User(Model):
                 "accent_color": data.accent_color,
                 "bio": data.bio
             },
-            "connected_accounts": [],  # TODO
+            "connected_accounts": [conn.ds_json() for conn in connections],
             "premium_since": premium_since,
             "premium_guild_since": premium_since,
             "user_profile": {

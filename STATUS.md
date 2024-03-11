@@ -44,7 +44,24 @@
       - [x] Remove
       - [x] Block
     - [x] Notes
-    - [ ] Connections
+    - [ ] Connections:
+      - [ ] PayPal
+      - [x] Reddit
+      - [ ] Steam
+      - [ ] TikTok
+      - [ ] Twitter
+      - [ ] eBay
+      - [ ] PlayStation Network
+      - [x] Spotify
+      - [ ] Xbox
+      - [ ] Battle.net
+      - [ ] Epic Games
+      - [ ] Facebook
+      - [x] Github
+      - [ ] League of Legends
+      - [ ] Riot Games
+      - [x] Twitch
+      - [ ] YouTube
   - [x] OAuth2
   - [ ] Bots:
     - [x] Create, edit, delete
