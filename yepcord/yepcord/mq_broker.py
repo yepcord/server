@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -22,7 +22,10 @@ from json import dumps, loads
 from typing import Union, Optional, Callable, Coroutine
 
 from async_timeout import timeout
-from propan import RabbitBroker, RedisBroker, SQSBroker, KafkaBroker, NatsBroker
+from faststream.rabbit import RabbitBroker
+from faststream.redis import RedisBroker
+from faststream.kafka import KafkaBroker
+from faststream.nats import NatsBroker
 from websockets.client import connect
 from websockets.legacy.client import WebSocketClientProtocol
 from websockets.legacy.server import WebSocketServer
@@ -150,7 +153,7 @@ class WsBroker:
             "message": message,
         }))
 
-    def handle(self, channel: str) -> Callable:  # pragma: no cover
+    def subscriber(self, channel: str) -> Callable:  # pragma: no cover
         def _handle(func):
             if channel not in self._handlers:
                 self._handlers[channel] = set()
@@ -163,14 +166,13 @@ class WsBroker:
 _brokers = {
     "rabbitmq": RabbitBroker,
     "redis": RedisBroker,
-    "sqs": SQSBroker,
     "kafka": KafkaBroker,
     "nats": NatsBroker,
     "ws": WsBroker,
 }
 
 
-def getBroker() -> Union[RabbitBroker, RedisBroker, SQSBroker, KafkaBroker, NatsBroker, WsBroker]:
+def getBroker() -> Union[RabbitBroker, RedisBroker, KafkaBroker, NatsBroker, WsBroker]:
     broker_type = Config.MESSAGE_BROKER["type"].lower()
     assert broker_type in ("rabbitmq", "redis", "sqs", "kafka", "nats", "ws",), \
         "MESSAGE_BROKER.type must be one of ('rabbitmq', 'redis', 'sqs', 'kafka', 'nats', 'ws')"

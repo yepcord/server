@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -25,6 +25,7 @@ from tortoise.contrib.quart import register_tortoise
 from .routes.applications import applications
 from .routes.auth import auth
 from .routes.channels import channels
+from .routes.connections import connections
 from .routes.gifs import gifs
 from .routes.guilds import guilds
 from .routes.hypesquad import hypesquad
@@ -123,6 +124,7 @@ app.register_blueprint(applications, url_prefix="/api/v9/applications")
 app.register_blueprint(teams, url_prefix="/api/v9/teams")
 app.register_blueprint(oauth2, url_prefix="/api/v9/oauth2")
 app.register_blueprint(interactions, url_prefix="/api/v9/interactions")
+app.register_blueprint(connections, url_prefix="/api/v9/connections")
 app.register_blueprint(other, url_prefix="/")
 
 

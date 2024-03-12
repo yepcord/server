@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -34,3 +34,6 @@ class RemoteAuthSession(Model):
     fingerprint: str = fields.CharField(max_length=64, unique=True)
     user: Optional[models.User] = fields.ForeignKeyField("models.User", null=True, default=None)
     expires_at: int = fields.IntField(default=time_plus_150s)
+    version: int = fields.SmallIntField(default=1)
+    v2_session: Optional[models.Session] = fields.ForeignKeyField("models.Session", null=True, default=None)
+    v2_encrypted_token: Optional[str] = fields.TextField(null=True, default=None)

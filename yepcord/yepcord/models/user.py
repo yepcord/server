@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -80,6 +80,7 @@ class User(Model):
                            guild_id: int = None) -> dict:
         data = await self.data
         premium_since = self.created_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        connections = await models.ConnectedAccount.filter(user=self, verified=True, visibility=1)
         data = {
             "user": {
                 "id": str(self.id),
@@ -94,7 +95,7 @@ class User(Model):
                 "accent_color": data.accent_color,
                 "bio": data.bio
             },
-            "connected_accounts": [],  # TODO
+            "connected_accounts": [conn.ds_json() for conn in connections],
             "premium_since": premium_since,
             "premium_guild_since": premium_since,
             "user_profile": {

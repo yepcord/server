@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -89,7 +89,6 @@ class ConfigMessageBrokers(BaseModel):
     type: str = "ws"
     redis: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
     rabbitmq: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
-    sqs: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
     kafka: ConfigMessageBrokerKafka = Field(default_factory=ConfigMessageBrokerKafka)
     nats: ConfigMessageBrokerNats = Field(default_factory=ConfigMessageBrokerNats)
     ws: ConfigMessageBrokerUrl = Field(default_factory=lambda: ConfigMessageBrokerUrl(url="ws://127.0.0.1:5055"))
@@ -104,6 +103,18 @@ class ConfigCaptcha(BaseModel):
     enabled: Literal["hcaptcha", "recaptcha", None] = None
     hcaptcha: ConfigCaptchaService = Field(default_factory=ConfigCaptchaService)
     recaptcha: ConfigCaptchaService = Field(default_factory=ConfigCaptchaService)
+
+
+class ConfigConnectionBase(BaseModel):
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+
+
+class ConfigConnections(BaseModel):
+    github: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
+    reddit: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
+    twitch: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
+    spotify: ConfigConnectionBase = Field(default_factory=ConfigConnectionBase)
 
 
 class ConfigModel(BaseModel):
@@ -121,6 +132,7 @@ class ConfigModel(BaseModel):
     GATEWAY_KEEP_ALIVE_DELAY: int = 45
     BCRYPT_ROUNDS: int = 15
     CAPTCHA: ConfigCaptcha = Field(default_factory=ConfigCaptcha)
+    CONNECTIONS: ConfigConnections = Field(default_factory=ConfigConnections)
 
     @field_validator("KEY")
     def validate_key(cls, value: str) -> str:

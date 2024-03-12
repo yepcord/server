@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -19,21 +19,25 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from random import choice
 from time import time
-from typing import Union
+from typing import Union, Optional
 
-from ..dependencies import DepUser, DepSession, DepGuildMember, DepGuild
+from ..dependencies import DepUser, DepSession, DepGuildMember, DepGuild, DepUserO
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, PutNote, \
     RelationshipRequest, SettingsProtoUpdate, MfaEnable, MfaDisable, MfaCodesVerification, RelationshipPut, \
-    DmChannelCreate, DeleteRequest, GetScheduledEventsQuery, RemoteAuthLogin, RemoteAuthFinish, RemoteAuthCancel
+    DmChannelCreate, DeleteRequest, GetScheduledEventsQuery, RemoteAuthLogin, RemoteAuthFinish, RemoteAuthCancel, \
+    EditConnection
 from ..y_blueprint import YBlueprint
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
-    UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent
+    UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent, \
+    UserConnectionsUpdate
 from ...yepcord.classes.other import MFA
+from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import RelationshipType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, \
-    GuildMember, RemoteAuthSession, Relationship, Authorization, Bot
+    GuildMember, RemoteAuthSession, Relationship, Authorization, Bot, ConnectedAccount
+from ...yepcord.models.remote_auth_session import time_plus_150s
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import execute_after, validImage, getImage
 
@@ -188,10 +192,44 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
     return {"settings": proto_string}
 
 
-# noinspection PyUnusedLocal
 @users_me.get("/connections", oauth_scopes=["connections"])
-async def get_connections(user: User = DepUser):  # TODO: add connections
-    return []
+async def get_connections(user: User = DepUser):
+    connections = await ConnectedAccount.filter(user=user, verified=True)
+    return [conn.ds_json() for conn in connections]
+
+
+@users_me.patch("/connections/<string:service>/<string:ext_id>", body_cls=EditConnection)
+async def edit_connection(service: str, ext_id: str, data: EditConnection, user: User = DepUser):
+    if service not in Config.CONNECTIONS:
+        raise InvalidDataErr(400, Errors.make(50035, {"provider_id": {
+            "code": "ENUM_TYPE_COERCE", "message": f"Value '{service}' is not a valid enum value."
+        }}))
+
+    connection = await ConnectedAccount.get_or_none(user=user, service_id=ext_id, type=service, verified=True)
+    if connection is None:
+        raise InvalidDataErr(404, Errors.make(10017))
+
+    await connection.update(**data.model_dump(exclude_none=True))
+
+    await getGw().dispatch(UserConnectionsUpdate(connection), user_ids=[user.id])
+    return connection.ds_json()
+
+
+@users_me.delete("/connections/<string:service>/<string:ext_id>")
+async def delete_connection(service: str, ext_id: str, user: User = DepUser):
+    if service not in Config.CONNECTIONS:
+        raise InvalidDataErr(400, Errors.make(50035, {"provider_id": {
+            "code": "ENUM_TYPE_COERCE", "message": f"Value '{service}' is not a valid enum value."
+        }}))
+
+    connection = await ConnectedAccount.get_or_none(user=user, service_id=ext_id, type=service, verified=True)
+    if connection is None:
+        raise InvalidDataErr(404, Errors.make(10017))
+
+    await connection.delete()
+    await getGw().dispatch(UserConnectionsUpdate(connection), user_ids=[user.id])
+
+    return "", 204
 
 
 @users_me.post("/relationships", body_cls=RelationshipRequest)
@@ -409,33 +447,58 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User =
 
 
 @users_me.post("/remote-auth/login", body_cls=RemoteAuthLogin)
-async def remote_auth_login(data: RemoteAuthLogin, user: User = DepUser):
-    ra_session = await RemoteAuthSession.get_or_none(fingerprint=data.fingerprint, user=None,
-                                                     expires_at__gt=int(time()))
-    if ra_session is None:
-        raise InvalidDataErr(404, Errors.make(10012))
+async def remote_auth_login(data: RemoteAuthLogin, user: Optional[User] = DepUserO):
+    if data.fingerprint is not None and user is not None:
+        ra_session = await RemoteAuthSession.get_or_none(fingerprint=data.fingerprint, user=None,
+                                                         expires_at__gt=int(time()))
+        if ra_session is None:
+            raise InvalidDataErr(404, Errors.make(10012))
 
-    await ra_session.update(user=user)
-    userdata = await user.userdata
-    avatar = userdata.avatar if userdata.avatar else ""
-    await getGw().dispatchRA("pending_finish", {
-        "fingerprint": data.fingerprint,
-        "userdata": f"{user.id}:{userdata.s_discriminator}:{avatar}:{userdata.username}"
-    })
+        await ra_session.update(user=user)
+        userdata = await user.userdata
+        avatar = userdata.avatar if userdata.avatar else ""
+        await getGw().dispatchRA("pending_finish", {
+            "fingerprint": data.fingerprint,
+            "userdata": f"{user.id}:{userdata.s_discriminator}:{avatar}:{userdata.username}"
+        })
 
-    return {"handshake_token": str(ra_session.id)}
+        return {"handshake_token": str(ra_session.id)}
+    elif data.ticket is not None:
+        ticket = Session.extract_token(data.ticket)
+        if ticket is None:
+            raise InvalidDataErr(404, Errors.make(10012))
+
+        user_id, session_id, fingerprint = ticket
+
+        ra_session = await RemoteAuthSession.get_or_none(
+            fingerprint=fingerprint, expires_at__gt=int(time()), v2_session__id=session_id, user__id=user_id
+        )
+        if ra_session is None:
+            raise InvalidDataErr(404, Errors.make(10012))
+
+        await ra_session.delete()
+
+        return {"encrypted_token": ra_session.v2_encrypted_token}
+
+    raise InvalidDataErr(404, Errors.make(10012))
 
 
 @users_me.post("/remote-auth/finish", body_cls=RemoteAuthFinish)
 async def remote_auth_finish(data: RemoteAuthFinish, user: User = DepUser):
     ra_session = await RemoteAuthSession.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
-                                                     user=user)
+                                                     user=user, v2_session=None)
     if ra_session is None:
         raise InvalidDataErr(404, Errors.make(10012))
 
+    session = await getCore().createSession(user)
+    if ra_session.version == 2:
+        await ra_session.update(v2_session=session, expires_at=time_plus_150s())
+    else:
+        await ra_session.delete()
+
     await getGw().dispatchRA("finish", {
         "fingerprint": ra_session.fingerprint,
-        "token": (await getCore().createSession(user)).token
+        "token": session.token
     })
 
     return "", 204

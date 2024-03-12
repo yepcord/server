@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -24,7 +24,7 @@ from typing import List, TYPE_CHECKING, Optional
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
-from ..yepcord.models import Emoji, Application, Integration
+from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount
 from ..yepcord.models.interaction import Interaction
 from ..yepcord.snowflake import Snowflake
 
@@ -108,7 +108,9 @@ class ReadyEvent(DispatchEvent):
                 "session_id": self.client.sid,
                 "presences": [],  # TODO
                 "relationships": await self.core.getRelationships(self.user),
-                "connected_accounts": [],  # TODO
+                "connected_accounts": [
+                    conn.ds_json() for conn in await ConnectedAccount.filter(user=self.user, verified=True)
+                ],
                 "consents": {
                     "personalization": {
                         "consented": settings.personalization
@@ -1037,6 +1039,21 @@ class InteractionFailureEvent(InteractionSuccessEvent):
     NAME = "INTERACTION_FAILURE"
 
 
+class UserConnectionsUpdate(DispatchEvent):
+    NAME = "USER_CONNECTIONS_UPDATE"
+
+    def __init__(self, connection: ConnectedAccount):
+        self.connection = connection
+
+    async def json(self) -> dict:
+        return {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                **self.connection.ds_json(),
+                "token_data": None,
+            }
+        }
 class VoiceStateUpdate(DispatchEvent):
     NAME = "VOICE_STATE_UPDATE"
 

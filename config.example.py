@@ -36,7 +36,7 @@ STORAGE = {
     }
 }
 
-# Acquire tenor api key from https://developers.google.com/tenor/guides/quickstart and set this  variable to enable gifs
+# Acquire tenor api key from https://developers.google.com/tenor/guides/quickstart and set this variable to enable gifs
 TENOR_KEY = None
 
 # Message broker used for communication between the API server and Gateway server. By default, 'ws' type is used
@@ -50,9 +50,6 @@ MESSAGE_BROKER = {
         "url": "",
     },
     "rabbitmq": {
-        "url": "",
-    },
-    "sqs": {
         "url": "",
     },
     "kafka": {
@@ -87,5 +84,32 @@ CAPTCHA = {
     "recaptcha": {
         "sitekey": "",
         "secret": "",
+    },
+}
+
+# Settings for external application connections
+# For every application, use https://PUBLIC_HOST/connections/SERVICE_NAME/callback as redirect (callback) url,
+# for example, if you need to create GitHub app and your yepcord instance (frontend) is running on 127.0.0.1:8888,
+# redirect url will be https://127.0.0.1:8888/connections/github/callback
+CONNECTIONS = {
+    "github": {
+        # Create at https://github.com/settings/applications/new
+        "client_id": None,
+        "client_secret": None,
+    },
+    "reddit": {
+        # Create at https://www.reddit.com/prefs/apps
+        "client_id": None,
+        "client_secret": None,
+    },
+    "twitch": {
+        # Create at https://dev.twitch.tv/console/apps/create
+        "client_id": None,
+        "client_secret": None,
+    },
+    "spotify": {
+        # Create at https://developer.spotify.com/dashboard/create
+        "client_id": None,
+        "client_secret": None,
     },
 }

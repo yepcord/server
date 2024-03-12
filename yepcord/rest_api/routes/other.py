@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -242,6 +242,7 @@ async def instance_info():
         "features": [
             "OLD_USERNAMES",
             "REMOTE_AUTH_V1",
+            "REMOTE_AUTH_V2",
             "SETTINGS_PROTO",
         ],
     }

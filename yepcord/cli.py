@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -76,6 +76,7 @@ def run_all(config: str, host: str, port: int, reload: bool, ssl: bool) -> None:
         "forwarded_allow_ips": "'*'",
         "host": host,
         "port": port,
+        "timeout_graceful_shutdown": 1,
     }
 
     if reload:

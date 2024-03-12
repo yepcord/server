@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -159,10 +159,13 @@ class GetScheduledEventsQuery(BaseModel):
 
 # noinspection PyMethodParameters
 class RemoteAuthLogin(BaseModel):
-    fingerprint: str
+    fingerprint: Optional[str] = None
+    ticket: Optional[str] = None
 
     @field_validator("fingerprint")
-    def validate_fingerprint(cls, value: str) -> str:
+    def validate_fingerprint(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return
         try:
             assert len(b64decode(value)) == 32
         except (ValueError, AssertionError):
@@ -195,3 +198,8 @@ class RemoteAuthCancel(BaseModel):
         except ValueError:
             raise InvalidDataErr(404, Errors.make(10012))
         return value
+
+
+class EditConnection(BaseModel):
+    visibility: Optional[bool] = None
+    show_activity: Optional[bool] = None

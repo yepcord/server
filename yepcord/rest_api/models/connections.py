@@ -16,14 +16,13 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from ..dependencies import DepUser
-from ..y_blueprint import YBlueprint
-from ...yepcord.models import User
+from typing import Optional
 
-# Base path is /api/vX/applications
-teams = YBlueprint('teams', __name__)
+from pydantic import BaseModel
 
 
-@teams.get("/", strict_slashes=False)
-async def get_teams(user: User = DepUser):
-    return []
+class ConnectionCallback(BaseModel):
+    state: str
+    insecure: bool
+    friend_sync: bool
+    code: Optional[str] = None

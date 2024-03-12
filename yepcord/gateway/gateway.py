@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -311,8 +311,8 @@ class Gateway:
     def __init__(self, core: Core):
         self.core = core
         self.broker = getBroker()
-        self.broker.handle("yepcord_events")(self.mcl_yepcordEventsCallback)
-        self.broker.handle("yepcord_sys_events")(self.mcl_yepcordSysEventsCallback)
+        self.broker.subscriber("yepcord_events")(self.mcl_yepcordEventsCallback)
+        self.broker.subscriber("yepcord_sys_events")(self.mcl_yepcordSysEventsCallback)
         self.store = WsStore()
         self.presences = Presences(self)
         self.ev = GatewayEvents(self)

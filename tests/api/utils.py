@@ -251,7 +251,7 @@ def generate_slash_command_payload(application: dict, guild: dict, channel: dict
 
 
 class RemoteAuthClient:
-    def __init__(self, on_fingerprint=None, on_userdata=None, on_token=None, on_cancel=None):
+    def __init__(self, on_fingerprint=None, on_userdata=None, on_token=None, on_cancel=None, on_pending_login=None):
         from cryptography.hazmat.primitives.asymmetric import rsa
 
         self.privKey: Optional[rsa.RSAPrivateKey] = None
@@ -264,11 +264,13 @@ class RemoteAuthClient:
         self.on_userdata = on_userdata
         self.on_token = on_token
         self.on_cancel = on_cancel
+        self.on_pending_login = on_pending_login
 
         self.results: dict[str, Union[Optional[str], bool]] = {
             "fingerprint": None,
             "userdata": None,
             "token": None,
+            "ticket": None,
             "cancel": False,
         }
 
@@ -277,7 +279,9 @@ class RemoteAuthClient:
             "nonce_proof": self.handle_nonce_proof,
             "pending_remote_init": self.handle_pending_remote_init,
             "pending_finish": self.handle_pending_finish,
+            "pending_ticket": self.handle_pending_finish,
             "finish": self.handle_finish,
+            "pending_login": self.handle_pending_login,
             "cancel": self.handle_cancel,
         }
 
@@ -335,6 +339,11 @@ class RemoteAuthClient:
         self.results["token"] = token
         if self.on_token is not None: await self.on_token(token)
 
+    async def handle_pending_login(self, ws: TestWebsocketConnectionProtocol, msg: dict) -> None:
+        ticket = msg["ticket"]
+        self.results["ticket"] = ticket
+        if self.on_pending_login is not None: await self.on_pending_login(ticket)
+
     async def handle_cancel(self, ws: TestWebsocketConnectionProtocol, msg: dict) -> None:
         self.results["cancel"] = True
         if self.on_cancel is not None: await self.on_cancel()
@@ -346,7 +355,7 @@ class RemoteAuthClient:
             if msg["op"] not in self.handlers: continue
             handler = self.handlers[msg["op"]]
             await handler(ws, msg)
-            if msg["op"] in {"finish", "cancel"}:
+            if msg["op"] in {"finish", "cancel", "pending_login"}:
                 break
 
         if self.heartbeatTask is not None:
