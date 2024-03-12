@@ -289,8 +289,8 @@ class Gateway:
     def __init__(self, core: Core):
         self.core = core
         self.broker = getBroker()
-        self.broker.handle("yepcord_events")(self.mcl_yepcordEventsCallback)
-        self.broker.handle("yepcord_sys_events")(self.mcl_yepcordSysEventsCallback)
+        self.broker.subscriber("yepcord_events")(self.mcl_yepcordEventsCallback)
+        self.broker.subscriber("yepcord_sys_events")(self.mcl_yepcordSysEventsCallback)
         self.store = WsStore()
         self.presences = Presences(self)
         self.ev = GatewayEvents(self)

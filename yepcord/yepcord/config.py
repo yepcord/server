@@ -89,7 +89,6 @@ class ConfigMessageBrokers(BaseModel):
     type: str = "ws"
     redis: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
     rabbitmq: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
-    sqs: ConfigMessageBrokerUrl = Field(default_factory=ConfigMessageBrokerUrl)
     kafka: ConfigMessageBrokerKafka = Field(default_factory=ConfigMessageBrokerKafka)
     nats: ConfigMessageBrokerNats = Field(default_factory=ConfigMessageBrokerNats)
     ws: ConfigMessageBrokerUrl = Field(default_factory=lambda: ConfigMessageBrokerUrl(url="ws://127.0.0.1:5055"))

@@ -129,7 +129,7 @@ class Gateway:
     def __init__(self):
         self.clients_by_fingerprint: dict[str, GatewayClient] = {}
         self.broker = getBroker()
-        self.broker.handle("yepcord_remote_auth")(self.mq_callback)
+        self.broker.subscriber("yepcord_remote_auth")(self.mq_callback)
 
     async def init(self):
         await self.broker.start()

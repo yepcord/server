@@ -56,7 +56,6 @@ werkzeug = "3.0.1"
 aioftp = "0.22.3"
 orjson = "3.9.15"
 mailers = {version = "3.0.2", extras = ["smtp"]}
-propan = {version = "0.1.5.26", extras = ["async-rabbit", "async-redis"]}  # TODO: replace with faststream
 redis = ">=4.6.0"
 click = "8.1.7"
 maxminddb = "2.5.2"
@@ -67,7 +66,8 @@ async-timeout = "^4.0.3"
 aerich = "^0.7.2"
 yc-protobuf3-to-dict = "^0.3.0"
 s3lite = "^0.1.4"
-fast-depends = ">=2.1.1,<2.2.0"
+fast-depends = ">=2.4.2"
+faststream = {extras = ["kafka", "nats", "rabbit", "redis"], version = "^0.4.7"}
 
 [tool.poetry.group.dev.dependencies]
 pytest-cov = "4.1.0"
