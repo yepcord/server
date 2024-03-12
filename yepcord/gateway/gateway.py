@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import warnings
 from json import dumps as jdumps
-from typing import Optional, Union
+from typing import Union
 
 from quart import Websocket
 from redis.asyncio import Redis

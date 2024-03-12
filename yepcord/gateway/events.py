@@ -1054,6 +1054,8 @@ class UserConnectionsUpdate(DispatchEvent):
                 "token_data": None,
             }
         }
+
+
 class VoiceStateUpdate(DispatchEvent):
     NAME = "VOICE_STATE_UPDATE"
 

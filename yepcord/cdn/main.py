@@ -166,7 +166,7 @@ async def get_sticker(query_args: CdnImageSizeQuery, sticker_id: int, format_: s
                 break
     else:
         sticker = await getStorage().getSticker(sticker_id, query_args.size, format_,
-                                       sticker.format in (StickerFormat.APNG, StickerFormat.GIF))
+                                                sticker.format in (StickerFormat.APNG, StickerFormat.GIF))
     if not sticker:
         return b'', 404
     return sticker, 200, {"Content-Type": f"image/{format_}"}

@@ -220,7 +220,7 @@ class AuditLogEntryUtils:
     @staticmethod
     async def bot_add(user: models.User, guild: models.Guild, bot: models.User) -> AuditLogEntry:
         return await AuditLogEntry.create(id=Snowflake.makeId(), guild=guild, user=user, target_id=bot.id,
-                                 action_type=AuditLogEntryType.BOT_ADD)
+                                          action_type=AuditLogEntryType.BOT_ADD)
 
     @staticmethod
     async def integration_create(user: models.User, guild: models.Guild, bot: models.User) -> AuditLogEntry:

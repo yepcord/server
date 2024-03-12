@@ -310,7 +310,8 @@ class Core(Singleton):
 
     async def getPrivateChannels(self, user: User, with_hidden: bool = False) -> list[Channel]:
         channels = await Channel.filter(recipients__id=user.id).select_related("owner").all()
-        channels = [channel for channel in channels if not await self.isDmChannelHidden(user, channel)]
+        if not with_hidden:
+            channels = [channel for channel in channels if not await self.isDmChannelHidden(user, channel)]
         return [await self.setLastMessageIdForChannel(channel) for channel in channels]
 
     async def getChannelMessages(self, channel: Channel, limit: int, before: int = 0, after: int = 0) -> list[Message]:
@@ -775,7 +776,7 @@ class Core(Singleton):
         # noinspection PyUnresolvedReferences
         return await GuildMember.filter(
             Q(guild=guild) &
-            (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query)) #&
+            (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))  #&
             #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
         ).select_related("user").limit(limit).all()
 

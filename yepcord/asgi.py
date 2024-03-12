@@ -21,6 +21,7 @@ from tortoise.contrib.quart import register_tortoise
 from quart_schema import RequestSchemaValidationError, QuartSchema
 import yepcord.rest_api.main as rest_api
 import yepcord.gateway.main as gateway
+import yepcord.voice_gateway.main as voice_gateway
 import yepcord.cdn.main as cdn
 import yepcord.remote_auth.main as remote_auth
 from yepcord.rest_api.routes import auth, connections

@@ -76,7 +76,7 @@ class GatewayDispatcher(Singleton):
             "role_id": role_id,
         })
 
-    async def dispatchUnsub(self, user_ids: list[int], guild_id: int = None, role_id: int = None, delete = False) -> None:
+    async def dispatchUnsub(self, user_ids: list[int], guild_id: int = None, role_id: int = None, delete=False) -> None:
         await self.dispatchSys("unsub", {
             "user_ids": user_ids,
             "guild_id": guild_id,
