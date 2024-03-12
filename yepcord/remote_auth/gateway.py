@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2023 RuslanUC
+    Copyright (C) 2022-2024 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -129,7 +129,7 @@ class Gateway:
     def __init__(self):
         self.clients_by_fingerprint: dict[str, GatewayClient] = {}
         self.broker = getBroker()
-        self.broker.handle("yepcord_remote_auth")(self.mq_callback)
+        self.broker.subscriber("yepcord_remote_auth")(self.mq_callback)
 
     async def init(self):
         await self.broker.start()

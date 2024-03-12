@@ -52,9 +52,6 @@ MESSAGE_BROKER = {
     "rabbitmq": {
         "url": "",
     },
-    "sqs": {
-        "url": "",
-    },
     "kafka": {
         "bootstrap_servers": [],
     },
