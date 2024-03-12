@@ -6,9 +6,18 @@ from typing import Optional
 from quart import Websocket
 
 from yepcord.yepcord.enums import VoiceGatewayOp
+from .default_sdp import DEFAULT_SDP
 from .events import Event, ReadyEvent, SpeakingEvent, UdpSessionDescriptionEvent, RtcSessionDescriptionEvent
 from .schemas import SelectProtocol
 from ..gateway.utils import require_auth
+
+try:
+    from semanticsdp import SDPInfo, DTLSInfo, Setup
+    from pymedooze import MediaServer
+
+    _DISABLED = False
+except ImportError:
+    _DISABLED = True
 
 
 class GatewayClient:
@@ -23,6 +32,8 @@ class GatewayClient:
         self.rtx_ssrc = 0
         self.mode: Optional[str] = None
         self.key: Optional[bytes] = None
+        self.sdp: Optional[SDPInfo] = None
+        self.transport = None
 
         self._gw = gw
 
@@ -37,11 +48,6 @@ class GatewayClient:
         if data["token"] != "idk_token":
             return await self.ws.close(4004)
 
-        # async with ClientSession() as sess:
-        #    p = await sess.get("http://192.168.1.155:10000/getLocalPort")
-        #    p = int(await p.text())
-        #    print(f"Got port {p}")
-
         self.user_id = int(data["user_id"])
         self.session_id = data["session_id"]
         self.guild_id = data["server_id"]
@@ -54,9 +60,12 @@ class GatewayClient:
         self.rtx_ssrc = self._gw.ssrc
         self._gw.ssrc += 1
 
-        port = 3791  # TODO: get port
+        self.sdp = SDPInfo.from_dict(DEFAULT_SDP)
+        self.sdp.dtls = DTLSInfo(
+            setup=Setup.ACTPASS, hash="sha-256", fingerprint=self._gw.endpoint.get_dtls_fingerprint()
+        )
 
-        await self.esend(ReadyEvent(self.ssrc, self.video_ssrc, self.rtx_ssrc, port))
+        await self.esend(ReadyEvent(self.ssrc, self.video_ssrc, self.rtx_ssrc, self._gw.endpoint.get_local_port()))
 
     @require_auth(4003)
     async def handle_HEARTBEAT(self, data: dict):
@@ -71,8 +80,30 @@ class GatewayClient:
             return await self.ws.close(4012)
 
         if d.protocol == "webrtc":
+            offer = SDPInfo.parse(f"m=audio\n{d.sdp}")
+            self.sdp.ice = offer.ice
+            self.sdp.dtls = offer.dtls
 
-            answer = ...  # TODO: generate answer
+            self.transport = self._gw.endpoint.create_transport(self.sdp)
+            self.transport.set_remote_properties(self.sdp)
+            self.transport.set_local_properties(self.sdp)
+
+            dtls = self.transport.get_local_dtls()
+            ice = self.transport.get_local_ice()
+            port = self._gw.endpoint.get_local_port()
+            fp = f"{dtls.hash} {dtls.fingerprint}"
+            candidate = self.transport.get_local_candidates()[0]
+
+            answer = (
+                    f"m=audio {port} ICE/SDP\n" +
+                    f"a=fingerprint:{fp}\n" +
+                    f"c=IN IP4 127.0.0.1\n" +
+                    f"a=rtcp:{port}\n" +
+                    f"a=ice-ufrag:{ice.ufrag}\n" +
+                    f"a=ice-pwd:{ice.pwd}\n" +
+                    f"a=fingerprint:{fp}\n" +
+                    f"a=candidate:1 1 {candidate.transport} {candidate.foundation} {candidate.address} {candidate.port} typ host\n"
+            )
 
             await self.esend(RtcSessionDescriptionEvent(answer))
         elif d.protocol == "udp":
@@ -97,7 +128,14 @@ class Gateway:
     def __init__(self):
         self.ssrc = 1
 
+        if not _DISABLED:
+            MediaServer.initialize()
+            MediaServer.set_port_range(3690, 3960)
+            self.endpoint = MediaServer.create_endpoint("127.0.0.1")
+
     async def sendHello(self, ws: Websocket) -> None:
+        if _DISABLED:
+            return await ws.close(4005)
         client = GatewayClient(ws, self)
         setattr(ws, "_yepcord_client", client)
         await ws.send_json({"op": VoiceGatewayOp.HELLO, "d": {"v": 7, "heartbeat_interval": 13750}})

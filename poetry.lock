@@ -1713,6 +1713,19 @@ files = [
 ]
 
 [[package]]
+name = "pymedooze"
+version = "0.1.0b3"
+description = "Python wrapper for medooze media-server."
+optional = false
+python-versions = ">=3.9,<4.0"
+files = [
+    {file = "pymedooze-0.1.0b3.tar.gz", hash = "sha256:efe8918cbf217477a7244aa7686df132179a599341008d48f4fc7657b34138be"},
+]
+
+[package.dependencies]
+semanticsdp = ">=0.1.0b3,<0.2.0"
+
+[[package]]
 name = "pypika-tortoise"
 version = "0.1.6"
 description = "Forked from pypika and streamline just for tortoise-orm"
@@ -1915,6 +1928,17 @@ files = [
 [package.dependencies]
 httpx = ">=0.27.0,<0.28.0"
 python-dateutil = ">=2.8.2,<3.0.0"
+
+[[package]]
+name = "semanticsdp"
+version = "0.1.0b5"
+description = "Python port of medooze/semantic-sdp-js"
+optional = false
+python-versions = ">=3.9,<4.0"
+files = [
+    {file = "semanticsdp-0.1.0b5-py3-none-any.whl", hash = "sha256:ea6e9ab64754af7590c6afb3c082ac378df7b85a9cd4994384b9b41246a1e096"},
+    {file = "semanticsdp-0.1.0b5.tar.gz", hash = "sha256:4658ad86aabb29be251913bfb5c4afecc312de79101aa3f129340f883e13648a"},
+]
 
 [[package]]
 name = "setuptools"
@@ -2380,4 +2404,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "2f385ba951cf4e1ff99d1fca6e27d9ec8ca9278cb952331480b735dd60677fb1"
+content-hash = "cc33c982864a4f552c392e441069bdb9b1f53f2ed515cbad4b6302b23dff4be1"
