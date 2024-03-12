@@ -77,11 +77,6 @@ fake-s3 = "1.0.2"
 types-protobuf = "^4.24.0.4"
 pytest-httpx = "^0.30.0"
 
-
-[tool.poetry.group.extras.dependencies]
-pymedooze = "^0.1.0b3"
-semanticsdp = ">=0.1.0b5"
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
