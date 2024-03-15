@@ -1917,6 +1917,17 @@ httpx = ">=0.27.0,<0.28.0"
 python-dateutil = ">=2.8.2,<3.0.0"
 
 [[package]]
+name = "semanticsdp"
+version = "0.1.0b5"
+description = "Python port of medooze/semantic-sdp-js"
+optional = false
+python-versions = ">=3.9,<4.0"
+files = [
+    {file = "semanticsdp-0.1.0b5-py3-none-any.whl", hash = "sha256:ea6e9ab64754af7590c6afb3c082ac378df7b85a9cd4994384b9b41246a1e096"},
+    {file = "semanticsdp-0.1.0b5.tar.gz", hash = "sha256:4658ad86aabb29be251913bfb5c4afecc312de79101aa3f129340f883e13648a"},
+]
+
+[[package]]
 name = "setuptools"
 version = "69.1.1"
 description = "Easily download, build, install, upgrade, and uninstall Python packages"
@@ -2380,4 +2391,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "2f385ba951cf4e1ff99d1fca6e27d9ec8ca9278cb952331480b735dd60677fb1"
+content-hash = "bf743d7dc835dde9db90bf7c8e748e6f788b45fbe7245e10e51de455dd077fd9"
