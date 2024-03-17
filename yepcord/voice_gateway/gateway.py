@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+from asyncio import get_event_loop
 from os import urandom
-from typing import Optional
+from typing import Optional, Any
 
+import websockets
 from httpx import AsyncClient
 from quart import Websocket
 from semanticsdp import SDPInfo
+from websockets import WebSocketClientProtocol
 
 from yepcord.yepcord.enums import VoiceGatewayOp
 from .default_sdp import DEFAULT_SDP
@@ -30,6 +34,38 @@ class GatewayClient:
         self.sdp = SDPInfo.from_dict(DEFAULT_SDP)
 
         self._gw = gw
+        self._ws: Optional[WebSocketClientProtocol] = None
+
+    async def connect_pion(self):
+        async with websockets.connect("ws://127.0.0.1:8088/voice") as websocket:
+            self._ws = websocket
+            while True:
+                msg = json.loads(await websocket.recv())
+                print(f"  From pion: {msg}")
+                if msg["op"] == VoiceGatewayOp.SESSION_DESCRIPTION:
+                    s = SDPInfo.parse(msg["d"]["sdp"])
+                    fp = s.dtls.fingerprint
+                    ufrag = s.ice.ufrag
+                    pwd = s.ice.pwd
+                    msg["d"]["sdp"] = (
+                            f"m=audio 3791 ICE/SDP\n" +
+                            f"a=fingerprint:sha-256 {fp}\n" +
+                            f"c=IN IP4 192.168.0.114\n" +
+                            f"a=rtcp:3791\n" +
+                            f"a=ice-ufrag:{ufrag}\n" +
+                            f"a=ice-pwd:{pwd}\n" +
+                            f"a=fingerprint:sha-256 {fp}\n" +
+                            f"a=candidate:366543523 1 udp 2130706431 192.168.0.114 3791 typ host\n"
+                    )
+                    print("patched sdp")
+                await self.ws.send_json(msg)
+
+    async def fwd(self, op: int, d: Any) -> None:
+        if self._ws is None:
+            return await self.ws.close(4004)
+        data = {"op": op, "d": d}
+        print(f"  To pion: {data}")
+        return await self._ws.send(json.dumps(data))
 
     async def send(self, data: dict):
         await self.ws.send_json(data)
@@ -38,6 +74,8 @@ class GatewayClient:
         await self.send(await event.json())
 
     async def handle_IDENTIFY(self, data: dict):
+        return await self.fwd(VoiceGatewayOp.IDENTIFY, data)
+
         print(f"Connected to voice with session_id={data['session_id']}")
         if data["token"] != "idk_token":
             return await self.ws.close(4004)
@@ -58,11 +96,13 @@ class GatewayClient:
             ReadyEvent(self.ssrc, self.video_ssrc, self.rtx_ssrc, await self._gw.get_channel_port(self.guild_id))
         )
 
-    @require_auth(4003)
+    #@require_auth(4003)
     async def handle_HEARTBEAT(self, data: dict):
+        return await self.fwd(VoiceGatewayOp.HEARTBEAT, data)
+
         await self.send({"op": VoiceGatewayOp.HEARTBEAT_ACK, "d": data})
 
-    @require_auth(4003)
+    #@require_auth(4003)
     async def handle_SELECT_PROTOCOL(self, data: dict):
         try:
             d = SelectProtocol(**data)
@@ -74,29 +114,11 @@ class GatewayClient:
             offer = SDPInfo.parse(f"m=audio\n{d.sdp}")
             self.sdp.ice = offer.ice
             self.sdp.dtls = offer.dtls
-            
-            port = await self._gw.get_channel_port(self.guild_id)
-            _, fingerprint = await self._gw.get_media_server_info()
 
-            data = {
-                "local": {"ice": {"ufrag": urandom(8).hex(), "pwd": urandom(16).hex()}},
-                "remote": {
-                    "ice": {"ufrag": self.sdp.ice.ufrag, "pwd": self.sdp.ice.pwd},
-                    "dtls": {
-                        "hash": self.sdp.dtls.hash,
-                        "fingerprint": self.sdp.dtls.fingerprint,
-                        "setup": self.sdp.dtls.setup.value
-                    },
-                },
-                "props": convert_rtp_properties(self.sdp),
-                "strpProtectionProfiles": "",
-                "disableSTUNKeepAlive": False,
-                "disableREMB": False,
-            }
+            sdp = "v=0\r\n"+str(self.sdp)+"\r\n"
+            print("gen sdp")
 
-            async with AsyncClient() as cl:
-                resp = await cl.post(f"http://127.0.0.1:9999/v1/channels/{self.guild_id}/users/{self.user_id}",
-                                     json=data)
+            return await self.fwd(VoiceGatewayOp.SELECT_PROTOCOL, data | {"data": sdp, "sdp": sdp})
 
             answer = (
                     f"m=audio {port} ICE/SDP\n" +
@@ -118,13 +140,15 @@ class GatewayClient:
             self.key = urandom(32)
             await self.esend(UdpSessionDescriptionEvent(self.mode, self.key))
 
-    @require_auth(4003)
+    #@require_auth(4003)
     async def handle_SPEAKING(self, data: dict):
         if self.ssrc != data["ssrc"] or data["ssrc"] < 1:
             return await self.ws.close(4014)
         await self.esend(SpeakingEvent(self.ssrc, self.user_id, data["speaking"]))
 
     async def handle_VOICE_BACKEND_VERSION(self, data: dict) -> None:
+        return await self.fwd(VoiceGatewayOp.VOICE_BACKEND_VERSION, data)
+
         await self.send({"op": VoiceGatewayOp.VOICE_BACKEND_VERSION, "d": {"voice": "0.11.0", "rtc_worker": "0.4.11"}})
 
 
@@ -159,6 +183,8 @@ class Gateway:
     async def sendHello(self, ws: Websocket) -> None:
         client = GatewayClient(ws, self)
         setattr(ws, "_yepcord_client", client)
+        return get_event_loop().create_task(client.connect_pion())
+
         await ws.send_json({"op": VoiceGatewayOp.HELLO, "d": {"v": 7, "heartbeat_interval": 13750}})
 
     async def process(self, ws: Websocket, data: dict) -> None:
