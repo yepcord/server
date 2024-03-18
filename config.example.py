@@ -113,3 +113,6 @@ CONNECTIONS = {
         "client_secret": None,
     },
 }
+
+# Voice workers addresses
+VOICE_WORKERS = []

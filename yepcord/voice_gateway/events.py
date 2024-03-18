@@ -10,10 +10,11 @@ class Event:
 class ReadyEvent(Event):
     OP = VoiceGatewayOp.READY
 
-    def __init__(self, ssrc: int, video_ssrc: int, rtx_ssrc: int, port: int):
+    def __init__(self, ssrc: int, video_ssrc: int, rtx_ssrc: int, ip: str, port: int):
         self.ssrc = ssrc
         self.video_ssrc = video_ssrc
         self.rtx_ssrc = rtx_ssrc
+        self.ip = ip
         self.port = port
 
     async def json(self) -> dict:
@@ -21,7 +22,7 @@ class ReadyEvent(Event):
             "op": self.OP,
             "d": {
                 "ssrc": self.ssrc,
-                "ip": "127.0.0.1",
+                "ip": self.ip,
                 "port": self.port,
                 "modes": ["xsalsa20_poly1305", "xsalsa20_poly1305_suffix", "xsalsa20_poly1305_lite",
                           "xsalsa20_poly1305_lite_rtpsize", "aead_aes256_gcm", "aead_aes256_gcm_rtpsize"],
