@@ -27,6 +27,7 @@ from .guild_ban import GuildBan
 from .guild_event import GuildEvent
 from .guild_template import GuildTemplate
 from .role import Role
+from .voice_state import VoiceState
 
 from .message import Message
 from .attachment import Attachment

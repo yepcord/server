@@ -120,7 +120,8 @@ class GatewayDispatcher(Singleton):
         stickers = [await sticker.ds_json() for sticker in stickers]
         await self.dispatch(StickersUpdateEvent(guild.id, stickers), guild_id=guild.id)
 
-    async def getChannelFilter(self, channel: Channel, permissions: int = 0) -> dict:
+    @staticmethod
+    async def getChannelFilter(channel: Channel, permissions: int = 0) -> dict:
         if channel.type in {ChannelType.DM, ChannelType.GROUP_DM}:
             return {"user_ids": await channel.recipients.all().values_list("id", flat=True)}
 
@@ -157,7 +158,8 @@ class GatewayDispatcher(Singleton):
 
         return {"role_ids": result_roles, "user_ids": list(user_ids), "exclude": list(excluded_user_ids)}
 
-    async def getRolesByPermissions(self, guild_id: int, permissions: int = 0) -> list[int]:
+    @staticmethod
+    async def getRolesByPermissions(guild_id: int, permissions: int = 0) -> list[int]:
         return await Role.filter(guild__id=guild_id).annotate(perms=RawSQL(f"permissions & {permissions}"))\
             .filter(perms=permissions).values_list("id", flat=True)
 

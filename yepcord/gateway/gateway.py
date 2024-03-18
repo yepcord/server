@@ -31,8 +31,10 @@ from .utils import require_auth, get_token_type, TokenType, init_redis_pool
 from ..yepcord.classes.fakeredis import FakeRedis
 from ..yepcord.core import Core
 from ..yepcord.ctx import getCore
-from ..yepcord.enums import GatewayOp
+from ..yepcord.enums import GatewayOp, GuildPermissions
+from ..yepcord.gateway_dispatcher import GatewayDispatcher
 from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember
+from ..yepcord.models.voice_state import VoiceState
 from ..yepcord.mq_broker import getBroker
 
 
@@ -180,22 +182,53 @@ class GatewayClient:
         self_mute = bool(data.get("self_mute"))
         self_deaf = bool(data.get("self_deaf"))
 
-        if not (channel := await getCore().getChannel(data.get("channel_id"))): return
-        if not await getCore().getUserByChannel(channel, self.user_id): return
-
-        guild = None
-        member = None
-        if guild_id := data.get("guild_id"):
-            if (guild := await getCore().getGuild(guild_id)) is None \
-                    or (member := await getCore().getGuildMember(guild, self.user_id)) is None:
+        voice_state = await VoiceState.get_or_none(user__id=self.user_id).select_related("channel", "guild")
+        if voice_state is not None:
+            if voice_state.session_id != self.sid and data["channel_id"] is None:
                 return
+            if str(voice_state.guild.id) != data["guild_id"] and voice_state.session_id == self.sid:
+                member = await getCore().getGuildMember(voice_state.guild, self.user_id)
+                voice_event = VoiceStateUpdate(
+                    self.id, self.sid, None, voice_state.guild, member, self_mute=self_mute, self_deaf=self_deaf
+                )
+                await self.gateway.broker.publish(channel="yepcord_events", message={
+                    "data": await voice_event.json(),
+                    "event": voice_event.NAME,
+                    **(await GatewayDispatcher.getChannelFilter(voice_state.channel, GuildPermissions.VIEW_CHANNEL))
+                })
+                if data["guild_id"] is None:
+                    return await voice_state.delete()
 
-        print(f"Connecting to voice with session_id={self.sid}")
+        if data["channel_id"] is None or data["guild_id"] is None:
+            return
+        if not (channel := await getCore().getChannel(data["channel_id"])): return
+        if not await getCore().getUserByChannel(channel, self.user_id): return
+        if (guild := await getCore().getGuild(data["guild_id"])) is None or channel.guild != guild or \
+                (member := await getCore().getGuildMember(guild, self.user_id)) is None:
+            return
 
-        await self.esend(VoiceStateUpdate(
-            self.id, self.sid, channel, guild, member, self_mute=self_mute, self_deaf=self_deaf
-        ))
-        await self.esend(VoiceServerUpdate(channel, guild))
+        if voice_state is not None:
+            await voice_state.update(guild=guild, channel=channel, session_id=self.sid)
+        else:
+            voice_state = await VoiceState.create(guild=guild, channel=channel, user=member.user, session_id=self.sid)
+
+        if member is None:
+            member = await getCore().getGuildMember(voice_state.guild, self.user_id)
+
+        voice_event = VoiceStateUpdate(
+            self.id, self.sid, voice_state.channel, voice_state.guild, member, self_mute=self_mute, self_deaf=self_deaf
+        )
+        await self.gateway.mcl_yepcordEventsCallback({
+            "data": await voice_event.json(),
+            "event": voice_event.NAME,
+            "user_ids": None,
+            "guild_id": None,
+            "role_ids": None,
+            "session_id": None,
+            "exclude": [],
+        } | await GatewayDispatcher.getChannelFilter(voice_state.channel, GuildPermissions.VIEW_CHANNEL))
+        await self.esend(VoiceServerUpdate(voice_state))
+        print("should connect now")
 
 
 class GatewayEvents:

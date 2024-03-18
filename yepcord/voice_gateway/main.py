@@ -1,8 +1,10 @@
 from asyncio import CancelledError
 
 from quart import Quart, websocket, Websocket
+from tortoise.contrib.quart import register_tortoise
 
 from .gateway import Gateway
+from ..yepcord.config import Config
 
 
 class YEPcord(Quart):
@@ -35,10 +37,10 @@ async def ws_gateway_voice():
         except CancelledError:
             raise
 
-# ?
-# register_tortoise(
-#    app,
-#    db_url=Config.DB_CONNECT_STRING,
-#    modules={"models": ["yepcord.yepcord.models"]},
-#    generate_schemas=False,
-# )
+
+register_tortoise(
+   app,
+   db_url=Config.DB_CONNECT_STRING,
+   modules={"models": ["yepcord.yepcord.models"]},
+   generate_schemas=False,
+)

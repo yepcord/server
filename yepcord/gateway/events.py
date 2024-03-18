@@ -29,7 +29,7 @@ from ..yepcord.models.interaction import Interaction
 from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Guild
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Guild, VoiceState
     from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence
@@ -173,16 +173,16 @@ class ReadySupplementalEvent(DispatchEvent):
         self.guilds_ids = guilds_ids
 
     async def json(self) -> dict:
-        g = [{"voice_states": [], "id": str(i), "embedded_activities": []} for i in self.guilds_ids]  # TODO
+        g = [{"voice_states": [], "id": str(i), "embedded_activities": []} for i in self.guilds_ids]  # TODO: add voice states
         return {
             "t": self.NAME,
             "op": self.OP,
             "d": {
                 "merged_presences": {
-                    "guilds": [[]],  # TODO
+                    "guilds": [[]],
                     "friends": self.friends_presences
                 },
-                "merged_members": [[]],  # TODO
+                "merged_members": [[]],
                 "guilds": g
             }
         }
@@ -1059,7 +1059,7 @@ class UserConnectionsUpdate(DispatchEvent):
 class VoiceStateUpdate(DispatchEvent):
     NAME = "VOICE_STATE_UPDATE"
 
-    def __init__(self, user_id: int, session_id: str, channel: Channel, guild: Optional[Guild],
+    def __init__(self, user_id: int, session_id: str, channel: Optional[Channel], guild: Optional[Guild],
                  member: Optional[GuildMember], **kwargs):
         self.user_id = user_id
         self.session_id = session_id
@@ -1074,7 +1074,7 @@ class VoiceStateUpdate(DispatchEvent):
             "op": self.OP,
             "d": {
                 "user_id": str(self.user_id),
-                "channel_id": str(self.channel.id),
+                "channel_id": str(self.channel.id) if self.channel is not None else None,
                 "deaf": False,
                 "mute": False,
                 "session_id": self.session_id,
@@ -1090,22 +1090,22 @@ class VoiceStateUpdate(DispatchEvent):
 class VoiceServerUpdate(DispatchEvent):
     NAME = "VOICE_SERVER_UPDATE"
 
-    def __init__(self, channel: Channel, guild: Optional[Guild]):
-        self.channel = channel
-        self.guild = guild
+    def __init__(self, voice_state: VoiceState):
+        self.state = voice_state
 
     async def json(self) -> dict:
         data = {
             "t": self.NAME,
             "op": self.OP,
             "d": {
-                "token": "idk_token",
-                "endpoint": "127.0.0.1:8000/voice"
+                "token": f"{self.state.id}.{self.state.token}",
+                "endpoint": Config.VOICE_GATEWAY_HOST
             }
         }
-        if self.guild:
-            data["d"]["guild_id"] = str(self.guild.id)
-        if self.channel:
-            data["d"]["channel_id"] = str(self.channel.id)
+        if self.state.guild:
+            data["d"]["guild_id"] = str(self.state.guild.id)
+        if self.state.channel:
+            data["d"]["channel_id"] = str(self.state.channel.id)
 
+        print(data)
         return data

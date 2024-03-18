@@ -10,37 +10,11 @@ from semanticsdp import SDPInfo, Setup
 from yepcord.yepcord.enums import VoiceGatewayOp
 from .default_sdp import DEFAULT_SDP
 from .events import Event, ReadyEvent, SpeakingEvent, UdpSessionDescriptionEvent, RtcSessionDescriptionEvent
+from .go_rpc import GoRpc
 from .schemas import SelectProtocol
 from ..gateway.utils import require_auth
 from ..yepcord.config import Config
-
-
-class GoRpc:
-    def __init__(self, rpc_addr: str):
-        self._address = f"http://{rpc_addr}/rpc"
-
-    async def create_endpoint(self, channel_id: int) -> Optional[int]:
-        async with AsyncClient() as cl:
-            resp = await cl.post(self._address, json={
-                # TODO: auto port allocation (on golang side)
-                "id": 0, "method": "Rpc.CreateApi", "params": [{"channel_id": str(channel_id), "port": 3791}]
-            })
-            j = resp.json()
-            if j["error"] is None:
-                return j["result"]
-            print(j["error"])
-
-    async def create_peer_connection(self, channel_id: int, session_id: int, offer: str) -> Optional[str]:
-        async with AsyncClient() as cl:
-            resp = await cl.post(self._address, json={
-                "id": 0, "method": "Rpc.NewPeerConnection", "params": [
-                    {"channel_id": str(channel_id), "session_id": str(session_id), "offer": offer}
-                ]
-            })
-            j = resp.json()
-            if j["error"] is None:
-                return j["result"]
-            print(j["error"])
+from ..yepcord.models import VoiceState
 
 
 class GatewayClient:
@@ -49,7 +23,7 @@ class GatewayClient:
         self.user_id = None
         self.session_id = None
         self.guild_id = None
-        self.token = None
+        self.channel_id = None
         self.ssrc = 0
         self.video_ssrc = 0
         self.rtx_ssrc = 0
@@ -67,13 +41,25 @@ class GatewayClient:
 
     async def handle_IDENTIFY(self, data: dict):
         print(f"Connected to voice with session_id={data['session_id']}")
-        if data["token"] != "idk_token":
+        try:
+            token = data["token"].split(".")
+            if len(token) != 2:
+                raise ValueError()
+            state_id, token = token
+            state_id = int(state_id)
+
+            state = await VoiceState.get_or_none(id=state_id, token=token).select_related("user", "guild", "channel")
+            if state is None:
+                raise ValueError
+        except ValueError:
             return await self.ws.close(4004)
 
         self.user_id = int(data["user_id"])
         self.session_id = data["session_id"]
         self.guild_id = int(data["server_id"])
-        self.token = data["token"]
+        self.channel_id = state.channel.id
+        if self.user_id != state.user.id or self.guild_id != state.guild.id:
+            return await self.ws.close(4004)
 
         self.ssrc = self._gw.ssrc
         self._gw.ssrc += 1
@@ -86,7 +72,7 @@ class GatewayClient:
         port = 0
         rpc = self._gw.rpc(self.guild_id)
         if rpc is not None:
-            port = await rpc.create_endpoint(self.guild_id)
+            port = await rpc.create_endpoint(self.channel_id)
 
         await self.esend(ReadyEvent(self.ssrc, self.video_ssrc, self.rtx_ssrc, ip, port))
 
@@ -114,7 +100,7 @@ class GatewayClient:
 
             sdp = "v=0\r\n" + str(self.sdp) + "\r\n"
 
-            answer = await rpc.create_peer_connection(self.guild_id, self.session_id, sdp)
+            answer = await rpc.create_peer_connection(self.channel_id, self.session_id, sdp)
 
             sdp = SDPInfo.parse(answer)
             c = sdp.candidates[0]
