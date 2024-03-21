@@ -13,6 +13,7 @@ KEY = "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE="
 PUBLIC_HOST = "127.0.0.1:8080"
 
 GATEWAY_HOST = "127.0.0.1:8000/gateway"
+VOICE_GATEWAY_HOST = "127.0.0.1:8000/voice"
 CDN_HOST = "127.0.0.1:8000/media"
 
 STORAGE = {
@@ -113,3 +114,6 @@ CONNECTIONS = {
         "client_secret": None,
     },
 }
+
+# Voice workers addresses
+VOICE_WORKERS = []

@@ -24,13 +24,16 @@ from ..yepcord.config import Config
 from ..yepcord.utils import b64decode
 
 
-def require_auth(func):
-    async def wrapped(self, *args, **kwargs):
-        if self.user_id is None:
-            return self.ws.close(4005)
-        return await func(self, *args, **kwargs)
+def require_auth(func_or_code):
+    def decorator(func):
+        async def wrapped(self, *args, **kwargs):
+            if self.user_id is None:
+                return await self.ws.close(func_or_code if isinstance(func_or_code, int) else 4005)
+            return await func(self, *args, **kwargs)
 
-    return wrapped
+        return wrapped
+
+    return decorator if isinstance(func_or_code, int) else decorator(func_or_code)
 
 
 class TokenType(Enum):

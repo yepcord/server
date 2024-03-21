@@ -174,8 +174,8 @@ _brokers = {
 
 def getBroker() -> Union[RabbitBroker, RedisBroker, KafkaBroker, NatsBroker, WsBroker]:
     broker_type = Config.MESSAGE_BROKER["type"].lower()
-    assert broker_type in ("rabbitmq", "redis", "sqs", "kafka", "nats", "ws",), \
-        "MESSAGE_BROKER.type must be one of ('rabbitmq', 'redis', 'sqs', 'kafka', 'nats', 'ws')"
+    assert broker_type in ("rabbitmq", "redis", "kafka", "nats", "ws",), \
+        "MESSAGE_BROKER.type must be one of ('rabbitmq', 'redis', 'kafka', 'nats', 'ws')"
 
     if broker_type == "ws":
         warnings.warn("'ws' message broker type is used. This message broker type should not be used in production!")

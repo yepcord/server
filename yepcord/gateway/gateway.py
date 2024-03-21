@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import warnings
 from json import dumps as jdumps
-from typing import Optional, Union
+from typing import Union
 
 from quart import Websocket
 from redis.asyncio import Redis
@@ -31,8 +31,10 @@ from .utils import require_auth, get_token_type, TokenType, init_redis_pool
 from ..yepcord.classes.fakeredis import FakeRedis
 from ..yepcord.core import Core
 from ..yepcord.ctx import getCore
-from ..yepcord.enums import GatewayOp
+from ..yepcord.enums import GatewayOp, GuildPermissions
+from ..yepcord.gateway_dispatcher import GatewayDispatcher
 from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember
+from ..yepcord.models.voice_state import VoiceState
 from ..yepcord.mq_broker import getBroker
 
 
@@ -53,9 +55,23 @@ class GatewayClient:
     def connected(self):
         return self._connected
 
-    def disconnect(self) -> None:
+    async def disconnect(self) -> None:
         self._connected = False
         self.ws = None
+
+        state = await VoiceState.get_or_none(user__id=self.user_id, session_id=self.sid)\
+            .select_related("channel", "guild")
+        if state is not None:
+            member = await getCore().getGuildMember(state.guild, self.user_id)
+            voice_event = VoiceStateUpdate(
+                self.id, self.sid, None, state.guild, member, self_mute=True, self_deaf=True
+            )
+            await self.gateway.broker.publish(channel="yepcord_events", message={
+                "data": await voice_event.json(),
+                "event": voice_event.NAME,
+                **(await GatewayDispatcher.getChannelFilter(state.channel, GuildPermissions.VIEW_CHANNEL))
+            })
+            await state.delete()
 
     async def send(self, data: dict):
         self.seq += 1
@@ -174,6 +190,59 @@ class GatewayClient:
         members = await getCore().getGuildMembersGw(guild, query, limit, data.get("user_ids", []))
         presences = []  # TODO: add presences
         await self.esend(GuildMembersChunkEvent(members, presences, guild_id))
+
+    @require_auth
+    async def handle_VOICE_STATE(self, data: dict) -> None:
+        self_mute = bool(data.get("self_mute"))
+        self_deaf = bool(data.get("self_deaf"))
+
+        voice_state = await VoiceState.get_or_none(user__id=self.user_id).select_related("channel", "guild")
+        if voice_state is not None:
+            if voice_state.session_id != self.sid and data["channel_id"] is None:
+                return
+            if str(voice_state.guild.id) != data["guild_id"] and voice_state.session_id == self.sid:
+                member = await getCore().getGuildMember(voice_state.guild, self.user_id)
+                voice_event = VoiceStateUpdate(
+                    self.id, self.sid, None, voice_state.guild, member, self_mute=self_mute, self_deaf=self_deaf
+                )
+                await self.gateway.broker.publish(channel="yepcord_events", message={
+                    "data": await voice_event.json(),
+                    "event": voice_event.NAME,
+                    **(await GatewayDispatcher.getChannelFilter(voice_state.channel, GuildPermissions.VIEW_CHANNEL))
+                })
+                if data["guild_id"] is None:
+                    return await voice_state.delete()
+
+        if data["channel_id"] is None or data["guild_id"] is None:
+            return
+        if not (channel := await getCore().getChannel(data["channel_id"])): return
+        if not await getCore().getUserByChannel(channel, self.user_id): return
+        if (guild := await getCore().getGuild(data["guild_id"])) is None or channel.guild != guild or \
+                (member := await getCore().getGuildMember(guild, self.user_id)) is None:
+            return
+
+        if voice_state is not None:
+            await voice_state.update(guild=guild, channel=channel, session_id=self.sid)
+        else:
+            voice_state = await VoiceState.create(guild=guild, channel=channel, user=member.user, session_id=self.sid)
+
+        if member is None:
+            member = await getCore().getGuildMember(voice_state.guild, self.user_id)
+
+        voice_event = VoiceStateUpdate(
+            self.id, self.sid, voice_state.channel, voice_state.guild, member, self_mute=self_mute, self_deaf=self_deaf
+        )
+        await self.gateway.mcl_yepcordEventsCallback({
+            "data": await voice_event.json(),
+            "event": voice_event.NAME,
+            "user_ids": None,
+            "guild_id": None,
+            "role_ids": None,
+            "session_id": None,
+            "exclude": [],
+        } | await GatewayDispatcher.getChannelFilter(voice_state.channel, GuildPermissions.VIEW_CHANNEL))
+        await self.esend(VoiceServerUpdate(voice_state))
+        print("should connect now")
 
 
 class GatewayEvents:
@@ -404,7 +473,7 @@ class Gateway:
         print(f"  Data: {data}")
 
     async def disconnect(self, ws: Websocket):
-        getattr(ws, "_yepcord_client").disconnect()
+        await getattr(ws, "_yepcord_client").disconnect()
 
     async def getFriendsPresences(self, uid: int) -> list[dict]:
         presences = []

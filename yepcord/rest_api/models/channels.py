@@ -248,6 +248,7 @@ class EmbedModel(BaseModel):
             raise EmbedErr(makeEmbedError(27, f"title", {"length": "256"}))
         return value
 
+    # noinspection PyUnusedLocal
     @field_validator("type")
     def validate_type(cls, value: Optional[str]):
         return "rich"

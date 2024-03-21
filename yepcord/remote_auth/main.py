@@ -53,7 +53,7 @@ async def set_cors_headers(response):  # pragma: no cover
 
 
 @app.websocket("/")
-async def ws_gateway():
+async def ws_gateway_remote_auth():
     version = websocket.args.get("v", "")
     version = int(version) if version.isdigit() else 1
 

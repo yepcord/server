@@ -20,16 +20,16 @@ from __future__ import annotations
 
 from base64 import b64encode
 from time import time
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Optional
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
-from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount
+from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount, VoiceState
 from ..yepcord.models.interaction import Interaction
 from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Guild
     from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence
@@ -173,16 +173,28 @@ class ReadySupplementalEvent(DispatchEvent):
         self.guilds_ids = guilds_ids
 
     async def json(self) -> dict:
-        g = [{"voice_states": [], "id": str(i), "embedded_activities": []} for i in self.guilds_ids]  # TODO
+        g = [
+            {
+                "voice_states": [
+                    state.ds_json() for state in await VoiceState.filter(
+                        guild__id=i, last_heartbeat__gt=int(time()-30)
+                    ).select_related("user", "channel")
+                ],
+                "id": str(i),
+                "embedded_activities": []
+            }
+            for i in self.guilds_ids
+        ]
+
         return {
             "t": self.NAME,
             "op": self.OP,
             "d": {
                 "merged_presences": {
-                    "guilds": [[]],  # TODO
+                    "guilds": [[]],
                     "friends": self.friends_presences
                 },
-                "merged_members": [[]],  # TODO
+                "merged_members": [[]],
                 "guilds": g
             }
         }
@@ -1054,3 +1066,57 @@ class UserConnectionsUpdate(DispatchEvent):
                 "token_data": None,
             }
         }
+
+
+class VoiceStateUpdate(DispatchEvent):
+    NAME = "VOICE_STATE_UPDATE"
+
+    def __init__(self, user_id: int, session_id: str, channel: Optional[Channel], guild: Optional[Guild],
+                 member: Optional[GuildMember], **kwargs):
+        self.user_id = user_id
+        self.session_id = session_id
+        self.channel = channel
+        self.guild = guild
+        self.member = member
+        self.kwargs = kwargs
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id),
+                "channel_id": str(self.channel.id) if self.channel is not None else None,
+                "deaf": False,
+                "mute": False,
+                "session_id": self.session_id,
+                **self.kwargs
+            }
+        }
+        if self.guild:
+            data["d"]["guild_id"] = str(self.guild.id)
+            data["d"]["member"] = await self.member.ds_json()
+        return data
+
+
+class VoiceServerUpdate(DispatchEvent):
+    NAME = "VOICE_SERVER_UPDATE"
+
+    def __init__(self, voice_state: VoiceState):
+        self.state = voice_state
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "token": f"{self.state.id}.{self.state.token}",
+                "endpoint": Config.VOICE_GATEWAY_HOST
+            }
+        }
+        if self.state.guild:
+            data["d"]["guild_id"] = str(self.state.guild.id)
+        if self.state.channel:
+            data["d"]["channel_id"] = str(self.state.channel.id)
+
+        return data
