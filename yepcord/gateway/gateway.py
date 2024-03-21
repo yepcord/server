@@ -55,9 +55,23 @@ class GatewayClient:
     def connected(self):
         return self._connected
 
-    def disconnect(self) -> None:
+    async def disconnect(self) -> None:
         self._connected = False
         self.ws = None
+
+        state = await VoiceState.get_or_none(user__id=self.user_id, session_id=self.sid)\
+            .select_related("channel", "guild")
+        if state is not None:
+            member = await getCore().getGuildMember(state.guild, self.user_id)
+            voice_event = VoiceStateUpdate(
+                self.id, self.sid, None, state.guild, member, self_mute=True, self_deaf=True
+            )
+            await self.gateway.broker.publish(channel="yepcord_events", message={
+                "data": await voice_event.json(),
+                "event": voice_event.NAME,
+                **(await GatewayDispatcher.getChannelFilter(state.channel, GuildPermissions.VIEW_CHANNEL))
+            })
+            await state.delete()
 
     async def send(self, data: dict):
         self.seq += 1
@@ -459,7 +473,7 @@ class Gateway:
         print(f"  Data: {data}")
 
     async def disconnect(self, ws: Websocket):
-        getattr(ws, "_yepcord_client").disconnect()
+        await getattr(ws, "_yepcord_client").disconnect()
 
     async def getFriendsPresences(self, uid: int) -> list[dict]:
         presences = []

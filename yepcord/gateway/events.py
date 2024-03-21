@@ -24,12 +24,12 @@ from typing import List, TYPE_CHECKING, Optional
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
-from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount
+from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount, VoiceState
 from ..yepcord.models.interaction import Interaction
 from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Guild, VoiceState
+    from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings, Guild
     from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence
@@ -173,7 +173,19 @@ class ReadySupplementalEvent(DispatchEvent):
         self.guilds_ids = guilds_ids
 
     async def json(self) -> dict:
-        g = [{"voice_states": [], "id": str(i), "embedded_activities": []} for i in self.guilds_ids]  # TODO: add voice states
+        g = [
+            {
+                "voice_states": [
+                    state.ds_json() for state in await VoiceState.filter(
+                        guild__id=i, last_heartbeat__gt=int(time()-30)
+                    ).select_related("user", "channel")
+                ],
+                "id": str(i),
+                "embedded_activities": []
+            }
+            for i in self.guilds_ids
+        ]
+
         return {
             "t": self.NAME,
             "op": self.OP,
@@ -1107,5 +1119,4 @@ class VoiceServerUpdate(DispatchEvent):
         if self.state.channel:
             data["d"]["channel_id"] = str(self.state.channel.id)
 
-        print(data)
         return data

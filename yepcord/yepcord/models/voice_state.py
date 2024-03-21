@@ -16,6 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from os import urandom
+from time import time
 from typing import Optional
 
 from tortoise import fields
@@ -28,6 +29,10 @@ def gen_token():
     return urandom(32).hex()
 
 
+def gen_cur_time():
+    return int(time())
+
+
 class VoiceState(Model):
     id: int = SnowflakeField(pk=True)
     guild: models.Guild = fields.ForeignKeyField("models.Guild", default=None, null=True)
@@ -35,3 +40,18 @@ class VoiceState(Model):
     user: models.User = fields.ForeignKeyField("models.User")
     session_id: str = fields.CharField(max_length=64)
     token: Optional[str] = fields.CharField(max_length=128, default=gen_token)
+    last_heartbeat: int = fields.BigIntField(default=gen_cur_time)
+
+    def ds_json(self) -> dict:
+        return {
+            "user_id": self.user.id,
+            "suppress": False,
+            "session_id": self.session_id,
+            "self_video": False,
+            "self_mute": False,
+            "self_deaf": False,
+            "request_to_speak_timestamp": None,
+            "mute": False,
+            "deaf": False,
+            "channel_id": self.channel.id
+        }

@@ -68,7 +68,7 @@ yc-protobuf3-to-dict = "^0.3.0"
 s3lite = "^0.1.4"
 fast-depends = ">=2.4.2"
 faststream = {extras = ["kafka", "nats", "rabbit", "redis"], version = "^0.4.7"}
-semanticsdp = "^0.1.0b5"
+semanticsdp = "^0.1.0b6"
 
 [tool.poetry.group.dev.dependencies]
 pytest-cov = "4.1.0"

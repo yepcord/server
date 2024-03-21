@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from os import urandom
+from time import time
 from typing import Optional
 
-from httpx import AsyncClient
 from quart import Websocket
 from semanticsdp import SDPInfo, Setup
 
@@ -78,6 +78,8 @@ class GatewayClient:
 
     @require_auth(4003)
     async def handle_HEARTBEAT(self, data: dict):
+        await VoiceState.filter(user__id=self.user_id, session_id=self.session_id).update(last_heartbeat=int(time()))
+
         await self.send({"op": VoiceGatewayOp.HEARTBEAT_ACK, "d": data})
 
     @require_auth(4003)
