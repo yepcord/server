@@ -3,12 +3,13 @@ from __future__ import annotations
 from os import urandom
 from time import time
 from typing import Optional
+from uuid import uuid4
 
 from quart import Websocket
-from semanticsdp import SDPInfo, Setup
+from semanticsdp import SDPInfo, Setup, Direction, StreamInfo, TrackInfo
 
 from yepcord.yepcord.enums import VoiceGatewayOp
-from .default_sdp import DEFAULT_SDP
+from .default_sdp import DEFAULT_SDP, DEFAULT_SDP_DS
 from .events import Event, ReadyEvent, SpeakingEvent, UdpSessionDescriptionEvent, RtcSessionDescriptionEvent
 from .go_rpc import GoRpc
 from .schemas import SelectProtocol
@@ -29,7 +30,7 @@ class GatewayClient:
         self.rtx_ssrc = 0
         self.mode: Optional[str] = None
         self.key: Optional[bytes] = None
-        self.sdp = SDPInfo.from_dict(DEFAULT_SDP)
+        self.sdp = SDPInfo.from_dict(DEFAULT_SDP_DS)
 
         self._gw = gw
 
@@ -84,8 +85,7 @@ class GatewayClient:
 
     @require_auth(4003)
     async def handle_SELECT_PROTOCOL(self, data: dict):
-        rpc = self._gw.rpc(self.guild_id)
-        if rpc is None:
+        if (rpc := self._gw.rpc(self.guild_id)) is None:
             return
 
         try:
@@ -132,6 +132,32 @@ class GatewayClient:
         if self.ssrc != data["ssrc"] or data["ssrc"] < 1:
             return await self.ws.close(4014)
         await self.esend(SpeakingEvent(self.ssrc, self.user_id, data["speaking"]))
+
+    @require_auth
+    async def handle_VIDEO(self, data: dict):
+        if (rpc := self._gw.rpc(self.guild_id)) is None:
+            return
+
+        if (audio_ssrc := data.get("audio_ssrc", 0)) < 1:
+            return await self.send({"op": VoiceGatewayOp.MEDIA_SINK_WANTS, "d": {"any": "100"}})  # ?
+
+        track_id = str(uuid4())
+        self.sdp.version += 1
+        self.sdp.medias[0].direction = Direction.SENDRECV
+        self.sdp.streams["-"] = StreamInfo(
+            id="-",
+            tracks={track_id: TrackInfo(
+                media="audio",
+                id=track_id,
+                media_id="0",
+                ssrcs=[audio_ssrc]
+            )}
+        )
+
+        sdp = "v=0\r\n" + str(self.sdp) + "\r\n"
+        await rpc.renegotiate(self.channel_id, self.session_id, sdp)
+
+        await self.send({"op": VoiceGatewayOp.MEDIA_SINK_WANTS, "d": {"any": "100"}})
 
     async def handle_VOICE_BACKEND_VERSION(self, data: dict) -> None:
         await self.send({"op": VoiceGatewayOp.VOICE_BACKEND_VERSION, "d": {"voice": "0.11.0", "rtc_worker": "0.4.11"}})
