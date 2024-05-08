@@ -35,6 +35,7 @@ async def ws_gateway_voice():
             data = await ws.receive_json()
             await gw.process(ws, data)
         except CancelledError:
+            await gw.disconnect(ws)
             raise
 
 

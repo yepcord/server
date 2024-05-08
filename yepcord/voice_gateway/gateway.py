@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from os import urandom
 from time import time
 from typing import Optional
 from uuid import uuid4
 
 from quart import Websocket
-from semanticsdp import SDPInfo, Setup, Direction, StreamInfo, TrackInfo
+from semanticsdp import SDPInfo, Setup, Direction, StreamInfo, TrackInfo, MediaInfo, CodecInfo, RTCPFeedbackInfo
 
 from yepcord.yepcord.enums import VoiceGatewayOp
-from .default_sdp import DEFAULT_SDP, DEFAULT_SDP_DS
+from .default_sdp import DEFAULT_SDP_DS
 from .events import Event, ReadyEvent, SpeakingEvent, UdpSessionDescriptionEvent, RtcSessionDescriptionEvent
 from .go_rpc import GoRpc
 from .schemas import SelectProtocol
@@ -30,7 +31,10 @@ class GatewayClient:
         self.rtx_ssrc = 0
         self.mode: Optional[str] = None
         self.key: Optional[bytes] = None
+
         self.sdp = SDPInfo.from_dict(DEFAULT_SDP_DS)
+        self.need_sync = False
+        self.other_media_ids: dict[int, int] = {}  # ssrc to media_id
 
         self._gw = gw
 
@@ -75,6 +79,7 @@ class GatewayClient:
         if rpc is not None:
             port = await rpc.create_endpoint(self.channel_id)
 
+        self._gw.channels[self.channel_id][self.user_id] = self
         await self.esend(ReadyEvent(self.ssrc, self.video_ssrc, self.rtx_ssrc, ip, port))
 
     @require_auth(4003)
@@ -141,6 +146,16 @@ class GatewayClient:
         if (audio_ssrc := data.get("audio_ssrc", 0)) < 1:
             return await self.send({"op": VoiceGatewayOp.MEDIA_SINK_WANTS, "d": {"any": "100"}})  # ?
 
+        if audio_ssrc == self.ssrc:
+            if not self.need_sync:
+                return
+
+            self.sdp.version += 1
+            sdp = "v=0\r\n" + str(self.sdp) + "\r\n"
+            await rpc.renegotiate(self.channel_id, self.session_id, sdp)
+
+            self.need_sync = False
+
         track_id = str(uuid4())
         self.sdp.version += 1
         self.sdp.medias[0].direction = Direction.SENDRECV
@@ -159,6 +174,42 @@ class GatewayClient:
 
         await self.send({"op": VoiceGatewayOp.MEDIA_SINK_WANTS, "d": {"any": "100"}})
 
+        for client in self._gw.channels[self.channel_id].values():
+            if client is self:
+                continue
+
+            next_media_id = max([int(media.id) for media in client.sdp.medias]) + 1
+            client.sdp.medias.append(MediaInfo(
+                id=str(next_media_id),
+                type="audio",
+                direction=Direction.RECVONLY,
+                extensions={
+                    1: "urn:ietf:params:rtp-hdrext:ssrc-audio-level",
+                    2: "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+                    3: "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
+                    4: "urn:ietf:params:rtp-hdrext:sdes:mid"
+                },
+                codecs={
+                    111: CodecInfo(
+                        codec="opus",
+                        type=111,
+                        channels=2,
+                        params={"minptime": "10", "useinbandfec": "1"},
+                        rtcpfbs={RTCPFeedbackInfo(id="transport-cc", params=[])}
+                    ),
+                    9: CodecInfo(codec="G722", type=9),
+                    0: CodecInfo(codec="PCMU", type=0),
+                    8: CodecInfo(codec="PCMA", type=8),
+                    13: CodecInfo(codec="CN", type=13),
+                    110: CodecInfo(codec="telephone-event", type=110),
+                    126: CodecInfo(codec="telephone-event", type=126),
+                },
+            ))
+            client.other_media_ids[audio_ssrc] = next_media_id
+            client.need_sync = True
+
+            await client.send({"op": VoiceGatewayOp.VIDEO, "d": data})
+
     async def handle_VOICE_BACKEND_VERSION(self, data: dict) -> None:
         await self.send({"op": VoiceGatewayOp.VOICE_BACKEND_VERSION, "d": {"voice": "0.11.0", "rtc_worker": "0.4.11"}})
 
@@ -166,7 +217,7 @@ class GatewayClient:
 class Gateway:
     def __init__(self):
         self.ssrc = 1
-        self.channels = {}
+        self.channels: defaultdict[int, dict[int, GatewayClient]] = defaultdict(dict)
         self._rpcs: dict[int, GoRpc] = {}
 
     def rpc(self, guild_id: int) -> Optional[GoRpc]:
@@ -195,3 +246,15 @@ class Gateway:
             print("-" * 16)
             print(f"  [Voice] Unknown op code: {op}")
             print(f"  [Voice] Data: {data}")
+
+    async def disconnect(self, ws: Websocket) -> None:
+        client: GatewayClient
+        if (client := getattr(ws, "_yepcord_client", None)) is None:
+            return
+        if client.channel_id not in self.channels or client.user_id not in self.channels[client.channel_id]:
+            return
+
+        del self.channels[client.channel_id][client.user_id]
+        for cl in self.channels[client.channel_id].values():
+            await cl.send({"op": VoiceGatewayOp.CLIENT_DISCONNECT, "d": {"user_id": str(client.user_id)}})
+            # TODO: remove disconnected client from sdp
