@@ -131,8 +131,9 @@ class _Storage(metaclass=SingletonABCMeta):
                 await self._write(paths[0], data)
                 return data
 
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
-        bytes]:
+    async def _getImage(
+            self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f
+    ) -> Optional[bytes]:
         anim = hash.startswith("a_")
         def_fmt = "gif" if anim else "png"
         paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
@@ -341,8 +342,9 @@ class FTPStorage(_Storage):
     def _getClient(self) -> FClient:
         return FClient.context(self.host, user=self.user, password=self.password, port=self.port)
 
-    async def _getImage(self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f) -> Optional[
-        bytes]:
+    async def _getImage(
+            self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f
+    ) -> Optional[bytes]:
         async with self._getClient() as ftp:
             self.session.set(ftp)
             return await super()._getImage(type, id, hash, size, fmt, def_size, size_f)

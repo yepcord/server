@@ -7,6 +7,9 @@ from google.protobuf.wrappers_pb2 import StringValue
 from yepcord.rest_api.main import app
 from yepcord.yepcord.proto import PreloadedUserSettings, TextAndImagesSettings, FrecencyUserSettings, FavoriteStickers
 from .utils import create_users, TestClientType, create_guild
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

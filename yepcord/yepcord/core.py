@@ -431,7 +431,7 @@ class Core(Singleton):
         await user.update(email=email, verified=False)
 
     async def sendMfaChallengeEmail(self, user: User, nonce: str) -> None:
-        code = await self.mfaNonceToCode(user, nonce)
+        code = await self.mfaNonceToCode(nonce)
         await EmailMsg(user.email,
                        f"Your one-time verification key is {code}",
                        f"It looks like you're trying to view your account's backup codes.\n"
@@ -439,7 +439,7 @@ class Core(Singleton):
                        f"password and do not share it with anyone.\n"
                        f"Enter it in the app to unlock your backup codes:\n{code}").send()
 
-    async def mfaNonceToCode(self, user: User, nonce: str) -> Optional[str]:
+    async def mfaNonceToCode(self, nonce: str) -> Optional[str]:
         if not (payload := JWT.decode(nonce, self.key)):
             return
         token = JWT.encode({"code": payload["code"]}, self.key)
@@ -695,8 +695,9 @@ class Core(Singleton):
     async def getGuildBans(self, guild: Guild) -> list[GuildBan]:
         return await GuildBan.filter(guild=guild).select_related("user", "guild").all()
 
-    async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> dict[
-        Channel, list[int]]:
+    async def bulkDeleteGuildMessagesFromBanned(
+            self, guild: Guild, user_id: int, after_id: int
+    ) -> dict[Channel, list[int]]:
         messages = await (Message.filter(guild=guild, author__id=user_id, id__gt=after_id).select_related("channel")
                           .limit(500).all())
         result = {}

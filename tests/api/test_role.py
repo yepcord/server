@@ -5,6 +5,9 @@ from yepcord.rest_api.main import app
 from tests.api.utils import TestClientType, create_users, create_guild, create_role, add_user_to_guild, \
     create_application, add_bot_to_guild
 from tests.yep_image import YEP_IMAGE
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

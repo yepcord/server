@@ -64,6 +64,7 @@ class GifSuggestion(_J):
     time: int
 
 
+# noinspection PyTestUnpassedFixture
 class Gifs(Singleton):
     def __init__(self, key: str = None, keep_searches: int = 100):
         self._key = key

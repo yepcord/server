@@ -148,7 +148,7 @@ class Channel(Model):
             }
         elif self.type == ChannelType.GUILD_PUBLIC_THREAD:
             message_count = await getCore().getChannelMessagesCount(self)
-            data = base_data | {
+            data: dict = base_data | {
                 "guild_id": str(self.guild.id),
                 "parent_id": str(self.parent.id) if self.parent else None,
                 "owner_id": str(self.owner.id),

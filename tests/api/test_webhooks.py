@@ -9,6 +9,9 @@ from yepcord.yepcord.utils import getImage
 from tests.api.utils import TestClientType, create_users, create_guild, create_webhook, \
     create_guild_channel, create_sticker, create_dm_group
 from tests.yep_image import YEP_IMAGE
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

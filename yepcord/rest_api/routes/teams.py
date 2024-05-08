@@ -24,6 +24,7 @@ from ...yepcord.models import User
 teams = YBlueprint('teams', __name__)
 
 
+# noinspection PyUnusedLocal
 @teams.get("/", strict_slashes=False)
 async def get_teams(user: User = DepUser):
     return []

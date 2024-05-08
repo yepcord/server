@@ -86,6 +86,7 @@ class WsServer:
 
 
 class WsBroker:
+    # noinspection PyUnusedLocal
     def __init__(self, url: str = "ws://127.0.0.1:5055", **kwargs):
         self._connection: Optional[WebSocketClientProtocol] = None
         self._url = url
