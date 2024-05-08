@@ -17,9 +17,7 @@
 """
 
 from asyncio import get_event_loop
-from cProfile import Profile
 from io import BytesIO
-from time import time
 
 import pytest as pt
 import pytest_asyncio
@@ -36,8 +34,10 @@ from yepcord.yepcord.utils import getImage, b64decode
 from .ftp_server import ftp_server
 from .local_server import local_server
 from .s3_server import s3_server
+from ..utils import register_app_error_handler
 from ..yep_image import YEP_IMAGE
 
+register_app_error_handler(app)
 TestClientType = app.test_client_class
 core = Core(b64decode(Config.KEY))
 

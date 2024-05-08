@@ -7,6 +7,9 @@ from yepcord.rest_api.main import app
 from yepcord.yepcord.enums import StickerType
 from yepcord.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_emoji, create_sticker
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

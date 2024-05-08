@@ -18,16 +18,15 @@
 
 import sys
 
-from quart import Quart
+from quart import Quart, Blueprint
 from quart_schema import validate_querystring, QuartSchema
 from tortoise.contrib.quart import register_tortoise
 
 from .models import CdnImageSizeQuery
 from ..yepcord.config import Config
-from ..yepcord.core import Core
 from ..yepcord.enums import StickerFormat
+from ..yepcord.models import Emoji, Sticker, Attachment
 from ..yepcord.storage import getStorage
-from ..yepcord.utils import b64decode
 
 
 class YEPcord(Quart):
@@ -36,7 +35,6 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-Cdn")
 QuartSchema(app)
-core = Core(b64decode(Config.KEY))
 
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
@@ -52,9 +50,10 @@ async def set_cors_headers(response):
 
 
 # Images (avatars, banners, emojis, icons, etc.)
+cdn = Blueprint('cdn', __name__)
 
 
-@app.get("/avatars/<int:user_id>/<string:file_hash>.<string:format_>")
+@cdn.get("/avatars/<int:user_id>/<string:file_hash>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_avatar(query_args: CdnImageSizeQuery, user_id: int, file_hash: str, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
@@ -65,7 +64,7 @@ async def get_avatar(query_args: CdnImageSizeQuery, user_id: int, file_hash: str
     return avatar, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/banners/<int:user_id>/<string:file_hash>.<string:format_>")
+@cdn.get("/banners/<int:user_id>/<string:file_hash>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_banner(query_args: CdnImageSizeQuery, user_id: int, file_hash: str, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
@@ -76,7 +75,7 @@ async def get_banner(query_args: CdnImageSizeQuery, user_id: int, file_hash: str
     return banner, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/splashes/<int:guild_id>/<string:file_hash>.<string:format_>")
+@cdn.get("/splashes/<int:guild_id>/<string:file_hash>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_splash(query_args: CdnImageSizeQuery, guild_id: int, file_hash: str, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
@@ -87,7 +86,7 @@ async def get_splash(query_args: CdnImageSizeQuery, guild_id: int, file_hash: st
     return splash, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/channel-icons/<int:channel_id>/<string:file_hash>.<string:format_>")
+@cdn.get("/channel-icons/<int:channel_id>/<string:file_hash>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_channel_icon(query_args: CdnImageSizeQuery, channel_id: int, file_hash: str, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
@@ -98,7 +97,7 @@ async def get_channel_icon(query_args: CdnImageSizeQuery, channel_id: int, file_
     return icon, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/icons/<int:guild_id>/<string:file_hash>.<string:format_>")
+@cdn.get("/icons/<int:guild_id>/<string:file_hash>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_guild_icon(query_args: CdnImageSizeQuery, guild_id: int, file_hash: str, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
@@ -109,7 +108,7 @@ async def get_guild_icon(query_args: CdnImageSizeQuery, guild_id: int, file_hash
     return icon, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/role-icons/<int:role_id>/<string:file_hash>.<string:format_>")
+@cdn.get("/role-icons/<int:role_id>/<string:file_hash>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_role_icon(query_args: CdnImageSizeQuery, role_id: int, file_hash: str, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
@@ -120,18 +119,18 @@ async def get_role_icon(query_args: CdnImageSizeQuery, role_id: int, file_hash: 
     return icon, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/emojis/<int:emoji_id>.<string:format_>")
+@cdn.get("/emojis/<int:emoji_id>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_emoji(query_args: CdnImageSizeQuery, emoji_id: int, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
         return b'', 400
     if query_args.size > 56: query_args.size = 56
-    emoji = await core.getEmoji(emoji_id)
+    emoji = await Emoji.get_or_none(id=emoji_id)
     if not emoji:
         # If emoji deleted or never existed
         for animated in (False, True):
             emoji = await getStorage().getEmoji(emoji_id, query_args.size, format_, animated)
-            if emoji:  # If deleted from database, but file found
+            if emoji:  # If deleted from a database, but file exists
                 break
     else:
         emoji = await getStorage().getEmoji(emoji_id, query_args.size, format_, emoji.animated)
@@ -140,7 +139,7 @@ async def get_emoji(query_args: CdnImageSizeQuery, emoji_id: int, format_: str):
     return emoji, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/guilds/<int:guild_id>/users/<int:member_id>/avatars/<string:file_hash>.<string:format_>")
+@cdn.get("/guilds/<int:guild_id>/users/<int:member_id>/avatars/<string:file_hash>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_guild_avatar(query_args: CdnImageSizeQuery, guild_id: int, member_id: int, file_hash: str, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
@@ -151,18 +150,18 @@ async def get_guild_avatar(query_args: CdnImageSizeQuery, guild_id: int, member_
     return avatar, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/stickers/<int:sticker_id>.<string:format_>")
+@cdn.get("/stickers/<int:sticker_id>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_sticker(query_args: CdnImageSizeQuery, sticker_id: int, format_: str):
     if format_ not in ["webp", "png", "gif"]:
         return b'', 400
     if query_args.size > 320: query_args.size = 320
-    sticker = await core.getSticker(sticker_id)
+    sticker = await Sticker.get_or_none(id=sticker_id)
     if not sticker:
         # If sticker deleted or never existed
         for animated in (False, True):
             sticker = await getStorage().getSticker(sticker_id, query_args.size, format_, animated)
-            if sticker:  # If deleted from database, but file found
+            if sticker:  # If deleted from a database, but file exists
                 break
     else:
         sticker = await getStorage().getSticker(sticker_id, query_args.size, format_,
@@ -172,7 +171,7 @@ async def get_sticker(query_args: CdnImageSizeQuery, sticker_id: int, format_: s
     return sticker, 200, {"Content-Type": f"image/{format_}"}
 
 
-@app.get("/guild-events/<int:event_id>/<string:file_hash>")
+@cdn.get("/guild-events/<int:event_id>/<string:file_hash>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, file_hash: str):
     if query_args.size > 600: query_args.size = 600
@@ -182,7 +181,7 @@ async def get_guild_event_image(query_args: CdnImageSizeQuery, event_id: int, fi
     return b'', 404
 
 
-@app.get("/app-icons/<int:app_id>/<string:file_hash>.<string:format_>")
+@cdn.get("/app-icons/<int:app_id>/<string:file_hash>.<string:format_>")
 @validate_querystring(CdnImageSizeQuery)
 async def get_app_icon(query_args: CdnImageSizeQuery, app_id: int, file_hash: str, format_: str):
     if format_ not in ["webp", "png", "jpg", "gif"]:
@@ -193,21 +192,12 @@ async def get_app_icon(query_args: CdnImageSizeQuery, app_id: int, file_hash: st
     return avatar, 200, {"Content-Type": f"image/{format_}"}
 
 
-if "pytest" in sys.modules:  # pragma: no cover
-    # Raise original exceptions instead of InternalServerError when testing
-    from werkzeug.exceptions import InternalServerError
-
-    @app.errorhandler(500)
-    async def handle_500_for_pytest(error: InternalServerError):
-        raise error.original_exception
-
-
 # Attachments
 
 
-@app.get("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")
+@cdn.get("/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")
 async def get_attachment(channel_id: int, attachment_id: int, name: str):
-    if not (attachment := await core.getAttachment(attachment_id)):
+    if not (attachment := await Attachment.get_or_none(id=attachment_id)):
         return b'', 404
     headers = {}
     if attachment.content_type:
@@ -215,6 +205,9 @@ async def get_attachment(channel_id: int, attachment_id: int, name: str):
     if not (attachment := await getStorage().getAttachment(channel_id, attachment_id, name)):
         return b'', 404
     return attachment, 200, headers
+
+
+app.register_blueprint(cdn)
 
 
 register_tortoise(

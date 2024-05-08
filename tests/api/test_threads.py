@@ -5,6 +5,9 @@ from yepcord.rest_api.main import app
 from yepcord.yepcord.enums import MessageFlags
 from tests.api.utils import TestClientType, create_users, create_guild, create_guild_channel, create_message, \
     create_thread, create_dm_group
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

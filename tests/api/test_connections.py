@@ -12,6 +12,9 @@ from tests.httpx_mock_callbacks import github_oauth_token_exchange, github_oauth
     spotify_oauth_user_get
 from yepcord.rest_api.main import app
 from yepcord.yepcord.config import Config
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

@@ -11,6 +11,9 @@ from yepcord.yepcord.config import Config
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import b64decode, b64encode
 from .utils import TestClientType, create_user, get_userdata, create_users
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

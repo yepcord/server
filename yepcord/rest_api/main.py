@@ -70,16 +70,6 @@ async def after_serving():
     await gateway.stop()
 
 
-if "pytest" in sys.modules:  # pragma: no cover
-    # Raise original exceptions instead of InternalServerError when testing
-    from werkzeug.exceptions import InternalServerError
-
-
-    @app.errorhandler(500)
-    async def handle_500_for_pytest(error: InternalServerError):
-        raise error.original_exception
-
-
 @app.errorhandler(YDataError)
 async def ydataerror_handler(err: YDataError):
     if isinstance(err, EmbedErr):

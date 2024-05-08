@@ -6,6 +6,9 @@ from yepcord.remote_auth.main import app as ra_app
 from yepcord.rest_api.main import app
 from yepcord.yepcord.utils import b64encode
 from .utils import TestClientType, create_users, RemoteAuthClient
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

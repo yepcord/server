@@ -11,6 +11,9 @@ from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import b64encode
 from .utils import TestClientType, create_users, create_application, create_guild, add_bot_to_guild, bot_token, \
     create_dm_channel, create_dm_group, generate_slash_command_payload
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

@@ -6,6 +6,9 @@ import pytest_asyncio
 from yepcord.rest_api.main import app
 from yepcord.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application, create_guild, create_ban, add_user_to_guild
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

@@ -81,20 +81,7 @@ app.websocket("/gateway", strict_slashes=False)(gateway.ws_gateway)
 remote_auth.ws_gateway.__name__ = "ws_ra_gateway"
 app.websocket("/remote-auth", strict_slashes=False)(remote_auth.ws_gateway)
 
-app.get("/media/avatars/<int:user_id>/<string:file_hash>.<string:format_>")(cdn.get_avatar)
-app.get("/media/banners/<int:user_id>/<string:file_hash>.<string:format_>")(cdn.get_banner)
-app.get("/media/splashes/<int:guild_id>/<string:file_hash>.<string:format_>")(cdn.get_splash)
-app.get("/media/channel-icons/<int:channel_id>/<string:file_hash>.<string:format_>")(cdn.get_channel_icon)
-app.get("/media/icons/<int:guild_id>/<string:file_hash>.<string:format_>")(cdn.get_guild_icon)
-app.get("/media/role-icons/<int:role_id>/<string:file_hash>.<string:format_>")(cdn.get_role_icon)
-app.get("/media/emojis/<int:emoji_id>.<string:format_>")(cdn.get_emoji)
-app.get("/media/guilds/<int:guild_id>/users/<int:member_id>/avatars/<string:file_hash>.<string:format_>")(
-    cdn.get_guild_avatar
-)
-app.get("/media/stickers/<int:sticker_id>.<string:format_>")(cdn.get_sticker)
-app.get("/media/guild-events/<int:event_id>/<string:file_hash>")(cdn.get_guild_event_image)
-app.get("/media/attachments/<int:channel_id>/<int:attachment_id>/<string:name>")(cdn.get_attachment)
-app.get("/media/app-icons/<int:app_id>/<string:file_hash>.<string:format_>")(cdn.get_app_icon)
+app.register_blueprint(cdn.cdn, url_prefix="/media")
 
 register_tortoise(
     app,
