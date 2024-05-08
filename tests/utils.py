@@ -40,3 +40,11 @@ def generateMfaVerificationKey(nonce: str, mfa_key: str, key: bytes):
     token = JWT.encode({"code": payload["code"]}, key)
     signature = token.split(".")[2]
     return signature.replace("-", "").replace("_", "")[:8].upper()
+
+
+def register_app_error_handler(app):
+    from werkzeug.exceptions import InternalServerError
+
+    @app.errorhandler(500)
+    async def handle_500_for_pytest(error: InternalServerError):
+        raise error.original_exception

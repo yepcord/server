@@ -22,7 +22,7 @@ from typing import Any, Callable, Optional
 from fast_depends import inject
 from flask.sansio.scaffold import T_route, setupmethod
 from quart import Blueprint, g
-from quart_schema import validate_request, DataSource, validate_querystring
+from quart_schema import validate_request, validate_querystring
 
 validate_funcs = {"body": validate_request, "qs": validate_querystring}
 

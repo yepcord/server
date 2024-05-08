@@ -310,7 +310,9 @@ class Core(Singleton):
 
     async def getPrivateChannels(self, user: User, with_hidden: bool = False) -> list[Channel]:
         channels = await Channel.filter(recipients__id=user.id).select_related("owner").all()
-        channels = [channel for channel in channels if not await self.isDmChannelHidden(user, channel)]
+        channels = [
+            channel for channel in channels if not with_hidden and not await self.isDmChannelHidden(user, channel)
+        ]
         return [await self.setLastMessageIdForChannel(channel) for channel in channels]
 
     async def getChannelMessages(self, channel: Channel, limit: int, before: int = 0, after: int = 0) -> list[Message]:
@@ -430,7 +432,7 @@ class Core(Singleton):
         await user.update(email=email, verified=False)
 
     async def sendMfaChallengeEmail(self, user: User, nonce: str) -> None:
-        code = await self.mfaNonceToCode(user, nonce)
+        code = await self.mfaNonceToCode(nonce)
         await EmailMsg(user.email,
                        f"Your one-time verification key is {code}",
                        f"It looks like you're trying to view your account's backup codes.\n"
@@ -438,7 +440,7 @@ class Core(Singleton):
                        f"password and do not share it with anyone.\n"
                        f"Enter it in the app to unlock your backup codes:\n{code}").send()
 
-    async def mfaNonceToCode(self, user: User, nonce: str) -> Optional[str]:
+    async def mfaNonceToCode(self, nonce: str) -> Optional[str]:
         if not (payload := JWT.decode(nonce, self.key)):
             return
         token = JWT.encode({"code": payload["code"]}, self.key)
@@ -694,8 +696,9 @@ class Core(Singleton):
     async def getGuildBans(self, guild: Guild) -> list[GuildBan]:
         return await GuildBan.filter(guild=guild).select_related("user", "guild").all()
 
-    async def bulkDeleteGuildMessagesFromBanned(self, guild: Guild, user_id: int, after_id: int) -> dict[
-        Channel, list[int]]:
+    async def bulkDeleteGuildMessagesFromBanned(
+            self, guild: Guild, user_id: int, after_id: int
+    ) -> dict[Channel, list[int]]:
         messages = await (Message.filter(guild=guild, author__id=user_id, id__gt=after_id).select_related("channel")
                           .limit(500).all())
         result = {}
@@ -775,7 +778,7 @@ class Core(Singleton):
         # noinspection PyUnresolvedReferences
         return await GuildMember.filter(
             Q(guild=guild) &
-            (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query)) #&
+            (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))  #&
             #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
         ).select_related("user").limit(limit).all()
 

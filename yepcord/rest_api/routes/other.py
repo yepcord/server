@@ -116,6 +116,7 @@ async def api_outboundpromotions():
     return []
 
 
+# noinspection PyUnusedLocal
 @other.get("/api/v9/users/@me/applications/<aid>/entitlements")
 async def api_users_me_applications_id_entitlements(aid):
     return []
@@ -187,6 +188,7 @@ async def api_users_me_settingsproto_3():
     return {"settings": ""}
 
 
+# noinspection PyUnusedLocal
 @other.route("/api/v9/users/@me/settings-proto/<int:t>", methods=["GET", "PATCH"])
 async def api_users_me_settingsproto_type(t):
     raise InvalidDataErr(400, Errors.make(50035, {"type": {
@@ -196,16 +198,19 @@ async def api_users_me_settingsproto_type(t):
     }}))
 
 
+# noinspection PyUnusedLocal
 @other.get("/api/v9/applications/<int:app_id>/skus")
 async def application_skus(app_id: int):
     return []
 
 
+# noinspection PyUnusedLocal
 @other.get("/api/v9/applications/<int:app_id>/subscription-group-listings")
 async def application_sub_group_list(app_id: int):
     return {"items": []}
 
 
+# noinspection PyUnusedLocal
 @other.get("/api/v9/applications/<int:app_id>/listings")
 async def application_listings(app_id: int):
     return []

@@ -7,6 +7,9 @@ from yepcord.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_dm_channel, create_dm_group, \
     create_message
 from tests.yep_image import YEP_IMAGE
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

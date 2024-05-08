@@ -4,6 +4,9 @@ import pytest_asyncio
 from yepcord.rest_api.main import app
 from yepcord.yepcord.enums import ChannelType
 from .utils import TestClientType, create_users, create_guild, create_invite, create_dm_group, create_ban
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

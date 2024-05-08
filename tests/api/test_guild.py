@@ -9,6 +9,9 @@ from tests.api.utils import TestClientType, create_users, create_guild, create_i
     add_user_to_guild, create_ban, create_message, create_role, create_application, add_bot_to_guild
 from tests.yep_image import YEP_IMAGE
 from yepcord.yepcord.utils import b64encode
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)

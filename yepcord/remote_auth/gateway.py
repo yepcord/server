@@ -94,6 +94,7 @@ class GatewayClient:
             return await self.ws.close(1001)
         await self.send("pending_remote_init", fingerprint=self.fingerprint)
 
+    # noinspection PyUnusedLocal
     async def handle_heartbeat(self, data: dict) -> None:
         self.last_heartbeat = time()
         await self.send("heartbeat_ack")

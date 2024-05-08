@@ -9,6 +9,9 @@ from yepcord.yepcord.enums import ChannelType, GatewayOp
 from yepcord.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application, create_guild, add_bot_to_guild, bot_token, \
     GatewayClient, gateway_cm, create_message
+from ..utils import register_app_error_handler
+
+register_app_error_handler(app)
 
 
 @pytest_asyncio.fixture(autouse=True)
