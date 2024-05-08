@@ -29,7 +29,7 @@ from quart import request, current_app, g
 import yepcord.yepcord.models as models
 from ..yepcord.classes.captcha import Captcha
 from ..yepcord.config import Config
-from ..yepcord.ctx import Ctx, getCore, getCDNStorage
+from ..yepcord.ctx import getCore, getCDNStorage
 from ..yepcord.enums import MessageType
 from ..yepcord.errors import Errors, InvalidDataErr
 from ..yepcord.models import Session, User, Channel, Attachment, Authorization, Bot, Webhook, Message

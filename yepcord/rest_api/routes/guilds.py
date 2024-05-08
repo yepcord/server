@@ -502,6 +502,7 @@ async def delete_role(user: User = DepUser, guild: Guild = DepGuild, member: Gui
     return "", 204
 
 
+# noinspection PyUnusedLocal
 @guilds.get("/<int:guild>/roles/<int:role>/connections/configuration", allow_bots=True)
 async def get_connections_configuration(role: int, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)

@@ -110,8 +110,8 @@ class Message(Model):
                 mdata = await member.data
                 data["mentions"].append(mdata.ds_json)
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
-            if (userid := self.extra_data.get("user")) and (udata := await models.UserData.get_or_none(id=userid)
-                    .select_related("user")):
+            if (userid := self.extra_data.get("user")) \
+                    and (udata := await models.UserData.get_or_none(id=userid).select_related("user")):
                 data["mentions"].append(udata.ds_json)
         if self.message_reference:
             data["message_reference"] = {

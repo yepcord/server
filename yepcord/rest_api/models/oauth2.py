@@ -27,12 +27,12 @@ class AppAuthorizeGetQs(BaseModel):
     client_id: Optional[int] = None
     scope: Optional[str] = None
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         if "client_id" not in kwargs or not kwargs.get("client_id", "").strip():
             raise InvalidDataErr(400, Errors.make(50035, {"client_id": {
                 "code": "BASE_TYPE_REQUIRED", "message": "This field is required"
             }}))
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
 
 class AppAuthorizePostQs(BaseModel):

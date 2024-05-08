@@ -328,7 +328,7 @@ async def get_backup_codes(data: MfaCodesVerification, user: User = DepUser):
         }}))
     reg = data.regenerate
     await getCore().verifyUserMfaNonce(user, nonce, reg)
-    if await getCore().mfaNonceToCode(user, nonce) != key:
+    if await getCore().mfaNonceToCode(nonce) != key:
         raise InvalidDataErr(400, Errors.make(60011))
     if reg:
         codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]

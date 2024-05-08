@@ -19,7 +19,6 @@
 from datetime import date, timedelta
 from typing import Optional
 
-from quart import g
 from tortoise import fields
 from tortoise.validators import MinValueValidator, MaxValueValidator
 
