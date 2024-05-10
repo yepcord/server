@@ -2062,6 +2062,17 @@ httpx = ">=0.27.0,<0.28.0"
 python-dateutil = ">=2.8.2,<3.0.0"
 
 [[package]]
+name = "semanticsdp"
+version = "0.1.0b9"
+description = "Python port of medooze/semantic-sdp-js"
+optional = false
+python-versions = "<4.0,>=3.9"
+files = [
+    {file = "semanticsdp-0.1.0b9-py3-none-any.whl", hash = "sha256:36432a31bc781a24ab2dece9aa961b10e2d09b927f7d257bf4a1e6b6479d2733"},
+    {file = "semanticsdp-0.1.0b9.tar.gz", hash = "sha256:805a218472f6ceae12c1a36f6c323762c8b9885dbabc0b45bd87db692e195541"},
+]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 description = "Tool to Detect Surrounding Shell"
@@ -2520,4 +2531,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "12c6a4fed2dc22c9c5398abba113aa7d96e4e54af57e0b8b8d251d49e16dd985"
+content-hash = "8341f97e28a754ed9e4377efe137c7cafa72d7612f3c8c946a08840744735b83"

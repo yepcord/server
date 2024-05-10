@@ -136,7 +136,11 @@ class GatewayClient:
     async def handle_SPEAKING(self, data: dict):
         if self.ssrc != data["ssrc"] or data["ssrc"] < 1:
             return await self.ws.close(4014)
-        await self.esend(SpeakingEvent(self.ssrc, self.user_id, data["speaking"]))
+
+        for client in self._gw.channels[self.channel_id].values():
+            if client is self:
+                continue
+            await client.esend(SpeakingEvent(self.ssrc, self.user_id, data["speaking"]))
 
     @require_auth
     async def handle_VIDEO(self, data: dict):
