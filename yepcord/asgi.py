@@ -1,6 +1,6 @@
 """
     YEPCord: Free open source selfhostable fully discord-compatible chat
-    Copyright (C) 2022-2024 RuslanUC
+    Copyright (C) 2022-2023 RuslanUC
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -21,6 +21,7 @@ from tortoise.contrib.quart import register_tortoise
 from quart_schema import RequestSchemaValidationError, QuartSchema
 import yepcord.rest_api.main as rest_api
 import yepcord.gateway.main as gateway
+import yepcord.voice_gateway.main as voice_gateway
 import yepcord.cdn.main as cdn
 import yepcord.remote_auth.main as remote_auth
 from yepcord.rest_api.routes import auth, connections
@@ -78,8 +79,8 @@ app.register_blueprint(other.other, url_prefix="/")
 app.route("/api/v9/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])(rest_api.other_api_endpoints)
 
 app.websocket("/gateway", strict_slashes=False)(gateway.ws_gateway)
-remote_auth.ws_gateway.__name__ = "ws_ra_gateway"
-app.websocket("/remote-auth", strict_slashes=False)(remote_auth.ws_gateway)
+app.websocket("/remote-auth", strict_slashes=False)(remote_auth.ws_gateway_remote_auth)
+app.websocket("/voice", strict_slashes=False)(voice_gateway.ws_gateway_voice)
 
 app.register_blueprint(cdn.cdn, url_prefix="/media")
 

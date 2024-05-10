@@ -123,6 +123,7 @@ class ConfigModel(BaseModel):
     MIGRATIONS_DIR: str = "./migrations"
     KEY: str = "XUJHVU0nUn51TifQuy9H1j0gId0JqhQ+PUz16a2WOXE="
     PUBLIC_HOST: str = "127.0.0.1:8080"
+    VOICE_GATEWAY_HOST: str = "127.0.0.1:8000/voice"
     GATEWAY_HOST: str = "127.0.0.1:8080/gateway"
     CDN_HOST: str = "127.0.0.1:8080/media"
     STORAGE: ConfigStorage = Field(default_factory=ConfigStorage)
@@ -133,6 +134,7 @@ class ConfigModel(BaseModel):
     BCRYPT_ROUNDS: int = 15
     CAPTCHA: ConfigCaptcha = Field(default_factory=ConfigCaptcha)
     CONNECTIONS: ConfigConnections = Field(default_factory=ConfigConnections)
+    VOICE_WORKERS: list[str] = Field(default_factory=list)
 
     @field_validator("KEY")
     def validate_key(cls, value: str) -> str:

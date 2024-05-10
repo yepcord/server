@@ -69,8 +69,8 @@ class Gifs(Singleton):
     def __init__(self, key: str = None, keep_searches: int = 100):
         self._key = key
         self._categories = []
-        self._last_searches = []
-        self._last_suggestions = []
+        self._last_searches: list[GifSearchResult] = []
+        self._last_suggestions: list[GifSuggestion] = []
         self._last_update = 0
         self._keep_searches = keep_searches
 

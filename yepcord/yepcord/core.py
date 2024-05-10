@@ -310,9 +310,8 @@ class Core(Singleton):
 
     async def getPrivateChannels(self, user: User, with_hidden: bool = False) -> list[Channel]:
         channels = await Channel.filter(recipients__id=user.id).select_related("owner").all()
-        channels = [
-            channel for channel in channels if not with_hidden and not await self.isDmChannelHidden(user, channel)
-        ]
+        if not with_hidden:
+            channels = [channel for channel in channels if not await self.isDmChannelHidden(user, channel)]
         return [await self.setLastMessageIdForChannel(channel) for channel in channels]
 
     async def getChannelMessages(self, channel: Channel, limit: int, before: int = 0, after: int = 0) -> list[Message]:

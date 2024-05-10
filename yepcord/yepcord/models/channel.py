@@ -72,7 +72,7 @@ class Channel(Model):
                     userdata = await recipient.data
                     recipients.append(userdata.ds_json)
 
-        base_data = {
+        base_data: dict = {
             "id": str(self.id),
             "type": self.type,
         }
