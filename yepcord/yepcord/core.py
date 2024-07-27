@@ -779,7 +779,7 @@ class Core(Singleton):
         # noinspection PyUnresolvedReferences
         return await GuildMember.filter(
             Q(guild=guild) &
-            (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))  #&
+            (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))  # &
             #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
         ).select_related("user").limit(limit).all()
 

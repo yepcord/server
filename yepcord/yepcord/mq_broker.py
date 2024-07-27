@@ -28,7 +28,7 @@ from faststream.kafka import KafkaBroker
 from faststream.nats import NatsBroker
 from websockets.client import connect
 from websockets.legacy.client import WebSocketClientProtocol
-from websockets.legacy.server import WebSocketServer
+from websockets.legacy.server import WebSocketServer, WebSocketServerProtocol
 from websockets.protocol import State
 from websockets.server import serve
 
@@ -38,7 +38,7 @@ from .config import Config
 class WsServer:
     def __init__(self, url: str):
         self._url = url
-        self._connections: set[WebSocketClientProtocol] = set()
+        self._connections: set[WebSocketServerProtocol] = set()
         self._server: WebSocketServer | None = None
         self._run_event = asyncio.Event()
 
@@ -48,7 +48,7 @@ class WsServer:
                 continue
             await connection.send(message)
 
-    async def _handle(self, client) -> None:
+    async def _handle(self, client: WebSocketServerProtocol) -> None:
         self._connections.add(client)
         async for message in client:
             await self._broadcast(message, exclude=client)
