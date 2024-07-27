@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Optional
-
 from tortoise import fields
 
 import yepcord.yepcord.models as models
@@ -28,6 +26,6 @@ class Reaction(Model):
     id: int = SnowflakeField(pk=True)
     message: models.Message = fields.ForeignKeyField("models.Message")
     user: models.User = fields.ForeignKeyField("models.User")
-    emoji: Optional[models.Emoji] = fields.ForeignKeyField("models.Emoji", on_delete=fields.SET_NULL, null=True,
-                                                           default=None)
-    emoji_name: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
+    emoji: models.Emoji | None = fields.ForeignKeyField("models.Emoji", on_delete=fields.SET_NULL, null=True,
+                                                        default=None)
+    emoji_name: str | None = fields.CharField(max_length=128, null=True, default=None)

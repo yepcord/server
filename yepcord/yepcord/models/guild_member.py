@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from tortoise import fields
 
@@ -35,7 +34,7 @@ class PermissionsChecker:
     def __init__(self, member: GuildMember):
         self.member = member
 
-    async def check(self, *check_permissions, channel: Optional[models.Channel]=None) -> None:
+    async def check(self, *check_permissions, channel: models.Channel | None = None) -> None:
         def _check(perms: int, perm: int) -> bool:
             return (perms & perm) == perm
         guild = self.member.guild
@@ -68,8 +67,7 @@ class PermissionsChecker:
             return False
         return True
 
-    async def canChangeRolesPositions(self, roles_changes: dict, current_roles: Optional[list[models.Role]]=None) -> (
-            bool):
+    async def canChangeRolesPositions(self, roles_changes: dict, current_roles: list[models.Role] | None = None) -> bool:
         guild = self.member.guild
         if self.member.user == guild.owner:
             return True
@@ -87,10 +85,10 @@ class GuildMember(Model):
     id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
-    avatar: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    communication_disabled_until: Optional[int] = fields.BigIntField(null=True, default=None)
+    avatar: str | None = fields.CharField(max_length=256, null=True, default=None)
+    communication_disabled_until: int | None = fields.BigIntField(null=True, default=None)
     flags: int = fields.BigIntField(default=0)
-    nick: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
+    nick: str | None = fields.CharField(max_length=128, null=True, default=None)
     mute: bool = fields.BooleanField(default=False)
     deaf: bool = fields.BooleanField(default=False)
     roles = fields.ManyToManyField("models.Role")
@@ -134,7 +132,7 @@ class GuildMember(Model):
         roles = await self.roles_w_default
         return roles[-1]
 
-    async def checkPermission(self, *check_permissions, channel: Optional[models.Channel] = None) -> None:
+    async def checkPermission(self, *check_permissions, channel: models.Channel | None = None) -> None:
         return await self.perm_checker.check(*check_permissions, channel=channel)
 
     @property

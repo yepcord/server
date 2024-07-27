@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 from json import loads, dumps
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from ..yepcord.config import Config
 
@@ -78,7 +78,7 @@ class Presences:
         await pipe.expire(f"presence_{user_id}", int(Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25))
         await pipe.execute()
 
-    async def get(self, user_id: int) -> Optional[Presence]:
+    async def get(self, user_id: int) -> Presence | None:
         if (presence := await self._gateway.redis.get(f"presence_{user_id}")) is None:
             return
         return Presence(user_id, **loads(presence))

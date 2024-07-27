@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Optional
-
 from tortoise import fields
 
 from ..config import Config
@@ -31,7 +29,7 @@ class Attachment(Model):
     message: models.Message = fields.ForeignKeyField("models.Message", null=True, default=None)
     filename: str = fields.CharField(max_length=128)
     size: str = fields.IntField()
-    content_type: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
+    content_type: str | None = fields.CharField(max_length=128, null=True, default=None)
     metadata: dict = fields.JSONField(default={})
 
     def ds_json(self) -> dict:

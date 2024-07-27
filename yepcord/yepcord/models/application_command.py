@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from tortoise import fields
 
 import yepcord.yepcord.models as models
@@ -31,14 +29,14 @@ from ..snowflake import Snowflake
 class ApplicationCommand(Model):
     id: int = SnowflakeField(pk=True)
     application: models.Application = fields.ForeignKeyField("models.Application")
-    guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", null=True, default=None)
+    guild: models.Guild | None = fields.ForeignKeyField("models.Guild", null=True, default=None)
     name: str = fields.CharField(min_length=1, max_length=32)
     description: str = fields.CharField(max_length=100)
     type: int = fields.IntField(default=1, validators=[ChoicesValidator(ApplicationCommandType.values_set())])
     name_localizations: dict = fields.JSONField(null=True, default=None)
     description_localizations: dict = fields.JSONField(null=True, default=None)
     options: list[dict] = fields.JSONField(default=[])
-    default_member_permissions: Optional[int] = fields.BigIntField(null=True, default=None)
+    default_member_permissions: int | None = fields.BigIntField(null=True, default=None)
     dm_permission: bool = fields.BooleanField(default=True)
     nsfw: bool = fields.BooleanField(default=False)
     version: int = fields.BigIntField(default=Snowflake.makeId)

@@ -19,7 +19,7 @@
 import asyncio
 import warnings
 from json import dumps, loads
-from typing import Union, Optional, Callable, Coroutine
+from typing import Callable, Coroutine
 
 from async_timeout import timeout
 from faststream.rabbit import RabbitBroker
@@ -28,7 +28,7 @@ from faststream.kafka import KafkaBroker
 from faststream.nats import NatsBroker
 from websockets.client import connect
 from websockets.legacy.client import WebSocketClientProtocol
-from websockets.legacy.server import WebSocketServer
+from websockets.legacy.server import WebSocketServer, WebSocketServerProtocol
 from websockets.protocol import State
 from websockets.server import serve
 
@@ -38,8 +38,8 @@ from .config import Config
 class WsServer:
     def __init__(self, url: str):
         self._url = url
-        self._connections: set[WebSocketClientProtocol] = set()
-        self._server: Optional[WebSocketServer] = None
+        self._connections: set[WebSocketServerProtocol] = set()
+        self._server: WebSocketServer | None = None
         self._run_event = asyncio.Event()
 
     async def _broadcast(self, message: str, exclude=None) -> None:  # pragma: no cover
@@ -48,7 +48,7 @@ class WsServer:
                 continue
             await connection.send(message)
 
-    async def _handle(self, client) -> None:
+    async def _handle(self, client: WebSocketServerProtocol) -> None:
         self._connections.add(client)
         async for message in client:
             await self._broadcast(message, exclude=client)
@@ -88,7 +88,7 @@ class WsServer:
 class WsBroker:
     # noinspection PyUnusedLocal
     def __init__(self, url: str = "ws://127.0.0.1:5055", **kwargs):
-        self._connection: Optional[WebSocketClientProtocol] = None
+        self._connection: WebSocketClientProtocol | None = None
         self._url = url
         self._handlers: dict[str, set[Coroutine]] = {}
         self._server = None
@@ -173,7 +173,7 @@ _brokers = {
 }
 
 
-def getBroker() -> Union[RabbitBroker, RedisBroker, KafkaBroker, NatsBroker, WsBroker]:
+def getBroker() -> RabbitBroker | RedisBroker | KafkaBroker | NatsBroker | WsBroker:
     broker_type = Config.MESSAGE_BROKER["type"].lower()
     assert broker_type in ("rabbitmq", "redis", "sqs", "kafka", "nats", "ws",), \
         "MESSAGE_BROKER.type must be one of ('rabbitmq', 'redis', 'sqs', 'kafka', 'nats', 'ws')"

@@ -16,7 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from os import urandom
-from typing import Optional
 
 from tortoise import fields
 
@@ -41,7 +40,7 @@ class Application(Model):
     name: str = fields.CharField(max_length=100)
     description: str = fields.CharField(default="", max_length=240)
     summary: str = fields.CharField(default="", max_length=240)
-    icon: Optional[str] = fields.CharField(null=True, default=None, max_length=64)
+    icon: str | None = fields.CharField(null=True, default=None, max_length=64)
     creator_monetization_state: int = fields.IntField(default=1)
     monetization_state: int = fields.IntField(default=1)
     discoverability_state: int = fields.IntField(default=1)
@@ -51,7 +50,7 @@ class Application(Model):
     hook: bool = fields.BooleanField(default=True)
     integration_public: bool = fields.BooleanField(default=True)
     integration_require_code_grant: bool = fields.BooleanField(default=True)
-    interactions_endpoint_url: Optional[str] = fields.CharField(null=True, default=None, max_length=2048)
+    interactions_endpoint_url: str | None = fields.CharField(null=True, default=None, max_length=2048)
     interactions_event_types: list = fields.JSONField(default=[])
     interactions_version: int = fields.IntField(default=1)
     redirect_uris: list[str] = fields.JSONField(default=[])
@@ -67,7 +66,7 @@ class Application(Model):
     secret: str = fields.CharField(default=gen_secret_key, max_length=128)
 
     async def ds_json(self) -> dict:
-        bot: Optional[models.Bot] = await models.Bot.get_or_none(application=self).select_related("user")
+        bot: models.Bot | None = await models.Bot.get_or_none(application=self).select_related("user")
 
         data = {
             "id": str(self.id),

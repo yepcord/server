@@ -17,7 +17,6 @@
 """
 
 from datetime import datetime
-from typing import Optional
 
 from tortoise import fields
 
@@ -37,7 +36,7 @@ class Invite(Model):
     max_age: int = fields.BigIntField(default=86400)
     max_uses: int = fields.BigIntField(default=0)
     uses: int = fields.BigIntField(default=0)
-    vanity_code: Optional[str] = fields.CharField(max_length=64, null=True, default=None)
+    vanity_code: str | None = fields.CharField(max_length=64, null=True, default=None)
 
     @property
     def created_at(self) -> datetime:

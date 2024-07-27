@@ -17,7 +17,6 @@
 """
 
 from time import time
-from typing import Optional
 
 from tortoise import fields
 
@@ -32,14 +31,14 @@ class Guild(Model):
     owner: models.User = fields.ForeignKeyField("models.User")
     name: str = fields.CharField(max_length=64)
     features: list = fields.JSONField(default=[])
-    icon: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    description: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    splash: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    discovery_splash: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    banner: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
+    icon: str | None = fields.CharField(max_length=256, null=True, default=None)
+    description: str | None = fields.CharField(max_length=256, null=True, default=None)
+    splash: str | None = fields.CharField(max_length=256, null=True, default=None)
+    discovery_splash: str | None = fields.CharField(max_length=256, null=True, default=None)
+    banner: str | None = fields.CharField(max_length=256, null=True, default=None)
     region: str = fields.CharField(max_length=64, default="deprecated")
-    afk_channel: Optional[int] = fields.BigIntField(null=True, default=None)
-    system_channel: Optional[int] = fields.BigIntField(null=True, default=None)
+    afk_channel: int | None = fields.BigIntField(null=True, default=None)
+    system_channel: int | None = fields.BigIntField(null=True, default=None)
     afk_timeout: int = fields.IntField(default=300)
     verification_level: int = fields.IntField(default=0)
     default_message_notifications: int = fields.IntField(default=0)
@@ -47,7 +46,7 @@ class Guild(Model):
     explicit_content_filter: int = fields.IntField(default=0)
     system_channel_flags: int = fields.BigIntField(default=0)
     max_members: int = fields.IntField(default=100)
-    vanity_url_code: Optional[str] = fields.CharField(max_length=64, null=True, default=None)
+    vanity_url_code: str | None = fields.CharField(max_length=64, null=True, default=None)
     preferred_locale: str = fields.CharField(max_length=8, default="en-US",
                                              validators=[ChoicesValidator(Locales.values_set())])
     premium_progress_bar_enabled: bool = fields.BooleanField(default=False)

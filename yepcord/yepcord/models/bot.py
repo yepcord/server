@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 from os import urandom
-from typing import Optional
 
 from tortoise import fields
 
@@ -46,7 +45,7 @@ class Bot(Model):
         return f"{b64encode(str(self.id))}.{self.token_secret}"
 
     @classmethod
-    async def from_token(cls, token: str) -> Optional[Bot]:
+    async def from_token(cls, token: str) -> Bot | None:
         token = models.Authorization.extract_token(token)
         if token is None:
             return

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import warnings
 from json import dumps as jdumps
-from typing import Optional, Union
 
 from quart import Websocket
 from redis.asyncio import Redis
@@ -47,7 +46,7 @@ class GatewayClient:
         self.z = getattr(ws, "zlib", None)
         self.id = self.user_id = None
         self.is_bot = False
-        self.cached_presence: Optional[Presence] = None
+        self.cached_presence: Presence | None = None
 
     @property
     def connected(self):
@@ -295,7 +294,7 @@ class Gateway:
         self.presences = Presences(self)
         self.ev = GatewayEvents(self)
 
-        self.redis: Union[Redis, FakeRedis, None] = None
+        self.redis: Redis | FakeRedis | None = None
 
     async def init(self):
         await self.broker.start()

@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from tortoise import fields
 
@@ -32,12 +31,12 @@ from ..snowflake import Snowflake
 
 class UserUtils:
     @staticmethod
-    async def get(user_id: int, allow_deleted: bool = True) -> Optional[User]:
+    async def get(user_id: int, allow_deleted: bool = True) -> User | None:
         kwargs = {} if allow_deleted else {"deleted": False}
         return await User.get_or_none(id=user_id, **kwargs)
 
     @staticmethod
-    async def getByUsername(username: str, discriminator: int) -> Optional[User]:
+    async def getByUsername(username: str, discriminator: int) -> User | None:
         data = await models.UserData.get_or_none(username=username, discriminator=discriminator).select_related("user")
         if data is not None:
             return data.user
@@ -70,7 +69,7 @@ class User(Model):
         return Snowflake.toDatetime(self.id)
 
     @property
-    async def mfa(self) -> Optional[MFA]:
+    async def mfa(self) -> MFA | None:
         settings = await self.settings
         mfa = MFA(settings.mfa, self.id)
         if mfa.valid:

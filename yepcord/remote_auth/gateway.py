@@ -21,7 +21,6 @@ from base64 import b64encode as _b64encode, b64decode as _b64decode
 from hashlib import sha256
 from os import urandom
 from time import time
-from typing import Optional
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
@@ -47,8 +46,8 @@ class GatewayClient:
         self.version = version
         self.gw = gateway
 
-        self.pubkey: Optional[RSAPublicKey] = None
-        self.fingerprint: Optional[str] = None
+        self.pubkey: RSAPublicKey | None = None
+        self.fingerprint: str | None = None
 
     def encrypt(self, data: bytes):
         return self.pubkey.encrypt(data, OAEP(mgf=MGF1(algorithm=SHA256()), algorithm=SHA256(), label=None))

@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from tortoise import fields
 
 import yepcord.yepcord.models as models
@@ -29,11 +27,11 @@ from ._utils import SnowflakeField, Model
 class Integration(Model):
     id: int = SnowflakeField(pk=True)
     application: models.Application = fields.ForeignKeyField("models.Application")
-    guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild")
+    guild: models.Guild | None = fields.ForeignKeyField("models.Guild")
     enabled: bool = fields.BooleanField(default=True)
     type: str = fields.CharField(default="discord", max_length=64)
     scopes: list[str] = fields.JSONField(default=[])
-    user: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
+    user: models.User | None = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
 
     async def ds_json(self, with_application=True, with_user=True, with_guild_id=False) -> dict:
         bot = await models.Bot.get(id=self.application.id).select_related("user")

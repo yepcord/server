@@ -16,7 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from datetime import datetime
-from typing import Optional
 
 from ..dependencies import DepApplication, DepUser, DepGuildO
 from ..models.applications import CreateApplication, UpdateApplication, UpdateApplicationBot, GetCommandsQS, \
@@ -145,10 +144,12 @@ async def get_application_commands(query_args: GetCommandsQS, application: Appli
 
 @applications.post("/<int:application_id>/commands")
 @applications.post("/<int:application_id>/guilds/<int:guild>/commands", body_cls=CreateCommand, allow_bots=True)
-async def create_update_application_command(data: CreateCommand, application: Application = DepApplication,
-                                            guild: Optional[Guild] = DepGuildO):
-    command = await (ApplicationCommand.get_or_none(application=application, name=data.name, type=data.type,
-                                                    guild=guild).select_related("application", "guild"))
+async def create_update_application_command(
+        data: CreateCommand, application: Application = DepApplication, guild: Guild | None = DepGuildO
+):
+    command = await ApplicationCommand.get_or_none(
+        application=application, name=data.name, type=data.type, guild=guild
+    ).select_related("application", "guild")
     if command is not None:
         cmd = data.model_dump(exclude={"name", "type"}, exclude_defaults=True)
         if cmd.get("options") is None or command.type != ApplicationCommandType.CHAT_INPUT: cmd["options"] = []
@@ -162,7 +163,8 @@ async def create_update_application_command(data: CreateCommand, application: Ap
 
 @applications.delete("/<int:application_id>/commands/<int:command_id>")
 @applications.delete("/<int:application_id>/guilds/<int:guild>/commands/<int:command_id>", allow_bots=True)
-async def delete_application_command(command_id: int, application: Application = DepApplication,
-                                     guild: Optional[Guild] = DepGuildO):
+async def delete_application_command(
+        command_id: int, application: Application = DepApplication, guild: Guild | None = DepGuildO
+):
     await ApplicationCommand.filter(application=application, id=command_id, guild=guild).delete()
     return "", 204

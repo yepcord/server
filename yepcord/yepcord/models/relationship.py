@@ -17,7 +17,6 @@
 """
 
 from __future__ import annotations
-from typing import Optional
 
 from tortoise.expressions import Q
 from tortoise import fields
@@ -51,7 +50,7 @@ class RelationshipUtils:
         return await Relationship.create(from_user=from_user, to_user=to_user, type=RelationshipType.PENDING)
 
     @staticmethod
-    async def accept(from_user: models.User, to_user: models.User) -> Optional[Relationship]:
+    async def accept(from_user: models.User, to_user: models.User) -> Relationship | None:
         if ((rel := await Relationship.get_or_none(from_user=from_user, to_user=to_user, type=RelationshipType.PENDING))
                 is None):
             return
@@ -131,7 +130,7 @@ class Relationship(Model):
     def other_user(self, current_user: models.User) -> models.User:
         return self.from_user if self.to_user == current_user else self.to_user
 
-    def discord_rel_type(self, current_user: models.User) -> Optional[int]:
+    def discord_rel_type(self, current_user: models.User) -> int | None:
         if self.type == RelationshipType.BLOCK and self.from_user.id != current_user.id:
             return None
         elif self.type == RelationshipType.BLOCK:
@@ -143,7 +142,7 @@ class Relationship(Model):
         elif self.to_user == current_user:
             return RelTypeDiscord.REQUEST_RECV
 
-    async def ds_json(self, current_user: models.User, with_data=False) -> Optional[dict]:
+    async def ds_json(self, current_user: models.User, with_data=False) -> dict | None:
         other_user = self.other_user(current_user)
         if (rel_type := self.discord_rel_type(current_user)) is None:
             return

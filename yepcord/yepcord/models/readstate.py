@@ -30,6 +30,11 @@ class ReadState(Model):
     last_read_id: int = fields.BigIntField()
     count: int = fields.IntField()
 
+    class Meta:
+        unique_together = (
+            ("channel", "user"),
+        )
+
     async def ds_json(self) -> dict:
         last_pin = await getCore().getLastPinnedMessage(self.channel)
         last_pin_ts = last_pin.pinned_timestamp.strftime("%Y-%m-%dT%H:%M:%S+00:00") if last_pin is not None else None

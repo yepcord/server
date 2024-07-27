@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Optional
-
 from tortoise import fields
 
 import yepcord.yepcord.models as models
@@ -27,7 +25,7 @@ from ._utils import SnowflakeField, Model
 class Emoji(Model):
     id: int = SnowflakeField(pk=True)
     name: str = fields.CharField(max_length=64)
-    user: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
+    user: models.User | None = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
     require_colons: bool = fields.BooleanField(default=True)
     managed: bool = fields.BooleanField(default=False)

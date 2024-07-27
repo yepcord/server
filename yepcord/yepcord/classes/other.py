@@ -23,7 +23,6 @@ from hmac import new
 from json import loads, dumps
 from struct import pack, unpack
 from time import time
-from typing import Union, Optional
 from zlib import compressobj, Z_FULL_FLUSH
 
 from mailers import Mailer
@@ -61,7 +60,7 @@ class JWT:
     """
 
     @staticmethod
-    def decode(token: str, secret: Union[str, bytes]) -> Optional[dict]:
+    def decode(token: str, secret: str | bytes) -> dict | None:
         try:
             header, payload, signature = token.split(".")
             header_dict = loads(b64decode(header).decode("utf8"))
@@ -79,11 +78,11 @@ class JWT:
             return loads(payload)
 
     @staticmethod
-    def encode(payload: dict, secret: Union[str, bytes], expire_timestamp: Union[int, float] = 0) -> str:
+    def encode(payload: dict, secret: str | bytes, expire_timestamp: int | float = 0) -> str:
         header = {
             "alg": "HS512",
             "typ": "JWT",
-            "exp": int(expire_timestamp)
+            "exp": int(expire_timestamp),
         }
         header = b64encode(dumps(header, separators=(',', ':')))
         payload = b64encode(dumps(payload, separators=(',', ':')))
@@ -131,7 +130,7 @@ class MFA:
         self.key = str(key).upper()
         self.uid = self.id = uid
 
-    def getCode(self, timestamp: Union[int, float] = None) -> str:
+    def getCode(self, timestamp: int | float | None = None) -> str:
         if timestamp is None:
             timestamp = time()
         key = b32decode(self.key.upper() + '=' * ((8 - len(self.key)) % 8))

@@ -17,7 +17,6 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 from urllib.parse import quote
 
 from httpx import AsyncClient
@@ -27,7 +26,7 @@ from yepcord.yepcord.errors import InvalidDataErr, Errors
 from yepcord.yepcord.models import User, ConnectedAccount
 
 
-def get_service_settings(service_name: str, check_field: Optional[str] = None) -> dict:
+def get_service_settings(service_name: str, check_field: str | None = None) -> dict:
     settings = Config.CONNECTIONS[service_name]
     if check_field is not None and settings[check_field] is None:
         raise InvalidDataErr(400, Errors.make(50035, {"provider_id": {
@@ -37,7 +36,7 @@ def get_service_settings(service_name: str, check_field: Optional[str] = None) -
     return settings
 
 
-def parse_state(state: str) -> tuple[Optional[int], Optional[int]]:
+def parse_state(state: str) -> tuple[int, int] | tuple[None, None]:
     state = state.split(".")
     if len(state) != 2:
         return None, None
@@ -71,14 +70,14 @@ class BaseConnection(ABC):
     def exchange_code_req(cls, code: str, settings: dict[str, str]) -> tuple[str, dict]: ...
 
     @classmethod
-    async def get_connection_from_state(cls, state: str) -> Optional[ConnectedAccount]:
+    async def get_connection_from_state(cls, state: str) -> ConnectedAccount | None:
         user_id, state = parse_state(state)
         if user_id is None:
             return
         return await ConnectedAccount.get_or_none(user__id=user_id, state=state, verified=False, type=cls.SERVICE_NAME)
 
     @classmethod
-    async def exchange_code(cls, code: str) -> Optional[str]:
+    async def exchange_code(cls, code: str) -> str | None:
         settings = get_service_settings(cls.SERVICE_NAME, "client_id")
 
         async with AsyncClient() as cl:

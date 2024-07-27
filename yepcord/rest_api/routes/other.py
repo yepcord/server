@@ -30,7 +30,7 @@ async def api_auth_locationmetadata():
     return {
         "consent_required": False,
         "country_code": "US",
-        "promotional_email_opt_in": {"required": True, "pre_checked": False}
+        "promotional_email_opt_in": {"required": False, "pre_checked": False}
     }
 
 
@@ -248,6 +248,5 @@ async def instance_info():
             "OLD_USERNAMES",
             "REMOTE_AUTH_V1",
             "REMOTE_AUTH_V2",
-            "SETTINGS_PROTO",
         ],
     }

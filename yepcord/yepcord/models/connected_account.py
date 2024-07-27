@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Optional
-
 from tortoise import fields
 
 from ._utils import ChoicesValidator, SnowflakeField, Model
@@ -38,9 +36,9 @@ class ConnectedAccount(Model):
     visibility: int = fields.IntField(default=1, validators=[ChoicesValidator({0, 1})])
     metadata_visibility: int = fields.IntField(default=1, validators=[ChoicesValidator({0, 1})])
     metadata: dict = fields.JSONField(default={})
-    access_token: Optional[str] = fields.TextField(null=True, default=None)
-    refresh_token: Optional[str] = fields.TextField(null=True, default=None)
-    token_expires_at: Optional[int] = fields.BigIntField(null=True, default=None)
+    access_token: str | None = fields.TextField(null=True, default=None)
+    refresh_token: str | None = fields.TextField(null=True, default=None)
+    token_expires_at: int | None = fields.BigIntField(null=True, default=None)
     state: int = fields.BigIntField(default=Snowflake.makeId)
 
     def ds_json(self) -> dict:

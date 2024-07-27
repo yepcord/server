@@ -5,7 +5,7 @@ Unofficial discord backend implementation in python.
 
 # Setup
 **Requirements:**
- - Python 3.9+
+ - Python 3.10+
  - Poetry (Optional)
  
 **Setup**:

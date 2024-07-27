@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from functools import wraps
 from json import loads
-from typing import Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from PIL import Image
 from async_timeout import timeout
@@ -39,7 +39,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from .models.channels import MessageCreate
 
 
-async def getSessionFromToken(token: str) -> Optional[Union[Session, Authorization, Bot]]:
+async def getSessionFromToken(token: str) -> Session | Authorization | Bot | None:
     if not token:
         return
 
@@ -99,7 +99,7 @@ async def get_multipart_json() -> dict:
         raise InvalidDataErr(400, Errors.make(50035))
 
 
-async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[dict, list[Attachment]]:
+async def processMessageData(data: dict | None, channel: Channel) -> tuple[dict, list[Attachment]]:
     attachments = []
     if data is None:  # Multipart request
         if request.content_length is not None and request.content_length > 1024 * 1024 * 100:
@@ -208,7 +208,7 @@ async def validate_reply(data: MessageCreate, channel: Channel) -> int:
     return message_type
 
 
-async def processMessage(data: dict, channel: Channel, author: Optional[User], validator_class,
+async def processMessage(data: dict, channel: Channel, author: User | None, validator_class,
                          webhook: Webhook=None) -> models.Message:
     data, attachments = await processMessageData(data, channel)
     w_author = {}

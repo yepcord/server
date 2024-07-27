@@ -2,7 +2,6 @@ from asyncio import sleep, set_event_loop, new_event_loop
 from collections import defaultdict
 from threading import Thread
 from time import time
-from typing import Optional, Union
 
 
 class Value:
@@ -22,7 +21,7 @@ class FakeRedis:
         self._kv: dict[str, Value] = {}
         self._sets: dict[str, set] = defaultdict(set)
         self._exp = defaultdict(set)
-        self._thread: Union[Thread, None] = None
+        self._thread: Thread | None = None
 
     def run(self):
         self._thread = Thread(target=self._run_thread, daemon=True)
@@ -71,7 +70,7 @@ class FakeRedis:
         val.ex = int(time() + ex)
         self._exp[val.ex // self._interval].add(key)
 
-    async def get(self, key: str) -> Optional[str]:
+    async def get(self, key: str) -> str | None:
         val = self._kv.pop(key, None)
         if val is None or val.expired():
             return

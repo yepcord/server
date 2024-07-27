@@ -17,7 +17,7 @@
 """
 
 from time import time
-from typing import Union, Optional, Callable, Awaitable, TypeVar
+from typing import Callable, Awaitable, TypeVar
 
 from fast_depends import Depends
 from quart import request
@@ -31,12 +31,12 @@ from yepcord.yepcord.models import Session, Authorization, Bot, User, Channel, M
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import b64decode
 
-SessionsType = Union[Session, Authorization, Bot]
+SessionsType = Session | Authorization | Bot
 T = TypeVar("T")
 P = ParamSpec("P")
 
 
-def depRaise(func: Callable[P, Awaitable[Optional[T]]], status_code: int, error: dict) -> Callable[P, Awaitable[T]]:
+def depRaise(func: Callable[P, Awaitable[T | None]], status_code: int, error: dict) -> Callable[P, Awaitable[T]]:
     async def wrapper(res=Depends(func)):
         if res is None:
             raise InvalidDataErr(status_code, error)
@@ -45,7 +45,7 @@ def depRaise(func: Callable[P, Awaitable[Optional[T]]], status_code: int, error:
     return wrapper
 
 
-async def depSessionO() -> Optional[SessionsType]:
+async def depSessionO() -> SessionsType | None:
     if session := await getSessionFromToken(request.headers.get("Authorization", "")):
         return session
 
@@ -57,7 +57,7 @@ async def _depUser_with_user(session: SessionsType = Depends(depSession)) -> Use
     return session.user
 
 
-async def _depUser_without_user(session: Optional[SessionsType] = Depends(depSessionO)) -> Optional[User]:
+async def _depUser_without_user(session: SessionsType | None = Depends(depSessionO)) -> User | None:
     if session:
         return session.user
 
@@ -66,7 +66,7 @@ def depUser(allow_without_user: bool = False):
     return _depUser_without_user if allow_without_user else _depUser_with_user
 
 
-async def depChannelO(channel_id: Optional[int] = None, user: User = Depends(depUser())) -> Optional[Channel]:
+async def depChannelO(channel_id: int | None = None, user: User = Depends(depUser())) -> Channel | None:
     if (channel := await getCore().getChannel(channel_id)) is None:
         return
     if not await getCore().getUserByChannel(channel, user.id):
@@ -75,8 +75,7 @@ async def depChannelO(channel_id: Optional[int] = None, user: User = Depends(dep
     return channel
 
 
-async def depChannelONoAuth(channel_id: Optional[int] = None, user: Optional[User] = Depends(depUser(True))) \
-        -> Optional[Channel]:
+async def depChannelONoAuth(channel_id: int | None = None, user: User | None = Depends(depUser(True))) -> Channel | None:
     if user is None:
         return
     return await depChannelO(channel_id, user)
@@ -85,7 +84,7 @@ async def depChannelONoAuth(channel_id: Optional[int] = None, user: Optional[Use
 depChannel = depRaise(depChannelO, 404, Errors.make(10003))
 
 
-async def depWebhookO(webhook: Optional[int] = None, token: Optional[str] = None) -> Optional[Webhook]:
+async def depWebhookO(webhook: int | None = None, token: str | None = None) -> Webhook | None:
     if webhook is None or token is None:
         return
     webhook = await Webhook.get_or_none(id=webhook).select_related("channel")
@@ -99,10 +98,10 @@ depWebhook = depRaise(depWebhookO, 404, Errors.make(10015))
 
 async def depMessageO(
         message: int,
-        channel: Optional[Channel] = Depends(depChannelONoAuth),
-        webhook: Optional[Webhook] = Depends(depWebhookO),
-        user: Optional[User] = Depends(depUser(True)),
-) -> Optional[Message]:
+        channel: Channel | None = Depends(depChannelONoAuth),
+        webhook: Webhook | None = Depends(depWebhookO),
+        user: User | None = Depends(depUser(True)),
+) -> Message | None:
     if webhook:
         message = await Message.get_or_none(id=message, webhook_id=webhook.id).select_related(*Message.DEFAULT_RELATED)
     elif channel is not None and user is not None:
@@ -119,7 +118,7 @@ async def depMessageO(
 depMessage = depRaise(depMessageO, 404, Errors.make(10008))
 
 
-async def depInvite(invite: Optional[str] = None) -> Invite:
+async def depInvite(invite: str | None = None) -> Invite:
     try:
         invite_id = int.from_bytes(b64decode(invite), "big")
         if not (inv := await getCore().getInvite(invite_id)):
@@ -132,7 +131,7 @@ async def depInvite(invite: Optional[str] = None) -> Invite:
     return invite
 
 
-async def depGuildO(guild: Optional[int] = None, user: User = Depends(depUser())) -> Optional[Guild]:
+async def depGuildO(guild: int | None = None, user: User = Depends(depUser())) -> Guild | None:
     if (guild := await getCore().getGuild(guild)) is None:
         return
     if not await GuildMember.filter(guild=guild, user=user).exists():

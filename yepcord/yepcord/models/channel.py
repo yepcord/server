@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from tortoise import fields
 from tortoise.expressions import Q
 from tortoise.fields import SET_NULL
@@ -33,24 +31,24 @@ from ._utils import SnowflakeField, Model
 class Channel(Model):
     id: int = SnowflakeField(pk=True)
     type: int = fields.IntField()
-    guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", null=True, default=None)
-    position: Optional[int] = fields.IntField(null=True, default=None)
-    name: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
-    topic: Optional[str] = fields.CharField(max_length=1536, null=True, default=None)
-    nsfw: Optional[bool] = fields.BooleanField(null=True, default=None)
-    bitrate: Optional[int] = fields.IntField(null=True, default=None)
-    user_limit: Optional[int] = fields.IntField(null=True, default=None)
-    rate_limit: Optional[int] = fields.IntField(null=True, default=None)
+    guild: models.Guild | None = fields.ForeignKeyField("models.Guild", null=True, default=None)
+    position: int | None = fields.IntField(null=True, default=None)
+    name: str | None = fields.CharField(max_length=128, null=True, default=None)
+    topic: str | None = fields.CharField(max_length=1536, null=True, default=None)
+    nsfw: bool | None = fields.BooleanField(null=True, default=None)
+    bitrate: int | None = fields.IntField(null=True, default=None)
+    user_limit: int | None = fields.IntField(null=True, default=None)
+    rate_limit: int | None = fields.IntField(null=True, default=None)
     recipients = fields.ManyToManyField("models.User", null=True, default=None, related_name="recipients")
-    icon: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    owner: Optional[models.User] = fields.ForeignKeyField("models.User", null=True, default=None, related_name="owner")
-    application_id: Optional[int] = fields.BigIntField(null=True, default=None)
-    parent: Optional[Channel] = fields.ForeignKeyField("models.Channel", on_delete=SET_NULL, null=True,
-                                                       default=None)
-    rtc_region: Optional[str] = fields.CharField(max_length=64, null=True, default=None)
-    video_quality_mode: Optional[int] = fields.IntField(null=True, default=None)
-    default_auto_archive: Optional[int] = fields.IntField(null=True, default=None)
-    flags: Optional[int] = fields.IntField(null=True, default=0)
+    icon: str | None = fields.CharField(max_length=256, null=True, default=None)
+    owner: models.User | None = fields.ForeignKeyField("models.User", null=True, default=None, related_name="owner")
+    application_id: int | None = fields.BigIntField(null=True, default=None)
+    parent: Channel | None = fields.ForeignKeyField("models.Channel", on_delete=SET_NULL, null=True,
+                                                    default=None)
+    rtc_region: str | None = fields.CharField(max_length=64, null=True, default=None)
+    video_quality_mode: int | None = fields.IntField(null=True, default=None)
+    default_auto_archive: int | None = fields.IntField(null=True, default=None)
+    flags: int | None = fields.IntField(null=True, default=0)
 
     last_message_id: int = None
 
@@ -175,7 +173,7 @@ class Channel(Model):
     async def messages(self, limit: int=50, before: int=0, after: int=0) -> list[models.Message]:
         return await getCore().getChannelMessages(self, limit, before, after)
 
-    async def other_user(self, current_user: models.User) -> Optional[models.User]:
+    async def other_user(self, current_user: models.User) -> models.User | None:
         if self.type != ChannelType.DM:
             return
         return await self.recipients.filter(~Q(id=current_user.id)).get_or_none()

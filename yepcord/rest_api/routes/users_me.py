@@ -19,7 +19,6 @@
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from random import choice
 from time import time
-from typing import Union, Optional
 
 from ..dependencies import DepUser, DepSession, DepGuildMember, DepGuild, DepUserO
 from ..models.users_me import UserUpdate, UserProfileUpdate, ConsentSettingsUpdate, SettingsUpdate, PutNote, \
@@ -46,7 +45,7 @@ users_me = YBlueprint('users_@me', __name__)
 
 
 @users_me.get("/", strict_slashes=False, allow_bots=True, oauth_scopes=["identify"])
-async def get_me(session: Union[Session, Authorization, Bot] = DepSession, user: User = DepUser):
+async def get_me(session: Session | Authorization | Bot = DepSession, user: User = DepUser):
     userdata = await user.data
     return await userdata.ds_json_full(isinstance(session, Authorization) and "email" not in session.scope_set)
 
@@ -447,7 +446,7 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User =
 
 
 @users_me.post("/remote-auth/login", body_cls=RemoteAuthLogin)
-async def remote_auth_login(data: RemoteAuthLogin, user: Optional[User] = DepUserO):
+async def remote_auth_login(data: RemoteAuthLogin, user: User | None = DepUserO):
     if data.fingerprint is not None and user is not None:
         ra_session = await RemoteAuthSession.get_or_none(fingerprint=data.fingerprint, user=None,
                                                          expires_at__gt=int(time()))

@@ -17,7 +17,6 @@
 """
 
 from datetime import datetime
-from typing import Optional, Union
 
 from tortoise import fields
 
@@ -25,7 +24,7 @@ from ..ctx import getCore
 from ..enums import ChannelType
 from ._utils import SnowflakeField, Model
 from ..snowflake import Snowflake
-from ..utils import b64encode, int_size, NoneType
+from ..utils import b64encode, int_size
 
 import yepcord.yepcord.models as models
 
@@ -34,11 +33,11 @@ class GuildTemplate(Model):
     id: int = SnowflakeField(pk=True)
     name: str = fields.CharField(max_length=64)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
-    description: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
+    description: str | None = fields.CharField(max_length=128, null=True, default=None)
     usage_count: int = fields.BigIntField(default=0)
-    creator: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
+    creator: models.User | None = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
     serialized_guild: dict = fields.JSONField(default={})
-    updated_at: Optional[datetime] = fields.DatetimeField(null=True, default=None)
+    updated_at: datetime | None = fields.DatetimeField(null=True, default=None)
     is_dirty: bool = fields.BooleanField(default=False)
 
     @property
@@ -71,7 +70,7 @@ class GuildTemplate(Model):
 
     @staticmethod
     async def serialize_guild(guild: models.Guild) -> dict:
-        replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None}
+        replaced_ids: dict[int | None, int | None] = {None: None}
         last_replaced_id = 0
         serialized_roles = []
         serialized_channels = []
