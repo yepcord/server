@@ -2515,4 +2515,4 @@ python-dateutil = ">=2.8.2,<3.0.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "3eca5e1e72c325ec204be76a94e311994a247da2313935d94b97b568526ff3df"
+content-hash = "bab0cbc3b9a9a39773d578a56b358efd9099b31b394f9027b94f079d13acb3a6"
