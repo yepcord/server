@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from tortoise.expressions import RawSQL
 
@@ -44,9 +43,11 @@ class GatewayDispatcher(Singleton):
         await self.broker.close()
         return self
 
-    async def dispatch(self, event: DispatchEvent, user_ids: Optional[list[int]]=None, guild_id: Optional[int]=None,
-                       role_ids: Optional[list[int]]=None, session_id: Optional[str]=None,
-                       channel: Optional[Channel] = None, permissions: Optional[int] = 0) -> None:
+    async def dispatch(
+            self, event: DispatchEvent, user_ids: list[int] | None = None, guild_id: int | None = None,
+            role_ids: list[int] | None = None, session_id: str | None = None, channel: Channel | None = None,
+            permissions: int | None = 0
+    ) -> None:
         if not user_ids and not guild_id and not role_ids and not session_id and not channel:
             return
         data = {

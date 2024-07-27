@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Optional
-
 from tortoise import fields
 
 import yepcord.yepcord.models as models
@@ -27,12 +25,12 @@ from ._utils import SnowflakeField, Model
 class Sticker(Model):
     id: int = SnowflakeField(pk=True)
     name: str = fields.CharField(max_length=64)
-    user: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
+    user: models.User | None = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
     type: int = fields.IntField()
     format: int = fields.IntField()
-    description: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
-    tags: Optional[str] = fields.CharField(max_length=64, null=True, default=None)
+    description: str | None = fields.CharField(max_length=128, null=True, default=None)
+    tags: str | None = fields.CharField(max_length=64, null=True, default=None)
 
     async def ds_json(self, with_user: bool=True) -> dict:
         data = {

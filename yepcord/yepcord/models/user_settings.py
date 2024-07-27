@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Any
+from typing import Any
 
 from google.protobuf.wrappers_pb2 import UInt32Value, BoolValue, StringValue, Int32Value
 from protobuf3_to_dict import protobuf_to_dict
@@ -76,7 +76,7 @@ class UserSettings(Model):
     dismissed_contents: str = fields.CharField(max_length=64, default="510109000002000080")
     status: str = fields.CharField(max_length=32, default="online",
                                    validators=[ChoicesValidator({"online", "idle", "dnd", "offline", "invisible"})])
-    custom_status: Optional[dict] = fields.JSONField(null=True, default=None)
+    custom_status: dict | None = fields.JSONField(null=True, default=None)
     activity_restricted_guild_ids: list = fields.JSONField(default=[])
     friend_source_flags: dict = fields.JSONField(default={"all": True})
     guild_positions: list = fields.JSONField(default=[])

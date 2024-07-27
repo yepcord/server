@@ -67,5 +67,5 @@
     - [x] Create, edit, delete
     - [ ] Commands:
       - [x] Slash commands
-      - [ ] User commands (?)
-      - [ ] Message commands (?)
+      - [ ] User commands (?, I forgot)
+      - [ ] Message commands (?, I forgot)

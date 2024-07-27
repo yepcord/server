@@ -17,7 +17,6 @@
 """
 from __future__ import annotations
 from os import urandom
-from typing import Optional
 
 from tortoise import fields
 
@@ -37,21 +36,21 @@ class Interaction(Model):
     application: models.Application = fields.ForeignKeyField("models.Application")
     user: models.User = fields.ForeignKeyField("models.User")
     type: int = fields.IntField(choices=InteractionType.values_set())
-    data: Optional[dict] = fields.JSONField(default=None)
+    data: dict | None = fields.JSONField(default=None)
     token: str = fields.CharField(max_length=128, default=gen_interaction_token)
-    guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", on_delete=fields.SET_NULL,
-                                                           null=True, default=None)
-    channel: Optional[models.Channel] = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
-                                                               null=True, default=None)
-    message_id: Optional[int] = fields.BigIntField(null=True, default=None)
-    locale: Optional[str] = fields.CharField(max_length=8, null=True, default=None)
-    guild_locale: Optional[str] = fields.CharField(max_length=8, null=True, default=None)
-    nonce: Optional[int] = fields.BigIntField(null=True, default=None)
+    guild: models.Guild | None = fields.ForeignKeyField("models.Guild", on_delete=fields.SET_NULL,
+                                                        null=True, default=None)
+    channel: models.Channel | None = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
+                                                            null=True, default=None)
+    message_id: int | None = fields.BigIntField(null=True, default=None)
+    locale: str | None = fields.CharField(max_length=8, null=True, default=None)
+    guild_locale: str | None = fields.CharField(max_length=8, null=True, default=None)
+    nonce: int | None = fields.BigIntField(null=True, default=None)
     session_id: str = fields.CharField(max_length=64)
     status: int = fields.IntField(choices=InteractionStatus.values_set(), default=InteractionStatus.PENDING)
-    command: Optional[models.ApplicationCommand] = fields.ForeignKeyField("models.ApplicationCommand", null=True,
-                                                                          on_delete=fields.SET_NULL, default=None)
-    saved_command_info: Optional[dict] = fields.JSONField(null=True, default=None)
+    command: models.ApplicationCommand | None = fields.ForeignKeyField("models.ApplicationCommand", null=True,
+                                                                       on_delete=fields.SET_NULL, default=None)
+    saved_command_info: dict | None = fields.JSONField(null=True, default=None)
 
     async def ds_json(self, with_user=False, with_token=False, resolved: dict = None) -> dict:
         data = {
@@ -101,7 +100,7 @@ class Interaction(Model):
         return f"int___{b64encode(f'interaction:{self.id}:{self.token}')}"
 
     @classmethod
-    async def from_token(cls, token: str) -> Optional[Interaction]:
+    async def from_token(cls, token: str) -> Interaction | None:
         if not token.startswith("int___"):
             return
         token = token[6:]

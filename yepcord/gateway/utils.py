@@ -16,7 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from enum import Enum, auto
-from typing import Optional
 
 from redis.asyncio import Redis
 
@@ -38,7 +37,7 @@ class TokenType(Enum):
     BOT = auto()
 
 
-def get_token_type(token: str) -> Optional[TokenType]:
+def get_token_type(token: str) -> TokenType | None:
     if not token:
         return
 
@@ -55,7 +54,7 @@ def get_token_type(token: str) -> Optional[TokenType]:
     return TokenType.USER if len(token) == 3 else TokenType.BOT
 
 
-async def init_redis_pool() -> Optional[Redis]:
+async def init_redis_pool() -> Redis | None:
     if not Config.REDIS_URL:
         return
     return Redis.from_url(

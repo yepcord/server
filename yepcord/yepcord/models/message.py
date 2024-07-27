@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from tortoise import fields
 
@@ -34,29 +33,29 @@ class Message(Model):
     id: int = SnowflakeField(pk=True)
     channel: models.Channel = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL, null=True,
                                                      related_name="channel")
-    author: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
-    content: Optional[str] = fields.TextField(max_length=2000, null=True, default=None)
-    edit_timestamp: Optional[datetime] = fields.DatetimeField(null=True, default=None)
+    author: models.User | None = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
+    content: str | None = fields.TextField(max_length=2000, null=True, default=None)
+    edit_timestamp: datetime | None = fields.DatetimeField(null=True, default=None)
     embeds: list = fields.JSONField(default=[])
     pinned_timestamp: datetime = fields.DatetimeField(null=True, default=None)
-    webhook_id: Optional[int] = fields.BigIntField(null=True, default=None)
+    webhook_id: int | None = fields.BigIntField(null=True, default=None)
     webhook_author: dict = fields.JSONField(default={})
-    application: Optional[int] = fields.BigIntField(null=True, default=None)
+    application: int | None = fields.BigIntField(null=True, default=None)
     type: int = fields.IntField(default=0)
     flags: int = fields.IntField(default=0)
     message_reference: dict = fields.JSONField(default={})
-    thread: Optional[models.Channel] = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
-                                                              null=True, default=None, related_name="thread")
+    thread: models.Channel | None = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
+                                                           null=True, default=None, related_name="thread")
     components: list = fields.JSONField(default=[])
     sticker_items: list = fields.JSONField(default=[])
     stickers: list = fields.JSONField(default=[])
     extra_data: dict = fields.JSONField(default={})
-    guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", on_delete=fields.SET_NULL,
-                                                           null=True, default=None)
-    interaction: Optional[models.Interaction] = fields.ForeignKeyField("models.Interaction", null=True, default=None)
+    guild: models.Guild | None = fields.ForeignKeyField("models.Guild", on_delete=fields.SET_NULL,
+                                                        null=True, default=None)
+    interaction: models.Interaction | None = fields.ForeignKeyField("models.Interaction", null=True, default=None)
     ephemeral: bool = fields.BooleanField(default=False)
 
-    nonce: Optional[str] = None
+    nonce: str | None = None
     DEFAULT_RELATED = ("thread", "thread__guild", "thread__parent", "thread__owner", "channel", "author", "guild",
                        "interaction", "interaction__user", "interaction__command", "interaction__application")
 

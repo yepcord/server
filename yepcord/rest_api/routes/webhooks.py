@@ -16,7 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from datetime import datetime
-from typing import Optional
 
 from quart import request
 
@@ -38,7 +37,7 @@ webhooks = YBlueprint('webhooks', __name__)
 
 @webhooks.delete("/<int:webhook>")
 @webhooks.delete("/<int:webhook>/<string:token>", allow_bots=True)
-async def delete_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
+async def delete_webhook(webhook: int, user: User | None = DepUserO, token: str | None=None):
     if webhook := await getCore().getWebhook(webhook):
         if webhook.token != token:
             guild = webhook.channel.guild
@@ -54,7 +53,7 @@ async def delete_webhook(webhook: int, user: Optional[User] = DepUserO, token: O
 
 @webhooks.patch("/<int:webhook>")
 @webhooks.patch("/<int:webhook>/<string:token>", body_cls=WebhookUpdate, allow_bots=True)
-async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
+async def edit_webhook(data: WebhookUpdate, webhook: int, user: User | None = DepUserO, token: str | None = None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     channel = webhook.channel
@@ -90,7 +89,7 @@ async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] =
 
 @webhooks.get("/<int:webhook>")
 @webhooks.get("/<int:webhook>/<string:token>", allow_bots=True)
-async def get_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
+async def get_webhook(webhook: int, user: User | None = DepUserO, token: str | None = None):
     if not (webhook := await getCore().getWebhook(webhook)):
         raise InvalidDataErr(404, Errors.make(10015))
     if webhook.token != token:

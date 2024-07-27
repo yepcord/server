@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from os import urandom
 from time import time
-from typing import Optional
 
 from tortoise import fields
 
@@ -42,12 +41,12 @@ class Authorization(Model):
     id: int = SnowflakeField(pk=True)
     user: User = fields.ForeignKeyField("models.User")
     application: models.Application = fields.ForeignKeyField("models.Application")
-    guild: Optional[Guild] = fields.ForeignKeyField("models.Guild", null=True, default=None)
+    guild: Guild | None = fields.ForeignKeyField("models.Guild", null=True, default=None)
     scope: str = fields.CharField(max_length=1024)
     secret: str = fields.CharField(max_length=128, default=gen_token_secret)
     refresh_token: str = fields.CharField(max_length=128, default=gen_token_secret, null=True)
     expires_at: int = fields.BigIntField(default=lambda: int(time() + 60 * 3))
-    auth_code: Optional[str] = fields.CharField(max_length=128, null=True, default=gen_secret_key)
+    auth_code: str | None = fields.CharField(max_length=128, null=True, default=gen_secret_key)
 
     @property
     def token(self) -> str:
@@ -66,7 +65,7 @@ class Authorization(Model):
         return set(self.scope.split(" "))
 
     @staticmethod
-    def extract_token(token: str) -> Optional[tuple[int, str]]:
+    def extract_token(token: str) -> tuple[int, str] | None:
         token = token.split(".")
         if len(token) != 2:
             return
@@ -79,7 +78,7 @@ class Authorization(Model):
         return auth_id, secret
 
     @classmethod
-    async def from_token(cls, token: str) -> Optional[Authorization]:
+    async def from_token(cls, token: str) -> Authorization | None:
         token = Authorization.extract_token(token)
         if token is None:
             return

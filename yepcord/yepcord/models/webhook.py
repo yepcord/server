@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Optional
-
 from tortoise import fields
 
 import yepcord.yepcord.models as models
@@ -30,9 +28,9 @@ class Webhook(Model):
     name: str = fields.CharField(max_length=128)
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
     user: models.User = fields.ForeignKeyField("models.User")
-    application_id: Optional[int] = fields.BigIntField(null=True, default=None)
-    avatar: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    token: Optional[str] = fields.CharField(max_length=128)
+    application_id: int | None = fields.BigIntField(null=True, default=None)
+    avatar: str | None = fields.CharField(max_length=256, null=True, default=None)
+    token: str | None = fields.CharField(max_length=128)
 
     async def ds_json(self) -> dict:
         userdata = await self.user.data

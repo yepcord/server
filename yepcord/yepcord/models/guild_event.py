@@ -17,7 +17,6 @@
 """
 
 from datetime import datetime
-from typing import Optional
 
 from tortoise import fields
 
@@ -31,18 +30,18 @@ class GuildEvent(Model):
     id: int = SnowflakeField(pk=True)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
     creator: models.User = fields.ForeignKeyField("models.User")
-    channel: Optional[models.Channel] = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
-                                                               null=True, default=None)
+    channel: models.Channel | None = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL,
+                                                            null=True, default=None)
     name: str = fields.CharField(max_length=64)
-    description: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
+    description: str | None = fields.CharField(max_length=128, null=True, default=None)
     start: datetime = fields.DatetimeField()
-    end: Optional[datetime] = fields.DatetimeField(null=True, default=None)
+    end: datetime | None = fields.DatetimeField(null=True, default=None)
     privacy_level: int = fields.IntField(default=2)
     status: int = fields.IntField(default=1)
     entity_type: int = fields.IntField()
-    entity_id: Optional[int] = fields.BigIntField(null=True, default=None)
+    entity_id: int | None = fields.BigIntField(null=True, default=None)
     entity_metadata: dict = fields.JSONField(default={}, null=True)
-    image: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
+    image: str | None = fields.CharField(max_length=256, null=True, default=None)
     subscribers = fields.ManyToManyField("models.GuildMember")
 
     async def ds_json(self, with_user: bool = False, with_user_count: bool = False) -> dict:

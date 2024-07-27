@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Optional
-
 from tortoise import fields
 
 import yepcord.yepcord.models as models
@@ -34,10 +32,10 @@ class Role(Model):
     hoist: bool = fields.BooleanField(default=False)
     managed: bool = fields.BooleanField(default=False)
     mentionable: bool = fields.BooleanField(default=False)
-    icon: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    unicode_emoji: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
+    icon: str | None = fields.CharField(max_length=256, null=True, default=None)
+    unicode_emoji: str | None = fields.CharField(max_length=256, null=True, default=None)
     flags: int = fields.BigIntField(default=0)
-    tags: Optional[dict] = fields.JSONField(default=None, null=True)
+    tags: dict | None = fields.JSONField(default=None, null=True)
 
     guildmembers: fields.ReverseRelation[models.GuildMember]
 

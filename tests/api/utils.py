@@ -3,7 +3,6 @@ from base64 import urlsafe_b64encode, b64decode
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from hashlib import sha256
-from typing import Optional, Union
 
 from quart.typing import TestWebsocketConnectionProtocol
 
@@ -17,7 +16,7 @@ from tests.yep_image import YEP_IMAGE
 TestClientType = _app.test_client_class
 
 
-async def create_user(app: TestClientType, email: str, password: str, username: str, *, exp_code: int=200) -> Optional[str]:
+async def create_user(app: TestClientType, email: str, password: str, username: str, *, exp_code: int=200) -> str | None:
     response = await app.post('/api/v9/auth/register', json={
         "username": username,
         "email": email,
@@ -254,9 +253,9 @@ class RemoteAuthClient:
     def __init__(self, on_fingerprint=None, on_userdata=None, on_token=None, on_cancel=None, on_pending_login=None):
         from cryptography.hazmat.primitives.asymmetric import rsa
 
-        self.privKey: Optional[rsa.RSAPrivateKey] = None
-        self.pubKey: Optional[rsa.RSAPublicKey] = None
-        self.pubKeyS: Optional[str] = None
+        self.privKey: rsa.RSAPrivateKey | None = None
+        self.pubKey: rsa.RSAPublicKey | None = None
+        self.pubKeyS: str | None = None
 
         self.heartbeatTask = None
 
@@ -266,7 +265,7 @@ class RemoteAuthClient:
         self.on_cancel = on_cancel
         self.on_pending_login = on_pending_login
 
-        self.results: dict[str, Union[Optional[str], bool]] = {
+        self.results: dict[str, str | None | bool] = {
             "fingerprint": None,
             "userdata": None,
             "token": None,
@@ -375,7 +374,7 @@ async def gateway_cm(gw_app):
 
 class GatewayClient:
     class EventListener:
-        def __init__(self, event: GatewayOp, dispatch_event: Optional[str], future: asyncio.Future, raw: bool):
+        def __init__(self, event: GatewayOp, dispatch_event: str | None, future: asyncio.Future, raw: bool):
             self.event = event
             self.dispatch_event = dispatch_event
             self.future = future
@@ -387,8 +386,8 @@ class GatewayClient:
 
         self.running = True
         self.loop = asyncio.get_event_loop()
-        self.heartbeatTask: Optional[asyncio.Task] = None
-        self.mainTask: Optional[asyncio.Task] = None
+        self.heartbeatTask: asyncio.Task | None = None
+        self.mainTask: asyncio.Task | None = None
 
         self.handlers = {
             GatewayOp.HELLO: self.handle_hello

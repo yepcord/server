@@ -17,7 +17,7 @@
 """
 
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from fast_depends import inject
 from flask.sansio.scaffold import T_route, setupmethod
@@ -27,7 +27,7 @@ from quart_schema import validate_request, validate_querystring
 validate_funcs = {"body": validate_request, "qs": validate_querystring}
 
 
-def apply_validator(func: T_route, type_: str, cls: Optional[type], source=None) -> T_route:
+def apply_validator(func: T_route, type_: str, cls: type | None, source=None) -> T_route:
     applied = getattr(func, "_patches", set())
 
     if cls is None or f"validate_{type_}" in applied or type_ not in validate_funcs:

@@ -19,12 +19,12 @@ from asyncio import get_event_loop, sleep as asleep
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from io import BytesIO
 from re import compile as rcompile
-from typing import Union, Optional, Any
+from typing import Any
 
 from magic import from_buffer
 
 
-def b64decode(data: Union[str, bytes]) -> bytes:
+def b64decode(data: str | bytes) -> bytes:
     if isinstance(data, str):
         data = data.encode("utf8")
     data += b'=' * (-len(data) % 4)
@@ -33,7 +33,7 @@ def b64decode(data: Union[str, bytes]) -> bytes:
     return _b64decode(data)
 
 
-def b64encode(data: Union[str, bytes]) -> str:
+def b64encode(data: str | bytes) -> str:
     if isinstance(data, str):
         data = data.encode("utf8")
     data = _b64encode(data).decode("utf8")
@@ -42,7 +42,7 @@ def b64encode(data: Union[str, bytes]) -> str:
     return data
 
 
-def getImage(image: Union[str, bytes, BytesIO]) -> Optional[BytesIO]:
+def getImage(image: str | bytes | BytesIO) -> BytesIO | None:
     if isinstance(image, str) and len(image) == 32:
         return  # Image hash provided instead of actual image data
     if isinstance(image, bytes):
@@ -79,10 +79,10 @@ async def execute_after(coro, seconds):
     get_event_loop().create_task(_wait_exec(coro, seconds))
 
 
-ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')
+ping_regex = rcompile(r'<@((?:[!&])?\d{17,32})>')
 
 
-def dict_get(obj: dict, path: str, default: Any=None, output_dict: dict=None, output_name: str=None):
+def dict_get(obj: dict, path: str, default: Any | None=None, output_dict: dict=None, output_name: str=None):
     path = path.split(".")
     for p in path:
         if p not in obj:
@@ -100,8 +100,6 @@ def int_size(i: int) -> int:
 
 LOCALES = ["bg", "cs", "da", "de", "el", "en-GB", "es-ES", "fi", "fr", "hi", "hr", "hu", "it", "ja", "ko", "lt", "nl",
            "no", "pl", "pt-BR", "ro", "ru", "sv-SE", "th", "tr", "uk", "vi", "zh-CN", "zh-TW", "en-US"]
-
-NoneType = type(None)
 
 
 def freeze(obj: Any) -> Any:

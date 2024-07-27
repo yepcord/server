@@ -17,7 +17,6 @@
 """
 
 from __future__ import annotations
-from typing import Optional
 
 from tortoise import fields
 
@@ -38,7 +37,7 @@ class Session(Model):
                f"{self.signature}"
 
     @staticmethod
-    def extract_token(token: str) -> Optional[tuple[int, int, str]]:
+    def extract_token(token: str) -> tuple[int, int, str] | None:
         token = token.split(".")
         if len(token) != 3:
             return
@@ -52,7 +51,7 @@ class Session(Model):
         return uid, sid, sig
 
     @classmethod
-    async def from_token(cls, token: str) -> Optional[Session]:
+    async def from_token(cls, token: str) -> Session | None:
         token = Session.extract_token(token)
         if token is None:
             return

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Literal, Union
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
@@ -12,26 +12,26 @@ from ...yepcord.utils import getImage, validImage
 
 class CreateApplication(BaseModel):
     name: str
-    team_id: Optional[int] = None
+    team_id: int | None = None
 
 
 class UpdateApplication(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = ""
-    icon: Optional[str] = ""
-    interactions_endpoint_url: Optional[str] = ""
-    privacy_policy_url: Optional[str] = ""
-    terms_of_service_url: Optional[str] = ""
-    role_connections_verification_url: Optional[str] = ""
+    name: str | None = None
+    description: str | None = ""
+    icon: str | None = ""
+    interactions_endpoint_url: str | None = ""
+    privacy_policy_url: str | None = ""
+    terms_of_service_url: str | None = ""
+    role_connections_verification_url: str | None = ""
     tags: list[str] = Field(default_factory=list, max_items=5)
     redirect_uris: list[str] = Field(default_factory=list, max_items=9)
-    max_participants: Optional[int] = None
+    max_participants: int | None = None
     bot_public: bool = None
     bot_require_code_grant: bool = None
     flags: int = None
 
     @field_validator("icon")
-    def validate_icon(cls, value: Optional[str]):
+    def validate_icon(cls, value: str | None):
         if value and len(value) == 32:
             value = ""
         if value:
@@ -43,11 +43,11 @@ class UpdateApplication(BaseModel):
 
 
 class UpdateApplicationBot(BaseModel):
-    username: Optional[str] = None
-    avatar: Optional[str] = ""
+    username: str | None = None
+    avatar: str | None = ""
 
     @field_validator("avatar")
-    def validate_avatar(cls, value: Optional[str]):
+    def validate_avatar(cls, value: str | None):
         if value and len(value) == 32:
             value = ""
         if value:
@@ -59,18 +59,18 @@ class UpdateApplicationBot(BaseModel):
 
 
 class GetCommandsQS(BaseModel):
-    with_localizations: Optional[bool] = False
+    with_localizations: bool | None = False
 
 
 class CommandBase(BaseModel):
     name: str = Field(max_length=32)
     description: str = Field(max_length=100)
-    name_localizations: Optional[dict] = None
-    description_localizations: Optional[dict] = None
-    options: Optional[list[CommandOption]] = Field(default=None)
+    name_localizations: dict | None = None
+    description_localizations: dict | None = None
+    options: list[CommandOption] | None = Field(default=None)
 
     @field_validator("name_localizations", "description_localizations")
-    def validate_localizations(cls, value: Optional[dict], info: ValidationInfo) -> Optional[dict]:
+    def validate_localizations(cls, value: dict | None, info: ValidationInfo) -> dict | None:
         if value is not None and any(k not in Locales.values_set() for k in value):
             raise InvalidDataErr(400, Errors.make(50035, {info.field_name: {
                 "code": "ENUM_TYPE_COERCE", "message": f"Value is not a valid enum value."
@@ -84,7 +84,7 @@ class CommandBase(BaseModel):
         return value
 
     @field_validator("options")
-    def validate_options(cls, value: Optional[list[CommandOption]]) -> Optional[list[CommandOption]]:
+    def validate_options(cls, value: list[CommandOption] | None) -> list[CommandOption] | None:
         T = ApplicationCommandOptionType
         if value is None:
             return
@@ -104,19 +104,19 @@ class CommandBase(BaseModel):
         super().__init__(**kwargs)
 
 
-ChoicesType = Optional[list[Union[str, int, float]]]
+ChoicesType = list[str | int | float] | None
 
 
 class CommandOption(CommandBase):
     type: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     required: bool = True
     choices: ChoicesType = Field(default=None, max_items=25)
-    channel_types: Optional[list[Literal[0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14]]] = None
-    min_value: Optional[int] = None
-    max_value: Optional[int] = None
-    min_length: Optional[int] = None
-    max_length: Optional[int] = None
-    autocomplete: Optional[bool] = None
+    channel_types: list[Literal[0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14]] | None = None
+    min_value: int | None = None
+    max_value: int | None = None
+    min_length: int | None = None
+    max_length: int | None = None
+    autocomplete: bool | None = None
 
     @field_validator("choices")
     def validate_choices(cls, value: ChoicesType, info: ValidationInfo) -> ChoicesType:
@@ -132,14 +132,14 @@ class CommandOption(CommandBase):
         return value
 
     @field_validator("min_value", "max_value")
-    def validate_min_max_value(cls, value: Optional[int], info: ValidationInfo) -> Optional[int]:
+    def validate_min_max_value(cls, value: int | None, info: ValidationInfo) -> int | None:
         T = ApplicationCommandOptionType
         if info.data["type"] not in {T.INTEGER, T.NUMBER} and value is not None:
             return None
         return value
 
     @field_validator("min_length", "max_length")
-    def validate_min_max_length(cls, value: Optional[int], info: ValidationInfo) -> Optional[int]:
+    def validate_min_max_length(cls, value: int | None, info: ValidationInfo) -> int | None:
         if info.data["type"] != ApplicationCommandOptionType.STRING and value is not None:
             return None
         if value is not None:
@@ -153,8 +153,7 @@ class CommandOption(CommandBase):
         return value
 
     @field_validator("options")
-    def validate_options(cls, value: Optional[list[CommandOption]], info: ValidationInfo) \
-            -> Optional[list[CommandOption]]:
+    def validate_options(cls, value: list[CommandOption | None], info: ValidationInfo) -> list[CommandOption] | None:
         T = ApplicationCommandOptionType
         if info.data.get("type", 1) not in {T.SUB_COMMAND, T.SUB_COMMAND_GROUP}:
             return None

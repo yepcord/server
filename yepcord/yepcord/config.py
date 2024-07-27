@@ -21,7 +21,7 @@ from __future__ import annotations
 import warnings
 from os import environ
 from os.path import exists, isdir
-from typing import Optional, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -106,8 +106,8 @@ class ConfigCaptcha(BaseModel):
 
 
 class ConfigConnectionBase(BaseModel):
-    client_id: Optional[str] = None
-    client_secret: Optional[str] = None
+    client_id: str | None = None
+    client_secret: str | None = None
 
 
 class ConfigConnections(BaseModel):
@@ -126,9 +126,9 @@ class ConfigModel(BaseModel):
     GATEWAY_HOST: str = "127.0.0.1:8080/gateway"
     CDN_HOST: str = "127.0.0.1:8080/media"
     STORAGE: ConfigStorage = Field(default_factory=ConfigStorage)
-    TENOR_KEY: Optional[str] = None
+    TENOR_KEY: str | None = None
     MESSAGE_BROKER: ConfigMessageBrokers = Field(default_factory=ConfigMessageBrokers)
-    REDIS_URL: Optional[str] = None
+    REDIS_URL: str | None = None
     GATEWAY_KEEP_ALIVE_DELAY: int = 45
     BCRYPT_ROUNDS: int = 15
     CAPTCHA: ConfigCaptcha = Field(default_factory=ConfigCaptcha)

@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from tortoise import fields
 
 from ..enums import AuditLogEntryType
@@ -246,10 +244,10 @@ class AuditLogEntry(Model):
 
     id: int = SnowflakeField(pk=True)
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
-    user: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
+    user: models.User | None = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
     target_id: int = fields.BigIntField(null=True, default=None)
     action_type: int = fields.IntField()
-    reason: Optional[str] = fields.CharField(max_length=512, null=True, default=None)
+    reason: str | None = fields.CharField(max_length=512, null=True, default=None)
     changes: list = fields.JSONField(default=[])
     options: dict = fields.JSONField(default={})
 

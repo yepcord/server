@@ -17,7 +17,6 @@
 """
 
 from datetime import date, timedelta
-from typing import Optional
 
 from tortoise import fields
 from tortoise.validators import MinValueValidator, MaxValueValidator
@@ -38,13 +37,13 @@ class UserData(Model):
     premium: bool = fields.BooleanField(default=True)
     flags: int = fields.BigIntField(default=0)
     public_flags: int = fields.BigIntField(default=0)
-    phone: Optional[str] = fields.CharField(max_length=32, null=True, default=None)
+    phone: str | None = fields.CharField(max_length=32, null=True, default=None)
     bio: str = fields.CharField(max_length=256, default="")
-    accent_color: Optional[int] = fields.BigIntField(null=True, default=None)
-    avatar: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    avatar_decoration: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    banner: Optional[str] = fields.CharField(max_length=256, null=True, default=None)
-    banner_color: Optional[int] = fields.BigIntField(null=True, default=None)
+    accent_color: int | None = fields.BigIntField(null=True, default=None)
+    avatar: str | None = fields.CharField(max_length=256, null=True, default=None)
+    avatar_decoration: str | None = fields.CharField(max_length=256, null=True, default=None)
+    banner: str | None = fields.CharField(max_length=256, null=True, default=None)
+    banner_color: int | None = fields.BigIntField(null=True, default=None)
 
     @property
     def s_discriminator(self) -> str:
