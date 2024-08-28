@@ -2132,13 +2132,13 @@ files = [
 
 [[package]]
 name = "tortoise-orm"
-version = "0.20.1"
+version = "0.20.0"
 description = "Easy async ORM for python, built with relations in mind"
 optional = false
-python-versions = "<4.0,>=3.8"
+python-versions = ">=3.8,<4.0"
 files = [
-    {file = "tortoise_orm-0.20.1-py3-none-any.whl", hash = "sha256:bf88bc1ba7495a8827565c071efba0a89c4b5f83ff1c16be3c837a4e6b672c21"},
-    {file = "tortoise_orm-0.20.1.tar.gz", hash = "sha256:c896c90a90d1213b822ac0d607b61659ad5fcd5ff72698a8ba2d9efbad9932f3"},
+    {file = "tortoise_orm-0.20.0-py3-none-any.whl", hash = "sha256:1891ad935de689ddf002c5c65c864176d28659ab6069e45f0e2cde32359bb8d9"},
+    {file = "tortoise_orm-0.20.0.tar.gz", hash = "sha256:283af584d685dcc58d6cc1da35b9115bb1e41c89075eae2a19c493b39b9b41f7"},
 ]
 
 [package.dependencies]
@@ -2147,7 +2147,6 @@ asyncmy = {version = ">=0.2.8,<0.3.0", optional = true, markers = "extra == \"as
 ciso8601 = {version = "*", optional = true, markers = "sys_platform != \"win32\" and implementation_name == \"cpython\" and extra == \"accel\""}
 iso8601 = ">=1.0.2,<2.0.0"
 orjson = {version = "*", optional = true, markers = "extra == \"accel\""}
-pydantic = ">=2.0,<2.7.0 || >2.7.0,<3.0"
 pypika-tortoise = ">=0.1.6,<0.2.0"
 pytz = "*"
 uvloop = {version = "*", optional = true, markers = "sys_platform != \"win32\" and implementation_name == \"cpython\" and extra == \"accel\""}
@@ -2159,6 +2158,17 @@ asyncmy = ["asyncmy (>=0.2.8,<0.3.0)"]
 asyncodbc = ["asyncodbc (>=0.1.1,<0.2.0)"]
 asyncpg = ["asyncpg"]
 psycopg = ["psycopg[binary,pool] (>=3.0.12,<4.0.0)"]
+
+[[package]]
+name = "tuna"
+version = "0.5.11"
+description = "Visualize Python performance profiles"
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "tuna-0.5.11-py3-none-any.whl", hash = "sha256:ab352a6d836014ace585ecd882148f1f7c68be9ea4bf9e9298b7127594dab2ef"},
+    {file = "tuna-0.5.11.tar.gz", hash = "sha256:d47f3e39e80af961c8df016ac97d1643c3c60b5eb451299da0ab5fe411d8866c"},
+]
 
 [[package]]
 name = "typer"
@@ -2520,4 +2530,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "12c6a4fed2dc22c9c5398abba113aa7d96e4e54af57e0b8b8d251d49e16dd985"
+content-hash = "bfeda63b1a0203bcc8e50ad08de9690a1a88230ef35d300a33e323e09dbe9bda"

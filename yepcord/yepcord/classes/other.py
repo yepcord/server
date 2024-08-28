@@ -24,21 +24,12 @@ from json import loads, dumps
 from struct import pack, unpack
 from time import time
 from typing import Union, Optional
-from zlib import compressobj, Z_FULL_FLUSH
 
 from mailers import Mailer
 from mailers.exceptions import DeliveryError
 
 from ..config import Config
 from ..utils import b64decode, b64encode
-
-
-class ZlibCompressor:
-    def __init__(self):
-        self.cObj = compressobj()
-
-    def __call__(self, data):
-        return self.cObj.compress(data) + self.cObj.flush(Z_FULL_FLUSH)
 
 
 class EmailMsg:

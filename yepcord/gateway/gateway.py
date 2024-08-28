@@ -25,6 +25,7 @@ from typing import Optional, Union
 from quart import Websocket
 from redis.asyncio import Redis
 
+from .compression import WsCompressor
 from .events import *
 from .presences import Presences, Presence
 from .utils import require_auth, get_token_type, TokenType, init_redis_pool
@@ -37,14 +38,18 @@ from ..yepcord.mq_broker import getBroker
 
 
 class GatewayClient:
-    def __init__(self, ws, gateway: Gateway):
+    __slots__ = (
+        "ws", "gateway", "seq", "sid", "id", "user_id", "is_bot", "_connected", "_compressor", "cached_presence",
+    )
+
+    def __init__(self, ws: Websocket, gateway: Gateway):
         self.ws = ws
         self.gateway = gateway
         self.seq = 0
         self.sid = hex(Snowflake.makeId())[2:]
         self._connected = True
 
-        self.z = getattr(ws, "zlib", None)
+        self._compressor: WsCompressor = getattr(ws, "compressor", None)
         self.id = self.user_id = None
         self.is_bot = False
         self.cached_presence: Optional[Presence] = None
@@ -60,9 +65,10 @@ class GatewayClient:
     async def send(self, data: dict):
         self.seq += 1
         data["s"] = self.seq
-        if self.z:
+        if self._compressor:
             return await self.ws.send(self.compress(data))
-        await self.ws.send_json(data)
+        if self.ws is not None:
+            await self.ws.send_json(data)
 
     async def esend(self, event):
         if not self.connected:
@@ -70,7 +76,7 @@ class GatewayClient:
         await self.send(await event.json())
 
     def compress(self, json: dict):
-        return self.z(jdumps(json).encode("utf8"))
+        return self._compressor(jdumps(json).encode("utf8"))
 
     async def handle_IDENTIFY(self, data: dict) -> None:
         if self.user_id is not None:
@@ -109,7 +115,7 @@ class GatewayClient:
         if (session := await S.from_token(token)) is None or self.user_id.id != session.user.id:
             return await self.ws.close(4004)
 
-        self.z = new_client.z
+        self._compressor = new_client._compressor
         self.ws = new_client.ws
         setattr(self.ws, "_yepcord_client", self)
 
@@ -353,7 +359,7 @@ class Gateway:
     async def sendws(self, ws, op: int, **data) -> None:
         r = {"op": op}
         r.update(data)
-        if getattr(ws, "zlib", None):
+        if getattr(ws, "compressor", None):
             return await ws.send(ws.zlib(jdumps(r).encode("utf8")))
         await ws.send_json(r)
 

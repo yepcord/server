@@ -60,7 +60,7 @@ redis = ">=4.6.0"
 click = "8.1.7"
 maxminddb = "2.6.1"
 wget = "3.2"
-tortoise-orm = {extras = ["aiosqlite", "asyncmy", "accel"], version = "^0.20.0"}
+tortoise-orm = {extras = ["aiosqlite", "asyncmy", "accel"], version = "0.20.0"}
 uvloop = "0.19.0"
 async-timeout = "^4.0.3"
 aerich = "^0.7.2"
@@ -77,6 +77,7 @@ pyftpdlib = "1.5.8"
 fake-s3 = "1.0.2"
 types-protobuf = "^4.24.0.4"
 pytest-httpx = "^0.30.0"
+tuna = "^0.5.11"
 
 [build-system]
 requires = ["poetry-core"]

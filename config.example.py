@@ -64,10 +64,10 @@ MESSAGE_BROKER = {
     },
 }
 
-# Redis used for users presences and statuses. If empty, presences will be stored in memory.
+# Redis used for users' presences and statuses. If empty, presences will be stored in memory.
 REDIS_URL = ""
 
-# How often gateway clients must send keep-alive packets (also, presences expiration time is this variable times 1.25).
+# How often gateway clients must send keep-alive packets (also, presence expiration time is this variable times 1.25).
 # Default value is 45 seconds, do not set it too big or too small.
 GATEWAY_KEEP_ALIVE_DELAY = 45
 
@@ -89,7 +89,7 @@ CAPTCHA = {
 
 # Settings for external application connections
 # For every application, use https://PUBLIC_HOST/connections/SERVICE_NAME/callback as redirect (callback) url,
-# for example, if you need to create GitHub app and your yepcord instance (frontend) is running on 127.0.0.1:8888,
+# for example, if you need to create GitHub app and your yepcord instance (front-end) is running on 127.0.0.1:8888,
 # redirect url will be https://127.0.0.1:8888/connections/github/callback
 CONNECTIONS = {
     "github": {
