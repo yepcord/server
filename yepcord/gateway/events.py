@@ -24,7 +24,7 @@ from typing import List, TYPE_CHECKING
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
-from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount
+from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount, Presence
 from ..yepcord.models.interaction import Interaction
 from ..yepcord.snowflake import Snowflake
 
@@ -32,7 +32,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
     from ..yepcord.core import Core
     from .gateway import GatewayClient
-    from .presences import Presence
 
 
 class Event:
@@ -296,11 +295,8 @@ class PresenceUpdateEvent(DispatchEvent):
             "op": self.OP,
             "d": {
                 "user": self.userdata.ds_json,
-                "status": self.presence.public_status,
-                "last_modified": int(time() * 1000),
-                "client_status": {} if self.presence.public_status == "offline"
-                else {"desktop": self.presence.public_status},
-                "activities": [] if self.presence.public_status == "offline" else self.presence.activities
+                "last_modified": 0 if self.presence.is_offline else int(self.presence.updated_at * 1000),
+                **self.presence.ds_json(),
             }
         }
 
@@ -508,41 +504,53 @@ class GuildMembersListUpdateEvent(DispatchEvent):
     def __init__(self, members: List[GuildMember], total_members: int, statuses: dict, guild_id: int):
         self.members = members
         self.total_members = total_members
-        self.statuses = statuses
+        self.statuses: dict[int, Presence] = statuses
         self.groups = {}
         for s in statuses.values():
-            if s.public_status not in self.groups:
-                self.groups[s.public_status] = 0
-            self.groups[s.public_status] += 1
+            status = s.public_status if s is not None else "offline"
+            if status not in self.groups:
+                self.groups[status] = 0
+            self.groups[status] += 1
         self.guild_id = guild_id
 
     # noinspection PyShadowingNames
     async def json(self) -> dict:
         groups = [{"id": status, "count": count} for status, count in self.groups.items()]
         items = []
-        for mem in self.members:
-            m = await mem.ds_json()
-            m["presence"] = {
-                "user": {"id": str(mem.user.id)},
-                "status": self.statuses[mem.user.id].public_status,
-                "client_status": {} if self.statuses[mem.user.id].public_status == "offline" else {
-                    "desktop": self.statuses[mem.user.id].public_status
+        online_count = 0
+        for member in self.members:
+            status = self.statuses[member.user.id]
+            if status is not None and not status.is_offline:
+                online_count += 1
+
+            items.append({
+                "member": {
+                    **(await member.ds_json()),
+                    "presence": {
+                        "user": {"id": str(member.user.id)},
+                        **(status.ds_json(False) if status is not None else Presence.ds_json_offline(full=False)),
+                    },
                 },
-                "activities": self.statuses[mem.user.id].activities
-            }
-            items.append({"member": m})
+            })
         items.sort(key=lambda i: i["member"]["presence"]["status"])
-        _ls = None
-        _ins: dict = {}
-        _offset = 0
-        for idx, i in enumerate(items):
-            if (_s := i["member"]["presence"]["status"]) != _ls:
-                group = {"id": _s, "count": self.groups[_s]}
-                _ins[idx+_offset] = {"group": group}
-                _offset += 1
-            _ls = _s
-        for idx, ins in _ins.items():
-            items.insert(idx, ins)
+
+        last_group = None
+        group_indexes: dict = {}
+        index_offset = 0
+        for idx, item in enumerate(items):
+            if (group_name := item["member"]["presence"]["status"]) != last_group:
+                group_indexes[idx + index_offset] = {
+                    "group": {
+                        "id": group_name,
+                        "count": self.groups[group_name],
+                    }
+                }
+                index_offset += 1
+            last_group = group_name
+
+        for idx, group in group_indexes.items():  # TODO: insert in previous loop
+            items.insert(idx, group)
+
         return {
             "t": self.NAME,
             "op": self.OP,
@@ -552,7 +560,7 @@ class GuildMembersListUpdateEvent(DispatchEvent):
                     "op": "SYNC",
                     "items": items
                 }],
-                "online_count": self.statuses.get("online", 0),
+                "online_count": online_count,
                 "member_count": self.total_members,
                 "id": "everyone",
                 "guild_id": str(self.guild_id),

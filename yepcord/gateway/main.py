@@ -65,8 +65,8 @@ async def ws_gateway():
     await gw.add_client(ws)
     while True:
         try:
-            data = await ws.receive()
-            await gw.process(ws, jloads(data))
+            data: dict = await ws.receive_json()
+            await gw.process(ws, data)
         except CancelledError:
             await gw.disconnect(ws)
             raise

@@ -20,19 +20,19 @@ from __future__ import annotations
 
 import warnings
 from json import dumps as jdumps
-from typing import Optional, Union
+from typing import Union
 
 from quart import Websocket
 from redis.asyncio import Redis
+from tortoise.expressions import Q
 
 from .events import *
-from .presences import Presences, Presence
 from .utils import require_auth, get_token_type, TokenType, init_redis_pool
 from ..yepcord.classes.fakeredis import FakeRedis
 from ..yepcord.core import Core
 from ..yepcord.ctx import getCore
 from ..yepcord.enums import GatewayOp
-from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember
+from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember, Relationship, Presence
 from ..yepcord.mq_broker import getBroker
 
 
@@ -45,9 +45,10 @@ class GatewayClient:
         self._connected = True
 
         self.z = getattr(ws, "zlib", None)
-        self.id = self.user_id = None
+        self.user_id = None
         self.is_bot = False
-        self.cached_presence: Optional[Presence] = None
+
+        self._user = None
 
     @property
     def connected(self):
@@ -72,6 +73,12 @@ class GatewayClient:
     def compress(self, json: dict):
         return self.z(jdumps(json).encode("utf8"))
 
+    async def get_user(self, reload: bool = False) -> User:
+        if self._user is None or reload:
+            self._user = await User.get(id=self.user_id)
+
+        return self._user
+
     async def handle_IDENTIFY(self, data: dict) -> None:
         if self.user_id is not None:
             return await self.ws.close(4005)
@@ -82,15 +89,10 @@ class GatewayClient:
         if (session := await S.from_token(token)) is None:
             return await self.ws.close(4004)
 
-        self.id = self.user_id = session.user.id
+        self.user_id = session.user.id
         self.is_bot = session.user.is_bot
 
-        settings = await session.user.settings
-        self.cached_presence = await self.gateway.presences.get(self.user_id) or self.cached_presence
-        if self.cached_presence is None:
-            self.cached_presence = Presence(self.user_id, settings.status, settings.custom_status, [])
-
-        await self.gateway.authenticated(self, self.cached_presence)
+        await self.gateway.authenticated(self)
         await self.esend(ReadyEvent(session.user, self, getCore()))
         if not session.user.is_bot:
             guild_ids = [guild.id for guild in await getCore().getUserGuilds(session.user)]
@@ -106,7 +108,7 @@ class GatewayClient:
             return await new_client.ws.close(4004)
 
         S = Session if token_type == TokenType.USER else Bot
-        if (session := await S.from_token(token)) is None or self.user_id.id != session.user.id:
+        if (session := await S.from_token(token)) is None or self.user_id != session.user.id:
             return await self.ws.close(4004)
 
         self.z = new_client.z
@@ -114,30 +116,30 @@ class GatewayClient:
         setattr(self.ws, "_yepcord_client", self)
 
         self.gateway.remove_client(new_client)
-        await self.gateway.authenticated(self, self.cached_presence)
+        await self.gateway.authenticated(self)
 
         await self.send({"op": GatewayOp.DISPATCH, "t": "READY"})
 
     # noinspection PyUnusedLocal
     async def handle_HEARTBEAT(self, data: None) -> None:
         await self.send({"op": GatewayOp.HEARTBEAT_ACK, "t": None, "d": None})
-        await self.gateway.presences.set_or_refresh(self.user_id, self.cached_presence)
+        if self.user_id is not None:
+            await Presence.filter(user__id=self.user_id).update(updated_at=int(time()))
 
     @require_auth
     async def handle_STATUS(self, data: dict) -> None:
-        self.cached_presence = await self.gateway.presences.get(self.user_id) or self.cached_presence
-        if self.cached_presence is None:
-            settings = await UserSettings.get(id=self.user_id)
-            self.cached_presence = Presence(self.user_id, settings.status, settings.custom_status, [])
+        presence, created = await Presence.get_or_create(id=self.user_id, user=await self.get_user())
+        presence.updated_at = int(time())
+        if created:
+            settings = await UserSettings.get(user__id=self.user_id)
+            presence.fill_from_settings(settings)
 
-        presence = self.cached_presence
-
-        if (status := data.get("status")) and status in ["online", "idle", "offline", "dnd", "invisible"]:
+        if (status := data.get("status")) and status in {"online", "idle", "offline", "dnd", "invisible"}:
             presence.status = status
         if (activities := data.get("activities")) is not None:
             presence.activities = activities
 
-        await self.gateway.presences.set_or_refresh(self.user_id, presence, overwrite=True)
+        await presence.save()
         await self.gateway.ev.presence_update(self.user_id, presence)
 
     @require_auth
@@ -150,10 +152,11 @@ class GatewayClient:
         members = await getCore().getGuildMembers(guild)
         statuses = {}
         for member in members:
-            if presence := await self.gateway.presences.get(member.user.id):
-                statuses[member.user.id] = presence
-            else:
-                statuses[member.user.id] = Presence(member.user.id, "offline", None)
+            # TODO: rewrite with one query?
+            #if presence := await self.gateway.presences.get(member.user.id):
+            #    statuses[member.user.id] = presence
+            #    continue
+            statuses[member.user.id] = None
         await self.esend(GuildMembersListUpdateEvent(
             members,
             await getCore().getGuildMemberCount(guild),
@@ -292,7 +295,6 @@ class Gateway:
         self.broker.subscriber("yepcord_events")(self.mcl_yepcordEventsCallback)
         self.broker.subscriber("yepcord_sys_events")(self.mcl_yepcordSysEventsCallback)
         self.store = WsStore()
-        self.presences = Presences(self)
         self.ev = GatewayEvents(self)
 
         self.redis: Union[Redis, FakeRedis, None] = None
@@ -362,20 +364,29 @@ class Gateway:
         setattr(ws, "_yepcord_client", client)
         await client.send({"op": GatewayOp.HELLO, "t": None, "s": None, "d": {"heartbeat_interval": 45000}})
 
-    async def authenticated(self, client: GatewayClient, presence: Presence) -> None:
+    async def authenticated(self, client: GatewayClient) -> None:
         if client.user_id not in self.store.by_user_id:
             self.store.by_user_id[client.user_id] = set()
         self.store.by_user_id[client.user_id].add(client)
         self.store.by_sess_id[client.sid] = client
 
-        for member in await GuildMember.filter(user__id=client.user_id).select_related("guild"):
+        user = await client.get_user()
+
+        for member in await GuildMember.filter(user=user).select_related("guild"):
             self.store.subscribe(member.guild.id, None, client.user_id)
             for role in await member.roles.all():
                 self.store.subscribe(None, role.id, client.user_id)
 
-        if presence:
+        presence, created = await Presence.get_or_create(id=user.id, user=user)
+        if created or time() - presence.updated_at > Config.GATEWAY_KEEP_ALIVE_DELAY * 10:
+            settings = await user.settings
+            presence.fill_from_settings(settings)
+
+        presence.updated_at = int(time())
+        await presence.save()
+
+        if presence.public_status != "offline":
             await self.ev.presence_update(client.user_id, presence)
-            await self.presences.set_or_refresh(client.user_id, presence)
 
     def remove_client(self, client: GatewayClient) -> None:
         if client in self.store.get(user_id=client.user_id):
@@ -403,29 +414,21 @@ class Gateway:
         print(f"  Unknown op code: {op}")
         print(f"  Data: {data}")
 
-    async def disconnect(self, ws: Websocket):
+    @staticmethod
+    async def disconnect(ws: Websocket):
         getattr(ws, "_yepcord_client").disconnect()
 
-    async def getFriendsPresences(self, uid: int) -> list[dict]:
+    @staticmethod
+    async def getFriendsPresences(user_id: int) -> list[dict[str, ...]]:
         presences = []
-        user = await User.get(id=uid)
-        friends = await self.core.getRelationships(user)
-        friends = [int(u["user_id"]) for u in friends if u["type"] == 1]
-        for friend in friends:
-            if presence := await self.presences.get(friend):
-                presences.append({
-                    "user_id": str(friend),
-                    "status": presence.public_status,
-                    "last_modified": int(time()*1000),
-                    "client_status": {"desktop": presence.public_status} if presence.public_status != "offline" else {},
-                    "activities": presence.activities
-                })
+        async for rel in Relationship.filter(Q(type=1) & (Q(from_user__id=user_id) | Q(to_user__id=user_id))) \
+                .select_related("from_user", "to_user"):
+            other = rel.other_user(user_id)
+            if presence := await Presence.get_or_none(
+                    user=other, updated_at__gt=int(time() - Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25)
+            ):
+                presences.append(presence.ds_json())
                 continue
-            presences.append({
-                "user_id": str(friend),
-                "status": "offline",
-                "last_modified": int(time()),
-                "client_status": {},
-                "activities": []
-            })
+            presences.append(Presence.ds_json_offline())
+
         return presences

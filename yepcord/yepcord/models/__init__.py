@@ -8,6 +8,7 @@ from .connected_account import ConnectedAccount
 from .mfa_code import MfaCode
 from .relationship import Relationship
 from .remote_auth_session import RemoteAuthSession
+from .presence import Presence
 
 from .channel import Channel
 from .hidden_dm_channel import HiddenDmChannel

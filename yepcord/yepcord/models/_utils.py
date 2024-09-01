@@ -43,6 +43,9 @@ class SnowflakeField(BigIntField):
 
 
 class Model(tortoise.Model):
+    def update_no_save(self, **kwargs) -> None:
+        self.update_from_dict(kwargs)
+
     async def update(self, **kwargs) -> None:
-        await self.update_from_dict(kwargs)
+        self.update_no_save(**kwargs)
         await self.save()

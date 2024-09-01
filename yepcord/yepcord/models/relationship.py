@@ -17,7 +17,7 @@
 """
 
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Union
 
 from tortoise.expressions import Q
 from tortoise import fields
@@ -128,8 +128,9 @@ class Relationship(Model):
     to_user: models.User = fields.ForeignKeyField("models.User", related_name="to_user")
     type: int = fields.IntField(validators=[ChoicesValidator({0, 1, 2})])
 
-    def other_user(self, current_user: models.User) -> models.User:
-        return self.from_user if self.to_user == current_user else self.to_user
+    def other_user(self, current_user: Union[models.User, int]) -> models.User:
+        check = self.to_user.id if isinstance(current_user, int) else self.to_user
+        return self.from_user if check == current_user else self.to_user
 
     def discord_rel_type(self, current_user: models.User) -> Optional[int]:
         if self.type == RelationshipType.BLOCK and self.from_user.id != current_user.id:
