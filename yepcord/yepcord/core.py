@@ -775,10 +775,10 @@ class Core(Singleton):
         return [member.user.id for member in await role.guildmembers.all().select_related("user").limit(100)]
 
     async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:
-        db_query = Q(guild=guild) & (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))
+        db_query = Q(guild=guild) & ((Q(nick__not_isnull=True) & Q(nick__istartswith=query)) | Q(user__userdatas__username__istartswith=query))
         if user_ids:
             db_query &= Q(user__id__in=user_ids)
-        return await GuildMember.filter(db_query).select_related("user").limit(limit).all()
+        return await GuildMember.filter(db_query).select_related("user").limit(limit)
 
     async def memberHasRole(self, member: GuildMember, role: Role) -> bool:
         return await member.roles.filter(id=role.id).exists()

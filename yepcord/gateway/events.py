@@ -172,7 +172,8 @@ class ReadySupplementalEvent(DispatchEvent):
         self.guilds_ids = guilds_ids
 
     async def json(self) -> dict:
-        g = [{"voice_states": [], "id": str(i), "embedded_activities": []} for i in self.guilds_ids]  # TODO
+        # TODO
+        g = [{"voice_states": [], "id": str(guilds_id), "embedded_activities": []} for guilds_id in self.guilds_ids]
         return {
             "t": self.NAME,
             "op": self.OP,

@@ -174,8 +174,21 @@ class GatewayClient:
         limit = data.get("limit", 100)
         if limit > 100 or limit < 1:
             limit = 100
+
         members = await getCore().getGuildMembersGw(guild, query, limit, data.get("user_ids", []))
-        presences = []  # TODO: add presences
+        member_ids = [member.user.id for member in members]
+
+        presences = await Presence.filter(
+            user__id__in=member_ids,
+            status__not_in=["offline", "invisible"],
+            updated_at__gt=int(time() - Config.GATEWAY_KEEP_ALIVE_DELAY * 1.25)
+        ).select_related("user")
+        presences = [{
+            "user": (await presence.user.userdata).ds_json,
+            "guild_id": str(guild_id),
+            **presence.ds_json(False),
+        } for presence in presences]
+
         await self.esend(GuildMembersChunkEvent(members, presences, guild_id))
 
 
@@ -429,6 +442,6 @@ class Gateway:
             ):
                 presences.append(presence.ds_json())
                 continue
-            presences.append(Presence.ds_json_offline())
+            presences.append(Presence.ds_json_offline(other.id))
 
         return presences
