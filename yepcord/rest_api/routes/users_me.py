@@ -57,21 +57,21 @@ async def update_me(data: UserUpdate, user: User = DepUser):
     discrim = data.discriminator if data.discriminator and data.discriminator != userdata.discriminator else None
     username = data.username if data.username and data.username != userdata.username else None
     if discrim or username or data.new_password is not None or data.email is not None:
-        if data.password is not None and not await getCore().checkUserPassword(user, data.password):
+        if data.password is not None and not user.check_password(data.password):
             raise InvalidDataErr(400, Errors.make(50035, {"password": {
                 "code": "PASSWORD_DOES_NOT_MATCH", "message": "Passwords does not match."
             }}))
         data.password = None
     if username:
-        await getCore().changeUserName(user, username)
+        await user.change_username(username)
         data.username = None
     if discrim:
-        if not await getCore().changeUserDiscriminator(user, discrim, bool(username)):
+        if not await user.change_discriminator(discrim, bool(username)):
             await userdata.refresh_from_db(fields=["username", "discriminator"])
             return await userdata.ds_json_full()
         data.discriminator = None
     if data.new_password is not None:
-        await getCore().changeUserPassword(user, data.new_password)
+        await user.change_password(data.new_password)
         data.new_password = None
     if data.email is not None:
         await getCore().changeUserEmail(user, data.email)
@@ -276,7 +276,7 @@ async def enable_mfa(data: MfaEnable, session: Session = DepSession):
     settings = await user.settings
     if settings.mfa is not None:
         raise InvalidDataErr(404, Errors.make(60001))
-    if not (password := data.password) or not await getCore().checkUserPassword(user, password):
+    if not (password := data.password) or not user.check_password(password):
         raise InvalidDataErr(400, Errors.make(50018))
     if not (secret := data.secret):
         raise InvalidDataErr(400, Errors.make(60005))
@@ -287,12 +287,13 @@ async def enable_mfa(data: MfaEnable, session: Session = DepSession):
         raise InvalidDataErr(400, Errors.make(60008))
     settings.mfa = secret
     await settings.save(update_fields=["mfa"])
-    codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
-    await getCore().setBackupCodes(user, codes)
+    codes = [
+        {"user_id": str(user.id), "code": code, "consumed": False}
+        for code in await user.create_backup_codes()
+    ]
     await execute_after(getGw().dispatch(UserUpdateEvent(user, await user.data, settings), [user.id]), 1.5)
-    codes = [{"user_id": str(user.id), "code": code, "consumed": False} for code in codes]
     await session.delete()
-    session = await getCore().createSession(user)
+    session = await Session.Y.create(user)
     return {"token": session.token, "backup_codes": codes}
 
 
@@ -307,14 +308,14 @@ async def disable_mfa(data: MfaDisable, session: Session = DepSession):
     mfa = await user.mfa
     code = code.replace("-", "").replace(" ", "")
     if code not in mfa.getCodes():
-        if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
+        if not (len(code) == 8 and await user.use_backup_code(code)):
             raise InvalidDataErr(400, Errors.make(60008))
     settings.mfa = None
     await settings.save(update_fields=["mfa"])
-    await getCore().clearBackupCodes(user)
+    await user.clear_backup_codes()
     await getGw().dispatch(UserUpdateEvent(user, await user.data, settings), [user.id])
     await session.delete()
-    session = await getCore().createSession(user)
+    session = await Session.Y.create(user)
     return {"token": session.token}
 
 
@@ -326,17 +327,16 @@ async def get_backup_codes(data: MfaCodesVerification, user: User = DepUser):
         raise InvalidDataErr(400, Errors.make(50035, {"key": {
             "code": "BASE_TYPE_REQUIRED", "message": "This field is required"
         }}))
-    reg = data.regenerate
-    await getCore().verifyUserMfaNonce(user, nonce, reg)
+    regenerate = data.regenerate
+    await getCore().verifyUserMfaNonce(user, nonce, regenerate)
     if await getCore().mfaNonceToCode(nonce) != key:
         raise InvalidDataErr(400, Errors.make(60011))
-    if reg:
-        codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
-        await getCore().setBackupCodes(user, codes)
-        codes = [{"user_id": str(user.id), "code": code, "consumed": False} for code in codes]
-    else:
-        codes = [code.ds_json() for code in await getCore().getBackupCodes(user)]
-    return {"backup_codes": codes}
+
+    codes = await user.create_backup_codes() if regenerate else await user.get_backup_codes()
+    return {"backup_codes": [
+        {"user_id": str(user.id), "code": code, "consumed": False}
+        for code in codes
+    ]}
 
 
 @users_me.put("/relationships/<int:user_id>", body_cls=RelationshipPut)
@@ -422,7 +422,7 @@ async def new_dm_channel(data: DmChannelCreate, user: User = DepUser):
 
 @users_me.post("/delete", body_cls=DeleteRequest)
 async def delete_user(data: DeleteRequest, user: User = DepUser):
-    if not await getCore().checkUserPassword(user, data.password):
+    if not user.check_password(data.password):
         raise InvalidDataErr(400, Errors.make(50018))
     if await getCore().getUserOwnedGuilds(user) or await getCore().getUserOwnedGroups(user):
         raise InvalidDataErr(400, Errors.make(40011))
@@ -490,7 +490,7 @@ async def remote_auth_finish(data: RemoteAuthFinish, user: User = DepUser):
     if ra_session is None:
         raise InvalidDataErr(404, Errors.make(10012))
 
-    session = await getCore().createSession(user)
+    session = await Session.Y.create(user)
     if ra_session.version == 2:
         await ra_session.update(v2_session=session, expires_at=time_plus_150s())
     else:

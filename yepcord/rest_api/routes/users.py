@@ -23,15 +23,14 @@ from ...yepcord.ctx import getCore
 from ...yepcord.models import User
 
 # Base path is /api/vX/users
-users = YBlueprint('users', __name__)
+users = YBlueprint("users", __name__)
 
 
 @users.get("/<string:target_user>/profile", qs_cls=UserProfileQuery)
 async def get_user_profile(query_args: UserProfileQuery, target_user: str, user: User = DepUser):
     if target_user == "@me":
         target_user = user.id
-    target_user = int(target_user)
-    target_user = await getCore().getUserProfile(target_user, user)
+    target_user = await user.get_another_user(int(target_user))
     return await target_user.profile_json(
         user, query_args.with_mutual_guilds, query_args.mutual_friends_count,  query_args.guild_id
     )

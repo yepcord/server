@@ -120,50 +120,7 @@ class Core(Singleton):
             _sid = urandom(12)
             sid = int.from_bytes(_sid, "big")
             raise MfaRequiredErr(user.id, b64encode(_sid), self.generateMfaTicketSignature(user, sid))
-        return await self.createSession(user.id)
-
-    async def createSession(self, user: Union[int, User]) -> Optional[Session]:
-        if not isinstance(user, User) and (user := await User.get_or_none(id=user, deleted=False)) is None:
-            return
-        sig = self.generateSessionSignature()
-        return await Session.create(id=Snowflake.makeId(), user=user, signature=sig)
-
-    async def getUserProfile(self, uid: int, current_user: User) -> User:
-        # TODO: check for relationship, mutual guilds or mutual friends
-        if not (user := await User.y.get(uid, False)):
-            raise InvalidDataErr(404, Errors.make(10013))
-        return user
-
-    async def checkUserPassword(self, user: User, password: str) -> bool:
-        return checkpw(self.prepPassword(password, user.id), user.password.encode("utf8"))
-
-    async def changeUserDiscriminator(self, user: User, discriminator: int, changed_username: bool = False) -> bool:
-        data = await user.data
-        username = data.username
-        if await User.y.getByUsername(username, discriminator):
-            if changed_username:
-                return False
-            raise InvalidDataErr(400, Errors.make(50035, {"username": {
-                "code": "USERNAME_TOO_MANY_USERS",
-                "message": "This discriminator already used by someone. Please enter something else."
-            }}))
-        data.discriminator = discriminator
-        await data.save(update_fields=["discriminator"])
-        return True
-
-    async def changeUserName(self, user: User, username: str) -> None:
-        data = await user.data
-        discriminator = data.discriminator
-        if await User.y.getByUsername(username, discriminator):
-            discriminator = await self.getRandomDiscriminator(username)
-            if discriminator is None:
-                raise InvalidDataErr(400, Errors.make(50035, {"username": {
-                    "code": "USERNAME_TOO_MANY_USERS",
-                    "message": "This name is used by too many users. Please enter something else or try again."
-                }}))
-        data.username = username
-        data.discriminator = discriminator
-        await data.save(update_fields=["username", "discriminator"])
+        return await Session.Y.create(user)
 
     async def getRelationships(self, user: User, with_data=False) -> list[dict]:
         rels = []
@@ -197,22 +154,6 @@ class Core(Singleton):
                 data = await recipient.data
                 users.append(data.ds_json)
         return users
-
-    async def changeUserPassword(self, user: User, new_password: str) -> None:
-        user.password = self.hashPassword(user.id, new_password)
-        await user.save(update_fields=["password"])
-
-    async def setBackupCodes(self, user: User, codes: list[str]) -> None:
-        await self.clearBackupCodes(user)
-        await MfaCode.bulk_create([
-            MfaCode(user=user, code=code) for code in codes
-        ])
-
-    async def clearBackupCodes(self, user: User) -> None:
-        await MfaCode.filter(user=user).delete()
-
-    async def getBackupCodes(self, user: User) -> list[MfaCode]:
-        return await MfaCode.filter(user=user).select_related("user").limit(10).all()
 
     def generateMfaTicketSignature(self, user: User, session_id: int) -> str:
         payload = {
@@ -257,13 +198,6 @@ class Core(Singleton):
         nonce_type = "normal" if not regenerate else "regenerate"
         if nonce_type != payload["type"]:
             raise InvalidDataErr(400, Errors.make(60011))
-
-    async def useMfaCode(self, user: User, code: str) -> bool:
-        if (code := await MfaCode.get_or_none(user=user, code=code, used=False)) is None:
-            return False
-        code.used = True
-        await code.save(update_fields=["used"])
-        return True
 
     async def getChannel(self, channel_id: Optional[int]) -> Optional[Channel]:
         if channel_id is None:

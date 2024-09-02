@@ -68,9 +68,9 @@ async def login_with_mfa(data: MfaLogin):
     code = code.replace("-", "").replace(" ", "")
     user = await User.y.get(mfa.uid)
     if code not in mfa.getCodes():
-        if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
+        if not (len(code) == 8 and await user.use_backup_code(code)):
             raise InvalidDataErr(400, Errors.make(60008))
-    sess = await getCore().createSession(user.id)
+    sess = await Session.Y.create(user)
     sett = await user.settings
     return {
         "token": sess.token,
@@ -89,7 +89,7 @@ async def logout(session: Session = DepSession):
 async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User = DepUser):
     if not (password := data.password):
         raise InvalidDataErr(400, Errors.make(50018))
-    if not await getCore().checkUserPassword(user, password):
+    if not user.check_password(password):
         raise InvalidDataErr(400, Errors.make(50018))
     nonce = await getCore().generateUserMfaNonce(user)
     await getCore().sendMfaChallengeEmail(user, nonce[0])
@@ -115,4 +115,4 @@ async def verify_email(data: VerifyEmail):
     user = await getCore().getUserByEmail(email)
     await getCore().verifyEmail(user, data.token)
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
-    return {"token": (await getCore().createSession(user.id)).token, "user_id": str(user.id)}
+    return {"token": (await Session.Y.create(user)).token, "user_id": str(user.id)}

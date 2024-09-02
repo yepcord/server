@@ -109,20 +109,6 @@ async def test_getUser_fail():
     assert user is None, f"User with id {VARS['user_id'] + 1} doesn't exists: must return None!"
 
 
-@pt.mark.asyncio
-async def test_createSession_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.createSession(VARS["user_id"])
-    assert session is not None
-
-
-@pt.mark.asyncio
-async def test_createSession_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.createSession(Snowflake.makeId())
-    assert session is None
-
-
 def changeUserData(data: UserData) -> None:
     data.birth = "2001-01-01" if data.birth == "2000-01-01" else "2000-01-01"
     data.username = f"{EMAIL_ID}_Changed username {randint(0, 1000)}"
@@ -138,110 +124,24 @@ def changeUserData(data: UserData) -> None:
     data.banner_color = randint(1, 10000)
 
 
-@pt.mark.asyncio
-async def test_getUserProfile_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    _user = await User.get(id=VARS["user_id"])
-    user = await testCore.getUserProfile(VARS["user_id"], _user)
-    assert user is not None and user == _user
-
-
-@pt.mark.asyncio
-async def test_getUserProfile_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    with pt.raises(InvalidDataErr):
-        await testCore.getUserProfile(VARS["user_id"] + 1, await User.get(id=VARS["user_id"]))
-
-
-@pt.mark.asyncio
-async def test_checkUserPassword_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.y.get(VARS["user_id"])
-    assert await testCore.checkUserPassword(user, "test_passw0rd")
-
-
-@pt.mark.asyncio
-async def test_checkUserPassword_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.y.get(VARS["user_id"])
-    assert not await testCore.checkUserPassword(user, "wrong_password")
-
-
-@pt.mark.asyncio
-async def test_changeUserDiscriminator_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.y.get(VARS["user_id"])
-    assert await testCore.changeUserDiscriminator(user, randint(1, 9999))
-
-
-@pt.mark.asyncio
+@pt.mark.asyncio  # May be removed, but not removing now because other tests depend on VARS["user_id"] + 100000
 async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
 
-    # Register 2 users with same nickname
-    session1 = await testCore.register(VARS["user_id"] + 100000, "Test", f"{EMAIL_ID}_test1@yepcord.ml", "password",
-                                       "2000-01-01")
-    session2 = await testCore.register(VARS["user_id"] + 200000, "Test", f"{EMAIL_ID}_test2@yepcord.ml", "password",
-                                       "2000-01-01")
-    user1 = await User.y.get(session1.user.id)
-    user2 = await User.y.get(session2.user.id)
-    userdata2 = await user2.userdata
-
-    # Try to change first user discriminator to second user discriminator
-    assert not await testCore.changeUserDiscriminator(user1, userdata2.discriminator, True)
-    with pt.raises(InvalidDataErr):
-        await testCore.changeUserDiscriminator(user1, userdata2.discriminator, False)
+    await testCore.register(VARS["user_id"] + 100000, "Test", f"{EMAIL_ID}_test1@yepcord.ml", "password",
+                            "2000-01-01")
+    await testCore.register(VARS["user_id"] + 200000, "Test", f"{EMAIL_ID}_test2@yepcord.ml", "password",
+                            "2000-01-01")
 
 
-@pt.mark.asyncio
-async def test_changeUserName_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.y.get(VARS["user_id"])
-    await testCore.changeUserName(user, f"{EMAIL_ID}_UserName")
-    userdata = await user.data
-    assert userdata.username == f"{EMAIL_ID}_UserName"
-
-
-@pt.mark.asyncio
-async def test_changeUserName_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-
-    # Insert in userdata table 9999 users to trigger USERNAME_TOO_MANY_USERS error
+@pt.mark.asyncio  # May be removed, but not removing now because other tests depend on VARS["user_id"] + 100000 + d
+async def test_changeUserName_fail():
     username = f"NoDiscriminatorsLeft_{Snowflake.makeId()}"
 
-    users = []
-    userdatas = []
-    for d in range(1, 10000):
-        _id = VARS["user_id"] + 100000 + d
-        users.append((_id, f"test_user_{_id}@test.yepcord.ml"))
-        userdatas.append((_id, _id, date(2000, 1, 1), username, d))
-
-    conn = connections.get("default")
-    if conn.capabilities.dialect == "mysql":
-        await conn.execute_many("INSERT INTO `user`(`id`, `email`, `password`) VALUES (%s, %s, \"123456\")", users)
-        await conn.execute_many(
-            "INSERT INTO `userdata`(`id`, `user_id`, `birth`, `username`, `discriminator`, `flags`, `public_flags`) "
-            "VALUES (%s, %s, %s, %s, %s, 0, 0)",
-            userdatas
-        )
-    elif conn.capabilities.dialect == "sqlite":
-        await conn.execute_many("INSERT INTO `user`(`id`, `email`, `password`) VALUES (?, ?, \"123456\")", users)
-        await conn.execute_many(
-            "INSERT INTO `userdata`(`id`, `user_id`, `birth`, `username`, `discriminator`, `flags`, `public_flags`) "
-            "VALUES (?, ?, ?, ?, ?, 0, 0)",
-            userdatas
-        )
-    elif conn.capabilities.dialect == "postgres":
-        await conn.execute_many("INSERT INTO \"user\" (id, email, password) VALUES ($1, $2, '123456')", users)
-        await conn.execute_many(
-            "INSERT INTO userdata(id, user_id, birth, username, discriminator, flags, public_flags) "
-            "VALUES ($1, $2, $3, $4, $5, 0, 0)",
-            userdatas
-        )
-
-    user = await User.y.get(VARS["user_id"])
-    with pt.raises(InvalidDataErr):
-        await testCore.changeUserName(user, username)
+    for d in range(1, 10):
+        user_id = VARS["user_id"] + 100000 + d
+        user = await User.create(id=user_id, email=f"test_user_{user_id}@test.yepcord.ml", password="123456")
+        await UserData.create(id=user_id, user=user, birth=date(2000, 1, 1), username=username, discriminator=d)
 
 
 @pt.mark.asyncio
@@ -342,18 +242,9 @@ async def test_delRelationship_success():
 
 
 @pt.mark.asyncio
-async def test_changeUserPassword_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_logoutUser_success():
     user = await User.y.get(VARS["user_id"])
-    await testCore.changeUserPassword(user, "test_password123")
-    user = await User.y.get(VARS["user_id"])
-    assert await testCore.checkUserPassword(user, "test_password123")
-
-
-@pt.mark.asyncio
-async def test_logoutUser_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.createSession(VARS["user_id"])
+    session = await Session.Y.create(user)
     assert await Session.get_or_none(id=session.id) is not None
     await session.delete()
     assert await Session.get_or_none(id=session.id) is None
@@ -381,38 +272,6 @@ async def test_getMfa():
 
 
 @pt.mark.asyncio
-async def test_setBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.get(id=VARS["user_id"])
-    codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
-    await testCore.setBackupCodes(user, codes)
-    db_codes = [code.code for code in await testCore.getBackupCodes(user)]
-    assert len(db_codes) == 10
-    assert set(codes) == set(db_codes)
-
-
-@pt.mark.asyncio
-async def test_clearBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.get(id=VARS["user_id"])
-    await testCore.clearBackupCodes(user)
-    codes = await testCore.getBackupCodes(user)
-    assert len(codes) == 0
-
-
-@pt.mark.asyncio
-async def test_getBackupCodes_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.get(id=VARS["user_id"])
-    assert len(await testCore.getBackupCodes(user)) == 0
-    codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]
-    await testCore.setBackupCodes(user, codes)
-    assert len(db_codes := await testCore.getBackupCodes(user)) == 10
-    db_codes = [code.code for code in db_codes]
-    assert set(codes) == set(db_codes)
-
-
-@pt.mark.asyncio
 async def test_getMfaFromTicket_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     user = await User.y.get(VARS["user_id"])
@@ -421,7 +280,7 @@ async def test_getMfaFromTicket_success(testCore: Coroutine[Any, Any, Core]):
     await settings.save(update_fields=["mfa"])
 
     try:
-        await testCore.login(user.email, "test_password123")
+        await testCore.login(user.email, "test_passw0rd")
         assert False
     except MfaRequiredErr as e:
         ticket = b64encode(dumps([e.uid, "login"])) + f".{e.sid}.{e.sig}"
@@ -452,25 +311,6 @@ async def test_verifyUserMfaNonce():
         with pt.raises(InvalidDataErr):
             await core.verifyUserMfaNonce(user, *args)
     del VARS["mfa_nonce"]
-
-
-@pt.mark.asyncio
-async def test_useMfaCode_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.y.get(VARS["user_id"])
-    codes = list(await testCore.getBackupCodes(user))
-    assert await testCore.useMfaCode(user, codes[0].code)
-    codes[0].used = True
-    db_codes = await testCore.getBackupCodes(user)
-    assert len(db_codes) == 10
-    assert set(codes) == set(db_codes)
-
-
-@pt.mark.asyncio
-async def test_useMfaCode_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    user = await User.y.get(VARS["user_id"])
-    assert not await testCore.useMfaCode(user, "invalid_code")
 
 
 @pt.mark.asyncio

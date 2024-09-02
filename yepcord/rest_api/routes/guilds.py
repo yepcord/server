@@ -684,7 +684,7 @@ async def delete_guild(data: GuildDelete, user: User = DepUser, guild: Guild = D
         if not data.code:
             raise InvalidDataErr(400, Errors.make(60008))
         if data.code not in mfa.getCodes():
-            if not (len(data.code) == 8 and await getCore().useMfaCode(user, data.code)):
+            if not (len(data.code) == 8 and await user.use_backup_code(data.code)):
                 raise InvalidDataErr(400, Errors.make(60008))
 
     role_ids = [role.id for role in await getCore().getRoles(guild, True)]
