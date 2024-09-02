@@ -133,6 +133,7 @@ class ConfigModel(BaseModel):
     BCRYPT_ROUNDS: int = 15
     CAPTCHA: ConfigCaptcha = Field(default_factory=ConfigCaptcha)
     CONNECTIONS: ConfigConnections = Field(default_factory=ConfigConnections)
+    LAZY_INJECT: bool = False
 
     @field_validator("KEY")
     def validate_key(cls, value: str) -> str:
@@ -167,6 +168,23 @@ class ConfigModel(BaseModel):
 
 
 class _Config(Singleton):
+    DB_CONNECT_STRING: str
+    MAIL_CONNECT_STRING: str
+    MIGRATIONS_DIR: str
+    KEY: str
+    PUBLIC_HOST: str
+    GATEWAY_HOST: str
+    CDN_HOST: str
+    STORAGE: dict
+    TENOR_KEY: Optional[str]
+    MESSAGE_BROKER: dict
+    REDIS_URL: Optional[str]
+    GATEWAY_KEEP_ALIVE_DELAY: int
+    BCRYPT_ROUNDS: int
+    CAPTCHA: dict
+    CONNECTIONS: dict
+    LAZY_INJECT: bool
+
     def update(self, variables: dict) -> _Config:
         self.__dict__.update(variables)
         return self

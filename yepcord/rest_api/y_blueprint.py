@@ -24,65 +24,90 @@ from flask.sansio.scaffold import T_route, setupmethod
 from quart import Blueprint, g
 from quart_schema import validate_request, validate_querystring
 
+from yepcord.yepcord.config import Config
+
 validate_funcs = {"body": validate_request, "qs": validate_querystring}
 
 
-def apply_validator(func: T_route, type_: str, cls: Optional[type], source=None) -> T_route:
-    applied = getattr(func, "_patches", set())
+def apply_validator(src_func: T_route, type_: str, cls: Optional[type], source=None) -> T_route:
+    applied = getattr(src_func, "_patches", set())
 
     if cls is None or f"validate_{type_}" in applied or type_ not in validate_funcs:
-        return func
+        return src_func
 
     kw = {} if source is None else {"source": source}
-    func = validate_funcs[type_](cls, **kw)(func)
+    func = validate_funcs[type_](cls, **kw)(src_func)
 
     applied.add(f"validate_{type_}")
     setattr(func, "_patches", applied)
+    if len(applied) > 1:
+        delattr(src_func, "_patches")
 
     return func
 
 
-def apply_inject(func: T_route) -> T_route:
-    applied = getattr(func, "_patches", set())
+def apply_inject(src_func: T_route) -> T_route:
+    applied = getattr(src_func, "_patches", set())
 
     if "fastdepends_inject" in applied:
-        return func
+        return src_func
 
-    func = inject(func)
+    if Config.LAZY_INJECT:
+        injected_func = None
+
+        @wraps(src_func)
+        async def func(*args, **kwargs):
+            nonlocal injected_func
+
+            if injected_func is None:
+                injected_func = inject(src_func)
+
+            return await injected_func(*args, **kwargs)
+    else:
+        func = inject(src_func)
+
     applied.add("fastdepends_inject")
     setattr(func, "_patches", applied)
+    if len(applied) > 1:
+        delattr(src_func, "_patches")
 
     return func
 
 
-def apply_allow_bots(func: T_route) -> T_route:
-    applied = getattr(func, "_patches", set())
+def apply_allow_bots(src_func: T_route) -> T_route:
+    applied = getattr(src_func, "_patches", set())
     if "allow_bots" in applied:
-        return func
+        return src_func
 
-    @wraps(func)
+    @wraps(src_func)
     async def wrapped(*args, **kwargs):
         g.bots_allowed = True
-        return await func(*args, **kwargs)
+        return await src_func(*args, **kwargs)
 
     applied.add("allow_bots")
-    setattr(func, "_patches", applied)
+    setattr(wrapped, "_patches", applied)
+    if len(applied) > 1:
+        delattr(src_func, "_patches")
+
     return wrapped
 
 
-def apply_oauth(func: T_route, scopes: list[str]) -> T_route:
-    applied = getattr(func, "_patches", set())
+def apply_oauth(src_func: T_route, scopes: list[str]) -> T_route:
+    applied = getattr(src_func, "_patches", set())
     if "oauth" in applied:
-        return func
+        return src_func
 
-    @wraps(func)
+    @wraps(src_func)
     async def wrapped(*args, **kwargs):
         g.oauth_allowed = True
         g.oauth_scopes = set(scopes)
-        return await func(*args, **kwargs)
+        return await src_func(*args, **kwargs)
 
     applied.add("oauth")
-    setattr(func, "_patches", applied)
+    setattr(wrapped, "_patches", applied)
+    if len(applied) > 1:
+        delattr(src_func, "_patches")
+
     return wrapped
 
 
