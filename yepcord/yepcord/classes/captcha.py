@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Type
 
-from aiohttp import ClientSession, FormData
+from httpx import AsyncClient
 
 from ..config import Config
 
@@ -32,14 +32,13 @@ class Captcha:
     @classmethod
     async def verify(cls, captcha_key: str) -> tuple[bool, list[str]]:
         captcha = Config.CAPTCHA[cls.NAME]
-        async with ClientSession() as sess:
-            form = FormData()
-            form.add_field("secret", captcha["secret"])
-            form.add_field("response", captcha_key)
-            form.add_field("sitekey", captcha["sitekey"])
-
-            resp = await sess.post(cls.VERIFY_ENDPOINT, data=form)
-            resp = await resp.json()
+        async with AsyncClient() as client:
+            resp = await client.post(cls.VERIFY_ENDPOINT, data={
+                "secret": captcha["secret"],
+                "response": captcha_key,
+                "sitekey": captcha["sitekey"],
+            })
+            resp = resp.json()
 
             return resp["success"], resp.get("error_codes", [])
 

@@ -35,8 +35,8 @@ def gen_token_secret() -> str:
 
 class Bot(Model):
     id: int = SnowflakeField(pk=True)
-    application: models.Application = fields.ForeignKeyField("models.Application", null=False, unique=True)
-    user: User = fields.ForeignKeyField("models.User", null=True, default=None, related_name="bot_user")
+    application: models.Application = fields.OneToOneField("models.Application")
+    user: User = fields.OneToOneField("models.User", null=True, default=None, related_name="bot_user")
     bot_public: bool = fields.BooleanField(default=True)
     bot_require_code_grant: bool = fields.BooleanField(default=True)
     token_secret: str = fields.CharField(max_length=128, default=gen_token_secret)

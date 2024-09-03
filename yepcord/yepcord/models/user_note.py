@@ -28,6 +28,11 @@ class UserNote(Model):
     target: models.User = fields.ForeignKeyField("models.User", related_name="target")
     text: str = fields.CharField(null=True, default=None, max_length=256)
 
+    class Meta:
+        unique_together = (
+            ("user", "target"),
+        )
+
     def ds_json(self) -> dict:
         return {
             "user_id": self.user.id,

@@ -97,6 +97,11 @@ class GuildMember(Model):
 
     guildevents: fields.ReverseRelation[models.GuildEvent]
 
+    class Meta:
+        unique_together = (
+            ("user", "guild"),
+        )
+
     @property
     def joined_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)

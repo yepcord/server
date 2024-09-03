@@ -33,7 +33,7 @@ import yepcord.yepcord.models as models
 class GuildTemplate(Model):
     id: int = SnowflakeField(pk=True)
     name: str = fields.CharField(max_length=64)
-    guild: models.Guild = fields.ForeignKeyField("models.Guild")
+    guild: models.Guild = fields.OneToOneField("models.Guild")
     description: Optional[str] = fields.CharField(max_length=128, null=True, default=None)
     usage_count: int = fields.BigIntField(default=0)
     creator: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)
