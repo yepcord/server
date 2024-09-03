@@ -27,7 +27,7 @@ from ..snowflake import Snowflake
 
 class ThreadMetadata(Model):
     id: int = SnowflakeField(pk=True)
-    channel: models.Channel = fields.ForeignKeyField("models.Channel")
+    channel: models.Channel = fields.OneToOneField("models.Channel")
     archived: bool = fields.BooleanField(default=False)
     locked: bool = fields.BooleanField(default=False)
     archive_timestamp: datetime = fields.DatetimeField()

@@ -31,7 +31,7 @@ class UserData(Model):
         unique_together = (("username", "discriminator"),)
 
     id: int = SnowflakeField(pk=True)
-    user: models.User = fields.ForeignKeyField("models.User")
+    user: models.User = fields.OneToOneField("models.User")
     birth: date = fields.DateField()
     username: str = fields.CharField(max_length=128)
     discriminator: int = fields.IntField(validators=[MinValueValidator(0), MaxValueValidator(9999)])

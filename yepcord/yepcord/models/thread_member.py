@@ -32,6 +32,11 @@ class ThreadMember(Model):
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
     guild: models.Guild = fields.ForeignKeyField("models.Guild")
 
+    class Meta:
+        unique_together = (
+            ("user", "channel"),
+        )
+
     @property
     def joined_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
