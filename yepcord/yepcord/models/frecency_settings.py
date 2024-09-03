@@ -26,7 +26,7 @@ from ..utils import b64decode
 
 class FrecencySettings(Model):
     id: int = SnowflakeField(pk=True)
-    user: models.User = fields.ForeignKeyField("models.User")
+    user: models.User = fields.OneToOneField("models.User")
     settings: str = fields.TextField()
 
     def to_proto(self) -> FrecencyUserSettings:
