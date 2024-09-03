@@ -20,7 +20,7 @@ from dataclasses import dataclass, asdict
 from time import time
 from typing import List
 
-from aiohttp import ClientSession
+from httpx import AsyncClient
 
 from .singleton import Singleton
 
@@ -85,10 +85,10 @@ class Gifs(Singleton):
             self._categories = []
             return
         categories = []
-        async with ClientSession() as sess:
-            async with sess.get(f"https://tenor.googleapis.com/v2/categories?key={self._key}") as resp:
-                for category in (await resp.json())["tags"]:
-                    categories.append(GifCategory(category["name"][1:], category["image"]))
+        async with AsyncClient() as client:
+            resp = await client.get(f"https://tenor.googleapis.com/v2/categories?key={self._key}")
+            for category in resp.json()["tags"]:
+                categories.append(GifCategory(category["name"][1:], category["image"]))
         self._categories = categories
         self._last_update = time()
 
@@ -109,19 +109,19 @@ class Gifs(Singleton):
         gifs = []
         if "key" in kwargs: del kwargs["key"]
         _params = {"key": self._key, "q": q, **kwargs}
-        async with ClientSession() as sess:
-            async with sess.get(f"https://tenor.googleapis.com/v2/search", params=_params) as resp:
-                for gif in (await resp.json())["results"]:
-                    gifs.append(Gif(
-                        id=gif["id"],
-                        title=gif["title"],
-                        preview=gif["media_formats"]["gifpreview"]["url"],
-                        gif_src=gif["media_formats"]["gif"]["url"],
-                        height=gif["media_formats"]["mp4"]["dims"][0],
-                        width=gif["media_formats"]["mp4"]["dims"][1],
-                        src=gif["media_formats"]["mp4"]["url"],
-                        url=gif["itemurl"]
-                    ))
+        async with AsyncClient() as client:
+            resp = await client.get(f"https://tenor.googleapis.com/v2/search", params=_params)
+            for gif in resp.json()["results"]:
+                gifs.append(Gif(
+                    id=gif["id"],
+                    title=gif["title"],
+                    preview=gif["media_formats"]["gifpreview"]["url"],
+                    gif_src=gif["media_formats"]["gif"]["url"],
+                    height=gif["media_formats"]["mp4"]["dims"][0],
+                    width=gif["media_formats"]["mp4"]["dims"][1],
+                    src=gif["media_formats"]["mp4"]["url"],
+                    url=gif["itemurl"]
+                ))
 
         search = GifSearchResult(q, gifs, int(time()))
 
@@ -148,9 +148,9 @@ class Gifs(Singleton):
 
         if "key" in kwargs: del kwargs["key"]
         _params = {"key": self._key, "q": q, **kwargs}
-        async with ClientSession() as sess:
-            async with sess.get(f"https://tenor.googleapis.com/v2/search_suggestions", params=_params) as resp:
-                suggestions = (await resp.json())["results"]
+        async with AsyncClient() as client:
+            resp = await client.get(f"https://tenor.googleapis.com/v2/search_suggestions", params=_params)
+            suggestions = resp.json()["results"]
 
         self._last_suggestions.append(GifSuggestion(q, suggestions, int(time())))
 
