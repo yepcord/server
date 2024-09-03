@@ -39,7 +39,8 @@ from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS, MessageFlags
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
-    ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot, Role
+    ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot, Role, HiddenDmChannel, Invite, \
+    Reaction
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage, b64encode, b64decode
 
@@ -116,7 +117,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
 @channels.delete("/<int:channel_id>", allow_bots=True)
 async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
     if channel.type == ChannelType.DM:
-        await getCore().hideDmChannel(user, channel)
+        await HiddenDmChannel.get_or_create(user=user, channel=channel)
         await getGw().dispatch(DMChannelDeleteEvent(await channel.ds_json()), user_ids=[user.id])
         return await channel.ds_json()
     elif channel.type == ChannelType.GROUP_DM:
@@ -319,7 +320,11 @@ async def pin_message(user: User = DepUser, channel: Channel = DepChannel, messa
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not message.pinned:
-        await getCore().pinMessage(message)
+        if await Message.filter(pinned_timestamp__not_isnull=True, channel=message.channel).count() >= 50:
+            raise InvalidDataErr(400, Errors.make(30003))
+        message.pinned_timestamp = datetime.now()
+        await message.save(update_fields=["pinned_timestamp"])
+
         await getGw().sendPinsUpdateEvent(channel)
         message_ref = {"message_id": str(message.id), "channel_id": str(channel.id)}
         if channel.guild:
@@ -351,11 +356,16 @@ async def unpin_message(user: User = DepUser, channel: Channel = DepChannel, mes
 async def get_pinned_messages(user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
-        await member.checkPermission(GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY,
-                                     channel=channel)
-    messages = await getCore().getPinnedMessages(channel)
-    messages = [await message.ds_json() for message in messages]
-    return messages
+        await member.checkPermission(
+            GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY,
+            channel=channel,
+        )
+
+    return [
+        await message.ds_json()
+        for message in await Message.filter(pinned_timestamp__not_isnull=True, channel=channel)
+        .select_related("channel", "author", "guild")
+    ]
 
 
 @channels.put("/<int:channel_id>/messages/<int:message>/reactions/<string:reaction>/@me", allow_bots=True)
@@ -371,7 +381,7 @@ async def add_message_reaction(reaction: str, user: User = DepUser, channel: Cha
         "emoji": None if not isinstance(reaction, Emoji) else reaction,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
     }
-    await getCore().addReaction(message, user, **emoji)
+    await Reaction.get_or_create(user=user, message=message, **emoji)
     await getGw().dispatch(MessageReactionAddEvent(user.id, message.id, channel.id, emoji), channel=channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
@@ -390,7 +400,7 @@ async def remove_message_reaction(reaction: str, user: User = DepUser, channel: 
         "emoji": None if not isinstance(reaction, Emoji) else reaction,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
     }
-    await getCore().removeReaction(message, user, **emoji)
+    await Reaction.filter(user=user, message=message, **emoji).delete()
     await getGw().dispatch(MessageReactionRemoveEvent(user.id, message.id, channel.id, emoji), channel=channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
@@ -405,11 +415,17 @@ async def get_message_reactions(query_args: GetReactionsQuery, reaction: str, us
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
         raise InvalidDataErr(400, Errors.make(10014))
-    emoji_data = {
-        "emoji": None if not isinstance(reaction, Emoji) else reaction,
-        "emoji_name": reaction if isinstance(reaction, str) else reaction.name
-    }
-    return await getCore().getReactedUsersJ(message, query_args.limit, **emoji_data)
+    emoji = None if not isinstance(reaction, Emoji) else reaction
+    emoji_name = reaction if isinstance(reaction, str) else reaction.name
+
+    reactions = await Reaction.filter(
+        message=message, emoji=emoji, emoji_name=emoji_name
+    ).limit(query_args.limit).select_related("user")
+
+    return [
+        (await reaction.user.data).ds_json
+        for reaction in reactions
+    ]
 
 
 @channels.get("/<int:channel_id>/messages/search", qs_cls=SearchQuery)
@@ -430,7 +446,9 @@ async def create_invite(data: InviteCreate, user: User = DepUser, channel: Chann
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.CREATE_INSTANT_INVITE)
-    invite = await getCore().createInvite(channel, user, **data.model_dump())
+    invite = await Invite.create(
+        id=Snowflake.makeId(), channel=channel, inviter=user, **data.model_dump(include={"max_age", "max_uses"}),
+    )
     if channel.guild:
         entry = await AuditLogEntry.utils.invite_create(user, invite)
         await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
@@ -501,8 +519,11 @@ async def get_channel_invites(user: User = DepUser, channel: Channel = DepChanne
     if not (member := await getCore().getGuildMember(channel.guild, user.id)):
         raise InvalidDataErr(403, Errors.make(50001))
     await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
-    invites = await getCore().getChannelInvites(channel)
-    return [await invite.ds_json() for invite in invites]
+    return [
+        await invite.ds_json()
+        for invite in await Invite.filter(channel=channel, vanity_code__isnull=True)
+        .select_related("channel__guild", "inviter")
+    ]
 
 
 @channels.post("/<int:channel_id>/webhooks", body_cls=WebhookCreate, allow_bots=True)
@@ -527,7 +548,10 @@ async def get_channel_webhooks(user: User = DepUser, channel: Channel = DepChann
     member = await getCore().getGuildMember(channel.guild, user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
-    return [await webhook.ds_json() for webhook in await getCore().getChannelWebhooks(channel)]
+    return [
+        await webhook.ds_json()
+        for webhook in await Webhook.filter(channel=channel).select_related("channel", "channel__guild", "user")
+    ]
 
 
 @channels.post("/<int:channel_id>/messages/<int:message>/threads", body_cls=CreateThread, allow_bots=True)

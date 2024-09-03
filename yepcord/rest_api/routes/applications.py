@@ -35,8 +35,10 @@ applications = YBlueprint('applications', __name__)
 
 @applications.get("/", strict_slashes=False)
 async def get_applications(user: User = DepUser):
-    apps = await getCore().getApplications(user)
-    return [await app.ds_json() for app in apps]
+    return [
+        await app.ds_json()
+        for app in await Application.filter(owner=user, deleted=False).select_related("owner")
+    ]
 
 
 @applications.post("/", strict_slashes=False, body_cls=CreateApplication)

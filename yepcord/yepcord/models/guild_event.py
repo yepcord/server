@@ -73,5 +73,5 @@ class GuildEvent(Model):
             creator = await self.creator.data
             data["creator"] = creator.ds_json
         if with_user_count:
-            data["user_count"] = await getCore().getGuildEventUserCount(self)
+            data["user_count"] = await self.subscribers.filter().count()
         return data

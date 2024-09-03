@@ -90,7 +90,10 @@ class Message(Model):
             "stickers": self.stickers,
             "tts": False,
             "sticker_ids": [sticker["id"] for sticker in self.stickers],
-            "attachments": [attachment.ds_json() for attachment in await getCore().getAttachments(self)],
+            "attachments": [
+                attachment.ds_json()
+                for attachment in await models.Attachment.filter(message=self).select_related("channel")
+            ],
         }
         if self.guild: data["guild_id"] = str(self.guild.id)
         data["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None

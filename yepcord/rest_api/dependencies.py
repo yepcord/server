@@ -122,9 +122,12 @@ depMessage = depRaise(depMessageO, 404, Errors.make(10008))
 async def depInvite(invite: Optional[str] = None) -> Invite:
     try:
         invite_id = int.from_bytes(b64decode(invite), "big")
-        if not (inv := await getCore().getInvite(invite_id)):
+        invite = await (
+            Invite.get_or_none(id=invite_id)
+            .select_related("channel", "channel__guild", "inviter", "channel__guild__owner", "channel__owner")
+        )
+        if not invite:
             raise ValueError
-        invite = inv
     except ValueError:
         if not (invite := await getCore().getVanityCodeInvite(invite)):
             raise InvalidDataErr(404, Errors.make(10006))

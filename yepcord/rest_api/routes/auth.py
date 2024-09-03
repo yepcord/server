@@ -25,6 +25,7 @@ from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmai
 from ..utils import captcha
 from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
+from ...yepcord.classes.other import EmailMsg
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import Session, User
@@ -92,7 +93,17 @@ async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User 
     if not user.check_password(password):
         raise InvalidDataErr(400, Errors.make(50018))
     nonce = await getCore().generateUserMfaNonce(user)
-    await getCore().sendMfaChallengeEmail(user, nonce[0])
+
+    code = await getCore().mfaNonceToCode(nonce[0])
+    await EmailMsg(
+        user.email,
+        f"Your one-time verification key is {code}",
+        f"It looks like you're trying to view your account's backup codes.\n"
+        f"This verification key expires in 10 minutes. This key is extremely sensitive, treat it like a "
+        f"password and do not share it with anyone.\n"
+        f"Enter it in the app to unlock your backup codes:\n{code}"
+    ).send()
+
     return {"nonce": nonce[0], "regenerate_nonce": nonce[1]}
 
 

@@ -33,10 +33,10 @@ from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, Relati
 from ...yepcord.classes.other import MFA
 from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
-from ...yepcord.enums import RelationshipType
+from ...yepcord.enums import RelationshipType, ChannelType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, \
-    GuildMember, RemoteAuthSession, Relationship, Authorization, Bot, ConnectedAccount
+    GuildMember, RemoteAuthSession, Relationship, Authorization, Bot, ConnectedAccount, GuildEvent, Channel
 from ...yepcord.models.remote_auth_session import time_plus_150s
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
 from ...yepcord.utils import execute_after, validImage, getImage
@@ -255,7 +255,7 @@ async def get_relationships(user: User = DepUser):
 async def get_notes(target_uid: int, user: User = DepUser):
     if not (target_user := await User.y.get(target_uid, False)):
         raise InvalidDataErr(404, Errors.make(10013))
-    if not (note := await getCore().getUserNote(user, target_user)):
+    if not (note := await UserNote.get_or_none(user=user, target=target_user).select_related("user", "target")):
         raise InvalidDataErr(404, Errors.make(10013))
     return note.ds_json()
 
@@ -424,7 +424,7 @@ async def new_dm_channel(data: DmChannelCreate, user: User = DepUser):
 async def delete_user(data: DeleteRequest, user: User = DepUser):
     if not user.check_password(data.password):
         raise InvalidDataErr(400, Errors.make(50018))
-    if await getCore().getUserOwnedGuilds(user) or await getCore().getUserOwnedGroups(user):
+    if await Guild.exists(owner=user) or await Channel.exists(owner=user, type=ChannelType.GROUP_DM):
         raise InvalidDataErr(400, Errors.make(40011))
     await getCore().deleteUser(user)
     await getGw().dispatch(UserDeleteEvent(user.id), user_ids=[user.id])
@@ -437,7 +437,9 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User =
     for guild_id in query_args.guild_ids[:5]:
         if not await GuildMember.get_or_none(guild__id=guild_id, user__id=user.id):
             raise InvalidDataErr(403, Errors.make(50001))
-        for event_id in await getCore().getSubscribedGuildEventIds(user, guild_id):
+        for event_id in await GuildEvent.filter(
+                guild__id=guild_id, subscribers__user__id__in=[user.id]
+        ).values_list("id", flat=True):
             events.append({
                 "guild_scheduled_event_id": str(event_id),
                 "user_id": str(user.id)

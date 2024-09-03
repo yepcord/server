@@ -127,7 +127,12 @@ class Guild(Model):
         if for_gateway or user_id:
             member = await getCore().getGuildMember(self, user_id)
             data["joined_at"] = member.joined_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
-            data["threads"] = [thread.ds_json() for thread in await getCore().getGuildMemberThreads(self, user_id)]
+            data["threads"] = [
+                thread.ds_json()
+                for thread in await models.ThreadMember.filter(guild=self, user__id=user_id).select_related(
+                    "channel", "user", "guild"
+                )
+            ]
         if for_gateway or with_channels:
             data["channels"] = [await channel.ds_json() for channel in await getCore().getGuildChannels(self)]
         if with_members:

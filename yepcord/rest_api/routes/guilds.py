@@ -23,6 +23,7 @@ from time import time
 from async_timeout import timeout
 from quart import request, current_app
 from tortoise.expressions import Q
+from tortoise.functions import Count
 
 from ..dependencies import DepUser, DepGuild, DepGuildMember, DepGuildTemplate, DepRole
 from ..models.guilds import GuildCreate, GuildUpdate, TemplateCreate, TemplateUpdate, EmojiCreate, EmojiUpdate, \
@@ -42,7 +43,7 @@ from ...yepcord.enums import GuildPermissions, StickerType, StickerFormat, Sched
     ScheduledEventEntityType
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import User, Guild, GuildMember, GuildTemplate, Emoji, Channel, PermissionOverwrite, UserData, \
-    Role, Invite, Sticker, GuildEvent, AuditLogEntry, Integration, ApplicationCommand
+    Role, Invite, Sticker, GuildEvent, AuditLogEntry, Integration, ApplicationCommand, Webhook, GuildBan
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import getImage, b64decode, validImage, imageType
 
@@ -260,9 +261,10 @@ async def create_channel(data: ChannelCreate, user: User = DepUser, guild: Guild
 @guilds.get("/<int:guild>/invites", allow_bots=True)
 async def get_guild_invites(guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    invites = await getCore().getGuildInvites(guild)
-    invites = [await invite.ds_json() for invite in invites]
-    return invites
+    return [
+        await invite.ds_json()
+        for invite in await Invite.filter(channel__guild=guild).select_related("channel", "channel__guild", "inviter")
+    ]
 
 
 @guilds.get("/<int:guild>/premium/subscriptions", allow_bots=True)
@@ -325,7 +327,7 @@ async def ban_member(user_id: int, data: BanMember, user: User = DepUser, guild:
         raise InvalidDataErr(403, Errors.make(50013))
     if await getCore().getGuildBan(guild, user_id) is not None:
         return "", 204
-    reason = request.headers.get("x-audit-log-reason")
+    reason = request.headers.get("x-audit-log-reason", "")
     if target_member is not None:
         await getGw().dispatchUnsub([target_member.user.id], guild.id)
         for role in await target_member.roles.all():
@@ -333,12 +335,12 @@ async def ban_member(user_id: int, data: BanMember, user: User = DepUser, guild:
         await target_member.delete()
         if target_member.user.is_bot:
             await process_bot_kick(user, target_member)
-        await getCore().banGuildMember(target_member, reason)
+        await GuildBan.create(user=target_member.user, guild=guild, reason=reason)
         target_user = target_member.user
     else:
         if (target_user := await User.y.get(user_id, False)) is None:
             raise InvalidDataErr(404, Errors.make(10013))
-        await getCore().banGuildUser(target_user, guild, reason)
+        await GuildBan.create(user=target_user, guild=guild, reason=reason)
     target_user_data = await target_user.data
     if target_member is not None:
         await getGw().dispatch(GuildMemberRemoveEvent(guild.id, target_user_data.ds_json), user_ids=[user_id])
@@ -369,7 +371,10 @@ async def ban_member(user_id: int, data: BanMember, user: User = DepUser, guild:
 @guilds.get("/<int:guild>/bans", allow_bots=True)
 async def get_guild_bans(guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
-    return [await ban.ds_json() for ban in await getCore().getGuildBans(guild)]
+    return [
+        await ban.ds_json()
+        for ban in await GuildBan.filter(guild=guild).select_related("user", "guild")
+    ]
 
 
 @guilds.delete("/<int:guild>/bans/<int:user_id>", allow_bots=True)
@@ -377,7 +382,7 @@ async def unban_member(user_id: int, user: User = DepUser, guild: Guild = DepGui
                        member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     target_user_data: UserData = await UserData.get(id=user_id).select_related("user")
-    await getCore().removeGuildBan(guild, target_user_data.user)
+    await GuildBan.filter(guild=guild, user=target_user_data.user).delete()
     await getGw().dispatch(GuildBanRemoveEvent(guild.id, target_user_data.ds_json), guild_id=guild.id,
                            permissions=GuildPermissions.BAN_MEMBERS)
 
@@ -512,13 +517,20 @@ async def get_connections_configuration(role: int, member: GuildMember = DepGuil
 @guilds.get("/<int:guild>/roles/member-counts", allow_bots=True)
 async def get_role_member_count(guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-    return await getCore().getRolesMemberCounts(guild)
+    counts = {}
+    for role in await Role.filter(guild=guild).select_related("guildmembers").annotate(m=Count("guildmembers")):
+        counts[role.id] = role.m
+    return counts
 
 
 @guilds.get("/<int:guild>/roles/<int:role>/member-ids", allow_bots=True)
 async def get_role_members(member: GuildMember = DepGuildMember, role: Role = DepRole):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
-    return [str(member_id) for member_id in await getCore().getRoleMemberIds(role)]
+    return [
+        str(member_id)
+        for member_id in await role.guildmembers.all().select_related("user").limit(100)
+        .values_list("user__id", flat=True)
+    ]
 
 
 @guilds.patch("/<int:guild>/roles/<int:role>/members", body_cls=AddRoleMembers, allow_bots=True)
@@ -532,7 +544,7 @@ async def add_role_members(data: AddRoleMembers, user: User = DepUser, guild: Gu
     members = {}
     for member_id in data.member_ids:
         target_member = await getCore().getGuildMember(guild, member_id)
-        if not await getCore().memberHasRole(target_member, role):
+        if not await target_member.roles.filter(id=role.id).exists():
             await target_member.roles.add(role)
             target_member_json = await target_member.ds_json()
             await getGw().dispatch(GuildMemberUpdateEvent(guild.id, target_member_json), guild_id=guild.id)
@@ -702,7 +714,10 @@ async def delete_guild(data: GuildDelete, user: User = DepUser, guild: Guild = D
 @guilds.get("/<int:guild>/webhooks", allow_bots=True)
 async def get_guild_webhooks(guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-    return [await webhook.ds_json() for webhook in await getCore().getWebhooks(guild)]
+    return [
+        await webhook.ds_json()
+        for webhook in await Webhook.filter(channel__guild=guild).select_related("channel", "channel__guild", "user")
+    ]
 
 
 @guilds.get("/<int:guild>/stickers", allow_bots=True)
