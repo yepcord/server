@@ -17,7 +17,7 @@
 """
 
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Awaitable
 
 from fast_depends import inject
 from flask.sansio.scaffold import T_route, setupmethod
@@ -40,7 +40,7 @@ def apply_validator(src_func: T_route, type_: str, cls: Optional[type], source=N
 
     applied.add(f"validate_{type_}")
     setattr(func, "_patches", applied)
-    if len(applied) > 1:
+    if len(applied) > 1:  # pragma: no cover
         delattr(src_func, "_patches")
 
     return func
@@ -52,7 +52,7 @@ def apply_inject(src_func: T_route) -> T_route:
     if "fastdepends_inject" in applied:
         return src_func
 
-    if Config.LAZY_INJECT:
+    if Config.LAZY_INJECT:  # pragma: no cover
         injected_func = None
 
         @wraps(src_func)
@@ -68,7 +68,7 @@ def apply_inject(src_func: T_route) -> T_route:
 
     applied.add("fastdepends_inject")
     setattr(func, "_patches", applied)
-    if len(applied) > 1:
+    if len(applied) > 1:  # pragma: no cover
         delattr(src_func, "_patches")
 
     return func
@@ -86,7 +86,7 @@ def apply_allow_bots(src_func: T_route) -> T_route:
 
     applied.add("allow_bots")
     setattr(wrapped, "_patches", applied)
-    if len(applied) > 1:
+    if len(applied) > 1:  # pragma: no cover
         delattr(src_func, "_patches")
 
     return wrapped
@@ -105,7 +105,7 @@ def apply_oauth(src_func: T_route, scopes: list[str]) -> T_route:
 
     applied.add("oauth")
     setattr(wrapped, "_patches", applied)
-    if len(applied) > 1:
+    if len(applied) > 1:  # pragma: no cover
         delattr(src_func, "_patches")
 
     return wrapped
