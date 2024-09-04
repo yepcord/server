@@ -39,21 +39,22 @@ auth = YBlueprint('auth', __name__)
 @auth.post("/register", body_cls=Register)
 @captcha
 async def register(data: Register):
-    loc = getCore().getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
-    sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth,
-                                    loc)
-    return {"token": sess.token}
+    locale = getCore().getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
+    user = await User.y.register(data.username, data.email, data.password, data.date_of_birth, locale)
+    session = await Session.Y.create(user)
+
+    return {"token": session.token}
 
 
 @auth.post("/login", body_cls=Login)
 @captcha
 async def login(data: Login):
-    sess = await getCore().login(data.login, data.password)
-    user = sess.user
-    sett = await user.settings
+    session = await User.y.login(data.login, data.password)
+    user = session.user
+    settings = await user.settings
     return {
-        "token": sess.token,
-        "user_settings": {"locale": sett.locale, "theme": sett.theme},
+        "token": session.token,
+        "user_settings": {"locale": settings.locale, "theme": settings.theme},
         "user_id": str(user.id)
     }
 

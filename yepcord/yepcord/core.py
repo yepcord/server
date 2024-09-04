@@ -19,7 +19,6 @@ import os.path
 from asyncio import get_event_loop
 # noinspection PyPackageRequirements
 from contextvars import Context
-from datetime import datetime
 from hashlib import sha256
 from hmac import new
 from json import loads as jloads, dumps as jdumps
@@ -29,7 +28,6 @@ from time import time
 from typing import Optional, Union
 
 import maxminddb
-from bcrypt import hashpw, gensalt, checkpw
 from tortoise.expressions import Q, Subquery
 from tortoise.functions import Count
 from tortoise.transactions import atomic
@@ -39,13 +37,13 @@ from .classes.other import EmailMsg, JWT, MFA
 from .classes.singleton import Singleton
 from .config import Config
 from .enums import ChannelType, GUILD_CHANNELS
-from .errors import InvalidDataErr, MfaRequiredErr, Errors
-from .models import User, UserData, UserSettings, Session, Relationship, Channel, Message, ReadState, FrecencySettings, \
-    Emoji, Invite, Guild, GuildMember, GuildTemplate, Reaction, Sticker, PermissionOverwrite, GuildBan, AuditLogEntry, \
+from .errors import InvalidDataErr, Errors
+from .models import User, UserSettings, Session, Relationship, Channel, Message, ReadState, FrecencySettings, Emoji, \
+    Invite, Guild, GuildMember, GuildTemplate, Reaction, Sticker, PermissionOverwrite, GuildBan, AuditLogEntry, \
     Webhook, HiddenDmChannel, MfaCode, Role, GuildEvent, ThreadMember
 from .snowflake import Snowflake
 from .storage import getStorage
-from .utils import b64encode, b64decode, int_size, NoneType
+from .utils import b64encode, b64decode, NoneType
 from ..gateway.events import DMChannelCreateEvent
 
 
@@ -55,71 +53,11 @@ class Core(Singleton):
         self.key = key if key and len(key) >= 16 and isinstance(key, bytes) else urandom(32)
         self.ipdb = None
 
-    def prepPassword(self, password: str, uid: int) -> bytes:
-        """
-        Prepares user password for hashing
-        :param password:
-        :param uid:
-        :return:
-        """
-        password = password.encode("utf8")
-        password += uid.to_bytes(int_size(uid), "big")
-        return password.replace(b"\x00", b'')
-
-    def hashPassword(self, uid: int, password: str) -> str:
-        password = self.prepPassword(password, uid)
-        return hashpw(password, gensalt(Config.BCRYPT_ROUNDS)).decode("utf8")
-
-    def generateSessionSignature(self) -> str:
-        return b64encode(urandom(32))
-
     async def getRandomDiscriminator(self, login: str) -> Optional[int]:
         for _ in range(5):
             d = randint(1, 9999)
             if not await User.y.getByUsername(login, d):
                 return d
-
-    @atomic()
-    async def register(self, uid: int, login: str, email: Optional[str], password: str, birth: str,
-                       locale: str = "en-US",
-                       invite: Optional[str] = None) -> Session:
-        birth = datetime.strptime(birth, "%Y-%m-%d")
-
-        email = email.lower()
-        if await self.getUserByEmail(email):
-            raise InvalidDataErr(400, Errors.make(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED",
-                                                                    "message": "Email address already registered."}}))
-        password = self.hashPassword(uid, password)
-        signature = self.generateSessionSignature()
-
-        discriminator = await self.getRandomDiscriminator(login)
-        if discriminator is None:
-            raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "USERNAME_TOO_MANY_USERS",
-                                                                    "message": "Too many users have this username, "
-                                                                               "please try another."}}))
-
-        user = await User.create(id=uid, email=email, password=password)
-        await UserData.create(id=uid, user=user, birth=birth, username=login, discriminator=discriminator)
-        await UserSettings.create(id=uid, user=user, locale=locale)
-
-        session = await Session.create(id=Snowflake.makeId(), user=user, signature=signature)
-        await self.sendVerificationEmail(user)
-        return session
-
-    async def login(self, email: str, password: str) -> Session:
-        email = email.strip().lower()
-        user = await User.get_or_none(email=email)
-        if not user or not checkpw(self.prepPassword(password, user.id), user.password.encode("utf8")):
-            raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "INVALID_LOGIN",
-                                                                    "message": "Invalid login or password."},
-                                                          "password": {"code": "INVALID_LOGIN",
-                                                                       "message": "Invalid login or password."}}))
-        settings = await user.settings
-        if settings.mfa:
-            _sid = urandom(12)
-            sid = int.from_bytes(_sid, "big")
-            raise MfaRequiredErr(user.id, b64encode(_sid), self.generateMfaTicketSignature(user, sid))
-        return await Session.Y.create(user)
 
     async def getRelationships(self, user: User, with_data=False) -> list[dict]:
         rels = []

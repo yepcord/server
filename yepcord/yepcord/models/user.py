@@ -19,20 +19,22 @@
 from __future__ import annotations
 
 from datetime import datetime
+from os import urandom
 from random import randint, choice
 from typing import Optional
 
 from bcrypt import checkpw, hashpw, gensalt
 from tortoise import fields
+from tortoise.transactions import atomic
 
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
 from ..classes.other import MFA
 from ..config import Config
 from ..ctx import getCore
-from ..errors import InvalidDataErr, Errors
+from ..errors import InvalidDataErr, Errors, MfaRequiredErr
 from ..snowflake import Snowflake
-from ..utils import int_size
+from ..utils import int_size, b64encode
 
 
 async def _get_free_discriminator(login: str) -> Optional[int]:
@@ -57,6 +59,58 @@ class UserUtils:
     @staticmethod
     def prepare_password(password: str, user_id: int) -> bytes:
         return password.encode("utf8") + user_id.to_bytes(int_size(user_id), "big").replace(b"\x00", b'')
+
+    @staticmethod
+    def hash_password(password: str, user_id: int) -> str:
+        password = UserUtils.prepare_password(password, user_id)
+        return hashpw(password, gensalt(Config.BCRYPT_ROUNDS)).decode("utf8")
+
+    @staticmethod
+    @atomic()
+    async def register(
+            login: str, email: Optional[str], password: str, birth: str, locale: str = "en-US",
+            invite: Optional[str] = None
+    ) -> User:
+        user_id = Snowflake.makeId()
+
+        birth = datetime.strptime(birth, "%Y-%m-%d")
+
+        email = email.lower()
+        if await User.exists(email=email):
+            raise InvalidDataErr(400, Errors.make(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED",
+                                                                    "message": "Email address already registered."}}))
+
+        discriminator = await _get_free_discriminator(login)
+        if discriminator is None:
+            raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "USERNAME_TOO_MANY_USERS",
+                                                                    "message": "Too many users have this username, "
+                                                                               "please try another."}}))
+
+        user = await User.create(id=user_id, email=email, password=UserUtils.hash_password(password, user_id))
+        await models.UserData.create(id=user_id, user=user, birth=birth, username=login, discriminator=discriminator)
+        await models.UserSettings.create(id=user_id, user=user, locale=locale)
+
+        await getCore().sendVerificationEmail(user)
+        return user
+
+    @staticmethod
+    async def login(email: str, password: str) -> models.Session:
+        email = email.strip().lower()
+        user = await User.get_or_none(email=email)
+        if not user or not checkpw(UserUtils.prepare_password(password, user.id), user.password.encode("utf8")):
+            raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "INVALID_LOGIN",
+                                                                    "message": "Invalid login or password."},
+                                                          "password": {"code": "INVALID_LOGIN",
+                                                                       "message": "Invalid login or password."}}))
+        settings = await user.settings
+        if settings.mfa:
+            sid = urandom(12)
+            raise MfaRequiredErr(
+                user.id,
+                b64encode(sid),
+                getCore().generateMfaTicketSignature(user, int.from_bytes(sid, "big")),
+            )
+        return await models.Session.Y.create(user)
 
 
 class User(Model):
@@ -142,8 +196,7 @@ class User(Model):
         return checkpw(self.y.prepare_password(password, self.id), self.password.encode("utf8"))
 
     def hash_new_password(self, password: str) -> str:
-        password = self.y.prepare_password(password, self.id)
-        return hashpw(password, gensalt(Config.BCRYPT_ROUNDS)).decode("utf8")
+        return self.y.hash_password(password, self.id)
 
     async def change_password(self, new_password: str) -> None:
         self.password = self.hash_new_password(new_password)
@@ -191,7 +244,7 @@ class User(Model):
         await models.MfaCode.filter(user=self).delete()
 
     async def get_backup_codes(self) -> list[str]:
-        return [code.code async for code in models.MfaCode.filter(user=self).limit(10)]
+        return [code.code for code in await models.MfaCode.filter(user=self).limit(10)]
 
     async def use_backup_code(self, code: str) -> bool:
         if (code := await models.MfaCode.get_or_none(user=self, code=code, used=False)) is None:

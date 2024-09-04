@@ -19,12 +19,12 @@
 from asyncio import get_event_loop
 from datetime import date
 from json import dumps
-from random import randint, choice
+from random import randint
 from typing import Coroutine, Any
 
 import pytest as pt
 import pytest_asyncio
-from tortoise import Tortoise, connections
+from tortoise import Tortoise
 
 from yepcord.yepcord.config import Config, ConfigModel
 from yepcord.yepcord.core import Core
@@ -64,37 +64,35 @@ async def _setup_db():
 
 
 @pt.mark.asyncio
-async def test_register_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.register(VARS["user_id"], "Test Login", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd",
-                                      "2000-01-01")
+async def test_register_success():
+    user = await User.y.register("Test Login", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
+    VARS["user_id"] = user.id
+    session = await Session.Y.create(user)
+
     assert session is not None, "Account not registered: maybe you using already used database?"
 
-    await core.register(VARS["user_id"] + 200001, "Test", f"{EMAIL_ID}_test2_1@yepcord.ml", "password", "2000-01-01")
+    user = await User.y.register("Test", f"{EMAIL_ID}_test2_1@yepcord.ml", "password", "2000-01-01")
+    VARS[f"user_id_200001"] = user.id
 
 
 @pt.mark.asyncio
-async def test_register_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_register_fail():
     with pt.raises(InvalidDataErr):
-        await testCore.register(VARS["user_id"], "Test Login 2", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd",
-                                "2000-01-01")
+        await User.y.register("Test Login 2", f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd", "2000-01-01")
 
 
 @pt.mark.asyncio
-async def test_login_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    session = await testCore.login(f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd")
+async def test_login_success():
+    session = await User.y.login(f"{EMAIL_ID}_test@yepcord.ml", "test_passw0rd")
     assert session is not None, "Session not created: ???"
 
 
 @pt.mark.asyncio
-async def test_login_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_login_fail():
     with pt.raises(InvalidDataErr):
-        await testCore.login(f"{EMAIL_ID}_test@yepcord.ml", "wrong_password")
+        await User.y.login(f"{EMAIL_ID}_test@yepcord.ml", "wrong_password")
     with pt.raises(InvalidDataErr):
-        await testCore.login(f"{EMAIL_ID}_test123@yepcord.ml", "test_passw0rd")
+        await User.y.login(f"{EMAIL_ID}_test123@yepcord.ml", "test_passw0rd")
 
 
 @pt.mark.asyncio
@@ -125,13 +123,11 @@ def changeUserData(data: UserData) -> None:
 
 
 @pt.mark.asyncio  # May be removed, but not removing now because other tests depend on VARS["user_id"] + 100000
-async def test_changeUserDiscriminator_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-
-    await testCore.register(VARS["user_id"] + 100000, "Test", f"{EMAIL_ID}_test1@yepcord.ml", "password",
-                            "2000-01-01")
-    await testCore.register(VARS["user_id"] + 200000, "Test", f"{EMAIL_ID}_test2@yepcord.ml", "password",
-                            "2000-01-01")
+async def test_changeUserDiscriminator_fail():
+    user = await User.y.register("Test", f"{EMAIL_ID}_test1@yepcord.ml", "password", "2000-01-01")
+    VARS["user_id_100000"] = user.id
+    user = await User.y.register("Test", f"{EMAIL_ID}_test2@yepcord.ml", "password", "2000-01-01")
+    VARS["user_id_200000"] = user.id
 
 
 @pt.mark.asyncio  # May be removed, but not removing now because other tests depend on VARS["user_id"] + 100000 + d
@@ -160,22 +156,22 @@ async def test_getUserByUsername_fail():
 
 @pt.mark.asyncio
 async def test_checkRelationShipAvailable_success():
-    user1 = await User.get(id=VARS["user_id"] + 100000)
-    user2 = await User.get(id=VARS["user_id"] + 200000)
+    user1 = await User.get(id=VARS["user_id_100000"])
+    user2 = await User.get(id=VARS["user_id_200000"])
     assert await Relationship.utils.available(user1, user2)
 
 
 @pt.mark.asyncio
 async def test_reqRelationship_success():
-    user1 = await User.get(id=VARS["user_id"] + 100000)
-    user2 = await User.get(id=VARS["user_id"] + 200000)
+    user1 = await User.get(id=VARS["user_id_100000"])
+    user2 = await User.get(id=VARS["user_id_200000"])
     assert await Relationship.utils.request(user2, user1)
 
 
 @pt.mark.asyncio
 async def test_checkRelationShipAvailable_fail():
-    user1 = await User.get(id=VARS["user_id"] + 100000)
-    user2 = await User.get(id=VARS["user_id"] + 200000)
+    user1 = await User.get(id=VARS["user_id_100000"])
+    user2 = await User.get(id=VARS["user_id_200000"])
     with pt.raises(InvalidDataErr):
         await Relationship.utils.available(user1, user2, raise_=True)
 
@@ -183,11 +179,11 @@ async def test_checkRelationShipAvailable_fail():
 @pt.mark.asyncio
 async def test_getRelationships_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await User.get(id=VARS["user_id"] + 100000)
+    user = await User.get(id=VARS["user_id_100000"])
     rels = await testCore.getRelationships(user)
     assert len(rels) == 1
     assert rels[0]["type"] == 3
-    assert rels[0]["user_id"] == str(VARS["user_id"] + 200000)
+    assert rels[0]["user_id"] == str(VARS["user_id_200000"])
 
 
 @pt.mark.asyncio
@@ -200,45 +196,45 @@ async def test_getRelationships_fail(testCore: Coroutine[Any, Any, Core]):
 
 @pt.mark.asyncio
 async def test_getRelationship_success():
-    assert await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100000),
-                                           await User.get(id=VARS["user_id"] + 200000))
+    assert await Relationship.utils.exists(await User.get(id=VARS["user_id_100000"]),
+                                           await User.get(id=VARS["user_id_200000"]))
 
 
 @pt.mark.asyncio
 async def test_getRelationship_fail():
     assert not await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100001),
-                                               await User.get(id=VARS["user_id"] + 200000))
+                                               await User.get(id=VARS["user_id_200000"]))
     assert not await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100001),
-                                               await User.get(id=VARS["user_id"] + 200001))
+                                               await User.get(id=VARS[f"user_id_200001"]))
 
 
 @pt.mark.asyncio
 async def test_getRelatedUsers_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user = await User.get(id=VARS["user_id"] + 100000)
+    user = await User.get(id=VARS["user_id_100000"])
     users = await testCore.getRelatedUsers(user, True)
     assert len(users) == 1
-    assert users[0] == VARS["user_id"] + 200000
+    assert users[0] == VARS["user_id_200000"]
 
 
 @pt.mark.asyncio
 async def test_accRelationship_success():
-    user = await User.get(id=VARS["user_id"] + 100000)
-    user2 = await User.get(id=VARS["user_id"] + 200000)
+    user = await User.get(id=VARS["user_id_100000"])
+    user2 = await User.get(id=VARS["user_id_200000"])
     await Relationship.utils.accept(user2, user)
-    rel = await Relationship.utils.get(await User.get(id=VARS["user_id"] + 100000),
-                                       await User.get(id=VARS["user_id"] + 200000))
+    rel = await Relationship.utils.get(await User.get(id=VARS["user_id_100000"]),
+                                       await User.get(id=VARS["user_id_200000"]))
     assert rel is not None
     assert rel.type == RelationshipType.FRIEND
 
 
 @pt.mark.asyncio
 async def test_delRelationship_success():
-    user = await User.get(id=VARS["user_id"] + 100000)
-    user2 = await User.get(id=VARS["user_id"] + 200000)
+    user = await User.get(id=VARS["user_id_100000"])
+    user2 = await User.get(id=VARS["user_id_200000"])
     await Relationship.utils.delete(user, user2)
-    assert not await Relationship.utils.exists(await User.get(id=VARS["user_id"] + 100000),
-                                               await User.get(id=VARS["user_id"] + 200000))
+    assert not await Relationship.utils.exists(await User.get(id=VARS["user_id_100000"]),
+                                               await User.get(id=VARS["user_id_200000"]))
 
 
 @pt.mark.asyncio
@@ -280,7 +276,7 @@ async def test_getMfaFromTicket_success(testCore: Coroutine[Any, Any, Core]):
     await settings.save(update_fields=["mfa"])
 
     try:
-        await testCore.login(user.email, "test_passw0rd")
+        await User.y.login(user.email, "test_passw0rd")
         assert False
     except MfaRequiredErr as e:
         ticket = b64encode(dumps([e.uid, "login"])) + f".{e.sid}.{e.sig}"
@@ -316,8 +312,8 @@ async def test_verifyUserMfaNonce():
 @pt.mark.asyncio
 async def test_getDMChannelOrCreate_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
-    user1 = await User.y.get(VARS["user_id"] + 100000)
-    user2 = await User.y.get(VARS["user_id"] + 200000)
+    user1 = await User.y.get(VARS["user_id_100000"])
+    user2 = await User.y.get(VARS["user_id_200000"])
     channel = await testCore.getDMChannelOrCreate(user1, user2)
     channel2 = await testCore.getDMChannelOrCreate(user1, user2)
     assert channel is not None
@@ -381,7 +377,7 @@ def test_config():
 @pt.mark.asyncio
 async def test_gw_channel_filter():
     user = await User.y.get(VARS["user_id"])
-    user2 = await User.y.get(VARS["user_id"] + 100000)
+    user2 = await User.y.get(VARS["user_id_100000"])
     guild = await Guild.create(owner=user, name="test")
     await GuildMember.create(guild=guild, user=user)
     role = await Role.create(id=guild.id, name="@everyone", guild=guild)
