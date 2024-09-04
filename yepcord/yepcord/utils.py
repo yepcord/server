@@ -76,7 +76,7 @@ async def execute_after(coro, seconds):
         await asleep(seconds_)
         await coro_
 
-    get_event_loop().create_task(_wait_exec(coro, seconds))
+    _ = get_event_loop().create_task(_wait_exec(coro, seconds))
 
 
 ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')

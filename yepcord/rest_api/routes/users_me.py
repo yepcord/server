@@ -17,7 +17,6 @@
 """
 
 from base64 import b64encode as _b64encode, b64decode as _b64decode
-from random import choice
 from time import time
 from typing import Union, Optional
 
@@ -426,7 +425,7 @@ async def delete_user(data: DeleteRequest, user: User = DepUser):
         raise InvalidDataErr(400, Errors.make(50018))
     if await Guild.exists(owner=user) or await Channel.exists(owner=user, type=ChannelType.GROUP_DM):
         raise InvalidDataErr(400, Errors.make(40011))
-    await getCore().deleteUser(user)
+    await user.y_delete()
     await getGw().dispatch(UserDeleteEvent(user.id), user_ids=[user.id])
     return "", 204
 

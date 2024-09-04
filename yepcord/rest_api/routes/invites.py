@@ -66,7 +66,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
                                    user_ids=[recipient.id for recipient in recipients])
         await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}),
                                user_ids=[user.id])
-        await getCore().useInvite(invite)
+        await invite.use()
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_NEWS):
         inv = await invite.ds_json()
         for excl in ["max_age", "max_uses", "created_at"]:  # Remove excluded fields
@@ -88,7 +88,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
                 await getCore().sendMessage(message)
                 await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel,
                                        permissions=GuildPermissions.VIEW_CHANNEL)
-            await getCore().useInvite(invite)
+            await invite.use()
             await getGw().dispatchSub([user.id], guild_id=guild.id)
     return inv
 

@@ -183,8 +183,8 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
 
     if channel.type == ChannelType.DM:
         other_user = await channel.other_user(user)
-        if await getCore().isDmChannelHidden(other_user, channel):
-            await getCore().unhideDmChannel(other_user, channel)
+        if await channel.dm_is_hidden(other_user):
+            await channel.dm_unhide(other_user)
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": other_user.id}),
                                    user_ids=[other_user.id])
     await getCore().sendMessage(message)

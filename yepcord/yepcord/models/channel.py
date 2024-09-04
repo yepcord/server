@@ -179,3 +179,11 @@ class Channel(Model):
         if self.type != ChannelType.DM:
             return
         return await self.recipients.filter(~Q(id=current_user.id)).get_or_none()
+
+    async def dm_is_hidden(self, for_user: models.User) -> bool:
+        return await models.HiddenDmChannel.exists(user=for_user, channel=self)
+
+    async def dm_unhide(self, for_user: models.User) -> None:
+        if self.type != ChannelType.DM:
+            return
+        await models.HiddenDmChannel.filter(user=for_user, channel=self).delete()

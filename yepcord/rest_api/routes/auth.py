@@ -29,7 +29,6 @@ from ...yepcord.classes.other import EmailMsg
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.models import Session, User
-from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import LOCALES, b64decode
 
 # Base path is /api/vX/auth

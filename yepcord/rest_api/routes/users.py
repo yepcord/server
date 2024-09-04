@@ -19,7 +19,6 @@
 from ..dependencies import DepUser
 from ..models.users import UserProfileQuery
 from ..y_blueprint import YBlueprint
-from ...yepcord.ctx import getCore
 from ...yepcord.models import User
 
 # Base path is /api/vX/users

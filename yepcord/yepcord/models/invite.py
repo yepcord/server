@@ -111,3 +111,10 @@ class Invite(Model):
                 data["code"] = self.vanity_code
 
         return data
+
+    async def use(self) -> None:
+        if 0 < self.max_uses <= self.uses + 1:
+            await self.delete()
+        else:
+            self.uses += 1
+            await self.save(update_fields=["uses"])

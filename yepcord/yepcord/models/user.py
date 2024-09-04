@@ -25,6 +25,7 @@ from typing import Optional
 
 from bcrypt import checkpw, hashpw, gensalt
 from tortoise import fields
+from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
 import yepcord.yepcord.models as models
@@ -65,6 +66,7 @@ class UserUtils:
         password = UserUtils.prepare_password(password, user_id)
         return hashpw(password, gensalt(Config.BCRYPT_ROUNDS)).decode("utf8")
 
+    # noinspection PyUnusedLocal
     @staticmethod
     @atomic()
     async def register(
@@ -97,7 +99,7 @@ class UserUtils:
     async def login(email: str, password: str) -> models.Session:
         email = email.strip().lower()
         user = await User.get_or_none(email=email)
-        if not user or not checkpw(UserUtils.prepare_password(password, user.id), user.password.encode("utf8")):
+        if not user or not user.check_password(password):
             raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "INVALID_LOGIN",
                                                                     "message": "Invalid login or password."},
                                                           "password": {"code": "INVALID_LOGIN",
@@ -186,6 +188,7 @@ class User(Model):
 
         return data
 
+    # noinspection PyMethodMayBeStatic
     async def get_another_user(self, user_id: int) -> User:
         # TODO: check for relationship, mutual guilds or mutual friends
         if (user := await User.y.get(user_id, False)) is None:  # TODO: add test for nonexistent user
@@ -252,3 +255,17 @@ class User(Model):
         code.used = True
         await code.save(update_fields=["used"])
         return True
+
+    async def y_delete(self) -> None:
+        await self.update(deleted=True, email=f"deleted_{self.id}@yepcord.ml", password="")
+        data = await self.data
+        await data.update(discriminator=0, username=f"Deleted User {hex(self.id)[2:]}", avatar=None, public_flags=0,
+                          avatar_decoration=None)
+        await models.Session.filter(user=self).delete()
+        await models.Relationship.filter(Q(from_user=self) | Q(to_user=self)).delete()
+        await models.MfaCode.filter(user=self).delete()
+        await models.GuildMember.filter(user=self).delete()
+        await models.UserSettings.filter(user=self).delete()
+        await models.FrecencySettings.filter(user=self).delete()
+        await models.Invite.filter(inviter=self).delete()
+        await models.ReadState.filter(user=self).delete()

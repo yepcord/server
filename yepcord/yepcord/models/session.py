@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 from os import urandom
-from typing import Optional, Union
+from typing import Optional
 
 from tortoise import fields
 
