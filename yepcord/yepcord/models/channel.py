@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Union
 
 from tortoise import fields
 from tortoise.expressions import Q
@@ -98,7 +98,7 @@ class Channel(Model):
             return base_data | {
                 "position": self.position,
                 "permission_overwrites": [
-                    overwrite.ds_json() for overwrite in await getCore().getPermissionOverwrites(self)
+                    overwrite.ds_json() for overwrite in await self.get_permission_overwrites()
                 ],
                 "parent_id": str(self.parent.id) if self.parent else None,
                 "name": self.name,
@@ -111,7 +111,7 @@ class Channel(Model):
                 "rate_limit_per_user": self.rate_limit,
                 "position": self.position,
                 "permission_overwrites": [
-                    overwrite.ds_json() for overwrite in await getCore().getPermissionOverwrites(self)
+                    overwrite.ds_json() for overwrite in await self.get_permission_overwrites()
                 ],
                 "parent_id": str(self.parent.id) if self.parent else None,
                 "name": self.name,
@@ -127,7 +127,7 @@ class Channel(Model):
                 "rate_limit_per_user": self.rate_limit,
                 "position": self.position,
                 "permission_overwrites": [
-                    overwrite.ds_json() for overwrite in await getCore().getPermissionOverwrites(self)
+                    overwrite.ds_json() for overwrite in await self.get_permission_overwrites()
                 ],
                 "parent_id": str(self.parent.id) if self.parent else None,
                 "name": self.name,
@@ -141,7 +141,7 @@ class Channel(Model):
                 "topic": self.topic,
                 "position": self.position,
                 "permission_overwrites": [
-                    overwrite.ds_json() for overwrite in await getCore().getPermissionOverwrites(self)
+                    overwrite.ds_json() for overwrite in await self.get_permission_overwrites()
                 ],
                 "parent_id": str(self.parent.id) if self.parent else None,
                 "name": self.name,
@@ -164,7 +164,10 @@ class Channel(Model):
                 "rate_limit_per_user": self.rate_limit,
                 "flags": self.flags,
                 "total_message_sent": message_count,
-                "member_ids_preview": [str(member.user.id) for member in await getCore().getThreadMembers(self, 10)]
+                "member_ids_preview": [
+                    str(member.user.id)
+                    for member in await self.get_thread_members()
+                ],
             }
             if user_id and (member := await getCore().getThreadMember(self, user_id)) is not None:
                 data["member"] = {
@@ -205,3 +208,38 @@ class Channel(Model):
 
     async def get_message(self, message_id: int) -> Optional[models.Message]:
         return await models.Message.Y.get(self, message_id)
+
+    async def get_last_pinned_message(self) -> Optional[models.Message]:
+        return await models.Message.filter(
+            pinned_timestamp__not_isnull=True, channel=self
+        ).order_by("-pinned_timestamp").first()
+
+    async def get_thread_members(self, limit: int = 10) -> list[models.ThreadMember]:
+        if self.type not in {ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD}:
+            return []
+        return await models.ThreadMember.filter(channel=self).select_related("user").limit(limit)
+
+    async def get_permission_overwrite(
+            self, target: Union[models.Role, models.User, int]
+    ) -> Optional[models.PermissionOverwrite]:
+        query = Q(channel=self)
+        if isinstance(target, models.Role):
+            query &= Q(target_role=target)
+        elif isinstance(target, models.User):
+            query &= Q(target_user=target)
+        else:
+            query &= (Q(target_role__id=target) | Q(target_user__id=target))
+
+        return await models.PermissionOverwrite.get_or_none(query).select_related(
+            "channel", "channel__guild", "target_role", "target_user"
+        )
+
+    async def get_permission_overwrites(
+            self, target: Optional[models.GuildMember] = None
+    ) -> list[models.PermissionOverwrite]:
+        query = models.PermissionOverwrite.filter(channel=self).select_related("target_role", "target_user")
+        if target is not None:
+            role_ids = [target.guild.id, *(await target.roles.all().values_list("id", flat=True))]
+            query = query.filter(Q(target_role__id__in=role_ids) | Q(target_user__id=target.user.id)).order_by("type")
+
+        return await query

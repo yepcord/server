@@ -22,7 +22,7 @@ from ..dependencies import DepApplication, DepUser, DepGuildO
 from ..models.applications import CreateApplication, UpdateApplication, UpdateApplicationBot, GetCommandsQS, \
     CreateCommand
 from ..y_blueprint import YBlueprint
-from ...yepcord.ctx import getCore, getCDNStorage
+from ...yepcord.ctx import getCDNStorage
 from ...yepcord.enums import ApplicationCommandType
 from ...yepcord.models import User, UserData, UserSettings, Application, Bot, gen_secret_key, gen_token_secret, \
     ApplicationCommand, Guild

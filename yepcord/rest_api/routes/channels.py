@@ -465,7 +465,7 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
     if target is None or (isinstance(target, Role) and target.guild != channel.guild):
         return "", 204
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
-    old_overwrite = await getCore().getPermissionOverwrite(channel, target)
+    old_overwrite = await channel.get_permission_overwrite(target)
     if old_overwrite is not None:
         await old_overwrite.update(**data.model_dump())
         overwrite = old_overwrite
@@ -493,7 +493,7 @@ async def delete_permission_overwrite(target_id: int, user: User = DepUser, chan
     if not (member := await getCore().getGuildMember(channel.guild, user.id)):
         raise InvalidDataErr(403, Errors.make(50001))
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
-    overwrite = await getCore().getPermissionOverwriteUnk(channel, target_id)
+    overwrite = await channel.get_permission_overwrite(target_id)
 
     if overwrite is None:
         return "", 204
@@ -553,8 +553,9 @@ async def get_channel_webhooks(user: User = DepUser, channel: Channel = DepChann
 
 
 @channels.post("/<int:channel_id>/messages/<int:message>/threads", body_cls=CreateThread, allow_bots=True)
-async def create_thread(data: CreateThread, user: User = DepUser, channel: Channel = DepChannel,
-                        message: Message = DepMessage):
+async def create_thread(
+        data: CreateThread, user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage
+):
     if not channel.guild:
         raise InvalidDataErr(403, Errors.make(50003))
     member = await getCore().getGuildMember(channel.guild, user.id)
@@ -564,11 +565,11 @@ async def create_thread(data: CreateThread, user: User = DepUser, channel: Chann
                                   name=data.name, owner=user, parent=channel, flags=0)
     thread_member = await ThreadMember.create(id=Snowflake.makeId(), user=user, channel=thread,
                                               guild=channel.guild)
-    thread_message = await Message.create(
+    await Message.create(
         id=Snowflake.makeId(), channel=thread, author=user, content="", type=MessageType.THREAD_STARTER_MESSAGE,
         message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": channel.guild.id}
     )
-    thread_create_message = await Message.create(
+    await Message.create(
         id=Snowflake.makeId(), channel=channel, author=user, content=thread.name, type=MessageType.THREAD_CREATED,
         message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": channel.guild.id}
     )
@@ -586,7 +587,9 @@ async def create_thread(data: CreateThread, user: User = DepUser, channel: Chann
 
 
 @channels.get("/<int:channel_id>/application-commands/search", qs_cls=CommandsSearchQS)
-async def search_application_commands(query_args: CommandsSearchQS, user: User = DepUser, channel: Channel = DepChannel):
+async def search_application_commands(
+        query_args: CommandsSearchQS, user: User = DepUser, channel: Channel = DepChannel
+):
     dm_user = None
     if (channel.type not in (*GUILD_CHANNELS, ChannelType.DM) or
             (channel.type == ChannelType.DM and not (dm_user := await channel.other_user(user)).is_bot)):

@@ -307,8 +307,11 @@ class ChannelCreate(BaseModel):
             return self.model_dump(include={"name", "type", "position"}, exclude_defaults=True)
         elif channel_type == ChannelType.GUILD_TEXT:
             return self.model_dump(
-                include={"name", "type", "position", "topic", "nsfw", "rate_limit", "parent_id", "default_auto_archive"},
-                exclude_defaults=True)
+                include={
+                    "name", "type", "position", "topic", "nsfw", "rate_limit", "parent_id", "default_auto_archive"
+                },
+                exclude_defaults=True
+            )
         elif channel_type == ChannelType.GUILD_VOICE:
             return self.model_dump(include={"name", "type", "position", "nsfw", "bitrate", "user_limit", "parent_id",
                                             "video_quality_mode"}, exclude_defaults=True)

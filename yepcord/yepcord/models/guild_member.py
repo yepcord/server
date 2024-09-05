@@ -23,7 +23,6 @@ from typing import Optional
 
 from tortoise import fields
 
-from ..ctx import getCore
 from ..enums import GuildPermissions
 from ..errors import InvalidDataErr, Errors
 from ._utils import SnowflakeField, Model
@@ -45,8 +44,7 @@ class PermissionsChecker:
         if _check(permissions, GuildPermissions.ADMINISTRATOR):
             return
         if channel:
-            overwrites = await getCore().getOverwritesForMember(channel, self.member)
-            for overwrite in overwrites:
+            for overwrite in await channel.get_permission_overwrites(self.member):
                 permissions &= ~overwrite.deny
                 permissions |= overwrite.allow
 

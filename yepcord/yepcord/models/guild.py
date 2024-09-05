@@ -156,9 +156,12 @@ class Guild(Model):
         data = {
             "id": str(self.id),
             "version": int(time() * 1000),  # What is this?
-            "stickers": [await sticker.ds_json() for sticker in await getCore().getGuildStickers(self)],
+            "stickers": [
+                await sticker.ds_json()
+                for sticker in await self.get_stickers()
+            ],
             "stage_instances": [],
-            "roles": [role.ds_json() for role in await getCore().getRoles(self)],
+            "roles": [role.ds_json() for role in await self.get_roles()],
             "properties": {
                 "afk_timeout": self.afk_timeout,
                 "splash": self.splash,
@@ -210,8 +213,14 @@ class Guild(Model):
             "member_count": await getCore().getGuildMemberCount(self),
             "lazy": True,
             "large": False,
-            "guild_scheduled_events": [await event.ds_json() for event in await getCore().getGuildEvents(self)],
-            "emojis": [await emoji.ds_json(False) for emoji in await getCore().getEmojis(self.id)],
+            "guild_scheduled_events": [
+                await event.ds_json()
+                for event in await self.get_events()
+            ],
+            "emojis": [
+                await emoji.ds_json(False)
+                for emoji in await self.get_emojis()
+            ],
             "data_mode": "full",
             "application_command_counts": [],
         }
@@ -231,8 +240,32 @@ class Guild(Model):
                 )
             ]
         if for_gateway or with_channels:
-            data["channels"] = [await channel.ds_json() for channel in await getCore().getGuildChannels(self)]
+            data["channels"] = [await channel.ds_json() for channel in await self.get_channels()]
         if with_members:
             data["members"] = [await member.ds_json() for member in await getCore().getGuildMembers(self)]
 
         return data
+
+    async def get_roles(self, exclude_default: bool = False) -> list[models.Role]:
+        query = models.Role.filter(guild=self).select_related("guild")
+        if exclude_default:
+            query = query.exclude(id=self.id)
+        return await query
+
+    async def get_channels(self) -> list[models.Channel]:
+        return await models.Channel.filter(guild=self) \
+            .exclude(type__in=[ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD]) \
+            .select_related("guild", "parent")
+
+    async def get_emojis(self) -> list[models.Emoji]:
+        return await models.Emoji.filter(guild=self).select_related("user")
+
+    async def get_audit_logs(self, limit: int, before: Optional[int] = None) -> list[models.AuditLogEntry]:
+        before = {} if before is None else {"id__lt": before}
+        return await models.AuditLogEntry.filter(guild=self, **before).select_related("guild", "user").limit(limit)
+
+    async def get_stickers(self) -> list[models.Sticker]:
+        return await models.Sticker.filter(guild=self).select_related("guild", "user")
+
+    async def get_events(self) -> list[models.GuildEvent]:
+        return await models.GuildEvent.filter(guild=self).select_related("channel", "guild", "creator")

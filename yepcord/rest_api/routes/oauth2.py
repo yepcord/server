@@ -24,8 +24,8 @@ from ..dependencies import DepUser
 from ..models.oauth2 import AppAuthorizeGetQs, ExchangeCode, AppAuthorizePostQs, AppAuthorizePost
 from ..utils import captcha
 from ..y_blueprint import YBlueprint
-from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLogEntryCreateEvent, GuildRoleCreateEvent, \
-    IntegrationCreateEvent
+from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLogEntryCreateEvent, \
+    GuildRoleCreateEvent, IntegrationCreateEvent
 from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
@@ -75,7 +75,7 @@ async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user
         result["bot"] = (await bot.user.userdata).ds_json
         result["application"]["bot_public"] = bot.bot_public
         result["application"]["bot_require_code_grant"] = bot.bot_require_code_grant
-        result["guilds"] = [await guild_ds_json(guild) for guild in await getCore().getUserGuilds(user)]
+        result["guilds"] = [await guild_ds_json(guild) for guild in await user.get_guilds()]
 
     return result
 

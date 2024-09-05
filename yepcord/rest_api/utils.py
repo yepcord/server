@@ -121,7 +121,9 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                 content = get_content()
                 total_size += len(content)
                 if total_size > 1024 * 1024 * 100: raise InvalidDataErr(400, Errors.make(50045))
-                content_type = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
+                content_type = (
+                    file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
+                )
                 metadata = {}
                 if content_type.startswith("image/"):
                     img = Image.open(file)

@@ -18,7 +18,6 @@
 
 from tortoise import fields
 
-from ..ctx import getCore
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
 
@@ -36,7 +35,7 @@ class ReadState(Model):
         )
 
     async def ds_json(self) -> dict:
-        last_pin = await getCore().getLastPinnedMessage(self.channel)
+        last_pin = await self.channel.get_last_pinned_message()
         last_pin_ts = last_pin.pinned_timestamp.strftime("%Y-%m-%dT%H:%M:%S+00:00") if last_pin is not None else None
         return {
             "mention_count": self.count,

@@ -280,3 +280,9 @@ class User(Model):
         await models.FrecencySettings.filter(user=self).delete()
         await models.Invite.filter(inviter=self).delete()
         await models.ReadState.filter(user=self).delete()
+
+    async def get_guilds(self) -> list[models.Guild]:
+        return [
+            member.guild for member in
+            await models.GuildMember.filter(user=self).select_related("guild", "guild__owner")
+        ]

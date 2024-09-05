@@ -18,9 +18,7 @@
 
 from __future__ import annotations
 
-# noinspection PyPackageRequirements
-from contextvars import ContextVar, copy_context
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Callable, cast
 
 if TYPE_CHECKING:  # pragma: no cover
     from .core import Core
@@ -28,52 +26,18 @@ if TYPE_CHECKING:  # pragma: no cover
     from .gateway_dispatcher import GatewayDispatcher
 
 
-class _Ctx:
-    _CTX = ContextVar("ctx")
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if not isinstance(cls._instance, cls):
-            cls._instance = super(_Ctx, cls).__new__(cls)
-        return cls._instance
-
-    def get(self, item, default=None):
-        self._init()
-        return self.__class__._CTX.get().get(item, default)
-
-    def set(self, key, value):
-        self._init()
-        self.__class__._CTX.get()[key] = value
-
-    def _init(self):
-        v = self.__class__._CTX
-        if v not in copy_context():
-            v.set({})
-        return self
-
-    def __setitem__(self, key, value):
-        self.set(key, value)
-
-
-Ctx = _Ctx()
-
-
-def _getCore(): pass
+_get_core: Callable[[], Optional[Core]] = lambda: None
+_get_storage: Callable[[], Optional[_Storage]] = lambda: None
+_get_gw: Callable[[], Optional[GatewayDispatcher]] = lambda: None
 
 
 def getCore() -> Core:
-    return Ctx.get("CORE") or _getCore()
-
-
-def _getCDNStorage(): pass
+    return cast(Core, _get_core())
 
 
 def getCDNStorage() -> _Storage:
-    return Ctx.get("STORAGE") or _getCDNStorage()
-
-
-def _getGw(): pass
+    return cast(_Storage, _get_storage())
 
 
 def getGw() -> GatewayDispatcher:
-    return Ctx.get("GW") or _getGw()
+    return cast(GatewayDispatcher, _get_gw())

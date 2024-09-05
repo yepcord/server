@@ -95,7 +95,8 @@ class CommandBase(BaseModel):
         if len(not_sub) != 0 and len(not_sub) != len(value):
             raise InvalidDataErr(400, Errors.make(50035, {"options": {
                 "code": "APPLICATION_COMMAND_OPTIONS_TYPE_INVALID",
-                "message": "Sub-command and sub-command group option types are mutually exclusive to all other types"}}))
+                "message": "Sub-command and sub-command group option types are mutually exclusive to all other types",
+            }}))
         return value
 
     def __init__(self, **kwargs):

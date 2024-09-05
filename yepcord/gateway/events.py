@@ -103,8 +103,10 @@ class ReadyEvent(DispatchEvent):
                     "flags": 0,
                 },
                 "users": await self.core.getRelatedUsers(self.user),
-                "guilds": [await guild.ds_json(user_id=self.user.id, for_gateway=True, with_channels=True)
-                           for guild in await self.core.getUserGuilds(self.user)],
+                "guilds": [
+                    await guild.ds_json(user_id=self.user.id, for_gateway=True, with_channels=True)
+                    for guild in await self.user.get_guilds()
+                ],
                 "session_id": self.client.sid,
                 "presences": [],  # TODO
                 "relationships": await self.core.getRelationships(self.user),

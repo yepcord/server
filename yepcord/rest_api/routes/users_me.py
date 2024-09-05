@@ -535,4 +535,4 @@ async def get_guilds(user: User = DepUser):
             "permissions": str(await member.permissions),
         }
 
-    return [await ds_json(guild) for guild in await getCore().getUserGuilds(user)]
+    return [await ds_json(guild) for guild in await user.get_guilds()]

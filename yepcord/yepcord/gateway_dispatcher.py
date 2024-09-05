@@ -23,6 +23,7 @@ from typing import Optional
 
 from tortoise.expressions import RawSQL
 
+from . import ctx
 from .classes.singleton import Singleton
 from .enums import ChannelType
 from .errors import InvalidDataErr
@@ -106,18 +107,23 @@ class GatewayDispatcher(Singleton):
 
     async def sendPinsUpdateEvent(self, channel: Channel) -> None:
         ts = datetime(year=1970, month=1, day=1)
-        if message := await c.getCore().getLastPinnedMessage(channel):
+        if message := await channel.get_last_pinned_message():
             ts = message.pinned_timestamp
         ts = ts.strftime("%Y-%m-%dT%H:%M:%S+00:00")
         await self.dispatch(ChannelPinsUpdateEvent(channel.id, ts), **(await self.getChannelFilter(channel)))
 
     async def sendGuildEmojisUpdateEvent(self, guild: Guild) -> None:
-        emojis = [await emoji.ds_json() for emoji in await c.getCore().getEmojis(guild.id)]
+        emojis = [
+            await emoji.ds_json()
+            for emoji in await guild.get_emojis()
+        ]
         await self.dispatch(GuildEmojisUpdate(guild.id, emojis), guild_id=guild.id)
 
     async def sendStickersUpdateEvent(self, guild: Guild) -> None:
-        stickers = await c.getCore().getGuildStickers(guild)
-        stickers = [await sticker.ds_json() for sticker in stickers]
+        stickers = [
+            await sticker.ds_json()
+            for sticker in await guild.get_stickers()
+        ]
         await self.dispatch(StickersUpdateEvent(guild.id, stickers), guild_id=guild.id)
 
     async def getChannelFilter(self, channel: Channel, permissions: int = 0) -> dict:
@@ -125,11 +131,11 @@ class GatewayDispatcher(Singleton):
             return {"user_ids": await channel.recipients.all().values_list("id", flat=True)}
 
         await channel.fetch_related("guild", "guild__owner")
-        roles = {role.id: role.permissions for role in await c.getCore().getRoles(channel.guild)}
+        roles = {role.id: role.permissions for role in await channel.guild.get_roles()}
 
         user_ids = set()
         excluded_user_ids = set()
-        overwrites = await c.getCore().getPermissionOverwrites(channel)
+        overwrites = await channel.get_permission_overwrites()
         for overwrite in overwrites:
             if overwrite.type == 0:
                 role_id = overwrite.target_role.id
@@ -138,7 +144,7 @@ class GatewayDispatcher(Singleton):
                 roles[role_id] &= ~overwrite.deny
                 roles[role_id] |= overwrite.allow
             else:
-                if not (member := await c.getCore().getGuildMember(channel.guild, overwrite.target_user.id)):
+                if not (member := await ctx.getCore().getGuildMember(channel.guild, overwrite.target_user.id)):
                     continue
                 try:
                     await member.checkPermission(permissions, channel=channel)
@@ -162,5 +168,4 @@ class GatewayDispatcher(Singleton):
             .filter(perms=permissions).values_list("id", flat=True)
 
 
-import yepcord.yepcord.ctx as c
-c._getGw = lambda: GatewayDispatcher.getInstance()
+ctx._get_gw = GatewayDispatcher.getInstance

@@ -93,7 +93,7 @@ class GatewayClient:
         await self.gateway.authenticated(self, self.cached_presence)
         await self.esend(ReadyEvent(session.user, self, getCore()))
         if not session.user.is_bot:
-            guild_ids = [guild.id for guild in await getCore().getUserGuilds(session.user)]
+            guild_ids = [guild.id for guild in await session.user.get_guilds()]
             await self.esend(ReadySupplementalEvent(await self.gateway.getFriendsPresences(self.user_id), guild_ids))
 
     @require_auth
@@ -221,7 +221,9 @@ class GatewayEvents:
             await self._send(client, event)
             sent.add(client)
 
-    async def sendToRoles(self, event: RawDispatchEvent, role_ids: list[int], exclude_users: set[int], sent: set) -> None:
+    async def sendToRoles(
+            self, event: RawDispatchEvent, role_ids: list[int], exclude_users: set[int], sent: set[GatewayClient]
+    ) -> None:
         for role_id in role_ids:
             for client in self.gw.store.get(role_id=role_id):
                 if client.user_id in exclude_users or client in sent:
