@@ -37,7 +37,9 @@ from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEven
     WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS, MessageFlags
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import UnknownMessage, UnknownUser, UnknownEmoji, UnknownInteraction, \
+    MaxPinsReached, MissingPermissions, CannotSendToThisUser, CannotExecuteOnDM, CannotEditAnotherUserMessage, \
+    MissingAccess
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
     ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot, Role, HiddenDmChannel, Invite, \
     Reaction
@@ -60,7 +62,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
     if channel.type == ChannelType.GROUP_DM:
         changes = data.to_json(channel.type)
         if "owner_id" in changes and channel.owner != user:
-            raise InvalidDataErr(403, Errors.make(50013))
+            raise MissingPermissions
         elif "owner_id" in changes:
             new_owner = await User.get_or_none(id=changes["owner_id"])
             if new_owner in await channel.recipients.all():
@@ -170,7 +172,7 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
     if channel.type == ChannelType.DM:
         oth = await channel.other_user(user)
         if await Relationship.utils.is_blocked(oth, user):
-            raise InvalidDataErr(403, Errors.make(50007))
+            raise CannotSendToThisUser
     elif channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
@@ -195,12 +197,11 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
 @channels.delete("/<int:channel_id>/messages/<int:message>", allow_bots=True)
 async def delete_message(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if message.author != user:
-        if channel.type in GUILD_CHANNELS:
-            member = await getCore().getGuildMember(channel.guild, user.id)
-            await member.checkPermission(GuildPermissions.MANAGE_MESSAGES, GuildPermissions.VIEW_CHANNEL,
-                                         GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-        else:
-            raise InvalidDataErr(403, Errors.make(50003))
+        if channel.type not in GUILD_CHANNELS:
+            raise CannotExecuteOnDM
+        member = await getCore().getGuildMember(channel.guild, user.id)
+        await member.checkPermission(GuildPermissions.MANAGE_MESSAGES, GuildPermissions.VIEW_CHANNEL,
+                                     GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     guild_id = channel.guild.id if channel.guild else None
     await message.delete()
     await getGw().dispatch(MessageDeleteEvent(message.id, channel.id, guild_id), channel=channel,
@@ -212,7 +213,7 @@ async def delete_message(user: User = DepUser, channel: Channel = DepChannel, me
 async def edit_message(data: MessageUpdate, user: User = DepUser, channel: Channel = DepChannel,
                        message: Message = DepMessage):
     if message.author != user:
-        raise InvalidDataErr(403, Errors.make(50005))
+        raise CannotEditAnotherUserMessage
     if channel.guild:
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
@@ -229,7 +230,7 @@ async def get_message(user: User = DepUser, channel: Channel = DepChannel, messa
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     if message.ephemeral and message.author != user:
-        raise InvalidDataErr(404, Errors.make(10008))
+        raise UnknownMessage
     return await message.ds_json(user_id=user.id)
 
 
@@ -268,9 +269,9 @@ async def send_typing_event(user: User = DepUser, channel: Channel = DepChannel)
 @channels.put("/<int:channel_id>/recipients/<int:target_user>")
 async def add_recipient(target_user: int, user: User = DepUser, channel: Channel = DepChannel):
     if (target_user := await User.y.get(target_user, False)) is None:
-        raise InvalidDataErr(404, Errors.make(10013))
+        raise UnknownUser
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     if channel.type == ChannelType.DM:
         recipients = await channel.recipients.filter(~Q(id=user.id)).all()
         recipients.append(target_user)
@@ -296,9 +297,9 @@ async def add_recipient(target_user: int, user: User = DepUser, channel: Channel
 @channels.delete("/<int:channel_id>/recipients/<int:target_user>")
 async def delete_recipient(target_user: int, user: User = DepUser, channel: Channel = DepChannel):
     if channel.type not in (ChannelType.GROUP_DM,):
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     if channel.owner != user or target_user == user.id:
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     target_user = await User.y.get(target_user, False)
     recipients = await channel.recipients.all()
     if target_user in recipients:
@@ -320,7 +321,7 @@ async def pin_message(user: User = DepUser, channel: Channel = DepChannel, messa
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not message.pinned:
         if await Message.filter(pinned_timestamp__not_isnull=True, channel=message.channel).count() >= 50:
-            raise InvalidDataErr(400, Errors.make(30003))
+            raise MaxPinsReached
         message.pinned_timestamp = datetime.now()
         await message.save(update_fields=["pinned_timestamp"])
 
@@ -374,7 +375,7 @@ async def add_message_reaction(reaction: str, user: User = DepUser, channel: Cha
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, Errors.make(10014))
+        raise UnknownEmoji
     emoji = {
         "emoji": None if not isinstance(reaction, Emoji) else reaction,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
@@ -393,7 +394,7 @@ async def remove_message_reaction(reaction: str, user: User = DepUser, channel: 
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, Errors.make(10014))
+        raise UnknownEmoji
     emoji = {
         "emoji": None if not isinstance(reaction, Emoji) else reaction,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
@@ -412,7 +413,7 @@ async def get_message_reactions(query_args: GetReactionsQuery, reaction: str, us
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, Errors.make(10014))
+        raise UnknownEmoji
     emoji = None if not isinstance(reaction, Emoji) else reaction
     emoji_name = reaction if isinstance(reaction, str) else reaction.name
 
@@ -458,9 +459,9 @@ async def create_invite(data: InviteCreate, user: User = DepUser, channel: Chann
 async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, target_id: int, user: User = DepUser,
                                                 channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
+        raise CannotExecuteOnDM
     if not (member := await getCore().getGuildMember(channel.guild, user.id)):
-        raise InvalidDataErr(403, Errors.make(50001))
+        raise MissingAccess
     target = await getCore().getRole(target_id) if data.type == 0 else await User.get_or_none(id=target_id)
     if target is None or (isinstance(target, Role) and target.guild != channel.guild):
         return "", 204
@@ -489,9 +490,9 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
 @channels.delete("/<int:channel_id>/permissions/<int:target_id>", allow_bots=True)
 async def delete_permission_overwrite(target_id: int, user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
+        raise CannotExecuteOnDM
     if not (member := await getCore().getGuildMember(channel.guild, user.id)):
-        raise InvalidDataErr(403, Errors.make(50001))
+        raise MissingAccess
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
     overwrite = await channel.get_permission_overwrite(target_id)
 
@@ -513,9 +514,9 @@ async def delete_permission_overwrite(target_id: int, user: User = DepUser, chan
 @channels.get("/<int:channel_id>/invites", allow_bots=True)
 async def get_channel_invites(user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
+        raise CannotExecuteOnDM
     if not (member := await getCore().getGuildMember(channel.guild, user.id)):
-        raise InvalidDataErr(403, Errors.make(50001))
+        raise MissingAccess
     await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
     return [
         await invite.ds_json()
@@ -527,7 +528,7 @@ async def get_channel_invites(user: User = DepUser, channel: Channel = DepChanne
 @channels.post("/<int:channel_id>/webhooks", body_cls=WebhookCreate, allow_bots=True)
 async def create_webhook(data: WebhookCreate, user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
+        raise CannotExecuteOnDM
     member = await getCore().getGuildMember(channel.guild, user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
@@ -542,7 +543,7 @@ async def create_webhook(data: WebhookCreate, user: User = DepUser, channel: Cha
 @channels.get("/<int:channel_id>/webhooks", allow_bots=True)
 async def get_channel_webhooks(user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
+        raise CannotExecuteOnDM
     member = await getCore().getGuildMember(channel.guild, user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
@@ -557,7 +558,7 @@ async def create_thread(
         data: CreateThread, user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage
 ):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
+        raise CannotExecuteOnDM
     member = await getCore().getGuildMember(channel.guild, user.id)
     await member.checkPermission(GuildPermissions.CREATE_PUBLIC_THREADS, channel=channel)
 
@@ -593,7 +594,7 @@ async def search_application_commands(
     dm_user = None
     if (channel.type not in (*GUILD_CHANNELS, ChannelType.DM) or
             (channel.type == ChannelType.DM and not (dm_user := await channel.other_user(user)).is_bot)):
-        raise InvalidDataErr(403, Errors.make(50003))
+        raise CannotExecuteOnDM
 
     try:
         cursor = loads(b64decode(query_args.cursor)) if query_args.cursor else [0]
@@ -656,9 +657,9 @@ async def get_message_interaction(user: User = DepUser, channel: Channel = DepCh
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     if message.ephemeral and message.author != user:
-        raise InvalidDataErr(404, Errors.make(10008))
+        raise UnknownMessage
     if not message.interaction:
-        raise InvalidDataErr(404, Errors.make(10062))
+        raise UnknownInteraction
     return await message.interaction.get_command_info() | {
         "application_command": None,
         "options": (message.interaction.data or {}).get("options", [])

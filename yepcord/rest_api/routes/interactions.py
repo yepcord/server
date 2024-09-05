@@ -27,7 +27,8 @@ from ...gateway.events import InteractionCreateEvent, InteractionFailureEvent, M
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import GuildPermissions, InteractionStatus, MessageFlags, InteractionCallbackType, \
     ApplicationCommandOptionType, MessageType, ApplicationCommandType
-from ...yepcord.errors import Errors, InvalidDataErr
+from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownChannel, UnknownGuild, UnknownMessage, \
+    UnknownUser, MissingAccess, CannotSendEmptyMessage, InteractionAlreadyAck, Unauthorized
 from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild
 from ...yepcord.models.interaction import Interaction
 from ...yepcord.snowflake import Snowflake
@@ -122,34 +123,34 @@ def validate_options(user_options: list[InteractionOption], bot_options: list[di
 async def create_interaction(user: User = DepUser):
     data = InteractionCreate(**(await get_multipart_json()))
     if (application := await Application.get_or_none(id=data.application_id, deleted=False)) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
     guild = None
     channel = await getCore().getChannel(data.channel_id)
     if data.guild_id:
         if (guild := await getCore().getGuild(data.guild_id)) is None:
-            raise InvalidDataErr(404, Errors.make(10004))
+            raise UnknownGuild
         if (member := await getCore().getGuildMember(guild, user.id)) is None:
-            raise InvalidDataErr(403, Errors.make(50001))
+            raise MissingAccess
         P = GuildPermissions
         await member.checkPermission(P.VIEW_CHANNEL, P.USE_APPLICATION_COMMANDS, channel=channel)
     if channel.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10003))
+        raise UnknownChannel
     if not await getCore().getUserByChannel(channel, user.id):
-        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        raise Unauthorized
     if guild is not None:
-        if (await Integration.get_or_none(guild=guild, application=application)) is None:
-            raise InvalidDataErr(404, Errors.make(10002))
+        if not await Integration.exists(guild=guild, application=application):
+            raise UnknownApplication
     command_query = Q(id=data.data.id, application=application) & (Q(guild=guild) | Q(guild=None))
     if (command := await ApplicationCommand.get_or_none(command_query)) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
     message = None
     target_member = None
     if command.type == ApplicationCommandType.MESSAGE and \
             (message := await channel.get_message(data.data.target_id)) is None:
-        raise InvalidDataErr(404, Errors.make(10008))
+        raise UnknownMessage
     if command.type == ApplicationCommandType.USER and \
             (target_member := await getCore().getGuildMember(guild, data.data.target_id)) is None:
-        raise InvalidDataErr(404, Errors.make(10013))
+        raise UnknownUser
 
     if data.data.version != command.version or data.data.type != command.type or data.data.name != command.name:
         raise InvalidDataErr(400, Errors.make(50035, {"data": {
@@ -223,10 +224,10 @@ async def respond_to_interaction(data: InteractionRespond, interaction: Interact
     T = InteractionCallbackType
     d = data.data
     if interaction.status != InteractionStatus.PENDING:
-        raise InvalidDataErr(400, Errors.make(40060))
+        raise InteractionAlreadyAck
     if data.type == T.CHANNEL_MESSAGE_WITH_SOURCE:
         if not d.content:
-            raise InvalidDataErr(400, Errors.make(50006))
+            raise CannotSendEmptyMessage
         flags = d.flags & MessageFlags.EPHEMERAL
         await send_interaction_response(interaction, flags, d.content)
     elif data.type == T.DEFFERED_CHANNEL_MESSAGE_WITH_SOURCE:

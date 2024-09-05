@@ -24,7 +24,7 @@ from typing import Optional
 from tortoise import fields
 
 from ..enums import GuildPermissions
-from ..errors import InvalidDataErr, Errors
+from ..errors import MissingPermissions
 from ._utils import SnowflakeField, Model
 from ..snowflake import Snowflake
 import yepcord.yepcord.models as models
@@ -50,7 +50,7 @@ class PermissionsChecker:
 
         for permission in check_permissions:
             if not _check(permissions, permission):
-                raise InvalidDataErr(403, Errors.make(50013))
+                raise MissingPermissions
 
     async def canKickOrBan(self, target_member: GuildMember) -> bool:
         if self.member == target_member:

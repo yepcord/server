@@ -28,7 +28,7 @@ from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
 from ...yepcord.classes.other import EmailMsg
 from ...yepcord.ctx import getCore, getGw
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import InvalidDataErr, Errors, PasswordDoesNotMatch, Invalid2FaCode, Invalid2FaAuthTicket
 from ...yepcord.models import Session, User
 from ...yepcord.utils import LOCALES, b64decode
 
@@ -62,16 +62,16 @@ async def login(data: Login):
 @auth.post("/mfa/totp", body_cls=MfaLogin)
 async def login_with_mfa(data: MfaLogin):
     if not (ticket := data.ticket):
-        raise InvalidDataErr(400, Errors.make(60006))
+        raise Invalid2FaAuthTicket
     if not (code := data.code):
-        raise InvalidDataErr(400, Errors.make(60008))
+        raise Invalid2FaCode
     if not (mfa := await getCore().getMfaFromTicket(ticket)):
-        raise InvalidDataErr(400, Errors.make(60006))
+        raise Invalid2FaAuthTicket
     code = code.replace("-", "").replace(" ", "")
     user = await User.y.get(mfa.uid)
     if code not in mfa.getCodes():
         if not (len(code) == 8 and await user.use_backup_code(code)):
-            raise InvalidDataErr(400, Errors.make(60008))
+            raise Invalid2FaCode
     sess = await Session.Y.create(user)
     sett = await user.settings
     return {
@@ -90,9 +90,9 @@ async def logout(session: Session = DepSession):
 @auth.post("/verify/view-backup-codes-challenge", body_cls=ViewBackupCodes)
 async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User = DepUser):
     if not (password := data.password):
-        raise InvalidDataErr(400, Errors.make(50018))
+        raise PasswordDoesNotMatch
     if not user.check_password(password):
-        raise InvalidDataErr(400, Errors.make(50018))
+        raise PasswordDoesNotMatch
     nonce = await getCore().generateUserMfaNonce(user)
 
     code = await getCore().mfaNonceToCode(nonce[0])

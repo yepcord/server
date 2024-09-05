@@ -33,7 +33,9 @@ from ...yepcord.classes.other import MFA
 from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import RelationshipType, ChannelType
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import InvalidDataErr, Errors, UnknownToken, UnknownUser, UnknownConnection, UnknownDiscordTag, \
+    AlreadyFriends, MalformedUserSettings, Already2Fa, PasswordDoesNotMatch, Invalid2FaSecret, Invalid2FaCode, \
+    NotYet2Fa, InvalidKey, InvalidGuild, InvalidRecipient, MustTransferGuildsBeforeDelete, MissingAccess
 from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNote, Session, UserData, Guild, \
     GuildMember, RemoteAuthSession, Relationship, Authorization, Bot, ConnectedAccount, GuildEvent, Channel
 from ...yepcord.models.remote_auth_session import time_plus_150s
@@ -155,7 +157,7 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User = DepUs
         proto = PreloadedUserSettings()
         proto.ParseFromString(_b64decode(data.settings.encode("utf8")))
     except ValueError:
-        raise InvalidDataErr(400, Errors.make(50104))
+        raise MalformedUserSettings
     settings = await user.settings
     settings_proto = UserSettingsProto(settings)
     await settings_proto.update(proto)
@@ -180,7 +182,7 @@ async def update_protobuf_frecency_settings(data: SettingsProtoUpdate, user: Use
         proto_new = FrecencyUserSettings()
         proto_new.ParseFromString(_b64decode(data.settings.encode("utf8")))
     except ValueError:
-        raise InvalidDataErr(400, Errors.make(50104))
+        raise MalformedUserSettings
     fsettings, _ = await FrecencySettings.get_or_create(id=user.id, user=user, settings="")
     proto = fsettings.to_proto() if fsettings else FrecencyUserSettings()
     proto.MergeFrom(proto_new)
@@ -206,7 +208,7 @@ async def edit_connection(service: str, ext_id: str, data: EditConnection, user:
 
     connection = await ConnectedAccount.get_or_none(user=user, service_id=ext_id, type=service, verified=True)
     if connection is None:
-        raise InvalidDataErr(404, Errors.make(10017))
+        raise UnknownConnection
 
     await connection.update(**data.model_dump(exclude_none=True))
 
@@ -223,7 +225,7 @@ async def delete_connection(service: str, ext_id: str, user: User = DepUser):
 
     connection = await ConnectedAccount.get_or_none(user=user, service_id=ext_id, type=service, verified=True)
     if connection is None:
-        raise InvalidDataErr(404, Errors.make(10017))
+        raise UnknownConnection
 
     await connection.delete()
     await getGw().dispatch(UserConnectionsUpdate(connection), user_ids=[user.id])
@@ -234,9 +236,9 @@ async def delete_connection(service: str, ext_id: str, user: User = DepUser):
 @users_me.post("/relationships", body_cls=RelationshipRequest)
 async def new_relationship(data: RelationshipRequest, user: User = DepUser):
     if not (target_user := await User.y.getByUsername(**data.model_dump())):
-        raise InvalidDataErr(400, Errors.make(80004))
+        raise UnknownDiscordTag
     if target_user == user:
-        raise InvalidDataErr(400, Errors.make(80007))
+        raise AlreadyFriends
     await Relationship.utils.request(user, target_user)
 
     await getGw().dispatch(RelationshipAddEvent(user.id, await user.userdata, 3), [target_user.id])
@@ -253,16 +255,16 @@ async def get_relationships(user: User = DepUser):
 @users_me.get("/notes/<int:target_uid>", allow_bots=True)
 async def get_notes(target_uid: int, user: User = DepUser):
     if not (target_user := await User.y.get(target_uid, False)):
-        raise InvalidDataErr(404, Errors.make(10013))
+        raise UnknownUser
     if not (note := await UserNote.get_or_none(user=user, target=target_user).select_related("user", "target")):
-        raise InvalidDataErr(404, Errors.make(10013))
+        raise UnknownUser
     return note.ds_json()
 
 
 @users_me.put("/notes/<int:target_uid>", body_cls=PutNote, allow_bots=True)
 async def set_notes(data: PutNote, target_uid: int, user: User = DepUser):
     if not (target_user := await User.y.get(target_uid, False)):
-        raise InvalidDataErr(404, Errors.make(10013))
+        raise UnknownUser
     if data.note:
         note, _ = await UserNote.get_or_create(user=user, target=target_user, defaults={"text": data.note})
         await getGw().dispatch(UserNoteUpdateEvent(target_uid, data.note), user_ids=[user.id])
@@ -274,16 +276,16 @@ async def enable_mfa(data: MfaEnable, session: Session = DepSession):
     user = session.user
     settings = await user.settings
     if settings.mfa is not None:
-        raise InvalidDataErr(404, Errors.make(60001))
+        raise Already2Fa
     if not (password := data.password) or not user.check_password(password):
-        raise InvalidDataErr(400, Errors.make(50018))
+        raise PasswordDoesNotMatch
     if not (secret := data.secret):
-        raise InvalidDataErr(400, Errors.make(60005))
+        raise Invalid2FaSecret
     mfa = MFA(secret, user.id)
     if not mfa.valid:
-        raise InvalidDataErr(400, Errors.make(60005))
+        raise Invalid2FaSecret
     if not (code := data.code) or code not in mfa.getCodes():
-        raise InvalidDataErr(400, Errors.make(60008))
+        raise Invalid2FaCode
     settings.mfa = secret
     await settings.save(update_fields=["mfa"])
     codes = [
@@ -299,16 +301,16 @@ async def enable_mfa(data: MfaEnable, session: Session = DepSession):
 @users_me.post("/mfa/totp/disable", body_cls=MfaDisable)
 async def disable_mfa(data: MfaDisable, session: Session = DepSession):
     if not (code := data.code):
-        raise InvalidDataErr(400, Errors.make(60008))
+        raise Invalid2FaCode
     user = session.user
     settings = await user.settings
     if settings.mfa is None:
-        raise InvalidDataErr(404, Errors.make(60002))
+        raise NotYet2Fa
     mfa = await user.mfa
     code = code.replace("-", "").replace(" ", "")
     if code not in mfa.getCodes():
         if not (len(code) == 8 and await user.use_backup_code(code)):
-            raise InvalidDataErr(400, Errors.make(60008))
+            raise Invalid2FaCode
     settings.mfa = None
     await settings.save(update_fields=["mfa"])
     await user.clear_backup_codes()
@@ -321,7 +323,7 @@ async def disable_mfa(data: MfaDisable, session: Session = DepSession):
 @users_me.post("/mfa/codes-verification", body_cls=MfaCodesVerification)
 async def get_backup_codes(data: MfaCodesVerification, user: User = DepUser):
     if not (nonce := data.nonce):
-        raise InvalidDataErr(400, Errors.make(60011))
+        raise InvalidKey
     if not (key := data.key):
         raise InvalidDataErr(400, Errors.make(50035, {"key": {
             "code": "BASE_TYPE_REQUIRED", "message": "This field is required"
@@ -329,7 +331,7 @@ async def get_backup_codes(data: MfaCodesVerification, user: User = DepUser):
     regenerate = data.regenerate
     await getCore().verifyUserMfaNonce(user, nonce, regenerate)
     if await getCore().mfaNonceToCode(nonce) != key:
-        raise InvalidDataErr(400, Errors.make(60011))
+        raise InvalidKey
 
     codes = await user.create_backup_codes() if regenerate else await user.get_backup_codes()
     return {"backup_codes": [
@@ -341,7 +343,7 @@ async def get_backup_codes(data: MfaCodesVerification, user: User = DepUser):
 @users_me.put("/relationships/<int:user_id>", body_cls=RelationshipPut)
 async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user: User = DepUser):
     if not (target_user_data := await UserData.get_or_none(id=user_id).select_related("user")):
-        raise InvalidDataErr(404, Errors.make(10013))
+        raise UnknownUser
     if not data.type or data.type == 1:
         from_user = target_user_data.user
 
@@ -385,7 +387,7 @@ async def api_users_me_harvest():
 @users_me.delete("/guilds/<int:guild>", allow_bots=True)
 async def leave_guild(user: User = DepUser, guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     if user == guild.owner:
-        raise InvalidDataErr(400, Errors.make(50055))
+        raise InvalidGuild
     await getGw().dispatchUnsub([user.id], guild.id)
     for role in await member.roles.all():
         await getGw().dispatchUnsub([user.id], role_id=role.id)
@@ -408,7 +410,7 @@ async def new_dm_channel(data: DmChannelCreate, user: User = DepUser):
         recipients.remove(user.id)
     recipients_users = [await User.y.get(recipient) for recipient in recipients]
     if None in recipients_users:
-        raise InvalidDataErr(400, Errors.make(50033))
+        raise InvalidRecipient
     if len(recipients) == 1:
         channel = await getCore().getDMChannelOrCreate(user, recipients_users[0])
     elif len(recipients) == 0:
@@ -422,9 +424,9 @@ async def new_dm_channel(data: DmChannelCreate, user: User = DepUser):
 @users_me.post("/delete", body_cls=DeleteRequest)
 async def delete_user(data: DeleteRequest, user: User = DepUser):
     if not user.check_password(data.password):
-        raise InvalidDataErr(400, Errors.make(50018))
+        raise PasswordDoesNotMatch
     if await Guild.exists(owner=user) or await Channel.exists(owner=user, type=ChannelType.GROUP_DM):
-        raise InvalidDataErr(400, Errors.make(40011))
+        raise MustTransferGuildsBeforeDelete
     await user.y_delete()
     await getGw().dispatch(UserDeleteEvent(user.id), user_ids=[user.id])
     return "", 204
@@ -435,7 +437,7 @@ async def get_scheduled_events(query_args: GetScheduledEventsQuery, user: User =
     events = []
     for guild_id in query_args.guild_ids[:5]:
         if not await GuildMember.get_or_none(guild__id=guild_id, user__id=user.id):
-            raise InvalidDataErr(403, Errors.make(50001))
+            raise MissingAccess
         for event_id in await GuildEvent.filter(
                 guild__id=guild_id, subscribers__user__id__in=[user.id]
         ).values_list("id", flat=True):
@@ -453,7 +455,7 @@ async def remote_auth_login(data: RemoteAuthLogin, user: Optional[User] = DepUse
         ra_session = await RemoteAuthSession.get_or_none(fingerprint=data.fingerprint, user=None,
                                                          expires_at__gt=int(time()))
         if ra_session is None:
-            raise InvalidDataErr(404, Errors.make(10012))
+            raise UnknownToken
 
         await ra_session.update(user=user)
         userdata = await user.userdata
@@ -467,7 +469,7 @@ async def remote_auth_login(data: RemoteAuthLogin, user: Optional[User] = DepUse
     elif data.ticket is not None:
         ticket = Session.extract_token(data.ticket)
         if ticket is None:
-            raise InvalidDataErr(404, Errors.make(10012))
+            raise UnknownToken
 
         user_id, session_id, fingerprint = ticket
 
@@ -475,13 +477,13 @@ async def remote_auth_login(data: RemoteAuthLogin, user: Optional[User] = DepUse
             fingerprint=fingerprint, expires_at__gt=int(time()), v2_session__id=session_id, user__id=user_id
         )
         if ra_session is None:
-            raise InvalidDataErr(404, Errors.make(10012))
+            raise UnknownToken
 
         await ra_session.delete()
 
         return {"encrypted_token": ra_session.v2_encrypted_token}
 
-    raise InvalidDataErr(404, Errors.make(10012))
+    raise UnknownToken
 
 
 @users_me.post("/remote-auth/finish", body_cls=RemoteAuthFinish)
@@ -489,7 +491,7 @@ async def remote_auth_finish(data: RemoteAuthFinish, user: User = DepUser):
     ra_session = await RemoteAuthSession.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
                                                      user=user, v2_session=None)
     if ra_session is None:
-        raise InvalidDataErr(404, Errors.make(10012))
+        raise UnknownToken
 
     session = await Session.Y.create(user)
     if ra_session.version == 2:
@@ -510,7 +512,7 @@ async def remote_auth_cancel(data: RemoteAuthCancel, user: User = DepUser):
     ra_session = await RemoteAuthSession.get_or_none(id=int(data.handshake_token), expires_at__gt=int(time()),
                                                      user=user)
     if ra_session is None:
-        raise InvalidDataErr(404, Errors.make(10012))
+        raise UnknownToken
 
     await getGw().dispatchRA("cancel", {"fingerprint": ra_session.fingerprint})
 

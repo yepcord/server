@@ -23,7 +23,7 @@ from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelR
     InviteDeleteEvent
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import ChannelType, GuildPermissions, MessageType
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import UnknownInvite, UserBanned, MissingAccess
 from ...yepcord.models import Invite, User, Message, GuildMember, GuildBan
 from ...yepcord.snowflake import Snowflake
 
@@ -47,7 +47,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
     if channel.type == ChannelType.GROUP_DM:
         recipients = await channel.recipients.all()
         if user not in recipients and len(recipients) >= 10:
-            raise InvalidDataErr(404, Errors.make(10006))
+            raise UnknownInvite
         inv = await invite.ds_json()
         for excl in ["max_age", "created_at"]:  # Remove excluded fields
             if excl in inv:
@@ -74,7 +74,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
         if not await getCore().getGuildMember(channel.guild, user.id):
             guild = channel.guild
             if await GuildBan.exists(guild=guild, user=user):
-                raise InvalidDataErr(403, Errors.make(40007))
+                raise UserBanned
             inv["new_member"] = True
             await GuildMember.create(id=Snowflake.makeId(), user=user, guild=guild)
             await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=user.id)), user_ids=[user.id])
@@ -95,7 +95,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
 async def delete_invite(user: User = DepUser, invite: Invite = DepInvite):
     if invite.channel.guild:
         if (member := await getCore().getGuildMember(invite.channel.guild, user.id)) is None:
-            raise InvalidDataErr(403, Errors.make(50001))
+            raise MissingAccess
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         await invite.delete()
         await getGw().dispatch(InviteDeleteEvent(invite), guild_id=invite.channel.guild.id)

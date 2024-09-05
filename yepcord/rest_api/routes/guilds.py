@@ -41,7 +41,9 @@ from ...gateway.events import MessageDeleteEvent, GuildUpdateEvent, ChannelUpdat
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, StickerType, StickerFormat, ScheduledEventStatus, ChannelType, \
     ScheduledEventEntityType
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import InvalidDataErr, Errors, UnknownRole, UnknownUser, UnknownGuildTemplate, UnknownSticker, \
+    UnknownGuildEvent, UnknownEmoji, CanHaveOneTemplate, MissingPermissions, InvalidRole, Invalid2FaCode, \
+    CannotSendEmptyMessage, InvalidAsset
 from ...yepcord.models import User, Guild, GuildMember, GuildTemplate, Emoji, Channel, PermissionOverwrite, UserData, \
     Role, Invite, Sticker, GuildEvent, AuditLogEntry, Integration, ApplicationCommand, Webhook, GuildBan
 from ...yepcord.snowflake import Snowflake
@@ -120,7 +122,7 @@ async def create_guild_template(data: TemplateCreate, user: User = DepUser, guil
                                 member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     if await getCore().getGuildTemplate(guild):
-        raise InvalidDataErr(400, Errors.make(30031))
+        raise CanHaveOneTemplate
 
     template: GuildTemplate = await GuildTemplate.create(
         id=Snowflake.makeId(), guild=guild, name=data.name, description=data.description, creator=user,
@@ -187,7 +189,7 @@ async def update_guild_emoji(data: EmojiUpdate, emoji: int, guild: Guild = DepGu
                              member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if (emoji := await getCore().getEmoji(emoji)) is None or emoji.guild != guild:
-        raise InvalidDataErr(400, Errors.make(10014))
+        raise UnknownEmoji
     await emoji.update(**data.model_dump(exclude_defaults=True))
 
     await getGw().sendGuildEmojisUpdateEvent(guild)
@@ -245,7 +247,7 @@ async def create_channel(data: ChannelCreate, user: User = DepUser, guild: Guild
     for overwrite in data.permission_overwrites:
         target = await getCore().getRole(overwrite.id) if data.type == 0 else await User.get_or_none(id=overwrite.id)
         if target is None:
-            raise InvalidDataErr(404, Errors.make(10011 if data.type == 0 else 10013))
+            raise (UnknownRole if data.type == 0 else UnknownUser)
         kw = {"target_role": target} if isinstance(target, Role) else {"target_user": target}
         await PermissionOverwrite.create(**overwrite.model_dump(), channel=channel, **kw)
 
@@ -305,7 +307,7 @@ async def kick_member(user_id: int, user: User = DepUser, guild: Guild = DepGuil
     if not (target_member := await getCore().getGuildMember(guild, user_id)):
         return "", 204
     if not await member.perm_checker.canKickOrBan(target_member):
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     await getGw().dispatchUnsub([target_member.user.id], guild.id)
     for role in await target_member.roles.all():
         await getGw().dispatchUnsub([target_member.user.id], role_id=role.id)
@@ -328,7 +330,7 @@ async def ban_member(user_id: int, data: BanMember, user: User = DepUser, guild:
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
     target_member = await getCore().getGuildMember(guild, user_id)
     if target_member is not None and not await member.perm_checker.canKickOrBan(target_member):
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     if await GuildBan.exists(guild=guild, user__id=user_id):
         return "", 204
     reason = request.headers.get("x-audit-log-reason", "")
@@ -343,7 +345,7 @@ async def ban_member(user_id: int, data: BanMember, user: User = DepUser, guild:
         target_user = target_member.user
     else:
         if (target_user := await User.y.get(user_id, False)) is None:
-            raise InvalidDataErr(404, Errors.make(10013))
+            raise UnknownUser
         await GuildBan.create(user=target_user, guild=guild, reason=reason)
     target_user_data = await target_user.data
     if target_member is not None:
@@ -465,7 +467,7 @@ async def update_roles_positions(guild: Guild = DepGuild, member: GuildMember = 
     roles = {role.id: role for role in await guild.get_roles(True)}
 
     if not await member.perm_checker.canChangeRolesPositions(roles_data, list(roles.values())):
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
 
     roles_data = RolesPositionsChangeList(changes=roles_data)
 
@@ -496,7 +498,7 @@ async def delete_role(user: User = DepUser, guild: Guild = DepGuild, member: Gui
                       role: Role = DepRole):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     if role.managed:
-        raise InvalidDataErr(400, Errors.make(50028))
+        raise InvalidRole
     await role.delete()
     await getGw().dispatch(GuildRoleDeleteEvent(guild.id, role.id), guild_id=guild.id,
                            permissions=GuildPermissions.MANAGE_ROLES)
@@ -543,9 +545,9 @@ async def add_role_members(data: AddRoleMembers, user: User = DepUser, guild: Gu
                            member: GuildMember = DepGuildMember, role: Role = DepRole):
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     if role.managed:
-        raise InvalidDataErr(400, Errors.make(50028))
+        raise InvalidRole
     if role.id == guild.id or (role.position >= (await member.top_role).position and user != guild.owner):
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     members = {}
     for member_id in data.member_ids:
         target_member = await getCore().getGuildMember(guild, member_id)
@@ -574,7 +576,7 @@ async def update_member(data: MemberUpdate, target_user: str, user: User = DepUs
         user_top_role = await member.top_role
         for role in roles:
             if guild_roles[role.id].position >= user_top_role.position and member.user != guild.owner:
-                raise InvalidDataErr(403, Errors.make(50013))
+                raise MissingPermissions
         add, remove = await getCore().setMemberRolesFromList(target_member, roles)
         for role_id in add:
             await getGw().dispatchSub([target_user], role_id=role_id)
@@ -589,7 +591,7 @@ async def update_member(data: MemberUpdate, target_user: str, user: User = DepUs
         )
     if data.avatar != "":
         if target_member != member:
-            raise InvalidDataErr(403, Errors.make(50013))
+            raise MissingPermissions
         img = data.avatar
         if img is not None:
             img = getImage(img)
@@ -676,7 +678,7 @@ async def create_from_template(data: GuildCreateFromTemplate, template: str, use
         if not (template := await getCore().getGuildTemplateById(template_id)):
             raise ValueError
     except ValueError:
-        raise InvalidDataErr(404, Errors.make(10057))
+        raise UnknownGuildTemplate
 
     guild = await Guild.Y.create_from_template(user, template, data.name)
 
@@ -696,14 +698,14 @@ async def create_from_template(data: GuildCreateFromTemplate, template: str, use
 @guilds.post("/<int:guild>/delete", body_cls=GuildDelete, allow_bots=True)
 async def delete_guild(data: GuildDelete, user: User = DepUser, guild: Guild = DepGuild):
     if user != guild.owner:
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
 
     if mfa := await user.mfa:
         if not data.code:
-            raise InvalidDataErr(400, Errors.make(60008))
+            raise Invalid2FaCode
         if data.code not in mfa.getCodes():
             if not (len(data.code) == 8 and await user.use_backup_code(data.code)):
-                raise InvalidDataErr(400, Errors.make(60008))
+                raise Invalid2FaCode
 
     role_ids = [role.id for role in await guild.get_roles(True)]
 
@@ -738,14 +740,14 @@ async def get_guild_stickers(guild: Guild = DepGuild):
 async def upload_guild_stickers(user: User = DepUser, guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if request.content_length is not None and request.content_length > 1024 * 512:
-        raise InvalidDataErr(400, Errors.make(50006))
+        raise CannotSendEmptyMessage
     async with timeout(current_app.config["BODY_TIMEOUT"]):
         if not (file := (await request.files).get("file")):
-            raise InvalidDataErr(400, Errors.make(50046))
+            raise InvalidAsset
         data = CreateSticker(**dict(await request.form))
         sticker_b = BytesIO(getattr(file, "getvalue", file.read)())
         if sticker_b.getbuffer().nbytes > 1024 * 512 or not (img := getImage(sticker_b)) or not validImage(img):
-            raise InvalidDataErr(400, Errors.make(50006))
+            raise CannotSendEmptyMessage
         sticker_type = getattr(StickerFormat, str(imageType(img)).upper(), StickerFormat.PNG)
 
         sticker_id = Snowflake.makeId()
@@ -766,7 +768,7 @@ async def update_guild_sticker(data: UpdateSticker, sticker_id: int, guild: Guil
                                member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if not (sticker := await getCore().getSticker(sticker_id)) or sticker.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10060))
+        raise UnknownSticker
     await sticker.update(**data.model_dump(exclude_defaults=True))
     await getGw().sendStickersUpdateEvent(guild)
     return await sticker.ds_json()
@@ -776,7 +778,7 @@ async def update_guild_sticker(data: UpdateSticker, sticker_id: int, guild: Guil
 async def delete_guild_sticker(sticker_id: int, guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     if not (sticker := await getCore().getSticker(sticker_id)) or sticker.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10060))
+        raise UnknownSticker
 
     await sticker.delete()
     await getGw().sendStickersUpdateEvent(guild)
@@ -822,7 +824,7 @@ async def create_scheduled_event(data: CreateEvent, user: User = DepUser, guild:
 @guilds.get("/<int:guild>/scheduled-events/<int:event_id>", qs_cls=GetScheduledEvent, allow_bots=True)
 async def get_scheduled_event(query_args: GetScheduledEvent, event_id: int, guild: Guild = DepGuild):
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10070))
+        raise UnknownGuildEvent
 
     return await event.ds_json(with_user_count=query_args.with_user_count)
 
@@ -840,7 +842,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, event_id: int, guil
                                  member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EVENTS)
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10070))
+        raise UnknownGuildEvent
 
     if (img := data.image) or img is None:
         if img is not None:
@@ -881,7 +883,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, event_id: int, guil
 async def subscribe_to_scheduled_event(event_id: int, user: User = DepUser, guild: Guild = DepGuild,
                                        member: GuildMember = DepGuildMember):
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10070))
+        raise UnknownGuildEvent
 
     await event.subscribers.add(member)
     await getGw().dispatch(ScheduledEventUserAddEvent(user.id, event_id, guild.id),
@@ -897,7 +899,7 @@ async def subscribe_to_scheduled_event(event_id: int, user: User = DepUser, guil
 async def unsubscribe_from_scheduled_event(event_id: int, user: User = DepUser, guild: Guild = DepGuild,
                                            member: GuildMember = DepGuildMember):
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10070))
+        raise UnknownGuildEvent
 
     if await event.subscribers.filter(user__id=user.id).get_or_none() is not None:
         await event.subscribers.remove(member)
@@ -911,7 +913,7 @@ async def unsubscribe_from_scheduled_event(event_id: int, user: User = DepUser, 
 async def delete_scheduled_event(event_id: int, guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EVENTS)
     if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10070))
+        raise UnknownGuildEvent
 
     await event.delete()
     await getGw().dispatch(GuildScheduledEventDeleteEvent(await event.ds_json()), guild_id=guild.id)

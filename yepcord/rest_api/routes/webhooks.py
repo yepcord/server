@@ -28,7 +28,7 @@ from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent, MessageUpdateEvent
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
 from ...yepcord.enums import GuildPermissions, MessageFlags
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import UnknownWebhook, MissingPermissions, CannotSendEmptyMessage
 from ...yepcord.models import User, Channel, Message, Webhook
 from ...yepcord.utils import getImage
 
@@ -43,7 +43,7 @@ async def delete_webhook(webhook: int, user: Optional[User] = DepUserO, token: O
         if webhook.token != token:
             guild = webhook.channel.guild
             if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
-                raise InvalidDataErr(403, Errors.make(50013))
+                raise MissingPermissions
             await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
         await webhook.delete()
         await getGw().dispatch(WebhooksUpdateEvent(webhook.channel.guild.id, webhook.channel.id),
@@ -56,12 +56,12 @@ async def delete_webhook(webhook: int, user: Optional[User] = DepUserO, token: O
 @webhooks.patch("/<int:webhook>/<string:token>", body_cls=WebhookUpdate, allow_bots=True)
 async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
-        raise InvalidDataErr(404, Errors.make(10015))
+        raise UnknownWebhook
     channel = webhook.channel
     guild = channel.guild
     if webhook.token != token:
         if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
-            raise InvalidDataErr(403, Errors.make(50013))
+            raise MissingPermissions
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
     if data.channel_id:
         if user is None:
@@ -92,11 +92,11 @@ async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] =
 @webhooks.get("/<int:webhook>/<string:token>", allow_bots=True)
 async def get_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
     if not (webhook := await getCore().getWebhook(webhook)):
-        raise InvalidDataErr(404, Errors.make(10015))
+        raise UnknownWebhook
     if webhook.token != token:
         guild = webhook.channel.guild
         if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
-            raise InvalidDataErr(403, Errors.make(50013))
+            raise MissingPermissions
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
     return await webhook.ds_json()
@@ -105,9 +105,9 @@ async def get_webhook(webhook: int, user: Optional[User] = DepUserO, token: Opti
 @webhooks.post("/<int:webhook>/<string:token>", qs_cls=WebhookMessageCreateQuery)
 async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: int, token: str):
     if not (webhook := await getCore().getWebhook(webhook)):
-        raise InvalidDataErr(404, Errors.make(10015))
+        raise UnknownWebhook
     if webhook.token != token:
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
 
     channel = webhook.channel
     message = await processMessage(await request.get_json(), channel, None, WebhookMessageCreate, webhook)
@@ -152,7 +152,7 @@ async def interaction_followup_create(message: Message = DepInteractionW):
     await validate_reply(data, channel)
     stickers_data = await process_stickers(data.sticker_ids)
     if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
-        raise InvalidDataErr(400, Errors.make(50006))
+        raise CannotSendEmptyMessage
 
     data_json = data.to_json() | stickers_data | {"flags": message.flags & ~MessageFlags.LOADING}
     await message.update(**data_json)

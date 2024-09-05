@@ -25,7 +25,8 @@ from typing_extensions import ParamSpec
 
 from yepcord.rest_api.utils import getSessionFromToken
 from yepcord.yepcord.ctx import getCore
-from yepcord.yepcord.errors import InvalidDataErr, Errors
+from yepcord.yepcord.errors import InvalidDataErr, Errors, UnknownApplication, UnknownInvite, UnknownMessage, \
+    UnknownRole, UnknownGuildTemplate, MissingAccess, Unauthorized
 from yepcord.yepcord.models import Session, Authorization, Bot, User, Channel, Message, Webhook, Invite, Guild, \
     GuildMember, Role, GuildTemplate, Application, Interaction
 from yepcord.yepcord.snowflake import Snowflake
@@ -70,7 +71,7 @@ async def depChannelO(channel_id: Optional[int] = None, user: User = Depends(dep
     if (channel := await getCore().getChannel(channel_id)) is None:
         return
     if not await getCore().getUserByChannel(channel, user.id):
-        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        raise Unauthorized
 
     return channel
 
@@ -108,7 +109,7 @@ async def depMessageO(
     elif channel is not None and user is not None:
         message = await channel.get_message(message)
     else:
-        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        raise Unauthorized
 
     if message is not None:
         return message
@@ -130,7 +131,7 @@ async def depInvite(invite: Optional[str] = None) -> Invite:
             raise ValueError
     except ValueError:
         if not (invite := await getCore().getVanityCodeInvite(invite)):
-            raise InvalidDataErr(404, Errors.make(10006))
+            raise UnknownInvite
 
     return invite
 
@@ -139,7 +140,7 @@ async def depGuildO(guild: Optional[int] = None, user: User = Depends(depUser())
     if (guild := await getCore().getGuild(guild)) is None:
         return
     if not await GuildMember.filter(guild=guild, user=user).exists():
-        raise InvalidDataErr(403, Errors.make(50001))
+        raise MissingAccess
 
     return guild
 
@@ -153,7 +154,7 @@ async def depGuildMember(guild: Guild = Depends(depGuild), user: User = Depends(
 
 async def depRole(role: int, guild: Guild = Depends(depGuild)) -> Role:
     if not role or not (role := await getCore().getRole(role, guild)):
-        raise InvalidDataErr(404, Errors.make(10011))
+        raise UnknownRole
     return role
 
 
@@ -163,43 +164,43 @@ async def depGuildTemplate(template: str, guild: Guild = Depends(depGuild)) -> G
         if not (template := await getCore().getGuildTemplateById(template_id, guild)):
             raise ValueError
     except ValueError:
-        raise InvalidDataErr(404, Errors.make(10057))
+        raise UnknownGuildTemplate
     return template
 
 
 async def depApplication(application_id: int, user: User = Depends(depUser())) -> Application:
     if user.is_bot and application_id != user.id:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
 
     kw = {"id": application_id, "deleted": False}
     if not user.is_bot:
         kw["owner"] = user
     if (app := await Application.get_or_none(**kw).select_related("owner")) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
 
     return app
 
 
 async def depInteraction(interaction: int, token: str) -> Interaction:
     if not token.startswith("int___"):
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
 
     interaction = await (Interaction.get_or_none(id=interaction)
                          .select_related("application", "user", "channel", "command"))
     if interaction is None or interaction.ds_token != token:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
 
     return interaction
 
 
 async def depInteractionW(application_id: int, token: str) -> Message:
     if not (inter := await Interaction.from_token(f"int___{token}")) or inter.application.id != application_id:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
 
     message = await Message.get_or_none(interaction=inter, id__gt=Snowflake.fromTimestamp(time() - 15 * 60)) \
         .select_related(*Message.DEFAULT_RELATED)
     if message is None:
-        raise InvalidDataErr(404, Errors.make(10008))
+        raise UnknownMessage
 
     return message
 

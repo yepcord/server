@@ -29,7 +29,7 @@ from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLo
 from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
-from ...yepcord.errors import Errors, InvalidDataErr
+from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownGuild, MissingAccess
 from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry, Application, Bot, Authorization, \
     Integration, GuildBan
 from ...yepcord.snowflake import Snowflake
@@ -47,7 +47,7 @@ async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user
                                               {"scope": {"code": "SCOPE_INVALID", "message": "Invalid scope"}}))
 
     if (application := await Application.get_or_none(id=query_args.client_id, deleted=False)) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
     bot = await Bot.get(id=application.id).select_related("user")
 
     result = {
@@ -89,7 +89,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
                                               {"scope": {"code": "SCOPE_INVALID", "message": "Invalid scope"}}))
 
     if (application := await Application.get_or_none(id=query_args.client_id, deleted=False)) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
 
     if not data.authorize:
         return {"location": f"{query_args.redirect_uri}?error=access_denied&error_description="
@@ -101,10 +101,10 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
                                 f"Guild+not+specified."}
 
         if (guild := await getCore().getGuild(data.guild_id)) is None:
-            raise InvalidDataErr(404, Errors.make(10004))
+            raise UnknownGuild
 
         if not (member := await getCore().getGuildMember(guild, user.id)):
-            raise InvalidDataErr(403, Errors.make(50001))
+            raise MissingAccess
 
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         bot = await Bot.get(id=application.id).select_related("user")

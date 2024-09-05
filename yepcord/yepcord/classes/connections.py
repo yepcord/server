@@ -23,7 +23,7 @@ from urllib.parse import quote
 from httpx import AsyncClient
 
 from yepcord.yepcord.config import Config
-from yepcord.yepcord.errors import InvalidDataErr, Errors
+from yepcord.yepcord.errors import InvalidDataErr, Errors, Error0
 from yepcord.yepcord.models import User, ConnectedAccount
 
 
@@ -85,7 +85,7 @@ class BaseConnection(ABC):
             url, kwargs = cls.exchange_code_req(code, settings)
             resp = await cl.post(url, **kwargs)
             if resp.status_code >= 400 or "error" in (j := resp.json()):
-                raise InvalidDataErr(400, Errors.make(0))
+                raise Error0
 
             return j["access_token"]
 
@@ -99,7 +99,7 @@ class BaseConnection(ABC):
         async with AsyncClient() as cl:
             resp = await cl.get(url, **kwargs)
             if resp.status_code >= 400:  # pragma: no cover
-                raise InvalidDataErr(400, Errors.make(0))
+                raise Error0
             return resp.json()
 
 

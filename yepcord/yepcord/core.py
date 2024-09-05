@@ -32,7 +32,7 @@ from .classes.other import EmailMsg, JWT, MFA
 from .classes.singleton import Singleton
 from .config import Config
 from .enums import ChannelType, GUILD_CHANNELS
-from .errors import InvalidDataErr, Errors
+from .errors import InvalidDataErr, Errors, InvalidKey
 from .models import User, Relationship, Channel, Message, ReadState, Emoji, Invite, Guild, GuildMember, GuildTemplate, \
     Reaction, Sticker, Webhook, Role, GuildEvent, ThreadMember
 from .snowflake import Snowflake
@@ -119,10 +119,10 @@ class Core(Singleton):
 
     async def verifyUserMfaNonce(self, user: User, nonce: str, regenerate: bool) -> None:
         if not (payload := JWT.decode(nonce, self.key)) or payload["user_id"] != user.id:
-            raise InvalidDataErr(400, Errors.make(60011))
+            raise InvalidKey
         nonce_type = "normal" if not regenerate else "regenerate"
         if nonce_type != payload["type"]:
-            raise InvalidDataErr(400, Errors.make(60011))
+            raise InvalidKey
 
     async def getChannel(self, channel_id: Optional[int]) -> Optional[Channel]:
         if channel_id is None:

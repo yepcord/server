@@ -31,7 +31,8 @@ from ..yepcord.classes.captcha import Captcha
 from ..yepcord.config import Config
 from ..yepcord.ctx import getCore, getCDNStorage
 from ..yepcord.enums import MessageType
-from ..yepcord.errors import Errors, InvalidDataErr
+from ..yepcord.errors import Errors, InvalidDataErr, UnknownChannel, UnknownMessage, InvalidFormBody, \
+    FileExceedsMaxSize, CannotSendEmptyMessage
 from ..yepcord.models import Session, User, Channel, Attachment, Authorization, Bot, Webhook, Message
 from ..yepcord.snowflake import Snowflake
 
@@ -58,11 +59,11 @@ async def getSessionFromToken(token: str) -> Optional[Union[Session, Authorizati
 
 async def _getMessage(user: User, channel: Channel, message_id: int) -> Message:
     if not channel:
-        raise InvalidDataErr(404, Errors.make(10003))
+        raise UnknownChannel
     if not user:
         raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
     if not message_id or not (message := await channel.get_message(message_id)):
-        raise InvalidDataErr(404, Errors.make(10008))
+        raise UnknownMessage
     return message
 
 
@@ -96,14 +97,14 @@ async def get_multipart_json() -> dict:
             raise ValueError
         return loads(form["payload_json"])
     except (ValueError, KeyError):
-        raise InvalidDataErr(400, Errors.make(50035))
+        raise InvalidFormBody
 
 
 async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[dict, list[Attachment]]:
     attachments = []
     if data is None:  # Multipart request
         if request.content_length is not None and request.content_length > 1024 * 1024 * 100:
-            raise InvalidDataErr(400, Errors.make(50045))
+            raise FileExceedsMaxSize
         async with timeout(current_app.config["BODY_TIMEOUT"]):
             files = list((await request.files).values())
             data = await get_multipart_json()
@@ -120,7 +121,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                 get_content = getattr(file, "getvalue", file.read)
                 content = get_content()
                 total_size += len(content)
-                if total_size > 1024 * 1024 * 100: raise InvalidDataErr(400, Errors.make(50045))
+                if total_size > 1024 * 1024 * 100: raise FileExceedsMaxSize
                 content_type = (
                     file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
                 )
@@ -139,7 +140,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
             not data.get("embeds") and \
             not data.get("attachments") and \
             not data.get("sticker_ids"):
-        raise InvalidDataErr(400, Errors.make(50006))
+        raise CannotSendEmptyMessage
     return data, attachments
 
 
@@ -228,7 +229,7 @@ async def processMessage(data: dict, channel: Channel, author: Optional[User], v
     message_type = await validate_reply(data, channel)
     stickers_data = await process_stickers(data.sticker_ids)
     if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
-        raise InvalidDataErr(400, Errors.make(50006))
+        raise CannotSendEmptyMessage
 
     data_json = data.to_json()
     if webhook is not None:

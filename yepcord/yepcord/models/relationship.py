@@ -23,7 +23,7 @@ from tortoise.expressions import Q
 from tortoise import fields
 
 from ..enums import RelationshipType, RelTypeDiscord
-from ..errors import InvalidDataErr, Errors
+from ..errors import AlreadyFriends
 from ._utils import ChoicesValidator, SnowflakeField, Model
 import yepcord.yepcord.models as models
 
@@ -41,13 +41,13 @@ class RelationshipUtils:
     async def available(from_user: models.User, to_user: models.User, *, raise_: bool=False) -> bool:
         available = not await RelationshipUtils.exists(from_user, to_user)  # TODO: check for to_user settings
         if not available and raise_:
-            raise InvalidDataErr(400, Errors.make(80007))
+            raise AlreadyFriends
         return available
 
     @staticmethod
     async def request(from_user: models.User, to_user: models.User) -> Relationship:
         if not await RelationshipUtils.available(from_user, to_user):
-            raise InvalidDataErr(400, Errors.make(80007))
+            raise AlreadyFriends
         return await Relationship.create(from_user=from_user, to_user=to_user, type=RelationshipType.PENDING)
 
     @staticmethod

@@ -33,7 +33,7 @@ from ._utils import SnowflakeField, Model
 from ..classes.other import MFA
 from ..config import Config
 from ..ctx import getCore
-from ..errors import InvalidDataErr, Errors, MfaRequiredErr
+from ..errors import InvalidDataErr, Errors, MfaRequiredErr, UnknownUser
 from ..snowflake import Snowflake
 from ..utils import int_size, b64encode
 
@@ -192,7 +192,7 @@ class User(Model):
     async def get_another_user(self, user_id: int) -> User:
         # TODO: check for relationship, mutual guilds or mutual friends
         if (user := await User.y.get(user_id, False)) is None:  # TODO: add test for nonexistent user
-            raise InvalidDataErr(404, Errors.make(10013))
+            raise UnknownUser
         return user
 
     def check_password(self, password: str) -> bool:
