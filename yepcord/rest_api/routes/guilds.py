@@ -53,12 +53,13 @@ guilds = YBlueprint('guilds', __name__)
 
 @guilds.post("/", strict_slashes=False, body_cls=GuildCreate, allow_bots=True)
 async def create_guild(data: GuildCreate, user: User = DepUser):
-    guild_id = Snowflake.makeId()
+    guild = await Guild.Y.create(user, data.name)
     if data.icon:
         img = getImage(data.icon)
-        if h := await getCDNStorage().setGuildIconFromBytesIO(guild_id, img):
-            data.icon = h
-    guild = await getCore().createGuild(guild_id, user, **data.model_dump(exclude_defaults=True))
+        if icon := await getCDNStorage().setGuildIconFromBytesIO(guild.id, img):
+            guild.icon = icon
+            await guild.save(update_fields=["icon"])
+
     await getGw().dispatch(GuildCreateEvent(
         await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
     ), user_ids=[user.id])
@@ -325,7 +326,7 @@ async def ban_member(user_id: int, data: BanMember, user: User = DepUser, guild:
     target_member = await getCore().getGuildMember(guild, user_id)
     if target_member is not None and not await member.perm_checker.canKickOrBan(target_member):
         raise InvalidDataErr(403, Errors.make(50013))
-    if await getCore().getGuildBan(guild, user_id) is not None:
+    if await GuildBan.exists(guild=guild, user__id=user_id):
         return "", 204
     reason = request.headers.get("x-audit-log-reason", "")
     if target_member is not None:
@@ -672,13 +673,13 @@ async def create_from_template(data: GuildCreateFromTemplate, template: str, use
     except ValueError:
         raise InvalidDataErr(404, Errors.make(10057))
 
-    guild_id = Snowflake.makeId()
-    if data.icon:
-        img = getImage(data.icon)
-        if h := await getCDNStorage().setGuildIconFromBytesIO(guild_id, img):
-            data.icon = h
+    guild = await Guild.Y.create_from_template(user, template, data.name)
 
-    guild = await getCore().createGuildFromTemplate(guild_id, user, template, data.name, data.icon)
+    if data.icon and (img := getImage(data.icon)) is not None:
+        if icon := await getCDNStorage().setGuildIconFromBytesIO(guild.id, img):
+            guild.icon = icon
+            await guild.save(update_fields=["icon"])
+
     await getGw().dispatch(GuildCreateEvent(
         await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
     ), user_ids=[user.id])

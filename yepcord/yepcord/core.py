@@ -16,21 +16,17 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 import os.path
-from asyncio import get_event_loop
 # noinspection PyPackageRequirements
-from contextvars import Context
 from hashlib import sha256
 from hmac import new
 from json import loads as jloads, dumps as jdumps
 from os import urandom
-from random import randint
 from time import time
 from typing import Optional, Union
 
 import maxminddb
 from tortoise.expressions import Q, Subquery
 from tortoise.functions import Count
-from tortoise.transactions import atomic
 
 from . import ctx
 from .classes.other import EmailMsg, JWT, MFA
@@ -38,12 +34,11 @@ from .classes.singleton import Singleton
 from .config import Config
 from .enums import ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, Errors
-from .models import User, Relationship, Channel, Message, ReadState, Emoji, \
-    Invite, Guild, GuildMember, GuildTemplate, Reaction, Sticker, PermissionOverwrite, GuildBan, AuditLogEntry, \
-    Webhook, Role, GuildEvent, ThreadMember
+from .models import User, Relationship, Channel, Message, ReadState, Emoji, Invite, Guild, GuildMember, GuildTemplate, \
+    Reaction, Sticker, PermissionOverwrite, AuditLogEntry, Webhook, Role, GuildEvent, ThreadMember
 from .snowflake import Snowflake
 from .storage import getStorage
-from .utils import b64encode, b64decode, NoneType
+from .utils import b64encode, b64decode
 from ..gateway.events import DMChannelCreateEvent
 
 
@@ -53,17 +48,10 @@ class Core(Singleton):
         self.key = key if key and len(key) >= 16 and isinstance(key, bytes) else urandom(32)
         self.ipdb = None
 
-    async def getRandomDiscriminator(self, login: str) -> Optional[int]:
-        for _ in range(5):
-            d = randint(1, 9999)
-            if not await User.y.getByUsername(login, d):
-                return d
-
     async def getRelationships(self, user: User, with_data=False) -> list[dict]:
         rels = []
         rel: Relationship
-        for rel in await (Relationship.filter(Q(from_user=user) | Q(to_user=user))
-                          .select_related("from_user", "to_user")):
+        for rel in await Relationship.filter(Q(from_user=user) | Q(to_user=user)).select_related("from_user", "to_user"):
             if (rel_json := await rel.ds_json(user, with_data)) is not None:
                 rels.append(rel_json)
         return rels
@@ -138,9 +126,7 @@ class Core(Singleton):
     async def getChannel(self, channel_id: Optional[int]) -> Optional[Channel]:
         if channel_id is None:
             return
-        if (channel := await Channel.get_or_none(id=channel_id).select_related("guild", "owner", "parent")) is None:
-            return
-        return await self.setLastMessageIdForChannel(channel)
+        return await Channel.get_or_none(id=channel_id).select_related("guild", "owner", "parent")
 
     async def getDChannel(self, user1: User, user2: User) -> Optional[Channel]:
         return await Channel.get_or_none(
@@ -165,69 +151,37 @@ class Core(Singleton):
         if await channel.dm_is_hidden(user1):
             await channel.dm_unhide(user1)
             await ctx.getGw().dispatch(DMChannelCreateEvent(channel), user_ids=[user1.id])
-        return await self.setLastMessageIdForChannel(channel)
 
-    async def getLastMessageId(self, channel: Channel) -> Optional[int]:
-        if (last_message := await Message.filter(channel=channel).group_by("-id").first()) is not None:
-            return last_message.id
-
-    async def setLastMessageIdForChannel(self, channel: Channel) -> Channel:
-        channel.last_message_id = await self.getLastMessageId(channel)
         return channel
 
-    async def getChannelMessagesCount(self, channel: Channel) -> int:
-        return await Message.filter(channel=channel).count()
-
     async def getPrivateChannels(self, user: User, with_hidden: bool = False) -> list[Channel]:
-        channels = await Channel.filter(recipients__id=user.id).select_related("owner")
-        channels = [
+        return [
             channel
-            for channel in channels
+            for channel in await Channel.filter(recipients__id=user.id).select_related("owner")
             if not with_hidden and not await channel.dm_is_hidden(user)
         ]
-        return [await self.setLastMessageIdForChannel(channel) for channel in channels]
 
-    async def getChannelMessages(self, channel: Channel, limit: int, before: int = 0, after: int = 0) -> list[Message]:
-        id_filter = {}
-        if after: id_filter["id__gt"] = after
-        if before: id_filter["id__lt"] = before
-        messages = await (Message.filter(channel=channel, ephemeral=False, **id_filter)
-                          .select_related(*Message.DEFAULT_RELATED)
-                          .order_by("-id").limit(limit))
-        return messages
+    #async def sendMessage(self, message: Message) -> Message:
+    #    async def _addToReadStates():  # TODO: recalculate read states when requested by user
+    #        users = await self.getRelatedUsersToChannel(message.channel)
+    #        if message.author in users:
+    #            users.remove(message.author)
+    #        for user in users:
+    #            read_state, _ = await ReadState.get_or_create(
+    #                user=user, channel=message.channel, defaults={"last_read_id": message.id, "count": 0}
+    #            )
+    #            read_state.count += 1
+    #            await read_state.save(update_fields=["count"])
 
-    async def getMessage(self, channel: Channel, message_id: int) -> Optional[Message]:
-        if not message_id: return
-        return await (Message.get_or_none(channel=channel, id=message_id)
-                      .select_related(*Message.DEFAULT_RELATED))
+    #    return message
 
-    async def sendMessage(self, message: Message) -> Message:
-        async def _addToReadStates():
-            users = await self.getRelatedUsersToChannel(message.channel, False)
-            if message.author.id in users:
-                users.remove(message.author.id)
-            for user in users:
-                read_state, _ = await ReadState.get_or_create(
-                    user=user, channel=message.channel, defaults={"last_read_id": message.id, "count": 0}
-                )
-                read_state.count += 1
-                await read_state.save(update_fields=["count"])
-
-        Context().run(get_event_loop().create_task, _addToReadStates())
-        return message
-
-    async def getRelatedUsersToChannel(self, channel: Union[Channel, int], ids: bool = True) -> list[Union[int, User]]:
-        if isinstance(channel, int):
-            channel = await Channel.get_or_none(id=channel).select_related("guild")
-        if not channel:
-            return []
+    async def getRelatedUsersToChannelCount(self, channel: Channel) -> int:
         if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
-            if ids: return [recipient.id for recipient in await channel.recipients.all()]
-            return await channel.recipients.all()
+            return await channel.recipients.filter().count()
         elif channel.type in GUILD_CHANNELS:
-            return [member.user.id if ids else member.user for member in await self.getGuildMembers(channel.guild)]
+            return await GuildMember.filter(guild=channel.guild).count()
         elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
-            return [member.user.id if ids else member.user for member in await self.getThreadMembers(channel)]
+            return await ThreadMember.filter(channel=channel).count()
 
     async def setReadState(self, user: User, channel: Channel, count: int, last: int) -> None:
         read_state, _ = await ReadState.get_or_create(
@@ -285,20 +239,6 @@ class Core(Singleton):
         user.verified = True
         await user.save(update_fields=["verified"])
 
-    async def getUserByEmail(self, email: str) -> Optional[User]:
-        return await User.get_or_none(email=email)
-
-    async def changeUserEmail(self, user: User, email: str) -> None:  # TODO
-        email = email.lower()
-        if user.email == email:
-            return
-        if await self.getUserByEmail(email):
-            raise InvalidDataErr(400, Errors.make(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED",
-                                                                    "message": "Email address already registered."}}))
-        user.email = email
-        user.verified = False
-        await user.save()
-
     async def mfaNonceToCode(self, nonce: str) -> Optional[str]:
         if not (payload := JWT.decode(nonce, self.key)):
             return
@@ -307,7 +247,7 @@ class Core(Singleton):
         return signature.replace("-", "").replace("_", "")[:8].upper()
 
     async def createDMGroupChannel(self, user: User, recipients: list[User], name: Optional[str] = None) -> Channel:
-        if user.id not in recipients:
+        if user not in recipients:
             recipients.append(user)
         channel = await Channel.create(id=Snowflake.makeId(), type=ChannelType.GROUP_DM, name=name, owner=user)
         for recipient in recipients:
@@ -362,94 +302,6 @@ class Core(Singleton):
         count = await query.count()
         return messages, count
 
-    @atomic()
-    async def createGuild(self, guild_id: int, user: User, name: str, icon: str = None) -> Guild:
-        guild = await Guild.create(id=guild_id, owner=user, name=name, icon=icon)
-        await Role.create(id=guild.id, guild=guild, name="@everyone")
-
-        text_category = await Channel.create(
-            id=Snowflake.makeId(), type=ChannelType.GUILD_CATEGORY, guild=guild, name="Text Channels", position=0,
-            flags=0, rate_limit=0
-        )
-        voice_category = await Channel.create(
-            id=Snowflake.makeId(), type=ChannelType.GUILD_CATEGORY, guild=guild, name="Voice Channels", position=0,
-            flags=0, rate_limit=0
-        )
-        system_channel = await Channel.create(
-            id=Snowflake.makeId(), type=ChannelType.GUILD_TEXT, guild=guild, name="general", position=0, flags=0,
-            parent=text_category, rate_limit=0
-        )
-        await Channel.create(
-            id=Snowflake.makeId(), type=ChannelType.GUILD_VOICE, guild=guild, name="General", position=0, flags=0,
-            parent=voice_category, bitrate=64000, user_limit=0, rate_limit=0
-        )
-        guild.system_channel = system_channel.id
-        await guild.save(update_fields=["system_channel"])
-
-        await GuildMember.create(id=Snowflake.makeId(), user=user, guild=guild)
-
-        return guild
-
-    @atomic()
-    async def createGuildFromTemplate(self, guild_id: int, user: User, template: GuildTemplate, name: Optional[str],
-                                      icon: Optional[str]) -> Guild:
-        serialized = template.serialized_guild
-        name = serialized["name"] = name or serialized["name"]
-        guild = await Guild.create(id=guild_id, owner=user, name=name)
-
-        serialized["icon"] = icon
-        replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None, 0: guild_id}
-        channels = {}
-        roles = {}
-
-        for role in serialized["roles"]:
-            if role["id"] not in replaced_ids:
-                replaced_ids[role["id"]] = Snowflake.makeId()
-            role["id"] = replaced_ids[role["id"]]
-            roles[role["id"]] = await Role.create(guild=guild, **role)
-
-        for channel in serialized["channels"]:
-            if channel["id"] not in replaced_ids:
-                replaced_ids[channel["id"]] = Snowflake.makeId()
-            channel["id"] = channel_id = replaced_ids[channel["id"]]
-            channel["parent"] = channels.get(replaced_ids.get(channel["parent_id"], None), None)
-            channel["rate_limit"] = channel["rate_limit_per_user"]
-            channel["default_auto_archive"] = channel["default_auto_archive_duration"]
-
-            del channel["parent_id"]
-            del channel["rate_limit_per_user"]
-            del channel["default_auto_archive_duration"]
-
-            del channel["available_tags"]
-            del channel["template"]
-            del channel["default_reaction_emoji"]
-            del channel["default_thread_rate_limit_per_user"]
-            del channel["default_sort_order"]
-            del channel["default_forum_layout"]
-
-            permission_overwrites = channel["permission_overwrites"]
-            del channel["permission_overwrites"]
-
-            channels[channel_id] = await Channel.create(guild=guild, **channel)
-            for overwrite in permission_overwrites:
-                overwrite["target_role"] = roles[replaced_ids[overwrite["id"]]]
-                overwrite["channel"] = channels[channel_id]
-                del overwrite["id"]
-                await PermissionOverwrite.create(**overwrite)
-
-        serialized["afk_channel"] = replaced_ids.get(serialized["afk_channel_id"], None)
-        serialized["system_channel"] = replaced_ids.get(serialized["system_channel_id"], None)
-        del serialized["afk_channel_id"]
-        del serialized["system_channel_id"]
-
-        del serialized["roles"]
-        del serialized["channels"]
-
-        await guild.update(**serialized)
-        await GuildMember.create(id=Snowflake.makeId(), user=user, guild=guild)
-
-        return guild
-
     async def getRole(self, role_id: int, guild: Optional[Guild] = None) -> Role:
         q = {"id": role_id}
         if guild is not None:
@@ -500,9 +352,6 @@ class Core(Singleton):
         if not (emoji := await self.getEmoji(emoji_id)):
             return
         return emoji if emoji.name == name else None
-
-    async def getGuildBan(self, guild: Guild, user_id: int) -> Optional[GuildBan]:
-        return await GuildBan.get_or_none(guild=guild, user__id=user_id)
 
     async def bulkDeleteGuildMessagesFromBanned(
             self, guild: Guild, user_id: int, after_id: int

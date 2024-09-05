@@ -45,10 +45,10 @@ async def get_applications(user: User = DepUser):
 async def create_application(data: CreateApplication, user: User = DepUser):
     app_id = Snowflake.makeId()
     name = username = data.name
-    disc = await getCore().getRandomDiscriminator(username)
+    disc = await User.y.get_free_discriminator(username)
     if disc is None:
         username = f"{username}{app_id}"
-        disc = await getCore().getRandomDiscriminator(username)
+        disc = await User.y.get_free_discriminator(username)
 
     app = await Application.create(id=app_id, owner=user, name=name)
     bot_user = await User.create(id=app_id, email=f"bot_{app_id}", password="", is_bot=True)

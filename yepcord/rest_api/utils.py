@@ -61,7 +61,7 @@ async def _getMessage(user: User, channel: Channel, message_id: int) -> Message:
         raise InvalidDataErr(404, Errors.make(10003))
     if not user:
         raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-    if not message_id or not (message := await getCore().getMessage(channel, message_id)):
+    if not message_id or not (message := await channel.get_message(message_id)):
         raise InvalidDataErr(404, Errors.make(10008))
     return message
 
@@ -202,7 +202,7 @@ async def process_stickers(sticker_ids: list[int]):
 async def validate_reply(data: MessageCreate, channel: Channel) -> int:
     message_type = MessageType.DEFAULT
     if data.message_reference:
-        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
+        data.validate_reply(channel, await channel.get_message(data.message_reference.message_id))
     if data.message_reference:
         message_type = MessageType.REPLY
     return message_type

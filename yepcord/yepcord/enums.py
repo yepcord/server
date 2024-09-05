@@ -92,7 +92,7 @@ class ChannelType(E):
     GUILD_DIRECTORY = 14
 
 
-GUILD_CHANNELS = (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY, ChannelType.GUILD_NEWS)
+GUILD_CHANNELS = {ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY, ChannelType.GUILD_NEWS}
 
 
 class MessageType(E):

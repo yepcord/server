@@ -113,7 +113,6 @@ async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: i
     message = await processMessage(await request.get_json(), channel, None, WebhookMessageCreate, webhook)
 
     message_json = await message.ds_json()
-    await getCore().sendMessage(message)
     await getGw().dispatch(MessageCreateEvent(message_json), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL)
 
     if query_args.wait:

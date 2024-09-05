@@ -78,7 +78,7 @@ class Interaction(Model):
             data["channel_id"] = str(self.channel.id)
             data["channel"] = await self.channel.ds_json()
 
-        if self.message_id is not None and (message := await getCore().getMessage(self.channel, self.message_id)):
+        if self.message_id is not None and (message := await self.channel.get_message(self.message_id)):
             data["message"] = await message.ds_json()
 
         if self.locale is not None:

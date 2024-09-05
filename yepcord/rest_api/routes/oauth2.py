@@ -31,7 +31,7 @@ from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
 from ...yepcord.errors import Errors, InvalidDataErr
 from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry, Application, Bot, Authorization, \
-    Integration
+    Integration, GuildBan
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import b64decode
 
@@ -108,7 +108,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
 
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         bot = await Bot.get(id=application.id).select_related("user")
-        if (ban := await getCore().getGuildBan(guild, bot.user.id)) is not None:
+        if (ban := await GuildBan.get_or_none(guild=guild, user=bot.user)) is not None:
             await ban.delete()
 
         bot_userdata = await bot.user.userdata
@@ -139,7 +139,6 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
                 id=Snowflake.makeId(), author=bot.user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                 guild=guild
             )
-            await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel,
                                    permissions=GuildPermissions.VIEW_CHANNEL)
 

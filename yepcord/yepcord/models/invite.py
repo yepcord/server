@@ -67,12 +67,11 @@ class Invite(Model):
         }
 
         if with_counts:
-            related_users = await getCore().getRelatedUsersToChannel(self.channel.id, ids=False)
-            data["approximate_member_count"] = len(related_users)
+            data["approximate_member_count"] = await getCore().getRelatedUsersToChannelCount(self.channel)
             if self.channel.type == ChannelType.GROUP_DM:
                 data["channel"]["recipients"] = [
-                    {"username": (await rel_user.data).username}
-                    for rel_user in related_users
+                    {"username": (await recipient.data).username}
+                    for recipient in await self.channel.recipients.all()
                 ]
 
         if self.channel.type == ChannelType.GROUP_DM:

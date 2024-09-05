@@ -30,7 +30,16 @@ from ..snowflake import Snowflake
 from ..utils import ping_regex
 
 
+class MessageUtils:
+    @staticmethod
+    async def get(channel: models.Channel, message_id: int) -> Optional[Message]:
+        if not message_id: return
+        return await Message.get_or_none(channel=channel, id=message_id).select_related(*Message.DEFAULT_RELATED)
+
+
 class Message(Model):
+    Y = MessageUtils
+
     id: int = SnowflakeField(pk=True)
     channel: models.Channel = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL, null=True,
                                                      related_name="channel")
@@ -127,7 +136,7 @@ class Message(Model):
                 ref_channel = await getCore().getChannel(int(self.message_reference["channel_id"]))
                 ref_message = None
                 if ref_channel:
-                    ref_message = await getCore().getMessage(ref_channel, int(self.message_reference["message_id"]))
+                    ref_message = await ref_channel.get_message(int(self.message_reference["message_id"]))
                 if ref_message: ref_message.message_reference = {}
                 data["referenced_message"] = await ref_message.ds_json() if ref_message else None
         if self.nonce is not None:

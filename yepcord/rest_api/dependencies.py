@@ -106,7 +106,7 @@ async def depMessageO(
     if webhook:
         message = await Message.get_or_none(id=message, webhook_id=webhook.id).select_related(*Message.DEFAULT_RELATED)
     elif channel is not None and user is not None:
-        message = await getCore().getMessage(channel, message)
+        message = await channel.get_message(message)
     else:
         raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
 

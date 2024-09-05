@@ -38,13 +38,6 @@ from ..snowflake import Snowflake
 from ..utils import int_size, b64encode
 
 
-async def _get_free_discriminator(login: str) -> Optional[int]:
-    for _ in range(5):
-        discriminator = randint(1, 9999)
-        if not await User.y.getByUsername(login, discriminator):
-            return discriminator
-
-
 class UserUtils:
     @staticmethod
     async def get(user_id: int, allow_deleted: bool = True) -> Optional[User]:
@@ -82,7 +75,7 @@ class UserUtils:
             raise InvalidDataErr(400, Errors.make(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED",
                                                                     "message": "Email address already registered."}}))
 
-        discriminator = await _get_free_discriminator(login)
+        discriminator = await User.y.get_free_discriminator(login)
         if discriminator is None:
             raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "USERNAME_TOO_MANY_USERS",
                                                                     "message": "Too many users have this username, "
@@ -113,6 +106,13 @@ class UserUtils:
                 getCore().generateMfaTicketSignature(user, int.from_bytes(sid, "big")),
             )
         return await models.Session.Y.create(user)
+
+    @staticmethod
+    async def get_free_discriminator(login: str) -> Optional[int]:
+        for _ in range(5):
+            discriminator = randint(1, 9999)
+            if not await User.y.getByUsername(login, discriminator):
+                return discriminator
 
 
 class User(Model):
@@ -209,7 +209,7 @@ class User(Model):
         data = await self.data
         discriminator = data.discriminator
         if await User.y.getByUsername(username, discriminator):
-            discriminator = await _get_free_discriminator(username)
+            discriminator = await self.y.get_free_discriminator(username)
             if discriminator is None:
                 raise InvalidDataErr(400, Errors.make(50035, {"username": {
                     "code": "USERNAME_TOO_MANY_USERS",
@@ -232,6 +232,17 @@ class User(Model):
         data.discriminator = new_discriminator
         await data.save(update_fields=["discriminator"])
         return True
+
+    async def change_email(self, new_email: str) -> None:
+        new_email = new_email.lower()
+        if self.email == new_email:
+            return
+        if await User.exists(email=new_email):
+            raise InvalidDataErr(400, Errors.make(50035, {"email": {"code": "EMAIL_ALREADY_REGISTERED",
+                                                                    "message": "Email address already registered."}}))
+        self.email = new_email
+        self.verified = False
+        await self.save()
 
     async def create_backup_codes(self) -> list[str]:
         codes = ["".join([choice('abcdefghijklmnopqrstuvwxyz0123456789') for _ in range(8)]) for _ in range(10)]

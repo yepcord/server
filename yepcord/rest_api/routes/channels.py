@@ -94,12 +94,10 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
         if "name" in changed:
             message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user,
                                            type=MessageType.CHANNEL_NAME_CHANGE, content=channel.name)
-            await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
         if "icon" in changed:
             message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user,
                                            type=MessageType.CHANNEL_ICON_CHANGE, content="")
-            await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
     elif channel.type in GUILD_CHANNELS:
         if "parent" in changes:
@@ -123,7 +121,6 @@ async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
     elif channel.type == ChannelType.GROUP_DM:
         message = Message(id=Snowflake.makeId(), author=user, channel=channel, content="",
                           type=MessageType.RECIPIENT_REMOVE, extra_data={"user": user.id})
-        await getCore().sendMessage(message)
         await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=channel)
         await channel.recipients.remove(user)
         await getGw().dispatch(ChannelRecipientRemoveEvent(channel.id, (await user.data).ds_json),
@@ -163,7 +160,7 @@ async def get_messages(query_args: GetMessagesQuery, user: User = DepUser, chann
     if channel.guild is not None:
         member = await getCore().getGuildMember(channel.guild, user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-    messages = await channel.messages(**query_args.model_dump())
+    messages = await channel.get_messages(**query_args.model_dump())
     messages = [await message.ds_json(user_id=user.id) for message in messages]
     return messages
 
@@ -187,7 +184,6 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
             await channel.dm_unhide(other_user)
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": other_user.id}),
                                    user_ids=[other_user.id])
-    await getCore().sendMessage(message)
     await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
     await getCore().setReadState(user, channel, 0, message.id)
@@ -244,10 +240,13 @@ async def send_message_ack(data: MessageAck, message: int, user: User = DepUser,
         await getCore().setReadState(user, channel, ct, message.id)
         await getGw().sendMessageAck(user.id, channel.id, message.id, ct, True)
     else:
-        ct = len(await getCore().getChannelMessages(channel, 99, channel.last_message_id, message.id))
-        await getCore().setReadState(user, channel, ct, message.id)
-        await getGw().dispatch(MessageAckEvent({"version_id": 1, "message_id": str(message.id),
-                                                "channel_id": str(channel.id)}), user_ids=[user.id])
+        count = await Message.filter(
+            channel=channel, ephemeral=False, id__gt=message.id, id__lt=await channel.get_last_message_id(),
+        ).count()
+        await getCore().setReadState(user, channel, count, message.id)
+        await getGw().dispatch(MessageAckEvent({
+            "version_id": 1, "message_id": str(message.id), "channel_id": str(channel.id),
+        }), user_ids=[user.id])
     return {"token": None}
 
 
@@ -280,9 +279,10 @@ async def add_recipient(target_user: int, user: User = DepUser, channel: Channel
     elif channel.type == ChannelType.GROUP_DM:
         recipients = await channel.recipients.all()
         if target_user not in recipients and len(recipients) < 10:
-            message = await Message.create(id=Snowflake.makeId(), author=user, channel=channel, content="",
-                                           type=MessageType.RECIPIENT_ADD, extra_data={"user": target_user.id})
-            await getCore().sendMessage(message)
+            message = await Message.create(
+                id=Snowflake.makeId(), author=user, channel=channel, content="", type=MessageType.RECIPIENT_ADD,
+                extra_data={"user": target_user.id}
+            )
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
             await channel.recipients.add(target_user)
             target_user_data = await target_user.data
@@ -304,7 +304,6 @@ async def delete_recipient(target_user: int, user: User = DepUser, channel: Chan
     if target_user in recipients:
         msg = await Message.create(id=Snowflake.makeId(), author=user, channel=channel, content="",
                                    type=MessageType.RECIPIENT_REMOVE, extra_data={"user": target_user.id})
-        await getCore().sendMessage(msg)
         await getGw().dispatch(MessageCreateEvent(await msg.ds_json()), channel=msg.channel)
         await channel.recipients.remove(target_user)
         target_user_data = await target_user.data
@@ -334,7 +333,6 @@ async def pin_message(user: User = DepUser, channel: Channel = DepChannel, messa
             message_reference=message_ref, guild=channel.guild
         )
 
-        await getCore().sendMessage(msg)
         await getGw().dispatch(MessageCreateEvent(await msg.ds_json()), channel=msg.channel,
                                permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
@@ -583,8 +581,6 @@ async def create_thread(data: CreateThread, user: User = DepUser, channel: Chann
     await message.update(thread=thread, flags=message.flags | MessageFlags.HAS_THREAD)
     await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=message.channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
-    await getCore().sendMessage(thread_message)
-    await getCore().sendMessage(thread_create_message)
 
     return await thread.ds_json()
 

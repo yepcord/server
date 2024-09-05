@@ -27,7 +27,7 @@ from yepcord.cdn.main import app
 from yepcord.yepcord.config import Config
 from yepcord.yepcord.core import Core
 from yepcord.yepcord.enums import StickerFormat, StickerType, ChannelType
-from yepcord.yepcord.models import User, Sticker, Emoji, Channel, Message, Attachment
+from yepcord.yepcord.models import User, Sticker, Emoji, Channel, Message, Attachment, Guild
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.storage import getStorage, _Storage
 from yepcord.yepcord.utils import getImage, b64decode
@@ -243,9 +243,10 @@ async def test_sticker(storage: _Storage):
     client: TestClientType = app.test_client()
 
     user = await User.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
-    guild = await core.createGuild(Snowflake.makeId(), user, "test")
-    sticker = await Sticker.create(id=Snowflake.makeId(), guild=guild, name="test", user=user,
-                                           type=StickerType.GUILD, format=StickerFormat.PNG)
+    guild = await Guild.Y.create(user, "test")
+    sticker = await Sticker.create(
+        id=Snowflake.makeId(), guild=guild, name="test", user=user, type=StickerType.GUILD, format=StickerFormat.PNG
+    )
     sticker_hash = await storage.setStickerFromBytesIO(sticker.id, getImage(YEP_IMAGE))
     assert sticker_hash == "sticker"
 
@@ -290,7 +291,7 @@ async def test_emoji(storage: _Storage):
     client: TestClientType = app.test_client()
 
     user = await User.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
-    guild = await core.createGuild(Snowflake.makeId(), user, "test")
+    guild = await Guild.Y.create(user, "test")
     emoji = await Emoji.create(id=Snowflake.makeId(), name="test", user=user, guild=guild)
     emoji_info = await storage.setEmojiFromBytesIO(emoji.id, getImage(YEP_IMAGE))
     assert not emoji_info["animated"]

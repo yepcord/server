@@ -19,6 +19,7 @@
 from json import loads as jloads
 
 from quart import request
+from tortoise.exceptions import DoesNotExist
 
 from ..dependencies import DepSession, DepUser
 from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmail
@@ -118,12 +119,11 @@ async def resend_verification_email(user: User = DepUser):
 async def verify_email(data: VerifyEmail):
     if not data.token:
         raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
-    # noinspection PyPep8
     try:
         email = jloads(b64decode(data.token.split(".")[0]).decode("utf8"))["email"]
-    except:
+        user = await User.get(email=email, verified=False)
+    except (ValueError, DoesNotExist):
         raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
-    user = await getCore().getUserByEmail(email)
     await getCore().verifyEmail(user, data.token)
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return {"token": (await Session.Y.create(user)).token, "user_id": str(user.id)}

@@ -32,7 +32,7 @@ from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, Cha
 from yepcord.yepcord.errors import InvalidDataErr, MfaRequiredErr
 from yepcord.yepcord.gateway_dispatcher import GatewayDispatcher
 from yepcord.yepcord.models import User, UserData, Session, Relationship, Guild, Channel, Role, PermissionOverwrite, \
-    GuildMember
+    GuildMember, Message
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import b64decode, b64encode
 
@@ -342,14 +342,14 @@ async def test_getChannel_fail(testCore: Coroutine[Any, Any, Core]):
 async def test_getLastMessageIdForChannel_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     channel = await testCore.getChannel(VARS["channel_id"])
-    assert channel.last_message_id is None or channel.last_message_id > 0
+    assert await channel.get_last_message_id() is None or await channel.get_last_message_id() > 0
 
 
 @pt.mark.asyncio
 async def test_getChannelMessagesCount_success(testCore: Coroutine[Any, Any, Core]):
     testCore = await testCore
     channel = await testCore.getChannel(VARS["channel_id"])
-    assert await testCore.getChannelMessagesCount(channel) == 0
+    assert await Message.filter(channel=channel).count() == 0
 
 
 @pt.mark.asyncio

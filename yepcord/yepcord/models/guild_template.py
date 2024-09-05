@@ -21,13 +21,12 @@ from typing import Optional, Union
 
 from tortoise import fields
 
+import yepcord.yepcord.models as models
+from ._utils import SnowflakeField, Model
 from ..ctx import getCore
 from ..enums import ChannelType
-from ._utils import SnowflakeField, Model
 from ..snowflake import Snowflake
-from ..utils import b64encode, int_size, NoneType
-
-import yepcord.yepcord.models as models
+from ..utils import b64encode, int_size
 
 
 class GuildTemplate(Model):
@@ -71,7 +70,7 @@ class GuildTemplate(Model):
 
     @staticmethod
     async def serialize_guild(guild: models.Guild) -> dict:
-        replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None}
+        replaced_ids: dict[Union[int, None], Union[int, None]] = {None: None}
         last_replaced_id = 0
         serialized_roles = []
         serialized_channels = []

@@ -15,19 +15,116 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+from __future__ import annotations
 
 from time import time
-from typing import Optional
+from typing import Optional, Union
 
 from tortoise import fields
+from tortoise.transactions import atomic
 
 from ..ctx import getCore
 import yepcord.yepcord.models as models
-from ..enums import Locales
+from ..enums import Locales, ChannelType
 from ._utils import SnowflakeField, Model, ChoicesValidator
+from ..snowflake import Snowflake
+
+
+class GuildUtils:
+    @staticmethod
+    @atomic()
+    async def create(owner: models.User, name: str) -> models.Guild:
+        guild = await Guild.create(id=Snowflake.makeId(), owner=owner, name=name)
+        await models.Role.create(id=guild.id, guild=guild, name="@everyone")
+
+        text_category = await models.Channel.create(
+            id=Snowflake.makeId(), type=ChannelType.GUILD_CATEGORY, guild=guild, name="Text Channels", position=0,
+            flags=0, rate_limit=0
+        )
+        voice_category = await models.Channel.create(
+            id=Snowflake.makeId(), type=ChannelType.GUILD_CATEGORY, guild=guild, name="Voice Channels", position=0,
+            flags=0, rate_limit=0
+        )
+        system_channel = await models.Channel.create(
+            id=Snowflake.makeId(), type=ChannelType.GUILD_TEXT, guild=guild, name="general", position=0, flags=0,
+            parent=text_category, rate_limit=0
+        )
+        await models.Channel.create(
+            id=Snowflake.makeId(), type=ChannelType.GUILD_VOICE, guild=guild, name="General", position=0, flags=0,
+            parent=voice_category, bitrate=64000, user_limit=0, rate_limit=0
+        )
+        guild.system_channel = system_channel.id
+        await guild.save(update_fields=["system_channel"])
+
+        await models.GuildMember.create(id=Snowflake.makeId(), user=owner, guild=guild)
+
+        return guild
+
+    @staticmethod
+    @atomic()
+    async def create_from_template(
+            owner: models.User, template: models.GuildTemplate, name: Optional[str]
+    ) -> models.Guild:
+        serialized = template.serialized_guild
+        name = serialized["name"] = name or serialized["name"]
+        guild = await Guild.create(id=Snowflake.makeId(), owner=owner, name=name)
+
+        replaced_ids: dict[Union[int, None], Union[int, None]] = {None: None, 0: guild.id}
+        channels = {}
+        roles = {}
+
+        for role in serialized["roles"]:
+            if role["id"] not in replaced_ids:
+                replaced_ids[role["id"]] = Snowflake.makeId()
+            role["id"] = replaced_ids[role["id"]]
+            roles[role["id"]] = await models.Role.create(guild=guild, **role)
+
+        for channel in serialized["channels"]:
+            if channel["id"] not in replaced_ids:
+                replaced_ids[channel["id"]] = Snowflake.makeId()
+            channel["id"] = channel_id = replaced_ids[channel["id"]]
+            channel["parent"] = channels.get(replaced_ids.get(channel["parent_id"], None), None)
+            channel["rate_limit"] = channel["rate_limit_per_user"]
+            channel["default_auto_archive"] = channel["default_auto_archive_duration"]
+
+            del channel["parent_id"]
+            del channel["rate_limit_per_user"]
+            del channel["default_auto_archive_duration"]
+
+            del channel["available_tags"]
+            del channel["template"]
+            del channel["default_reaction_emoji"]
+            del channel["default_thread_rate_limit_per_user"]
+            del channel["default_sort_order"]
+            del channel["default_forum_layout"]
+
+            permission_overwrites = channel["permission_overwrites"]
+            del channel["permission_overwrites"]
+
+            channels[channel_id] = await models.Channel.create(guild=guild, **channel)
+            for overwrite in permission_overwrites:
+                overwrite["target_role"] = roles[replaced_ids[overwrite["id"]]]
+                overwrite["channel"] = channels[channel_id]
+                del overwrite["id"]
+                await models.PermissionOverwrite.create(**overwrite)
+
+        serialized["afk_channel"] = replaced_ids.get(serialized["afk_channel_id"], None)
+        serialized["system_channel"] = replaced_ids.get(serialized["system_channel_id"], None)
+        del serialized["afk_channel_id"]
+        del serialized["system_channel_id"]
+
+        del serialized["roles"]
+        del serialized["channels"]
+
+        await guild.update(**serialized)
+        await models.GuildMember.create(id=Snowflake.makeId(), user=owner, guild=guild)
+
+        return guild
 
 
 class Guild(Model):
+    Y = GuildUtils
+
     id: int = SnowflakeField(pk=True)
     owner: models.User = fields.ForeignKeyField("models.User")
     name: str = fields.CharField(max_length=64)

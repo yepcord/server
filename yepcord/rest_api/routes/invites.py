@@ -24,7 +24,7 @@ from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelR
 from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import ChannelType, GuildPermissions, MessageType
 from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.models import Invite, User, Message, GuildMember
+from ...yepcord.models import Invite, User, Message, GuildMember, GuildBan
 from ...yepcord.snowflake import Snowflake
 
 # Base path is /api/vX/invites
@@ -61,7 +61,6 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
             await channel.recipients.add(user)
             await getGw().dispatch(ChannelRecipientAddEvent(channel.id, (await user.data).ds_json),
                                    user_ids=[recipient.id for recipient in recipients])
-            await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()),
                                    user_ids=[recipient.id for recipient in recipients])
         await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}),
@@ -74,7 +73,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
                 del inv[excl]
         if not await getCore().getGuildMember(channel.guild, user.id):
             guild = channel.guild
-            if await getCore().getGuildBan(guild, user.id) is not None:
+            if await GuildBan.exists(guild=guild, user=user):
                 raise InvalidDataErr(403, Errors.make(40007))
             inv["new_member"] = True
             await GuildMember.create(id=Snowflake.makeId(), user=user, guild=guild)
@@ -85,7 +84,6 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
                     id=Snowflake.makeId(), author=user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                     guild=guild
                 )
-                await getCore().sendMessage(message)
                 await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel,
                                        permissions=GuildPermissions.VIEW_CHANNEL)
             await invite.use()

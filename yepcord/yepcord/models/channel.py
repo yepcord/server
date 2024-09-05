@@ -52,14 +52,18 @@ class Channel(Model):
     default_auto_archive: Optional[int] = fields.IntField(null=True, default=None)
     flags: Optional[int] = fields.IntField(null=True, default=0)
 
-    last_message_id: int = None
+    _last_message_id: int = None
+
+    async def get_last_message_id(self) -> int:
+        if self._last_message_id is None and \
+                (last_message := await models.Message.filter(channel=self).group_by("-id").first()) is not None:
+            self._last_message_id = last_message.id
+
+        return self._last_message_id
 
     async def ds_json(self, user_id: int=None, with_ids: bool=True) -> dict:
-        if self.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
-            self.last_message_id = await getCore().getLastMessageId(self)
-        if self.last_message_id is None:
-            await getCore().setLastMessageIdForChannel(self)
-        last_message_id = str(self.last_message_id) if self.last_message_id is not None else None
+        last_message_id = await self.get_last_message_id()
+        last_message_id = str(last_message_id) if last_message_id is not None else None
         recipients = []
         if self.type in (ChannelType.DM, ChannelType.GROUP_DM):
             recipients = await (self.recipients.all() if not user_id else self.recipients.filter(~Q(id=user_id)).all())
@@ -147,7 +151,7 @@ class Channel(Model):
                 "nsfw": self.nsfw
             }
         elif self.type == ChannelType.GUILD_PUBLIC_THREAD:
-            message_count = await getCore().getChannelMessagesCount(self)
+            message_count = await models.Message.filter(channel=self).count()
             data: dict = base_data | {
                 "guild_id": str(self.guild.id),
                 "parent_id": str(self.parent.id) if self.parent else None,
@@ -172,8 +176,19 @@ class Channel(Model):
 
             return data
 
-    async def messages(self, limit: int=50, before: int=0, after: int=0) -> list[models.Message]:
-        return await getCore().getChannelMessages(self, limit, before, after)
+    async def get_messages(self, limit: int = 50, before: int = 0, after: int = 0) -> list[models.Message]:
+        id_filter = {}
+        if after:
+            id_filter["id__gt"] = after
+        if before:
+            id_filter["id__lt"] = before
+
+        return await (
+            models.Message.filter(channel=self, ephemeral=False, **id_filter)
+            .select_related(*models.Message.DEFAULT_RELATED)
+            .order_by("-id")
+            .limit(limit)
+        )
 
     async def other_user(self, current_user: models.User) -> Optional[models.User]:
         if self.type != ChannelType.DM:
@@ -187,3 +202,6 @@ class Channel(Model):
         if self.type != ChannelType.DM:
             return
         await models.HiddenDmChannel.filter(user=for_user, channel=self).delete()
+
+    async def get_message(self, message_id: int) -> Optional[models.Message]:
+        return await models.Message.Y.get(self, message_id)

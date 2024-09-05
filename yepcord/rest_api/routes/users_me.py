@@ -73,7 +73,7 @@ async def update_me(data: UserUpdate, user: User = DepUser):
         await user.change_password(data.new_password)
         data.new_password = None
     if data.email is not None:
-        await getCore().changeUserEmail(user, data.email)
+        await user.change_email(data.email)
         await getCore().sendVerificationEmail(user)
         data.email = None
     if data.avatar != "" and data.avatar is not None:

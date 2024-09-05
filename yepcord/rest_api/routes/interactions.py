@@ -145,7 +145,7 @@ async def create_interaction(user: User = DepUser):
     message = None
     target_member = None
     if command.type == ApplicationCommandType.MESSAGE and \
-            (message := await getCore().getMessage(channel, data.data.target_id)) is None:
+            (message := await channel.get_message(data.data.target_id)) is None:
         raise InvalidDataErr(404, Errors.make(10008))
     if command.type == ApplicationCommandType.USER and \
             (target_member := await getCore().getGuildMember(guild, data.data.target_id)) is None:
