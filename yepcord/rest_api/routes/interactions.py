@@ -29,7 +29,7 @@ from ...yepcord.enums import GuildPermissions, InteractionStatus, MessageFlags, 
     ApplicationCommandOptionType, MessageType, ApplicationCommandType
 from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownChannel, UnknownGuild, UnknownMessage, \
     UnknownUser, MissingAccess, CannotSendEmptyMessage, InteractionAlreadyAck, Unauthorized
-from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild
+from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild, Channel
 from ...yepcord.models.interaction import Interaction
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import execute_after
@@ -55,7 +55,7 @@ async def resolve_options(interaction_options: list[InteractionOption], guild: G
                 result["members"] = {}
             result["members"][option.value] = await member.ds_json(False)
         elif option.type == T.CHANNEL:
-            if guild is None or (channel := await getCore().getChannel(option.value)) is None:
+            if guild is None or (channel := await Channel.Y.get(option.value)) is None:
                 continue
             if channel.guild != guild:
                 continue
@@ -125,7 +125,7 @@ async def create_interaction(user: User = DepUser):
     if (application := await Application.get_or_none(id=data.application_id, deleted=False)) is None:
         raise UnknownApplication
     guild = None
-    channel = await getCore().getChannel(data.channel_id)
+    channel = await Channel.Y.get(data.channel_id)
     if data.guild_id:
         if (guild := await getCore().getGuild(data.guild_id)) is None:
             raise UnknownGuild

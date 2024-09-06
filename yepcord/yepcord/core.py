@@ -21,11 +21,10 @@ from hmac import new
 from json import loads as jloads, dumps as jdumps
 from os import urandom
 from time import time
-from typing import Optional, Union
+from typing import Optional
 
 import maxminddb
-from tortoise.expressions import Q, Subquery
-from tortoise.functions import Count
+from tortoise.expressions import Q
 
 from . import ctx
 from .classes.other import EmailMsg, JWT, MFA
@@ -33,52 +32,17 @@ from .classes.singleton import Singleton
 from .config import Config
 from .enums import ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, Errors, InvalidKey
-from .models import User, Relationship, Channel, Message, ReadState, Emoji, Invite, Guild, GuildMember, GuildTemplate, \
-    Reaction, Sticker, Webhook, Role, GuildEvent, ThreadMember
-from .snowflake import Snowflake
+from .models import User, Channel, Message, ReadState, Emoji, Invite, Guild, GuildMember, GuildTemplate, Sticker, \
+    Webhook, Role, GuildEvent, ThreadMember
 from .storage import getStorage
 from .utils import b64encode, b64decode
-from ..gateway.events import DMChannelCreateEvent
 
 
 # noinspection PyMethodMayBeStatic
 class Core(Singleton):
-    def __init__(self, key=None):
-        self.key = key if key and len(key) >= 16 and isinstance(key, bytes) else urandom(32)
+    def __init__(self):
+        self.key = b64decode(Config.KEY)
         self.ipdb = None
-
-    async def getRelationships(self, user: User, with_data=False) -> list[dict]:
-        rels = []
-        rel: Relationship
-        for rel in await Relationship.filter(
-                Q(from_user=user) | Q(to_user=user)
-        ).select_related("from_user", "to_user"):
-            if (rel_json := await rel.ds_json(user, with_data)) is not None:
-                rels.append(rel_json)
-        return rels
-
-    async def getRelatedUsers(self, user: User, only_ids=False) -> list:
-        users = []
-        for r in await Relationship.filter(Q(from_user=user) | Q(to_user=user)).select_related("from_user", "to_user"):
-            other_user = r.other_user(user)
-            if only_ids:
-                users.append(other_user.id)
-                continue
-            data = await other_user.data
-            users.append(data.ds_json)
-        for channel in await self.getPrivateChannels(user, with_hidden=True):
-            channel = await Channel.get(id=channel.id)
-            for recipient in await channel.recipients.all():
-                if recipient.id == user.id: continue
-                if only_ids:
-                    if recipient.id in users: continue
-                    users.append(recipient.id)
-                    continue
-                if [rec for rec in users if rec["id"] == recipient.id]:
-                    continue
-                data = await recipient.data
-                users.append(data.ds_json)
-        return users
 
     def generateMfaTicketSignature(self, user: User, session_id: int) -> str:
         payload = {
@@ -124,44 +88,6 @@ class Core(Singleton):
         if nonce_type != payload["type"]:
             raise InvalidKey
 
-    async def getChannel(self, channel_id: Optional[int]) -> Optional[Channel]:
-        if channel_id is None:
-            return
-        return await Channel.get_or_none(id=channel_id).select_related("guild", "owner", "parent")
-
-    async def getDChannel(self, user1: User, user2: User) -> Optional[Channel]:
-        return await Channel.get_or_none(
-            id__in=Subquery(
-                Channel
-                .filter(recipients__id__in=[user1.id, user2.id])
-                .annotate(user_count=Count('recipients__id', distinct=True))
-                .filter(user_count=2)
-                .group_by("id")
-                .values_list('id', flat=True)
-            )
-        )
-
-    async def getDMChannelOrCreate(self, user1: User, user2: User) -> Channel:
-        channel = await self.getDChannel(user1, user2)
-        if channel is None:
-            channel = await Channel.create(id=Snowflake.makeId(), type=ChannelType.DM)
-            await channel.recipients.add(user1)
-            await channel.recipients.add(user2)
-            return await Channel.get(id=channel.id)
-
-        if await channel.dm_is_hidden(user1):
-            await channel.dm_unhide(user1)
-            await ctx.getGw().dispatch(DMChannelCreateEvent(channel), user_ids=[user1.id])
-
-        return channel
-
-    async def getPrivateChannels(self, user: User, with_hidden: bool = False) -> list[Channel]:
-        return [
-            channel
-            for channel in await Channel.filter(recipients__id=user.id).select_related("owner")
-            if not with_hidden and not await channel.dm_is_hidden(user)
-        ]
-
     #async def sendMessage(self, message: Message) -> Message:
     #    async def _addToReadStates():  # TODO: recalculate read states when requested by user
     #        users = await self.getRelatedUsersToChannel(message.channel)
@@ -198,11 +124,6 @@ class Core(Singleton):
         for st in await ReadState.filter(user=user).select_related("channel", "user"):
             states.append(await st.ds_json())
         return states
-
-    async def getUserByChannelId(self, channel_id: int, user_id: int) -> Optional[User]:
-        if not (channel := await self.getChannel(channel_id)):
-            return None
-        return await self.getUserByChannel(channel, user_id)
 
     async def getUserByChannel(self, channel: Channel, user_id: int) -> Optional[User]:
         if channel.type in (ChannelType.DM, ChannelType.GROUP_DM):
@@ -246,33 +167,6 @@ class Core(Singleton):
         token = JWT.encode({"code": payload["code"]}, self.key)
         signature = token.split(".")[2]
         return signature.replace("-", "").replace("_", "")[:8].upper()
-
-    async def createDMGroupChannel(self, user: User, recipients: list[User], name: Optional[str] = None) -> Channel:
-        if user not in recipients:
-            recipients.append(user)
-        channel = await Channel.create(id=Snowflake.makeId(), type=ChannelType.GROUP_DM, name=name, owner=user)
-        for recipient in recipients:
-            await channel.recipients.add(recipient)
-        return channel
-
-    async def getMessageReactionsJ(self, message: Message, user: Union[User, int]) -> list:
-        if isinstance(user, User):
-            user = user.id
-        reactions = []
-        result = await (Reaction.filter(message=message)
-                        .group_by("emoji_name", "emoji__id")
-                        .annotate(count=Count("id"))
-                        .values("id", "emoji_name", "emoji__id", "count"))
-
-        me_results = set(await Reaction.filter(message=message, user=user).values_list("id", flat=True))
-
-        for r in result:
-            reactions.append({
-                "emoji": {"id": str(r["emoji__id"]) if r["emoji__id"] else None, "name": r["emoji_name"]},
-                "count": r["count"],
-                "me": r["id"] in me_results
-            })
-        return reactions
 
     async def searchMessages(self, channel: Channel, search_filter: dict) -> tuple[list[Message], int]:
         filter_args = {"channel": channel}
@@ -365,21 +259,6 @@ class Core(Singleton):
             mutual_guilds_json.append({"id": str(guild_id), "nick": member.nick})
 
         return mutual_guilds_json
-
-    async def setMemberRolesFromList(self, member: GuildMember, roles: list[Role]) -> tuple[list, list]:
-        current_roles = await member.roles.all()
-        add = []
-        remove = []
-        for role in roles:
-            if role not in current_roles and not role.managed:
-                add.append(role.id)
-                await member.roles.add(role)
-        for role in current_roles:
-            if role not in roles and not role.managed:
-                remove.append(role.id)
-                await member.roles.remove(role)
-
-        return add, remove
 
     # noinspection PyUnusedLocal
     async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:

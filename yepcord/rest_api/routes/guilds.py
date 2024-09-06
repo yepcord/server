@@ -85,7 +85,7 @@ async def update_guild(data: GuildUpdate, user: User = DepUser, guild: Guild = D
                 setattr(data, image_type, h)
     for ch in ("afk_channel", "system_channel"):
         if (channel_id := getattr(data, ch)) is not None:
-            if (channel := await getCore().getChannel(channel_id)) is None:
+            if (channel := await Channel.Y.get(channel_id)) is None:
                 setattr(data, ch, None)
             elif channel.guild != guild:
                 setattr(data, ch, None)
@@ -577,10 +577,10 @@ async def update_member(data: MemberUpdate, target_user: str, user: User = DepUs
         for role in roles:
             if guild_roles[role.id].position >= user_top_role.position and member.user != guild.owner:
                 raise MissingPermissions
-        add, remove = await getCore().setMemberRolesFromList(target_member, roles)
-        for role_id in add:
+        added, removed = await target_member.set_roles_from_list(roles)
+        for role_id in added:
             await getGw().dispatchSub([target_user], role_id=role_id)
-        for role_id in remove:
+        for role_id in removed:
             await getGw().dispatchUnsub([target_user], role_id=role_id)
         data.roles = None
     if data.nick is not None:
@@ -638,7 +638,7 @@ async def update_vanity_url(data: SetVanityUrl, user: User = DepUser, guild: Gui
             await invite.delete()
         guild.vanity_url_code = data.code
         await guild.save(update_fields=["vanity_url_code"])
-        channel = await getCore().getChannel(guild.system_channel) if guild.system_channel is not None else None
+        channel = await Channel.Y.get(guild.system_channel) if guild.system_channel is not None else None
         if channel is None:
             channel = (await guild.get_channels())[0]
         await Invite.create(id=Snowflake.makeId(), channel=channel, inviter=guild.owner, vanity_code=data.code)
@@ -803,7 +803,7 @@ async def create_scheduled_event(data: CreateEvent, user: User = DepUser, guild:
 
     data_dict = data.model_dump()
     if data.entity_type in (ScheduledEventEntityType.STAGE_INSTANCE, ScheduledEventEntityType.VOICE):
-        if ((channel := await getCore().getChannel(data.channel_id)) is None or channel.guild != guild
+        if ((channel := await Channel.Y.get(data.channel_id)) is None or channel.guild != guild
                 or channel.type not in (ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE)):
             raise InvalidDataErr(400, Errors.make(50035, {"channel_id": {
                 "code": "CHANNEL_INVALID", "message": "Invalid channel"

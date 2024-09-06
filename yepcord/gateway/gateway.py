@@ -29,9 +29,8 @@ from .events import *
 from .presences import Presences, Presence
 from .utils import require_auth, get_token_type, TokenType, init_redis_pool
 from ..yepcord.classes.fakeredis import FakeRedis
-from ..yepcord.core import Core
 from ..yepcord.ctx import getCore
-from ..yepcord.enums import GatewayOp
+from ..yepcord.enums import GatewayOp, RelationshipType
 from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember
 from ..yepcord.mq_broker import getBroker
 
@@ -91,7 +90,7 @@ class GatewayClient:
             self.cached_presence = Presence(self.user_id, settings.status, settings.custom_status, [])
 
         await self.gateway.authenticated(self, self.cached_presence)
-        await self.esend(ReadyEvent(session.user, self, getCore()))
+        await self.esend(ReadyEvent(session.user, self))
         if not session.user.is_bot:
             guild_ids = [guild.id for guild in await session.user.get_guilds()]
             await self.esend(ReadySupplementalEvent(await self.gateway.getFriendsPresences(self.user_id), guild_ids))
@@ -182,24 +181,23 @@ class GatewayEvents:
     def __init__(self, gw: Gateway):
         self.gw = gw
         self.send = gw.send
-        self.core = gw.core
 
     async def presence_update(self, user_id: int, presence: Presence):
         user = await User.get(id=user_id)
         userdata = await user.data
-        users = await self.core.getRelatedUsers(user, only_ids=True)
+        user_ids = [user.id for user in await user.get_related_users()]
 
         event = PresenceUpdateEvent(userdata, presence)
 
         await self.gw.broker.publish(channel="yepcord_events", message={
             "data": await event.json(),
             "event": event.NAME,
-            "users": users,
+            "users": user_ids,
             "channel_id": None,
             "guild_id": None,
             "permissions": None,
         })
-        await self.sendToUsers(RawDispatchEventWrapper(event), users, set())
+        await self.sendToUsers(RawDispatchEventWrapper(event), user_ids, set())
 
     async def _send(self, client: GatewayClient, event: RawDispatchEvent) -> None:
         if client.is_bot and event.data.get("t") in self.BOTS_EVENTS_BLACKLIST:
@@ -288,8 +286,7 @@ class WsStore:
 
 
 class Gateway:
-    def __init__(self, core: Core):
-        self.core = core
+    def __init__(self):
         self.broker = getBroker()
         self.broker.subscriber("yepcord_events")(self.mcl_yepcordEventsCallback)
         self.broker.subscriber("yepcord_sys_events")(self.mcl_yepcordSysEventsCallback)
@@ -411,8 +408,11 @@ class Gateway:
     async def getFriendsPresences(self, uid: int) -> list[dict]:
         presences = []
         user = await User.get(id=uid)
-        friends = await self.core.getRelationships(user)
-        friends = [int(u["user_id"]) for u in friends if u["type"] == 1]
+        friends = [
+            relationship.other_user(user).id
+            for relationship in await user.get_relationships()
+            if relationship.type == RelationshipType.FRIEND
+        ]
         for friend in friends:
             if presence := await self.presences.get(friend):
                 presences.append({

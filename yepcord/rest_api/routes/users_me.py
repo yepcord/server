@@ -249,7 +249,10 @@ async def new_relationship(data: RelationshipRequest, user: User = DepUser):
 
 @users_me.get("/relationships", oauth_scopes=["relationships.read"])
 async def get_relationships(user: User = DepUser):
-    return await getCore().getRelationships(user, with_data=True)
+    return [
+        await relationship.ds_json(user, True)
+        for relationship in await user.get_relationships()
+    ]
 
 
 @users_me.get("/notes/<int:target_uid>", allow_bots=True)
@@ -355,7 +358,7 @@ async def accept_relationship_or_block(data: RelationshipPut, user_id: int, user
         else:
             await getGw().dispatch(RelationshipAddEvent(user.id, await user.data, 1), [user_id])
             await getGw().dispatch(RelationshipAddEvent(user_id, target_user_data, 1), [user.id])
-            channel = await getCore().getDMChannelOrCreate(user, target_user_data.user)
+            channel = await Channel.Y.get_dm(user, target_user_data.user)
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user_id}), [user_id])
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}), [user.id])
     elif data.type == 2:
@@ -400,7 +403,10 @@ async def leave_guild(user: User = DepUser, guild: Guild = DepGuild, member: Gui
 
 @users_me.get("/channels")
 async def get_dm_channels(user: User = DepUser):
-    return [await channel.ds_json(user_id=user.id) for channel in await getCore().getPrivateChannels(user)]
+    return [
+        await channel.ds_json(user_id=user.id)
+        for channel in await user.get_private_channels()
+    ]
 
 
 @users_me.post("/channels", body_cls=DmChannelCreate)
@@ -412,11 +418,11 @@ async def new_dm_channel(data: DmChannelCreate, user: User = DepUser):
     if None in recipients_users:
         raise InvalidRecipient
     if len(recipients) == 1:
-        channel = await getCore().getDMChannelOrCreate(user, recipients_users[0])
+        channel = await Channel.Y.get_dm(user, recipients_users[0])
     elif len(recipients) == 0:
-        channel = await getCore().createDMGroupChannel(user, [], data.name)
+        channel = await Channel.Y.create_dm_group(user, [], data.name)
     else:
-        channel = await getCore().createDMGroupChannel(user, recipients_users, data.name)
+        channel = await Channel.Y.create_dm_group(user, recipients_users, data.name)
     await getGw().dispatch(DMChannelCreateEvent(channel), channel=channel)
     return await channel.ds_json(with_ids=False, user_id=user.id)
 

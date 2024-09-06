@@ -23,6 +23,7 @@ from time import time
 from typing import List, TYPE_CHECKING
 
 from ..yepcord.config import Config
+from ..yepcord.ctx import getCore
 from ..yepcord.enums import GatewayOp
 from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount
 from ..yepcord.models.interaction import Interaction
@@ -30,7 +31,6 @@ from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
-    from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence
 
@@ -66,10 +66,9 @@ class RawDispatchEventWrapper(RawDispatchEvent):
 class ReadyEvent(DispatchEvent):
     NAME = "READY"
 
-    def __init__(self, user: User, client: GatewayClient, core: Core):
+    def __init__(self, user: User, client: GatewayClient):
         self.user = user
         self.client = client
-        self.core = core
 
     async def json(self) -> dict:
         userdata = await self.user.userdata
@@ -102,14 +101,20 @@ class ReadyEvent(DispatchEvent):
                     "id": str(self.user.id),
                     "flags": 0,
                 },
-                "users": await self.core.getRelatedUsers(self.user),
+                "users": [
+                    (await user.data).ds_json
+                    for user in await self.user.get_related_users()
+                ],
                 "guilds": [
                     await guild.ds_json(user_id=self.user.id, for_gateway=True, with_channels=True)
                     for guild in await self.user.get_guilds()
                 ],
                 "session_id": self.client.sid,
                 "presences": [],  # TODO
-                "relationships": await self.core.getRelationships(self.user),
+                "relationships": [
+                    await relationship.ds_json(self.user)
+                    for relationship in await self.user.get_relationships()
+                ],
                 "connected_accounts": [
                     conn.ds_json() for conn in await ConnectedAccount.filter(user=self.user, verified=True)
                 ],
@@ -125,12 +130,14 @@ class ReadyEvent(DispatchEvent):
                 "guild_experiments": [],  # TODO
                 "guild_join_requests": [],  # TODO
                 "merged_members": [],  # TODO
-                "private_channels": [await channel.ds_json(user_id=self.user.id)
-                                     for channel in await self.core.getPrivateChannels(self.user)],
+                "private_channels": [
+                    await channel.ds_json(user_id=self.user.id)
+                    for channel in await self.user.get_private_channels()
+                ],
                 "read_state": {
                     "version": 1,
                     "partial": False,
-                    "entries": await self.core.getReadStatesJ(self.user) if not self.user.is_bot else []
+                    "entries": await getCore().getReadStatesJ(self.user) if not self.user.is_bot else []
                 },
                 "resume_gateway_url": f"wss://{Config.GATEWAY_HOST}/",
                 "session_type": "normal",

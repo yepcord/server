@@ -143,7 +143,7 @@ class Relationship(Model):
         elif self.to_user == current_user:
             return RelTypeDiscord.REQUEST_RECV
 
-    async def ds_json(self, current_user: models.User, with_data=False) -> Optional[dict]:
+    async def ds_json(self, current_user: models.User, with_data: bool = False) -> Optional[dict]:
         other_user = self.other_user(current_user)
         if (rel_type := self.discord_rel_type(current_user)) is None:
             return

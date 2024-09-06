@@ -52,7 +52,6 @@ class YEPcord(Quart):
 
 app = YEPcord("YEPcord-api")
 QuartSchema(app)
-core = Core(b64decode(Config.KEY))
 storage = getStorage()
 gateway = GatewayDispatcher()
 app.gifs = Gifs(Config.TENOR_KEY)

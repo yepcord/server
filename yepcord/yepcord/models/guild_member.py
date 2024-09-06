@@ -151,3 +151,18 @@ class GuildMember(Model):
         for role in await self.get_roles():
             permissions |= role.permissions
         return permissions
+
+    async def set_roles_from_list(self, roles: list[models.Role]) -> tuple[list[int], list[int]]:
+        current_roles = await self.roles.all()
+        added = []
+        removed = []
+        for role in roles:
+            if role not in current_roles and not role.managed:
+                added.append(role.id)
+                await self.roles.add(role)
+        for role in current_roles:
+            if role not in roles and not role.managed:
+                removed.append(role.id)
+                await self.roles.remove(role)
+
+        return added, removed

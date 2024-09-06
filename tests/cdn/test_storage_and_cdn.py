@@ -39,7 +39,7 @@ from ..yep_image import YEP_IMAGE
 
 register_app_error_handler(app)
 TestClientType = app.test_client_class
-core = Core(b64decode(Config.KEY))
+core = Core()
 
 
 @pt.fixture

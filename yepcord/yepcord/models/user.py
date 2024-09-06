@@ -33,6 +33,7 @@ from ._utils import SnowflakeField, Model
 from ..classes.other import MFA
 from ..config import Config
 from ..ctx import getCore
+from ..enums import RelationshipType
 from ..errors import InvalidDataErr, Errors, MfaRequiredErr, UnknownUser
 from ..snowflake import Snowflake
 from ..utils import int_size, b64encode
@@ -286,3 +287,31 @@ class User(Model):
             member.guild for member in
             await models.GuildMember.filter(user=self).select_related("guild", "guild__owner")
         ]
+
+    async def get_private_channels(self) -> list[models.Channel]:
+        return [
+            channel
+            for channel in await models.Channel.filter(recipients__id=self.id).select_related("owner")
+            if not await channel.dm_is_hidden(self)
+        ]
+
+    async def get_relationships(self) -> list[models.Relationship]:
+        return [
+            relationship
+            for relationship in
+            await models.Relationship.filter(Q(from_user=self) | Q(to_user=self)).select_related("from_user", "to_user")
+            if not (relationship.type == RelationshipType.BLOCK and relationship.from_user.id != self.id)
+        ]
+
+    async def get_related_users(self) -> list[models.User]:
+        users = {
+            relationship.other_user(self).id: relationship.other_user(self)
+            for relationship in await self.get_relationships()
+        }
+        for channel in await models.Channel.filter(recipients__id=self.id):
+            for recipient in await channel.recipients.all():
+                if recipient.id in users or recipient == self:
+                    continue
+                users[recipient.id] = recipient
+
+        return list(users.values())

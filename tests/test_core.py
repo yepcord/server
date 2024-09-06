@@ -41,7 +41,7 @@ VARS = {
     "user_id": Snowflake.makeId()
 }
 
-core = Core(b64decode(Config.KEY))
+core = Core()
 
 
 @pt.fixture
@@ -177,20 +177,18 @@ async def test_checkRelationShipAvailable_fail():
 
 
 @pt.mark.asyncio
-async def test_getRelationships_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getRelationships_success():
     user = await User.get(id=VARS["user_id_100000"])
-    rels = await testCore.getRelationships(user)
+    rels = await user.get_relationships()
     assert len(rels) == 1
-    assert rels[0]["type"] == 3
-    assert rels[0]["user_id"] == str(VARS["user_id_200000"])
+    assert rels[0].type == RelationshipType.PENDING
+    assert rels[0].other_user(user).id == VARS["user_id_200000"]
 
 
 @pt.mark.asyncio
-async def test_getRelationships_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getRelationships_fail():
     user = await User.get(id=VARS["user_id"] + 100001)
-    rels = await testCore.getRelationships(user)
+    rels = await user.get_relationships()
     assert len(rels) == 0
 
 
@@ -209,12 +207,11 @@ async def test_getRelationship_fail():
 
 
 @pt.mark.asyncio
-async def test_getRelatedUsers_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getRelatedUsers_success():
     user = await User.get(id=VARS["user_id_100000"])
-    users = await testCore.getRelatedUsers(user, True)
+    users = await user.get_related_users()
     assert len(users) == 1
-    assert users[0] == VARS["user_id_200000"]
+    assert users[0].id == VARS["user_id_200000"]
 
 
 @pt.mark.asyncio
@@ -310,12 +307,11 @@ async def test_verifyUserMfaNonce():
 
 
 @pt.mark.asyncio
-async def test_getDMChannelOrCreate_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getDMChannelOrCreate_success():
     user1 = await User.y.get(VARS["user_id_100000"])
     user2 = await User.y.get(VARS["user_id_200000"])
-    channel = await testCore.getDMChannelOrCreate(user1, user2)
-    channel2 = await testCore.getDMChannelOrCreate(user1, user2)
+    channel = await Channel.Y.get_dm(user1, user2)
+    channel2 = await Channel.Y.get_dm(user1, user2)
     assert channel is not None
     assert channel.type == ChannelType.DM
     assert channel.id == channel2.id
@@ -324,31 +320,27 @@ async def test_getDMChannelOrCreate_success(testCore: Coroutine[Any, Any, Core])
 
 
 @pt.mark.asyncio
-async def test_getChannel_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    channel = await testCore.getChannel(VARS["channel_id"])
+async def test_getChannel_success():
+    channel = await Channel.Y.get(VARS["channel_id"])
     assert channel is not None
     assert channel.type == ChannelType.DM
 
 
 @pt.mark.asyncio
-async def test_getChannel_fail(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    channel = await testCore.getChannel(0)
+async def test_getChannel_fail():
+    channel = await Channel.Y.get(0)
     assert channel is None
 
 
 @pt.mark.asyncio
-async def test_getLastMessageIdForChannel_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    channel = await testCore.getChannel(VARS["channel_id"])
+async def test_getLastMessageIdForChannel_success():
+    channel = await Channel.Y.get(VARS["channel_id"])
     assert await channel.get_last_message_id() is None or await channel.get_last_message_id() > 0
 
 
 @pt.mark.asyncio
-async def test_getChannelMessagesCount_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
-    channel = await testCore.getChannel(VARS["channel_id"])
+async def test_getChannelMessagesCount_success():
+    channel = await Channel.Y.get(VARS["channel_id"])
     assert await Message.filter(channel=channel).count() == 0
 
 

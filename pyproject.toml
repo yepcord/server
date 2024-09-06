@@ -76,6 +76,10 @@ fake-s3 = "1.0.2"
 types-protobuf = "^4.24.0.4"
 pytest-httpx = "^0.30.0"
 
+
+[tool.poetry.group.profiling.dependencies]
+viztracer = "^0.16.3"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

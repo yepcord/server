@@ -31,7 +31,7 @@ from ...yepcord.ctx import getCore, getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
 from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownGuild, MissingAccess
 from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry, Application, Bot, Authorization, \
-    Integration, GuildBan
+    Integration, GuildBan, Channel
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import b64decode
 
@@ -134,7 +134,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
                                    permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
         await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=bot.user.id)), user_ids=[bot.user.id])
-        if (sys_channel := await getCore().getChannel(guild.system_channel)) is not None:
+        if (sys_channel := await Channel.Y.get(guild.system_channel)) is not None:
             message = await Message.create(
                 id=Snowflake.makeId(), author=bot.user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                 guild=guild

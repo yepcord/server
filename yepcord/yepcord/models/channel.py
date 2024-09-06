@@ -21,16 +21,69 @@ from __future__ import annotations
 from typing import Optional, Union
 
 from tortoise import fields
-from tortoise.expressions import Q
+from tortoise.expressions import Q, Subquery
 from tortoise.fields import SET_NULL
+from tortoise.functions import Count
 
-from ..ctx import getCore
+from ..ctx import getCore, getGw
 from ..enums import ChannelType
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
+
+
+class ChannelUtils:
+    @staticmethod
+    async def get(channel_id: int) -> Optional[models.Channel]:
+        if channel_id is None:
+            return
+        return await Channel.get_or_none(id=channel_id).select_related("guild", "owner", "parent")
+
+    @staticmethod
+    async def get_dm(user1: models.User, user2: models.User) -> Optional[models.Channel]:
+        channel = await Channel.get_or_none(
+            id__in=Subquery(
+                Channel
+                .filter(recipients__id__in=[user1.id, user2.id])
+                .annotate(user_count=Count("recipients__id", distinct=True))
+                .filter(user_count=2)
+                .group_by("id")
+                .values_list("id", flat=True)
+            )
+        )
+
+        if channel is None:
+            channel = await Channel.create(id=Snowflake.makeId(), type=ChannelType.DM)
+            await channel.recipients.add(user1)
+            await channel.recipients.add(user2)
+
+            return channel
+
+        if await channel.dm_is_hidden(user1):
+            from ...gateway.events import DMChannelCreateEvent
+
+            await channel.dm_unhide(user1)
+            await getGw().dispatch(DMChannelCreateEvent(channel), user_ids=[user1.id])
+
+        return channel
+
+    @staticmethod
+    async def create_dm_group(
+            owner: models.User, recipients: list[models.User], name: Optional[str] = None
+    ) -> models.Channel:
+        recipients = set(recipients)
+        recipients.add(owner)
+
+        channel = await Channel.create(id=Snowflake.makeId(), type=ChannelType.GROUP_DM, name=name, owner=owner)
+        for recipient in recipients:
+            await channel.recipients.add(recipient)
+
+        return channel
 
 
 class Channel(Model):
+    Y = ChannelUtils
+
     id: int = SnowflakeField(pk=True)
     type: int = fields.IntField()
     guild: Optional[models.Guild] = fields.ForeignKeyField("models.Guild", null=True, default=None)

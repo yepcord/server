@@ -83,7 +83,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
 
         changes = data.to_json(channel.type)
         if "parent_id" in changes:
-            parent = await getCore().getChannel(changes["parent_id"])
+            parent = await Channel.Y.get(changes["parent_id"])
             if (changes["parent_id"] is None or
                     (parent is not None and parent.guild == guild and parent.type == ChannelType.GUILD_CATEGORY)):
                 changes["parent"] = parent
@@ -273,10 +273,10 @@ async def add_recipient(target_user: int, user: User = DepUser, channel: Channel
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
         raise MissingPermissions
     if channel.type == ChannelType.DM:
-        recipients = await channel.recipients.filter(~Q(id=user.id)).all()
+        recipients = await channel.recipients.filter(~Q(id=user.id))
         recipients.append(target_user)
-        ch = await getCore().createDMGroupChannel(user, recipients)
-        await getGw().dispatch(DMChannelCreateEvent(ch), channel=channel)
+        new_channel = await Channel.Y.create_dm_group(user, recipients)
+        await getGw().dispatch(DMChannelCreateEvent(new_channel), channel=channel)
     elif channel.type == ChannelType.GROUP_DM:
         recipients = await channel.recipients.all()
         if target_user not in recipients and len(recipients) < 10:

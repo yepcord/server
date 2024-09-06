@@ -68,7 +68,7 @@ def depUser(allow_without_user: bool = False):
 
 
 async def depChannelO(channel_id: Optional[int] = None, user: User = Depends(depUser())) -> Optional[Channel]:
-    if (channel := await getCore().getChannel(channel_id)) is None:
+    if (channel := await Channel.Y.get(channel_id)) is None:
         return
     if not await getCore().getUserByChannel(channel, user.id):
         raise Unauthorized
