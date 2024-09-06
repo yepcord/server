@@ -144,7 +144,8 @@ class GatewayClient:
         if not (guild_id := int(data.get("guild_id"))): return
         if not data.get("members", True): return
         guild = await getCore().getGuild(guild_id)
-        if not await getCore().getGuildMember(guild, self.user_id): return
+        if not await GuildMember.exists(guild=guild, user__id=self.user_id):
+            return
 
         members = await getCore().getGuildMembers(guild)
         statuses = {}
@@ -164,7 +165,8 @@ class GatewayClient:
     async def handle_GUILD_MEMBERS(self, data: dict) -> None:
         if not (guild_id := int(data.get("guild_id")[0])): return
         guild = await getCore().getGuild(guild_id)
-        if not await getCore().getGuildMember(guild, self.user_id): return
+        if not await GuildMember.exists(guild=guild, user__id=self.user_id):
+            return
 
         query = data.get("query", "")
         limit = data.get("limit", 100)

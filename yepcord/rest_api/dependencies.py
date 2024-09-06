@@ -70,7 +70,7 @@ def depUser(allow_without_user: bool = False):
 async def depChannelO(channel_id: Optional[int] = None, user: User = Depends(depUser())) -> Optional[Channel]:
     if (channel := await Channel.Y.get(channel_id)) is None:
         return
-    if not await getCore().getUserByChannel(channel, user.id):
+    if not await channel.user_can_access(user.id):
         raise Unauthorized
 
     return channel
@@ -153,7 +153,7 @@ async def depGuildMember(guild: Guild = Depends(depGuild), user: User = Depends(
 
 
 async def depRole(role: int, guild: Guild = Depends(depGuild)) -> Role:
-    if not role or not (role := await getCore().getRole(role, guild)):
+    if not role or (role := await guild.get_role(role)) is None:
         raise UnknownRole
     return role
 
@@ -161,7 +161,8 @@ async def depRole(role: int, guild: Guild = Depends(depGuild)) -> Role:
 async def depGuildTemplate(template: str, guild: Guild = Depends(depGuild)) -> GuildTemplate:
     try:
         template_id = int.from_bytes(b64decode(template), "big")
-        if not (template := await getCore().getGuildTemplateById(template_id, guild)):
+        template = await GuildTemplate.get_or_none(id=template_id, guild=guild).select_related("guild", "creator")
+        if template is None:
             raise ValueError
     except ValueError:
         raise UnknownGuildTemplate

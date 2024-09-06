@@ -231,7 +231,7 @@ class Guild(Model):
             data.update(props)
 
         if for_gateway or user_id:
-            member = await getCore().getGuildMember(self, user_id)
+            member = await self.get_member(user_id)
             data["joined_at"] = member.joined_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
             data["threads"] = [
                 thread.ds_json()
@@ -269,3 +269,22 @@ class Guild(Model):
 
     async def get_events(self) -> list[models.GuildEvent]:
         return await models.GuildEvent.filter(guild=self).select_related("channel", "guild", "creator")
+
+    async def get_member(self, user_id: int) -> Optional[models.GuildMember]:
+        return await models.GuildMember.get_or_none(
+            guild=self, user__id=user_id,
+        ).select_related("user", "guild", "guild__owner")
+
+    async def get_template(self) -> Optional[models.GuildTemplate]:
+        return await models.GuildTemplate.get_or_none(guild=self).select_related("creator", "guild")
+
+    async def get_role(self, role_id: int) -> Optional[models.Role]:
+        return await models.Role.get_or_none(id=role_id, guild=self).select_related("guild")
+
+    async def get_sticker(self, sticker_id: int) -> Optional[models.Sticker]:
+        return await models.Sticker.get_or_none(id=sticker_id, guild=self).select_related("guild", "user")
+
+    async def get_scheduled_event(self, event_id: int) -> Optional[models.GuildEvent]:
+        return await models.GuildEvent.get_or_none(
+            id=event_id, guild=self
+        ).select_related("channel", "guild", "creator")

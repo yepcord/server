@@ -26,7 +26,7 @@ from tortoise.fields import SET_NULL
 from tortoise.functions import Count
 
 from ..ctx import getCore, getGw
-from ..enums import ChannelType
+from ..enums import ChannelType, GUILD_CHANNELS
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
 from ..snowflake import Snowflake
@@ -222,7 +222,7 @@ class Channel(Model):
                     for member in await self.get_thread_members()
                 ],
             }
-            if user_id and (member := await getCore().getThreadMember(self, user_id)) is not None:
+            if user_id and (member := await self.get_thread_member(user_id)) is not None:
                 data["member"] = {
                     "muted": False,
                     "mute_config": None,
@@ -296,3 +296,18 @@ class Channel(Model):
             query = query.filter(Q(target_role__id__in=role_ids) | Q(target_user__id=target.user.id)).order_by("type")
 
         return await query
+
+    async def user_can_access(self, user_id: int) -> bool:
+        if self.type in (ChannelType.DM, ChannelType.GROUP_DM):
+            return await self.recipients.filter(id=user_id).exists()
+        if self.type in GUILD_CHANNELS:
+            return await models.GuildMember.exists(guild=self.guild, user__id=user_id)
+        if self.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
+            return await models.ThreadMember.exists(channel=self, user__id=user_id)
+
+        return False
+
+    async def get_thread_member(self, user_id: int) -> Optional[models.ThreadMember]:
+        if self.type not in {ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD}:
+            return
+        return await models.ThreadMember.get_or_none(channel=self, user__id=user_id)

@@ -78,7 +78,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
         await getGw().dispatch(DMChannelUpdateEvent(channel), channel=channel)
     elif channel.type in GUILD_CHANNELS:
         guild = channel.guild
-        member = await getCore().getGuildMember(guild, user.id)
+        member = await guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
         changes = data.to_json(channel.type)
@@ -135,7 +135,7 @@ async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
             await channel.save()
             await getGw().dispatch(DMChannelUpdateEvent(channel), channel=channel)
     elif channel.type in GUILD_CHANNELS:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
         entry = await AuditLogEntry.utils.channel_delete(user, channel)
@@ -160,7 +160,7 @@ async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
 @channels.get("/<int:channel_id>/messages", qs_cls=GetMessagesQuery, allow_bots=True)
 async def get_messages(query_args: GetMessagesQuery, user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild is not None:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     messages = await channel.get_messages(**query_args.model_dump())
     messages = [await message.ds_json(user_id=user.id) for message in messages]
@@ -174,7 +174,7 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
         if await Relationship.utils.is_blocked(oth, user):
             raise CannotSendToThisUser
     elif channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
 
@@ -199,7 +199,7 @@ async def delete_message(user: User = DepUser, channel: Channel = DepChannel, me
     if message.author != user:
         if channel.type not in GUILD_CHANNELS:
             raise CannotExecuteOnDM
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     guild_id = channel.guild.id if channel.guild else None
@@ -215,7 +215,7 @@ async def edit_message(data: MessageUpdate, user: User = DepUser, channel: Chann
     if message.author != user:
         raise CannotEditAnotherUserMessage
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
@@ -227,7 +227,7 @@ async def edit_message(data: MessageUpdate, user: User = DepUser, channel: Chann
 @channels.get("/<int:channel_id>/messages/<int:message>", allow_bots=True)
 async def get_message(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild is not None:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     if message.ephemeral and message.author != user:
         raise UnknownMessage
@@ -260,7 +260,7 @@ async def delete_message_ack(user: User = DepUser, channel: Channel = DepChannel
 @channels.post("/<int:channel_id>/typing", allow_bots=True)
 async def send_typing_event(user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
     await getGw().dispatch(TypingEvent(user.id, channel.id), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
@@ -317,7 +317,7 @@ async def delete_recipient(target_user: int, user: User = DepUser, channel: Chan
 @channels.put("/<int:channel_id>/pins/<int:message>", allow_bots=True)
 async def pin_message(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not message.pinned:
         if await Message.filter(pinned_timestamp__not_isnull=True, channel=message.channel).count() >= 50:
@@ -342,7 +342,7 @@ async def pin_message(user: User = DepUser, channel: Channel = DepChannel, messa
 @channels.delete("/<int:channel_id>/pins/<int:message>", allow_bots=True)
 async def unpin_message(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(message.guild, user.id)
+        member = await message.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
     if message.pinned:
         message.pinned_timestamp = None
@@ -354,7 +354,7 @@ async def unpin_message(user: User = DepUser, channel: Channel = DepChannel, mes
 @channels.get("/<int:channel_id>/pins", allow_bots=True)
 async def get_pinned_messages(user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(
             GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY,
             channel=channel,
@@ -371,10 +371,10 @@ async def get_pinned_messages(user: User = DepUser, channel: Channel = DepChanne
 async def add_message_reaction(reaction: str, user: User = DepUser, channel: Channel = DepChannel,
                                message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
-    if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
+    if not is_emoji(reaction) and not (reaction := await Emoji.Y.get_by_reaction(reaction)):
         raise UnknownEmoji
     emoji = {
         "emoji": None if not isinstance(reaction, Emoji) else reaction,
@@ -390,10 +390,10 @@ async def add_message_reaction(reaction: str, user: User = DepUser, channel: Cha
 async def remove_message_reaction(reaction: str, user: User = DepUser, channel: Channel = DepChannel,
                                   message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
-    if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
+    if not is_emoji(reaction) and not (reaction := await Emoji.Y.get_by_reaction(reaction)):
         raise UnknownEmoji
     emoji = {
         "emoji": None if not isinstance(reaction, Emoji) else reaction,
@@ -409,10 +409,10 @@ async def remove_message_reaction(reaction: str, user: User = DepUser, channel: 
 async def get_message_reactions(query_args: GetReactionsQuery, reaction: str, user: User = DepUser,
                                 channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
-    if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
+    if not is_emoji(reaction) and not (reaction := await Emoji.Y.get_by_reaction(reaction)):
         raise UnknownEmoji
     emoji = None if not isinstance(reaction, Emoji) else reaction
     emoji_name = reaction if isinstance(reaction, str) else reaction.name
@@ -430,7 +430,7 @@ async def get_message_reactions(query_args: GetReactionsQuery, reaction: str, us
 @channels.get("/<int:channel_id>/messages/search", qs_cls=SearchQuery)
 async def search_messages(query_args: SearchQuery, user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL,
                                      channel=channel)
     messages, total = await getCore().searchMessages(channel, query_args.model_dump(exclude_defaults=True))
@@ -443,7 +443,7 @@ async def search_messages(query_args: SearchQuery, user: User = DepUser, channel
 @channels.post("/<int:channel_id>/invites", body_cls=InviteCreate, allow_bots=True)
 async def create_invite(data: InviteCreate, user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.CREATE_INSTANT_INVITE)
     invite = await Invite.create(
         id=Snowflake.makeId(), channel=channel, inviter=user, **data.model_dump(include={"max_age", "max_uses"}),
@@ -460,9 +460,9 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
                                                 channel: Channel = DepChannel):
     if not channel.guild:
         raise CannotExecuteOnDM
-    if not (member := await getCore().getGuildMember(channel.guild, user.id)):
+    if not (member := await channel.guild.get_member(user.id)):
         raise MissingAccess
-    target = await getCore().getRole(target_id) if data.type == 0 else await User.get_or_none(id=target_id)
+    target = await channel.guild.get_role(target_id) if data.type == 0 else await User.get_or_none(id=target_id)
     if target is None or (isinstance(target, Role) and target.guild != channel.guild):
         return "", 204
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
@@ -491,7 +491,7 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
 async def delete_permission_overwrite(target_id: int, user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
         raise CannotExecuteOnDM
-    if not (member := await getCore().getGuildMember(channel.guild, user.id)):
+    if not (member := await channel.guild.get_member(user.id)):
         raise MissingAccess
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
     overwrite = await channel.get_permission_overwrite(target_id)
@@ -515,7 +515,7 @@ async def delete_permission_overwrite(target_id: int, user: User = DepUser, chan
 async def get_channel_invites(user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
         raise CannotExecuteOnDM
-    if not (member := await getCore().getGuildMember(channel.guild, user.id)):
+    if not (member := await channel.guild.get_member(user.id)):
         raise MissingAccess
     await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
     return [
@@ -529,7 +529,7 @@ async def get_channel_invites(user: User = DepUser, channel: Channel = DepChanne
 async def create_webhook(data: WebhookCreate, user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
         raise CannotExecuteOnDM
-    member = await getCore().getGuildMember(channel.guild, user.id)
+    member = await channel.guild.get_member(user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
     webhook = await Webhook.create(id=Snowflake.makeId(), type=WebhookType.INCOMING, name=data.name,
@@ -544,7 +544,7 @@ async def create_webhook(data: WebhookCreate, user: User = DepUser, channel: Cha
 async def get_channel_webhooks(user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
         raise CannotExecuteOnDM
-    member = await getCore().getGuildMember(channel.guild, user.id)
+    member = await channel.guild.get_member(user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
     return [
@@ -559,7 +559,7 @@ async def create_thread(
 ):
     if not channel.guild:
         raise CannotExecuteOnDM
-    member = await getCore().getGuildMember(channel.guild, user.id)
+    member = await channel.guild.get_member(user.id)
     await member.checkPermission(GuildPermissions.CREATE_PUBLIC_THREADS, channel=channel)
 
     thread = await Channel.create(id=message.id, type=ChannelType.GUILD_PUBLIC_THREAD, guild=channel.guild,
@@ -654,7 +654,7 @@ async def search_application_commands(
 @channels.get("/<int:channel_id>/messages/<int:message>/interaction-data", allow_bots=True)
 async def get_message_interaction(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild is not None:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     if message.ephemeral and message.author != user:
         raise UnknownMessage

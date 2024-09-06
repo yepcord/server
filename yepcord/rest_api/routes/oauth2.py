@@ -68,7 +68,7 @@ async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user
 
     if "bot" in scopes:
         async def guild_ds_json(g: Guild) -> dict:
-            member = await getCore().getGuildMember(g, user.id)
+            member = await g.get_member(user.id)
             return {"id": str(g.id), "name": g.name, "icon": g.icon, "mfa_level": g.mfa_level,
                     "permissions": str(await member.permissions)}
 
@@ -103,7 +103,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
         if (guild := await getCore().getGuild(data.guild_id)) is None:
             raise UnknownGuild
 
-        if not (member := await getCore().getGuildMember(guild, user.id)):
+        if not (member := await guild.get_member(user.id)):
             raise MissingAccess
 
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)

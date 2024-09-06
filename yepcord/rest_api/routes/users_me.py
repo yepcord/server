@@ -530,7 +530,7 @@ async def remote_auth_cancel(data: RemoteAuthCancel, user: User = DepUser):
 @users_me.get("/guilds", allow_bots=True, oauth_scopes=["guilds"])
 async def get_guilds(user: User = DepUser):
     async def ds_json(guild: Guild) -> dict:
-        member = await getCore().getGuildMember(guild, user.id)
+        member = await guild.get_member(user.id)
         return {
             "approximate_member_count": await getCore().getGuildMemberCount(guild),
             "approximate_presence_count": 0,

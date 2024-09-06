@@ -32,8 +32,7 @@ from .classes.singleton import Singleton
 from .config import Config
 from .enums import ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, Errors, InvalidKey
-from .models import User, Channel, Message, ReadState, Emoji, Invite, Guild, GuildMember, GuildTemplate, Sticker, \
-    Webhook, Role, GuildEvent, ThreadMember
+from .models import User, Channel, Message, ReadState, Invite, Guild, GuildMember, ThreadMember
 from .storage import getStorage
 from .utils import b64encode, b64decode
 
@@ -125,15 +124,6 @@ class Core(Singleton):
             states.append(await st.ds_json())
         return states
 
-    async def getUserByChannel(self, channel: Channel, user_id: int) -> Optional[User]:
-        if channel.type in (ChannelType.DM, ChannelType.GROUP_DM):
-            if await Channel.exists(id=channel.id, recipients__id__in=[user_id]):
-                return await User.y.get(user_id)
-        elif channel.type in GUILD_CHANNELS:
-            return await self.getGuildMember(channel.guild, user_id)
-        elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
-            return await self.getThreadMember(channel, user_id)
-
     async def sendVerificationEmail(self, user: User) -> None:
         key = new(self.key, str(user.id).encode('utf-8'), sha256).digest()
         t = int(time())
@@ -193,16 +183,6 @@ class Core(Singleton):
         count = await query.count()
         return messages, count
 
-    async def getRole(self, role_id: int, guild: Optional[Guild] = None) -> Role:
-        q = {"id": role_id}
-        if guild is not None:
-            q["guild"] = guild
-        return await Role.get_or_none(**q).select_related("guild")
-
-    async def getGuildMember(self, guild: Guild, user_id: int) -> Optional[GuildMember]:
-        return await GuildMember.get_or_none(guild=guild, user__id=user_id).select_related("user", "guild",
-                                                                                           "guild__owner")
-
     async def getGuildMembers(self, guild: Guild) -> list[GuildMember]:
         return await GuildMember.filter(guild=guild).select_related("user")
 
@@ -211,21 +191,6 @@ class Core(Singleton):
 
     async def getGuild(self, guild_id: int) -> Optional[Guild]:
         return await Guild.get_or_none(id=guild_id).select_related("owner")
-
-    async def getEmoji(self, emoji_id: int) -> Optional[Emoji]:
-        return await Emoji.get_or_none(id=emoji_id).select_related("guild")
-
-    async def getEmojiByReaction(self, reaction: str) -> Optional[Emoji]:
-        try:
-            name, emoji_id = reaction.split(":")
-            emoji_id = int(emoji_id)
-            if "~" in name:
-                name = name.split("~")[0]
-        except ValueError:
-            return
-        if not (emoji := await self.getEmoji(emoji_id)):
-            return
-        return emoji if emoji.name == name else None
 
     async def bulkDeleteGuildMessagesFromBanned(
             self, guild: Guild, user_id: int, after_id: int
@@ -273,32 +238,11 @@ class Core(Singleton):
         if code is None: return
         return await Invite.get_or_none(vanity_code=code)
 
-    async def getGuildTemplate(self, guild: Guild) -> Optional[GuildTemplate]:
-        return await GuildTemplate.get_or_none(guild=guild).select_related("creator", "guild")
-
-    async def getGuildTemplateById(self, template_id: int, guild: Optional[Guild] = None) -> Optional[GuildTemplate]:
-        q = {"id": template_id}
-        if guild is not None:
-            q["guild"] = guild
-        return await GuildTemplate.get_or_none(**q).select_related("guild", "creator")
-
     async def setTemplateDirty(self, guild: Guild) -> None:
-        if not (template := await self.getGuildTemplate(guild)):
+        if (template := await guild.get_template()) is None:
             return
         template.is_dirty = True
         await template.save(update_fields=["is_dirty"])
-
-    async def getWebhook(self, webhook_id: int) -> Optional[Webhook]:
-        return await Webhook.get_or_none(id=webhook_id).select_related("channel", "channel__guild", "user")
-
-    async def getSticker(self, sticker_id: int) -> Optional[Sticker]:
-        return await Sticker.get_or_none(id=sticker_id).select_related("guild", "user")
-
-    async def getGuildEvent(self, event_id: int) -> Optional[GuildEvent]:
-        return await GuildEvent.get_or_none(id=event_id).select_related("channel", "guild", "creator")
-
-    async def getThreadMember(self, thread: Channel, user_id: int) -> Optional[ThreadMember]:
-        return await ThreadMember.get_or_none(channel=thread, user__id=user_id)
 
     def getLanguageCode(self, ip: str, default: str = "en-US") -> str:
         if self.ipdb is None and not os.path.exists("other/ip_database.mmdb"):

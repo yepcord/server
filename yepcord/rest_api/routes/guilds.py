@@ -112,7 +112,7 @@ async def update_guild(data: GuildUpdate, user: User = DepUser, guild: Guild = D
 async def get_guild_templates(guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     templates = []
-    if template := await getCore().getGuildTemplate(guild):
+    if template := await guild.get_template():
         templates.append(await template.ds_json())
     return templates
 
@@ -121,7 +121,7 @@ async def get_guild_templates(guild: Guild = DepGuild, member: GuildMember = Dep
 async def create_guild_template(data: TemplateCreate, user: User = DepUser, guild: Guild = DepGuild,
                                 member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
-    if await getCore().getGuildTemplate(guild):
+    if await GuildTemplate.exists(guild=guild):
         raise CanHaveOneTemplate
 
     template: GuildTemplate = await GuildTemplate.create(
@@ -188,7 +188,7 @@ async def create_guild_emoji(data: EmojiCreate, user: User = DepUser, guild: Gui
 async def update_guild_emoji(data: EmojiUpdate, emoji: int, guild: Guild = DepGuild,
                              member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
-    if (emoji := await getCore().getEmoji(emoji)) is None or emoji.guild != guild:
+    if (emoji := await Emoji.get_or_none(id=emoji, guild=guild)) is None:
         raise UnknownEmoji
     await emoji.update(**data.model_dump(exclude_defaults=True))
 
@@ -202,7 +202,7 @@ async def delete_guild_emoji(emoji: int, user: User = DepUser, guild: Guild = De
                              member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
 
-    if not (emoji := await getCore().getEmoji(emoji)) or emoji.guild != guild:
+    if (emoji := await Emoji.get_or_none(id=emoji, guild=guild).select_related("guild")) is None:
         return "", 204
 
     await emoji.delete()
@@ -245,7 +245,7 @@ async def create_channel(data: ChannelCreate, user: User = DepUser, guild: Guild
         del data_json["parent_id"]
     channel = await Channel.create(id=Snowflake.makeId(), guild=guild, **data_json)
     for overwrite in data.permission_overwrites:
-        target = await getCore().getRole(overwrite.id) if data.type == 0 else await User.get_or_none(id=overwrite.id)
+        target = await guild.get_role(overwrite.id) if data.type == 0 else await User.get_or_none(id=overwrite.id)
         if target is None:
             raise (UnknownRole if data.type == 0 else UnknownUser)
         kw = {"target_role": target} if isinstance(target, Role) else {"target_user": target}
@@ -304,7 +304,7 @@ async def process_bot_kick(user: User = DepUser, bot_member: GuildMember = DepGu
 async def kick_member(user_id: int, user: User = DepUser, guild: Guild = DepGuild,
                       member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.KICK_MEMBERS)
-    if not (target_member := await getCore().getGuildMember(guild, user_id)):
+    if not (target_member := await guild.get_member(user_id)):
         return "", 204
     if not await member.perm_checker.canKickOrBan(target_member):
         raise MissingPermissions
@@ -328,7 +328,7 @@ async def kick_member(user_id: int, user: User = DepUser, guild: Guild = DepGuil
 async def ban_member(user_id: int, data: BanMember, user: User = DepUser, guild: Guild = DepGuild,
                      member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.BAN_MEMBERS)
-    target_member = await getCore().getGuildMember(guild, user_id)
+    target_member = await guild.get_member(user_id)
     if target_member is not None and not await member.perm_checker.canKickOrBan(target_member):
         raise MissingPermissions
     if await GuildBan.exists(guild=guild, user__id=user_id):
@@ -550,7 +550,7 @@ async def add_role_members(data: AddRoleMembers, user: User = DepUser, guild: Gu
         raise MissingPermissions
     members = {}
     for member_id in data.member_ids:
-        target_member = await getCore().getGuildMember(guild, member_id)
+        target_member = await guild.get_member(member_id)
         if not await target_member.roles.filter(id=role.id).exists():
             await target_member.roles.add(role)
             target_member_json = await target_member.ds_json()
@@ -567,7 +567,7 @@ async def update_member(data: MemberUpdate, target_user: str, user: User = DepUs
     if target_user == "@me":
         target_user = user.id
     target_user = int(target_user)
-    target_member = await getCore().getGuildMember(guild, target_user)
+    target_member = await guild.get_member(target_user)
     if data.roles is not None:
         await member.checkPermission(GuildPermissions.MANAGE_ROLES)
         roles = [int(role) for role in data.roles]
@@ -675,7 +675,7 @@ async def get_audit_logs(query_args: GetAuditLogsQuery, guild: Guild = DepGuild,
 async def create_from_template(data: GuildCreateFromTemplate, template: str, user: User = DepUser):
     try:
         template_id = int.from_bytes(b64decode(template), "big")
-        if not (template := await getCore().getGuildTemplateById(template_id)):
+        if not (template := await GuildTemplate.get_or_none(id=template_id)):
             raise ValueError
     except ValueError:
         raise UnknownGuildTemplate
@@ -767,7 +767,7 @@ async def upload_guild_stickers(user: User = DepUser, guild: Guild = DepGuild, m
 async def update_guild_sticker(data: UpdateSticker, sticker_id: int, guild: Guild = DepGuild,
                                member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
-    if not (sticker := await getCore().getSticker(sticker_id)) or sticker.guild != guild:
+    if (sticker := await guild.get_sticker(sticker_id)) is None:
         raise UnknownSticker
     await sticker.update(**data.model_dump(exclude_defaults=True))
     await getGw().sendStickersUpdateEvent(guild)
@@ -777,7 +777,7 @@ async def update_guild_sticker(data: UpdateSticker, sticker_id: int, guild: Guil
 @guilds.delete("/<int:guild>/stickers/<int:sticker_id>", allow_bots=True)
 async def delete_guild_sticker(sticker_id: int, guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
-    if not (sticker := await getCore().getSticker(sticker_id)) or sticker.guild != guild:
+    if (sticker := await guild.get_sticker(sticker_id)) is None:
         raise UnknownSticker
 
     await sticker.delete()
@@ -823,7 +823,7 @@ async def create_scheduled_event(data: CreateEvent, user: User = DepUser, guild:
 
 @guilds.get("/<int:guild>/scheduled-events/<int:event_id>", qs_cls=GetScheduledEvent, allow_bots=True)
 async def get_scheduled_event(query_args: GetScheduledEvent, event_id: int, guild: Guild = DepGuild):
-    if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
+    if (event := await guild.get_scheduled_event(event_id)) is None:
         raise UnknownGuildEvent
 
     return await event.ds_json(with_user_count=query_args.with_user_count)
@@ -841,7 +841,7 @@ async def get_scheduled_events(query_args: GetScheduledEvent, guild: Guild = Dep
 async def update_scheduled_event(data: UpdateScheduledEvent, event_id: int, guild: Guild = DepGuild,
                                  member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EVENTS)
-    if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
+    if (event := await guild.get_scheduled_event(event_id)) is None:
         raise UnknownGuildEvent
 
     if (img := data.image) or img is None:
@@ -882,7 +882,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, event_id: int, guil
 @guilds.put("/<int:guild>/scheduled-events/<int:event_id>/users/@me", allow_bots=True)
 async def subscribe_to_scheduled_event(event_id: int, user: User = DepUser, guild: Guild = DepGuild,
                                        member: GuildMember = DepGuildMember):
-    if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
+    if (event := await guild.get_scheduled_event(event_id)) is None:
         raise UnknownGuildEvent
 
     await event.subscribers.add(member)
@@ -898,7 +898,7 @@ async def subscribe_to_scheduled_event(event_id: int, user: User = DepUser, guil
 @guilds.delete("/<int:guild>/scheduled-events/<int:event_id>/users/@me", allow_bots=True)
 async def unsubscribe_from_scheduled_event(event_id: int, user: User = DepUser, guild: Guild = DepGuild,
                                            member: GuildMember = DepGuildMember):
-    if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
+    if (event := await guild.get_scheduled_event(event_id)) is None:
         raise UnknownGuildEvent
 
     if await event.subscribers.filter(user__id=user.id).get_or_none() is not None:
@@ -912,7 +912,7 @@ async def unsubscribe_from_scheduled_event(event_id: int, user: User = DepUser, 
 @guilds.delete("/<int:guild>/scheduled-events/<int:event_id>", allow_bots=True)
 async def delete_scheduled_event(event_id: int, guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_EVENTS)
-    if not (event := await getCore().getGuildEvent(event_id)) or event.guild != guild:
+    if (event := await guild.get_scheduled_event(event_id)) is None:
         raise UnknownGuildEvent
 
     await event.delete()

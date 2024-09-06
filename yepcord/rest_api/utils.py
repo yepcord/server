@@ -33,7 +33,7 @@ from ..yepcord.ctx import getCore, getCDNStorage
 from ..yepcord.enums import MessageType
 from ..yepcord.errors import Errors, InvalidDataErr, UnknownChannel, UnknownMessage, InvalidFormBody, \
     FileExceedsMaxSize, CannotSendEmptyMessage
-from ..yepcord.models import Session, User, Channel, Attachment, Authorization, Bot, Webhook, Message
+from ..yepcord.models import Session, User, Channel, Attachment, Authorization, Bot, Webhook, Message, Sticker
 from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -188,7 +188,7 @@ def makeEmbedError(code, path=None, replaces=None):
 
 
 async def process_stickers(sticker_ids: list[int]):
-    stickers = [await getCore().getSticker(sticker_id) for sticker_id in sticker_ids]
+    stickers = await Sticker.filter(id__in=sticker_ids).select_related("guild")
     stickers_data = {"sticker_items": [], "stickers": []}
     for sticker in stickers:
         if sticker is None:

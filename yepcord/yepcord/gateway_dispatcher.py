@@ -144,7 +144,7 @@ class GatewayDispatcher(Singleton):
                 roles[role_id] &= ~overwrite.deny
                 roles[role_id] |= overwrite.allow
             else:
-                if not (member := await ctx.getCore().getGuildMember(channel.guild, overwrite.target_user.id)):
+                if not (member := await channel.guild.get_member(overwrite.target_user.id)):
                     continue
                 try:
                     await member.checkPermission(permissions, channel=channel)

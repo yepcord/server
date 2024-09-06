@@ -116,12 +116,10 @@ class Message(Model):
                 if ping.startswith("&"):
                     data["mention_roles"].append(ping[1:])
                     continue
-                if not (member := await getCore().getUserByChannel(self.channel, int(ping))):
+                if not await self.channel.user_can_access(int(ping)):
                     continue
-                if isinstance(member, (models.GuildMember, models.ThreadMember)):
-                    member = member.user
-                mdata = await member.data
-                data["mentions"].append(mdata.ds_json)
+                pinged_data = await models.UserData.get(user__id=int(ping)).select_related("user")
+                data["mentions"].append(pinged_data.ds_json)
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
             if (userid := self.extra_data.get("user")) \
                     and (udata := await models.UserData.get_or_none(id=userid).select_related("user")):

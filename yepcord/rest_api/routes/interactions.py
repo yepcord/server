@@ -49,7 +49,7 @@ async def resolve_options(interaction_options: list[InteractionOption], guild: G
             if "users" not in result:
                 result["users"] = {}
             result["users"][option.value] = (await user.userdata).ds_json
-            if guild is None or not (member := await getCore().getGuildMember(guild, user.id)):
+            if guild is None or not (member := await guild.get_member(user.id)):
                 continue
             if "members" not in result:
                 result["members"] = {}
@@ -63,9 +63,7 @@ async def resolve_options(interaction_options: list[InteractionOption], guild: G
                 result["channels"] = {}
             result["channels"][option.value] = await channel.ds_json()
         elif option.type == T.ROLE:
-            if guild is None or (role := await getCore().getRole(option.value)) is None:
-                continue
-            if role.guild != guild:
+            if guild is None or (role := await guild.get_role(option.value)) is None:
                 continue
             if "roles" not in result:
                 result["roles"] = {}
@@ -129,13 +127,13 @@ async def create_interaction(user: User = DepUser):
     if data.guild_id:
         if (guild := await getCore().getGuild(data.guild_id)) is None:
             raise UnknownGuild
-        if (member := await getCore().getGuildMember(guild, user.id)) is None:
+        if (member := await guild.get_member(user.id)) is None:
             raise MissingAccess
         P = GuildPermissions
         await member.checkPermission(P.VIEW_CHANNEL, P.USE_APPLICATION_COMMANDS, channel=channel)
     if channel.guild != guild:
         raise UnknownChannel
-    if not await getCore().getUserByChannel(channel, user.id):
+    if not await channel.user_can_access(user.id):
         raise Unauthorized
     if guild is not None:
         if not await Integration.exists(guild=guild, application=application):
@@ -149,7 +147,7 @@ async def create_interaction(user: User = DepUser):
             (message := await channel.get_message(data.data.target_id)) is None:
         raise UnknownMessage
     if command.type == ApplicationCommandType.USER and \
-            (target_member := await getCore().getGuildMember(guild, data.data.target_id)) is None:
+            (target_member := await guild.get_member(data.data.target_id)) is None:
         raise UnknownUser
 
     if data.data.version != command.version or data.data.type != command.type or data.data.name != command.name:

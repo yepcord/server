@@ -177,7 +177,7 @@ class User(Model):
             }
         }
         if guild_id and (guild := await getCore().getGuild(guild_id)):
-            if member := await getCore().getGuildMember(guild, self.id):
+            if member := await guild.get_member(self.id):
                 data["guild_member_profile"] = {"guild_id": str(guild_id)}
                 data["guild_member"] = await member.ds_json()
         if mutual_friends_count:

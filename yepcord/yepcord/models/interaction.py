@@ -68,10 +68,10 @@ class Interaction(Model):
 
         if self.guild is not None:
             data["guild_id"] = str(self.guild.id)
-            member = await getCore().getGuildMember(self.guild, self.user.id)
+            member = await self.guild.get_member(self.user.id)
             data["member"] = await member.ds_json()
 
-            if (bot_member := await getCore().getGuildMember(self.guild, self.application.id)) is not None:
+            if (bot_member := await self.guild.get_member(self.application.id)) is not None:
                 data["app_permissions"] = str(await bot_member.permissions)
 
         if self.channel is not None:

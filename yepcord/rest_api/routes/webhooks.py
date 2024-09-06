@@ -36,31 +36,38 @@ from ...yepcord.utils import getImage
 webhooks = YBlueprint('webhooks', __name__)
 
 
-@webhooks.delete("/<int:webhook>")
-@webhooks.delete("/<int:webhook>/<string:token>", allow_bots=True)
-async def delete_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
-    if webhook := await getCore().getWebhook(webhook):
-        if webhook.token != token:
-            guild = webhook.channel.guild
-            if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
-                raise MissingPermissions
-            await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-        await webhook.delete()
-        await getGw().dispatch(WebhooksUpdateEvent(webhook.channel.guild.id, webhook.channel.id),
-                               guild_id=webhook.channel.guild.id, permissions=GuildPermissions.MANAGE_WEBHOOKS)
+@webhooks.delete("/<int:webhook_id>")
+@webhooks.delete("/<int:webhook_id>/<string:token>", allow_bots=True)
+async def delete_webhook(webhook_id: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
+    if (webhook := await Webhook.Y.get(webhook_id)) is None:
+        return "", 204
+
+    if webhook.token != token:
+        guild = webhook.channel.guild
+        if user is None or not (member := await guild.get_member(user.id)):
+            raise MissingPermissions
+        await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    await webhook.delete()
+    await getGw().dispatch(
+        WebhooksUpdateEvent(webhook.channel.guild.id, webhook.channel.id),
+        guild_id=webhook.channel.guild.id,
+        permissions=GuildPermissions.MANAGE_WEBHOOKS
+    )
 
     return "", 204
 
 
-@webhooks.patch("/<int:webhook>")
-@webhooks.patch("/<int:webhook>/<string:token>", body_cls=WebhookUpdate, allow_bots=True)
-async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
-    if not (webhook := await getCore().getWebhook(webhook)):
+@webhooks.patch("/<int:webhook_id>")
+@webhooks.patch("/<int:webhook_id>/<string:token>", body_cls=WebhookUpdate, allow_bots=True)
+async def edit_webhook(
+        data: WebhookUpdate, webhook_id: int, user: Optional[User] = DepUserO, token: Optional[str] = None
+):
+    if (webhook := await Webhook.Y.get(webhook_id)) is None:
         raise UnknownWebhook
     channel = webhook.channel
     guild = channel.guild
     if webhook.token != token:
-        if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
+        if user is None or not (member := await guild.get_member(user.id)):
             raise MissingPermissions
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
     if data.channel_id:
@@ -88,23 +95,23 @@ async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] =
     return await webhook.ds_json()
 
 
-@webhooks.get("/<int:webhook>")
-@webhooks.get("/<int:webhook>/<string:token>", allow_bots=True)
-async def get_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
-    if not (webhook := await getCore().getWebhook(webhook)):
+@webhooks.get("/<int:webhook_id>")
+@webhooks.get("/<int:webhook_id>/<string:token>", allow_bots=True)
+async def get_webhook(webhook_id: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
+    if (webhook := await Webhook.Y.get(webhook_id)) is None:
         raise UnknownWebhook
     if webhook.token != token:
         guild = webhook.channel.guild
-        if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
+        if user is None or not (member := await guild.get_member(user.id)):
             raise MissingPermissions
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
     return await webhook.ds_json()
 
 
-@webhooks.post("/<int:webhook>/<string:token>", qs_cls=WebhookMessageCreateQuery)
-async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: int, token: str):
-    if not (webhook := await getCore().getWebhook(webhook)):
+@webhooks.post("/<int:webhook_id>/<string:token>", qs_cls=WebhookMessageCreateQuery)
+async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook_id: int, token: str):
+    if (webhook := await Webhook.Y.get(webhook_id)) is None:
         raise UnknownWebhook
     if webhook.token != token:
         raise MissingPermissions

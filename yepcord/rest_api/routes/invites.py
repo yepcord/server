@@ -71,7 +71,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
         for excl in ["max_age", "max_uses", "created_at"]:  # Remove excluded fields
             if excl in inv:
                 del inv[excl]
-        if not await getCore().getGuildMember(channel.guild, user.id):
+        if not await GuildMember.exists(guild=channel.guild, user=user):
             guild = channel.guild
             if await GuildBan.exists(guild=guild, user=user):
                 raise UserBanned
@@ -94,7 +94,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
 @invites.delete("/<string:invite>", allow_bots=True)
 async def delete_invite(user: User = DepUser, invite: Invite = DepInvite):
     if invite.channel.guild:
-        if (member := await getCore().getGuildMember(invite.channel.guild, user.id)) is None:
+        if (member := await invite.channel.guild.get_member(user.id)) is None:
             raise MissingAccess
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         await invite.delete()
