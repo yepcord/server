@@ -532,7 +532,7 @@ async def get_guilds(user: User = DepUser):
     async def ds_json(guild: Guild) -> dict:
         member = await guild.get_member(user.id)
         return {
-            "approximate_member_count": await getCore().getGuildMemberCount(guild),
+            "approximate_member_count": await guild.get_member_count(),
             "approximate_presence_count": 0,
             "features": ["ANIMATED_ICON", "BANNER", "INVITE_SPLASH", "VANITY_URL", "PREMIUM_TIER_3_OVERRIDE",
                          "ROLE_ICONS", *guild.features],

@@ -63,11 +63,15 @@ async def create_guild(data: GuildCreate, user: User = DepUser):
             await guild.save(update_fields=["icon"])
 
     await getGw().dispatch(GuildCreateEvent(
-        await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
+        await guild.ds_json(
+            user_id=user.id,
+            with_channels=True,
+            with_member=await GuildMember.get(guild=guild, user=user).select_related("user"),
+        )
     ), user_ids=[user.id])
     await getGw().dispatchSub([user.id], guild.id)
 
-    return await guild.ds_json(user_id=user.id, with_members=False, with_channels=True)
+    return await guild.ds_json(user_id=user.id, with_channels=True)
 
 
 @guilds.patch("/<int:guild>", body_cls=GuildUpdate, allow_bots=True)
@@ -103,7 +107,7 @@ async def update_guild(data: GuildUpdate, user: User = DepUser, guild: Guild = D
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(guild)
+    await guild.set_template_dirty()
 
     return await guild.ds_json(user_id=user.id)
 
@@ -231,7 +235,7 @@ async def update_channels_positions(guild: Guild = DepGuild, member: GuildMember
         change = change.model_dump(exclude_defaults=True, exclude={"id"})
         await channel.update(**change)
         await getGw().dispatch(ChannelUpdateEvent(await channel.ds_json()), guild_id=channel.guild.id)
-    await getCore().setTemplateDirty(guild)
+    await guild.set_template_dirty()
     return "", 204
 
 
@@ -257,7 +261,7 @@ async def create_channel(data: ChannelCreate, user: User = DepUser, guild: Guild
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(guild)
+    await guild.set_template_dirty()
 
     return await channel.ds_json()
 
@@ -355,7 +359,7 @@ async def ban_member(user_id: int, data: BanMember, user: User = DepUser, guild:
                            permissions=GuildPermissions.BAN_MEMBERS)
     if (delete_message_seconds := data.delete_message_seconds) > 0:
         after = Snowflake.fromTimestamp(int(time() - delete_message_seconds))
-        deleted_messages = await getCore().bulkDeleteGuildMessagesFromBanned(guild, user_id, after)
+        deleted_messages = await guild.bulk_delete_messages_from_banned(user_id, after)
         for channel, messages in deleted_messages.items():
             if len(messages) > 1:
                 await getGw().dispatch(MessageBulkDeleteEvent(guild.id, channel.id, messages), channel=channel,
@@ -429,7 +433,7 @@ async def create_role(data: RoleCreate, user: User = DepUser, guild: Guild = Dep
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(guild)
+    await guild.set_template_dirty()
 
     return role.ds_json()
 
@@ -455,7 +459,7 @@ async def update_role(data: RoleUpdate, user: User = DepUser, guild: Guild = Dep
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(guild)
+    await guild.set_template_dirty()
 
     return role.ds_json()
 
@@ -485,7 +489,7 @@ async def update_roles_positions(guild: Guild = DepGuild, member: GuildMember = 
         await getGw().dispatch(GuildRoleUpdateEvent(guild.id, role.ds_json()), guild_id=guild.id,
                                permissions=GuildPermissions.MANAGE_ROLES)
 
-    await getCore().setTemplateDirty(guild)
+    await guild.set_template_dirty()
 
     return [
         role.ds_json()
@@ -507,7 +511,7 @@ async def delete_role(user: User = DepUser, guild: Guild = DepGuild, member: Gui
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(guild)
+    await guild.set_template_dirty()
 
     await getGw().dispatchUnsub([], role_id=role.id, delete=True)
 
@@ -613,7 +617,7 @@ async def update_member(data: MemberUpdate, target_user: str, user: User = DepUs
 async def get_vanity_url(guild: Guild = DepGuild, member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     code = {"code": guild.vanity_url_code}
-    if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
+    if invite := await Invite.Y.get_from_vanity_code(guild.vanity_url_code):
         code["uses"] = invite.uses
     return code
 
@@ -627,14 +631,14 @@ async def update_vanity_url(data: SetVanityUrl, user: User = DepUser, guild: Gui
     if data.code == guild.vanity_url_code:
         return {"code": guild.vanity_url_code}
     if not data.code:
-        if invite := await getCore().getVanityCodeInvite(guild.vanity_url_code):
+        if invite := await Invite.Y.get_from_vanity_code(guild.vanity_url_code):
             await invite.delete()
             guild.vanity_url_code = None
         await guild.save(update_fields=["vanity_url_code"])
     else:
-        if await getCore().getVanityCodeInvite(data.code):
+        if await Invite.exists(vanity_code=data.code):
             return {"code": guild.vanity_url_code}
-        if guild.vanity_url_code and (invite := await getCore().getVanityCodeInvite(guild.vanity_url_code)):
+        if guild.vanity_url_code and (invite := await Invite.Y.get_from_vanity_code(guild.vanity_url_code)):
             await invite.delete()
         guild.vanity_url_code = data.code
         await guild.save(update_fields=["vanity_url_code"])
@@ -688,11 +692,15 @@ async def create_from_template(data: GuildCreateFromTemplate, template: str, use
             await guild.save(update_fields=["icon"])
 
     await getGw().dispatch(GuildCreateEvent(
-        await guild.ds_json(user_id=user.id, with_members=True, with_channels=True)
+        await guild.ds_json(
+            user_id=user.id,
+            with_channels=True,
+            with_member=await GuildMember.get(guild=guild, user=user).select_related("user"),
+        )
     ), user_ids=[user.id])
     await getGw().dispatchSub([user.id], guild.id)
 
-    return await guild.ds_json(user_id=user.id, with_members=False, with_channels=True)
+    return await guild.ds_json(user_id=user.id, with_channels=True)
 
 
 @guilds.post("/<int:guild>/delete", body_cls=GuildDelete, allow_bots=True)

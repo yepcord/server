@@ -16,20 +16,29 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Optional
 
 from tortoise import fields
 
-from ..ctx import getCore
-from ..enums import ChannelType
+import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
+from ..enums import ChannelType
 from ..snowflake import Snowflake
 from ..utils import b64encode, int_size
-import yepcord.yepcord.models as models
+
+
+class InviteUtils:
+    @staticmethod
+    async def get_from_vanity_code(code: str) -> Optional[Invite]:
+        return await Invite.get_or_none(vanity_code=code) if code else None
 
 
 class Invite(Model):
+    Y = InviteUtils
+
     id: int = SnowflakeField(pk=True)
     type: int = fields.IntField(default=1)
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
@@ -67,7 +76,7 @@ class Invite(Model):
         }
 
         if with_counts:
-            data["approximate_member_count"] = await getCore().getRelatedUsersToChannelCount(self.channel)
+            data["approximate_member_count"] = await self.channel.get_related_users_count()
             if self.channel.type == ChannelType.GROUP_DM:
                 data["channel"]["recipients"] = [
                     {"username": (await recipient.data).username}

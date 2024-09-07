@@ -151,8 +151,10 @@ class Guild(Model):
     nsfw: bool = fields.BooleanField(default=False)
     nsfw_level: int = fields.IntField(default=0)
 
-    async def ds_json(self, user_id: int, for_gateway: bool=False, with_members: bool=False,
-                      with_channels: bool=False) -> dict:
+    async def ds_json(
+            self, user_id: int, for_gateway: bool = False, with_member: Optional[models.GuildMember] = None,
+            with_channels: bool = False
+    ) -> dict:
         data = {
             "id": str(self.id),
             "version": int(time() * 1000),  # What is this?
@@ -210,7 +212,7 @@ class Guild(Model):
                 "widget_channel_id": None,
             },
             "premium_subscription_count": 30,
-            "member_count": await getCore().getGuildMemberCount(self),
+            "member_count": await self.get_member_count(),
             "lazy": True,
             "large": False,
             "guild_scheduled_events": [
@@ -241,8 +243,8 @@ class Guild(Model):
             ]
         if for_gateway or with_channels:
             data["channels"] = [await channel.ds_json() for channel in await self.get_channels()]
-        if with_members:
-            data["members"] = [await member.ds_json() for member in await getCore().getGuildMembers(self)]
+        if with_member is not None:
+            data["members"] = [await with_member.ds_json()]
 
         return data
 
@@ -288,3 +290,27 @@ class Guild(Model):
         return await models.GuildEvent.get_or_none(
             id=event_id, guild=self
         ).select_related("channel", "guild", "creator")
+
+    async def get_member_count(self) -> int:
+        return await models.GuildMember.filter(guild=self).count()
+
+    async def bulk_delete_messages_from_banned(
+            self, user_id: int, after_message_id: int
+    ) -> dict[models.Channel, list[int]]:
+        messages = await models.Message.filter(
+            guild=self, author__id=user_id, id__gt=after_message_id
+        ).select_related("channel").limit(500)
+        result = {}
+        messages_ids = []
+        for message in messages:
+            if message.channel not in result:
+                result[message.channel] = []
+            result[message.channel].append(message.id)
+            messages_ids.append(message.id)
+
+        await models.Message.filter(id__in=messages_ids).delete()
+
+        return result
+
+    async def set_template_dirty(self) -> None:
+        await models.GuildTemplate.filter(guild=self).update(is_dirty=True)

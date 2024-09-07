@@ -140,14 +140,14 @@ class GatewayClient:
         await self.gateway.ev.presence_update(self.user_id, presence)
 
     @require_auth
-    async def handle_LAZY_REQUEST(self, data: dict) -> None:
+    async def handle_LAZY_REQUEST(self, data: dict) -> None:  # TODO: handle ranges
         if not (guild_id := int(data.get("guild_id"))): return
         if not data.get("members", True): return
         guild = await getCore().getGuild(guild_id)
         if not await GuildMember.exists(guild=guild, user__id=self.user_id):
             return
 
-        members = await getCore().getGuildMembers(guild)
+        members = await GuildMember.filter(guild=guild).select_related("user")
         statuses = {}
         for member in members:
             if presence := await self.gateway.presences.get(member.user.id):
@@ -156,7 +156,7 @@ class GatewayClient:
                 statuses[member.user.id] = Presence(member.user.id, "offline", None)
         await self.esend(GuildMembersListUpdateEvent(
             members,
-            await getCore().getGuildMemberCount(guild),
+            await guild.get_member_count(),
             statuses,
             guild_id
         ))

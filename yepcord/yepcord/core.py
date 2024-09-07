@@ -30,9 +30,8 @@ from . import ctx
 from .classes.other import EmailMsg, JWT, MFA
 from .classes.singleton import Singleton
 from .config import Config
-from .enums import ChannelType, GUILD_CHANNELS
 from .errors import InvalidDataErr, Errors, InvalidKey
-from .models import User, Channel, Message, ReadState, Invite, Guild, GuildMember, ThreadMember
+from .models import User, Channel, ReadState, Guild, GuildMember
 from .storage import getStorage
 from .utils import b64encode, b64decode
 
@@ -101,14 +100,6 @@ class Core(Singleton):
 
     #    return message
 
-    async def getRelatedUsersToChannelCount(self, channel: Channel) -> int:
-        if channel.type in [ChannelType.DM, ChannelType.GROUP_DM]:
-            return await channel.recipients.filter().count()
-        elif channel.type in GUILD_CHANNELS:
-            return await GuildMember.filter(guild=channel.guild).count()
-        elif channel.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
-            return await ThreadMember.filter(channel=channel).count()
-
     async def setReadState(self, user: User, channel: Channel, count: int, last: int) -> None:
         read_state, _ = await ReadState.get_or_create(
             user=user, channel=channel, defaults={"last_read_id": last, "count": count}
@@ -158,56 +149,8 @@ class Core(Singleton):
         signature = token.split(".")[2]
         return signature.replace("-", "").replace("_", "")[:8].upper()
 
-    async def searchMessages(self, channel: Channel, search_filter: dict) -> tuple[list[Message], int]:
-        filter_args = {"channel": channel}
-        if "author_id" in search_filter:
-            filter_args["author__id"] = search_filter["author_id"]
-        if "mentions" in search_filter:
-            filter_args["content__contains"] = f"<@{search_filter['mentions']}>"
-        if "has" in search_filter:
-            ...  # TODO: add `has` filter
-        if "min_id" in search_filter:
-            filter_args["id__gt"] = search_filter["min_id"]
-        if "max_id" in search_filter:
-            filter_args["id__lt"] = search_filter["max_id"]
-        if "pinned" in search_filter:
-            filter_args["pinned"] = search_filter["pinned"].lower() == "true"
-        if "content" in search_filter:
-            filter_args["content__icontains"] = search_filter["content"]
-        query = (Message.filter(**filter_args).select_related("author", "channel", "thread", "guild")
-                 .order_by("-id").limit(25))
-        if "offset" in search_filter:
-            query = query.offset(search_filter["offset"])
-
-        messages = await query
-        count = await query.count()
-        return messages, count
-
-    async def getGuildMembers(self, guild: Guild) -> list[GuildMember]:
-        return await GuildMember.filter(guild=guild).select_related("user")
-
-    async def getGuildMemberCount(self, guild: Guild) -> int:
-        return await GuildMember.filter(guild=guild).count()
-
     async def getGuild(self, guild_id: int) -> Optional[Guild]:
         return await Guild.get_or_none(id=guild_id).select_related("owner")
-
-    async def bulkDeleteGuildMessagesFromBanned(
-            self, guild: Guild, user_id: int, after_id: int
-    ) -> dict[Channel, list[int]]:
-        messages = await (Message.filter(guild=guild, author__id=user_id, id__gt=after_id).select_related("channel")
-                          .limit(500))
-        result = {}
-        messages_ids = []
-        for message in messages:
-            if message.channel not in result:
-                result[message.channel] = []
-            result[message.channel].append(message.id)
-            messages_ids.append(message.id)
-
-        await Message.filter(id__in=messages_ids).delete()
-
-        return result
 
     async def getMutualGuildsJ(self, user: User, current_user: User) -> list[dict[str, str]]:
         user_guilds_member = await GuildMember.filter(user=user).select_related("guild")
@@ -233,16 +176,6 @@ class Core(Singleton):
             (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))  #&
             #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
         ).select_related("user").limit(limit)
-
-    async def getVanityCodeInvite(self, code: str) -> Optional[Invite]:
-        if code is None: return
-        return await Invite.get_or_none(vanity_code=code)
-
-    async def setTemplateDirty(self, guild: Guild) -> None:
-        if (template := await guild.get_template()) is None:
-            return
-        template.is_dirty = True
-        await template.save(update_fields=["is_dirty"])
 
     def getLanguageCode(self, ip: str, default: str = "en-US") -> str:
         if self.ipdb is None and not os.path.exists("other/ip_database.mmdb"):

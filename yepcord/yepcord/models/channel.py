@@ -307,7 +307,40 @@ class Channel(Model):
 
         return False
 
+    async def get_related_users_count(self) -> int:
+        if self.type in [ChannelType.DM, ChannelType.GROUP_DM]:
+            return await self.recipients.filter().count()
+        elif self.type in GUILD_CHANNELS:
+            return await models.GuildMember.filter(guild=self.guild).count()
+        elif self.type in (ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD):
+            return await models.ThreadMember.filter(channel=self).count()
+
     async def get_thread_member(self, user_id: int) -> Optional[models.ThreadMember]:
         if self.type not in {ChannelType.GUILD_PUBLIC_THREAD, ChannelType.GUILD_PRIVATE_THREAD}:
             return
         return await models.ThreadMember.get_or_none(channel=self, user__id=user_id)
+
+    async def search_messages(self, search_filter: dict) -> tuple[list[models.Message], int]:
+        filter_args = {"channel": self}
+        if "author_id" in search_filter:
+            filter_args["author__id"] = search_filter["author_id"]
+        if "mentions" in search_filter:
+            filter_args["content__contains"] = f"<@{search_filter['mentions']}>"
+        if "has" in search_filter:
+            ...  # TODO: add `has` filter
+        if "min_id" in search_filter:
+            filter_args["id__gt"] = search_filter["min_id"]
+        if "max_id" in search_filter:
+            filter_args["id__lt"] = search_filter["max_id"]
+        if "pinned" in search_filter:
+            filter_args["pinned"] = search_filter["pinned"].lower() == "true"
+        if "content" in search_filter:
+            filter_args["content__icontains"] = search_filter["content"]
+        query = (models.Message.filter(**filter_args).select_related("author", "channel", "thread", "guild")
+                 .order_by("-id").limit(25))
+        if "offset" in search_filter:
+            query = query.offset(search_filter["offset"])
+
+        messages = await query
+        count = await query.count()
+        return messages, count

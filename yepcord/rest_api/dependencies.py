@@ -130,7 +130,7 @@ async def depInvite(invite: Optional[str] = None) -> Invite:
         if not invite:
             raise ValueError
     except ValueError:
-        if not (invite := await getCore().getVanityCodeInvite(invite)):
+        if not (invite := await Invite.Y.get_from_vanity_code(invite)):
             raise UnknownInvite
 
     return invite

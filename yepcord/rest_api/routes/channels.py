@@ -109,7 +109,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
         await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
                                permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-        await getCore().setTemplateDirty(channel.guild)
+        await channel.guild.set_template_dirty()
 
     return await channel.ds_json()
 
@@ -151,7 +151,7 @@ async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
         await channel.delete()
         await getGw().dispatch(ChannelDeleteEvent(await channel.ds_json()), guild_id=channel.guild.id)
 
-        await getCore().setTemplateDirty(channel.guild)
+        await channel.guild.set_template_dirty()
 
         return await channel.ds_json()
     return "", 204
@@ -433,7 +433,7 @@ async def search_messages(query_args: SearchQuery, user: User = DepUser, channel
         member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL,
                                      channel=channel)
-    messages, total = await getCore().searchMessages(channel, query_args.model_dump(exclude_defaults=True))
+    messages, total = await channel.search_messages(query_args.model_dump(exclude_defaults=True))
     messages = [[await message.ds_json(search=True)] for message in messages]
     for message in messages:
         message[0]["hit"] = True
@@ -482,7 +482,7 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(channel.guild)
+    await channel.guild.set_template_dirty()
 
     return "", 204
 
@@ -506,7 +506,7 @@ async def delete_permission_overwrite(target_id: int, user: User = DepUser, chan
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(channel.guild)
+    await channel.guild.set_template_dirty()
 
     return "", 204
 
