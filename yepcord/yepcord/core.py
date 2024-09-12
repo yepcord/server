@@ -15,25 +15,31 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+
 import os.path
 from hashlib import sha256
 from hmac import new
 from json import loads as jloads, dumps as jdumps
 from os import urandom
 from time import time
-from typing import Optional
+from typing import Optional, Union
 
 import maxminddb
-from tortoise.expressions import Q
 
 from . import ctx
 from .classes.other import EmailMsg, JWT, MFA
 from .classes.singleton import Singleton
 from .config import Config
+from .enums import MfaNonceType
 from .errors import InvalidDataErr, Errors, InvalidKey
 from .models import User, Channel, ReadState, Guild, GuildMember
 from .storage import getStorage
 from .utils import b64encode, b64decode
+
+
+def _assert(value: ..., exc: Union[type[BaseException], BaseException] = ValueError) -> None:
+    if not value:
+        raise exc
 
 
 # noinspection PyMethodMayBeStatic
@@ -42,49 +48,33 @@ class Core(Singleton):
         self.key = b64decode(Config.KEY)
         self.ipdb = None
 
-    def generateMfaTicketSignature(self, user: User, session_id: int) -> str:
-        payload = {
-            "user_id": user.id,
-            "session_id": session_id
-        }
-        token = JWT.encode(payload, self.key, time() + 300)
-        return b64encode(token)
-
-    def verifyMfaTicketSignature(self, user: User, session_id: int, token: str) -> bool:
-        if not (payload := JWT.decode(token, self.key)):
-            return False
-        if payload["user_id"] != user.id: return False
-        if payload["session_id"] != session_id: return False
-        return True
-
     async def getMfaFromTicket(self, ticket: str) -> Optional[MFA]:
         try:
-            uid, sid, sig = ticket.split(".")
-            uid = jloads(b64decode(uid).decode("utf8"))[0]
-            sid = int.from_bytes(b64decode(sid), "big")
+            user_id, session_id, sig = ticket.split(".")
+            user_id = jloads(b64decode(user_id).decode("utf8"))[0]
+            session_id = int.from_bytes(b64decode(session_id), "big")
             sig = b64decode(sig).decode("utf8")
+
+            _assert(user := await User.y.get(user_id))
+            _assert(payload := JWT.decode(sig, self.key))
+            _assert(payload["u"] == user.id)
+            _assert(payload["s"] == session_id)
         except (ValueError, IndexError):
             return
-        if not (user := await User.y.get(uid)):
-            return
-        if not self.verifyMfaTicketSignature(user, sid, sig):
-            return
-        settings = await user.settings
-        return MFA(settings.mfa, uid)
+
+        return MFA(await user.get_mfa_key(), user_id)
 
     async def generateUserMfaNonce(self, user: User) -> tuple[str, str]:
         exp = time() + 600
         code = b64encode(urandom(16))
-        nonce = JWT.encode({"type": "normal", "code": code, "user_id": user.id}, self.key, exp)
-        rnonce = JWT.encode({"type": "regenerate", "code": code, "user_id": user.id}, self.key, exp)
+        nonce = JWT.encode({"t": MfaNonceType.NORMAL, "c": code, "u": user.id}, self.key, exp)
+        rnonce = JWT.encode({"t": MfaNonceType.REGENERATE, "c": code, "u": user.id}, self.key, exp)
         return nonce, rnonce
 
-    async def verifyUserMfaNonce(self, user: User, nonce: str, regenerate: bool) -> None:
-        if not (payload := JWT.decode(nonce, self.key)) or payload["user_id"] != user.id:
-            raise InvalidKey
-        nonce_type = "normal" if not regenerate else "regenerate"
-        if nonce_type != payload["type"]:
-            raise InvalidKey
+    async def verifyUserMfaNonce(self, user: User, nonce: str, nonce_type: MfaNonceType) -> None:
+        _assert(payload := JWT.decode(nonce, self.key), InvalidKey)
+        _assert(payload["u"] == user.id, InvalidKey)
+        _assert(nonce_type == payload["t"], InvalidKey)
 
     #async def sendMessage(self, message: Message) -> Message:
     #    async def _addToReadStates():  # TODO: recalculate read states when requested by user
@@ -145,7 +135,7 @@ class Core(Singleton):
     async def mfaNonceToCode(self, nonce: str) -> Optional[str]:
         if not (payload := JWT.decode(nonce, self.key)):
             return
-        token = JWT.encode({"code": payload["code"]}, self.key)
+        token = JWT.encode({"code": payload["c"]}, self.key)
         signature = token.split(".")[2]
         return signature.replace("-", "").replace("_", "")[:8].upper()
 
@@ -167,15 +157,6 @@ class Core(Singleton):
             mutual_guilds_json.append({"id": str(guild_id), "nick": member.nick})
 
         return mutual_guilds_json
-
-    # noinspection PyUnusedLocal
-    async def getGuildMembersGw(self, guild: Guild, query: str, limit: int, user_ids: list[int]) -> list[GuildMember]:
-        # noinspection PyUnresolvedReferences
-        return await GuildMember.filter(
-            Q(guild=guild) &
-            (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))  #&
-            #((GuildMember.user.id in user_ids) if user_ids else (GuildMember.user.id not in [0]))
-        ).select_related("user").limit(limit)
 
     def getLanguageCode(self, ip: str, default: str = "en-US") -> str:
         if self.ipdb is None and not os.path.exists("other/ip_database.mmdb"):

@@ -32,7 +32,7 @@ from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, Relati
 from ...yepcord.classes.other import MFA
 from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getCDNStorage, getGw
-from ...yepcord.enums import RelationshipType, ChannelType
+from ...yepcord.enums import RelationshipType, ChannelType, MfaNonceType
 from ...yepcord.errors import InvalidDataErr, Errors, UnknownToken, UnknownUser, UnknownConnection, UnknownDiscordTag, \
     AlreadyFriends, MalformedUserSettings, Already2Fa, PasswordDoesNotMatch, Invalid2FaSecret, Invalid2FaCode, \
     NotYet2Fa, InvalidKey, InvalidGuild, InvalidRecipient, MustTransferGuildsBeforeDelete, MissingAccess
@@ -332,7 +332,7 @@ async def get_backup_codes(data: MfaCodesVerification, user: User = DepUser):
             "code": "BASE_TYPE_REQUIRED", "message": "This field is required"
         }}))
     regenerate = data.regenerate
-    await getCore().verifyUserMfaNonce(user, nonce, regenerate)
+    await getCore().verifyUserMfaNonce(user, nonce, MfaNonceType.REGENERATE if regenerate else MfaNonceType.NORMAL)
     if await getCore().mfaNonceToCode(nonce) != key:
         raise InvalidKey
 

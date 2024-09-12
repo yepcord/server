@@ -28,13 +28,13 @@ from tortoise import Tortoise
 
 from yepcord.yepcord.config import Config, ConfigModel
 from yepcord.yepcord.core import Core
-from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType, GuildPermissions
+from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType, GuildPermissions, MfaNonceType
 from yepcord.yepcord.errors import InvalidDataErr, MfaRequiredErr
 from yepcord.yepcord.gateway_dispatcher import GatewayDispatcher
 from yepcord.yepcord.models import User, UserData, Session, Relationship, Guild, Channel, Role, PermissionOverwrite, \
     GuildMember, Message
 from yepcord.yepcord.snowflake import Snowflake
-from yepcord.yepcord.utils import b64decode, b64encode
+from yepcord.yepcord.utils import b64encode
 
 EMAIL_ID = Snowflake.makeId()
 VARS = {
@@ -298,9 +298,9 @@ async def test_generateUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
 async def test_verifyUserMfaNonce():
     user = await User.y.get(VARS["user_id"])
     nonce, regenerate_nonce = VARS["mfa_nonce"]
-    await core.verifyUserMfaNonce(user, nonce, False)
-    await core.verifyUserMfaNonce(user, regenerate_nonce, True)
-    for args in ((nonce, True), (regenerate_nonce, False)):
+    await core.verifyUserMfaNonce(user, nonce, MfaNonceType.NORMAL)
+    await core.verifyUserMfaNonce(user, regenerate_nonce, MfaNonceType.REGENERATE)
+    for args in ((nonce, MfaNonceType.REGENERATE), (regenerate_nonce, MfaNonceType.NORMAL)):
         with pt.raises(InvalidDataErr):
             await core.verifyUserMfaNonce(user, *args)
     del VARS["mfa_nonce"]

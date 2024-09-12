@@ -24,6 +24,7 @@ from typing import Optional, Union
 
 from quart import Websocket
 from redis.asyncio import Redis
+from tortoise.expressions import Q
 
 from .events import *
 from .presences import Presences, Presence
@@ -170,9 +171,15 @@ class GatewayClient:
 
         query = data.get("query", "")
         limit = data.get("limit", 100)
+        user_ids = data.get("user_ids", [])
         if limit > 100 or limit < 1:
             limit = 100
-        members = await getCore().getGuildMembersGw(guild, query, limit, data.get("user_ids", []))
+
+        q = Q(guild=guild) & (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))
+        if user_ids:
+            q &= Q(user__id__in=user_ids)
+        members = await GuildMember.filter(q).select_related("user").limit(limit)
+
         presences = []  # TODO: add presences
         await self.esend(GuildMembersChunkEvent(members, presences, guild_id))
 

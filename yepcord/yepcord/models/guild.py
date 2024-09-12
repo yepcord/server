@@ -23,7 +23,6 @@ from typing import Optional, Union
 from tortoise import fields
 from tortoise.transactions import atomic
 
-from ..ctx import getCore
 import yepcord.yepcord.models as models
 from ..enums import Locales, ChannelType
 from ._utils import SnowflakeField, Model, ChoicesValidator

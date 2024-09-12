@@ -23,7 +23,7 @@ async def setup_db():
 def generateMfaVerificationKey(nonce: str, mfa_key: str, key: bytes):
     if not (payload := JWT.decode(nonce, key + b64decode(mfa_key))):
         return
-    token = JWT.encode({"code": payload["code"]}, key)
+    token = JWT.encode({"code": payload["c"]}, key)
     signature = token.split(".")[2]
     return signature.replace("-", "").replace("_", "")[:8].upper()
 

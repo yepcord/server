@@ -21,7 +21,8 @@ from __future__ import annotations
 from datetime import datetime
 from os import urandom
 from random import randint, choice
-from typing import Optional
+from time import time
+from typing import Optional, cast
 
 from bcrypt import checkpw, hashpw, gensalt
 from tortoise import fields
@@ -30,7 +31,7 @@ from tortoise.transactions import atomic
 
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
-from ..classes.other import MFA
+from ..classes.other import MFA, JWT
 from ..config import Config
 from ..ctx import getCore
 from ..enums import RelationshipType
@@ -98,15 +99,17 @@ class UserUtils:
                                                                     "message": "Invalid login or password."},
                                                           "password": {"code": "INVALID_LOGIN",
                                                                        "message": "Invalid login or password."}}))
-        settings = await user.settings
-        if settings.mfa:
-            sid = urandom(12)
-            raise MfaRequiredErr(
-                user.id,
-                b64encode(sid),
-                getCore().generateMfaTicketSignature(user, int.from_bytes(sid, "big")),
-            )
-        return await models.Session.Y.create(user)
+        mfa_key = await user.get_mfa_key()
+        if not mfa_key:
+            return await models.Session.Y.create(user)
+
+        sid = urandom(12)
+        sid_int = int.from_bytes(sid, "big")
+        raise MfaRequiredErr(
+            user.id,
+            b64encode(sid),
+            b64encode(JWT.encode({"u": user.id, "s": sid_int}, getCore().key, time() + 300)),
+        )
 
     @staticmethod
     async def get_free_discriminator(login: str) -> Optional[int]:
@@ -144,10 +147,8 @@ class User(Model):
 
     @property
     async def mfa(self) -> Optional[MFA]:
-        settings = await self.settings
-        mfa = MFA(settings.mfa, self.id)
-        if mfa.valid:
-            return mfa
+        mfa = MFA(await self.get_mfa_key(), self.id)
+        return mfa if mfa.valid else None
 
     async def profile_json(self, other_user: User, with_mutual_guilds: bool = False, mutual_friends_count: bool = False,
                            guild_id: int = None) -> dict:
@@ -315,3 +316,6 @@ class User(Model):
                 users[recipient.id] = recipient
 
         return list(users.values())
+
+    async def get_mfa_key(self) -> str | None:
+        return cast(str, await models.UserSettings.get(user=self).values_list("mfa", flat=True))

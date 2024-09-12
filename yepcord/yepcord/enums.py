@@ -419,3 +419,8 @@ class InteractionCallbackType:
     APPLICATION_COMMAND_AUTOCOMPLETE_RESULT = 8
     MODAL = 9
     PREMIUM_REQUIRED = 10
+
+
+class MfaNonceType(E):
+    NORMAL = 1
+    REGENERATE = 2
