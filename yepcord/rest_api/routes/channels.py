@@ -188,7 +188,7 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
                                    user_ids=[other_user.id])
     await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
-    await getCore().setReadState(user, channel, 0, message.id)
+    await user.update_read_state(channel, 0, message.id)
     await getGw().dispatch(MessageAckEvent({"version_id": 1, "message_id": str(message.id),
                                             "channel_id": str(message.channel.id)}), user_ids=[user.id])
     return await message.ds_json()
@@ -238,13 +238,13 @@ async def get_message(user: User = DepUser, channel: Channel = DepChannel, messa
 async def send_message_ack(data: MessageAck, message: int, user: User = DepUser, channel: Channel = DepChannel):
     message = await _getMessage(user, channel, message)
     if data.manual and (ct := data.mention_count):
-        await getCore().setReadState(user, channel, ct, message.id)
+        await user.update_read_state(channel, ct, message.id)
         await getGw().sendMessageAck(user.id, channel.id, message.id, ct, True)
     else:
         count = await Message.filter(
             channel=channel, ephemeral=False, id__gt=message.id, id__lt=await channel.get_last_message_id(),
         ).count()
-        await getCore().setReadState(user, channel, count, message.id)
+        await user.update_read_state(channel, count, message.id)
         await getGw().dispatch(MessageAckEvent({
             "version_id": 1, "message_id": str(message.id), "channel_id": str(channel.id),
         }), user_ids=[user.id])

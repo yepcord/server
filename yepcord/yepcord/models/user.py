@@ -31,13 +31,13 @@ from tortoise.transactions import atomic
 
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
-from ..classes.other import MFA, JWT
+from ..classes.other import MFA, JWT, EmailMsg
 from ..config import Config
 from ..ctx import getCore
-from ..enums import RelationshipType
-from ..errors import InvalidDataErr, Errors, MfaRequiredErr, UnknownUser
+from ..enums import RelationshipType, MfaNonceType
+from ..errors import InvalidDataErr, Errors, MfaRequiredErr, UnknownUser, InvalidKey
 from ..snowflake import Snowflake
-from ..utils import int_size, b64encode
+from ..utils import int_size, b64encode, b64decode, assert_
 
 
 class UserUtils:
@@ -87,7 +87,7 @@ class UserUtils:
         await models.UserData.create(id=user_id, user=user, birth=birth, username=login, discriminator=discriminator)
         await models.UserSettings.create(id=user_id, user=user, locale=locale)
 
-        await getCore().sendVerificationEmail(user)
+        await user.send_verification_email()
         return user
 
     @staticmethod
@@ -319,3 +319,27 @@ class User(Model):
 
     async def get_mfa_key(self) -> str | None:
         return cast(str, await models.UserSettings.get(user=self).values_list("mfa", flat=True))
+
+    async def generate_mfa_nonce(self) -> tuple[str, str]:
+        key = b64decode(Config.KEY)
+        exp = time() + 600
+        code = b64encode(urandom(16))
+        nonce = JWT.encode({"t": MfaNonceType.NORMAL, "c": code, "u": self.id}, key, exp)
+        rnonce = JWT.encode({"t": MfaNonceType.REGENERATE, "c": code, "u": self.id}, key, exp)
+        return nonce, rnonce
+
+    async def verify_mfa_nonce(self, nonce: str, nonce_type: MfaNonceType) -> None:
+        key = b64decode(Config.KEY)
+        assert_(payload := JWT.decode(nonce, key), InvalidKey)
+        assert_(payload["u"] == self.id, InvalidKey)
+        assert_(nonce_type == payload["t"], InvalidKey)
+
+    async def update_read_state(self, channel: models.Channel, count: int, last: int) -> None:
+        await models.ReadState.update_or_create(user=self, channel=channel, defaults={
+            "last_read_id": last,
+            "count": count,
+        })
+
+    async def send_verification_email(self) -> None:
+        token = JWT.encode({"id": self.id, "email": self.email}, b64decode(Config.KEY), expires_after=600)
+        await EmailMsg.send_verification(self.email, token)

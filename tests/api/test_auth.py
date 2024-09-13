@@ -7,6 +7,7 @@ import pytest as pt
 import pytest_asyncio
 
 from yepcord.rest_api.main import app
+from yepcord.yepcord.classes.other import JWT
 from yepcord.yepcord.config import Config
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import b64decode, b64encode
@@ -23,15 +24,6 @@ async def setup_db():
     yield
     for func in app.after_serving_funcs:
         await app.ensure_async(func)()
-
-
-def generateEmailVerificationToken(user_id: int, email: str, key: bytes):
-    key = new(key, str(user_id).encode('utf-8'), sha256).digest()
-    t = int(time())
-    sig = b64encode(new(key, f"{user_id}:{email}:{t}".encode('utf-8'), sha256).digest())
-    token = b64encode(dumps({"id": user_id, "email": email, "time": t}))
-    token += f".{sig}"
-    return token
 
 
 @pt.mark.asyncio
@@ -109,7 +101,7 @@ async def test_verify_email():
     client: TestClientType = app.test_client()
     user = (await create_users(client, 1))[0]
 
-    token = generateEmailVerificationToken(int(user["id"]), user["email"], b64decode(Config.KEY))
+    token = JWT.encode({"id": int(user["id"]), "email": user["email"]}, b64decode(Config.KEY), expires_after=600)
 
     resp = await client.post("/api/v9/auth/verify", json={"token": ""})
     assert resp.status_code == 400
@@ -117,7 +109,7 @@ async def test_verify_email():
     assert resp.status_code == 400
 
     resp = await client.post("/api/v9/auth/verify", json={'token': token})
-    assert resp.status_code == 200
+    assert resp.status_code == 200, await resp.get_json()
     json = await resp.get_json()
     assert json["token"]
     assert json["user_id"] == user["id"]

@@ -15,6 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+import json
 from asyncio import get_event_loop, sleep as asleep
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from io import BytesIO
@@ -33,9 +34,12 @@ def b64decode(data: Union[str, bytes]) -> bytes:
     return _b64decode(data)
 
 
-def b64encode(data: Union[str, bytes]) -> str:
+def b64encode(data: Union[str, bytes, dict, list]) -> str:
+    if isinstance(data, (dict, list)):
+        data = json.dumps(data)
     if isinstance(data, str):
         data = data.encode("utf8")
+
     data = _b64encode(data).decode("utf8")
     for search, replace in (('+', '-'), ('/', '_'), ('=', '')):
         data = data.replace(search, replace)
@@ -118,3 +122,8 @@ def unfreeze(obj: Any) -> Any:
     if isinstance(obj, list):
         return [unfreeze(v) for v in obj]
     return obj
+
+
+def assert_(value: ..., exc: Union[type[BaseException], BaseException] = ValueError) -> None:
+    if not value:
+        raise exc

@@ -16,6 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from __future__ import annotations
 import re
 from base64 import b32decode
 from hashlib import sha512
@@ -30,7 +31,7 @@ from mailers import Mailer
 from mailers.exceptions import DeliveryError
 
 from ..config import Config
-from ..utils import b64decode, b64encode
+from ..utils import b64decode, b64encode, assert_
 
 
 class ZlibCompressor:
@@ -53,6 +54,15 @@ class EmailMsg:
             await mailer.send_message(self.to, self.subject, self.text, from_address="no-reply@yepcord.ml")
         except DeliveryError:
             pass
+
+    @classmethod
+    async def send_verification(cls, email: str, token: str) -> None:
+        await cls(email, "Confirm your e-mail in YEPCord", (
+            f"Thank you for signing up for a YEPCord account!\n"
+            f"First you need to make sure that you are you!\n"
+            f"Click to verify your email address:\n"
+            f"https://{Config.PUBLIC_HOST}/verify#token={token}"
+        )).send()
 
 
 class JWT:
@@ -79,11 +89,19 @@ class JWT:
             return loads(payload)
 
     @staticmethod
-    def encode(payload: dict, secret: Union[str, bytes], expire_timestamp: Union[int, float] = 0) -> str:
+    def encode(
+            payload: dict, secret: Union[str, bytes], expires_at: Optional[Union[int, float]] = None,
+            expires_after: Optional[int] = None
+    ) -> str:
+        if expires_after is not None:
+            expires_at = int(time() + expires_after)
+        if expires_at is None:
+            expires_at = 0
+
         header = {
             "alg": "HS512",
             "typ": "JWT",
-            "exp": int(expire_timestamp)
+            "exp": int(expires_at)
         }
         header = b64encode(dumps(header, separators=(',', ':')))
         payload = b64encode(dumps(payload, separators=(',', ':')))
@@ -147,3 +165,32 @@ class MFA:
     @property
     def valid(self) -> bool:
         return bool(self._re.match(self.key))
+
+    @staticmethod
+    async def get_from_ticket(ticket: str) -> Optional[MFA]:
+        from ..models import User
+
+        try:
+            user_id, session_id, sig = ticket.split(".")
+            user_id = loads(b64decode(user_id).decode("utf8"))[0]
+            session_id = int.from_bytes(b64decode(session_id), "big")
+            sig = b64decode(sig).decode("utf8")
+
+            assert_(user := await User.y.get(user_id))
+            assert_(payload := JWT.decode(sig, b64decode(Config.KEY)))
+            assert_(payload["u"] == user.id)
+            assert_(payload["s"] == session_id)
+        except (ValueError, IndexError):
+            return
+
+        return MFA(await user.get_mfa_key(), user_id)
+
+    @staticmethod
+    async def nonce_to_code(nonce: str) -> Optional[str]:
+        key = b64decode(Config.KEY)
+
+        if not (payload := JWT.decode(nonce, key)):
+            return
+        token = JWT.encode({"code": payload["c"]}, key)
+        signature = token.split(".")[2]
+        return signature.replace("-", "").replace("_", "")[:8].upper()

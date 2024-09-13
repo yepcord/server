@@ -26,9 +26,11 @@ from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmai
 from ..utils import captcha
 from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
-from ...yepcord.classes.other import EmailMsg
+from ...yepcord.classes.other import EmailMsg, MFA, JWT
+from ...yepcord.config import Config
 from ...yepcord.ctx import getCore, getGw
-from ...yepcord.errors import InvalidDataErr, Errors, PasswordDoesNotMatch, Invalid2FaCode, Invalid2FaAuthTicket
+from ...yepcord.errors import InvalidDataErr, Errors, PasswordDoesNotMatch, Invalid2FaCode, Invalid2FaAuthTicket, \
+    InvalidToken
 from ...yepcord.models import Session, User
 from ...yepcord.utils import LOCALES, b64decode
 
@@ -65,7 +67,7 @@ async def login_with_mfa(data: MfaLogin):
         raise Invalid2FaAuthTicket
     if not (code := data.code):
         raise Invalid2FaCode
-    if not (mfa := await getCore().getMfaFromTicket(ticket)):
+    if not (mfa := await MFA.get_from_ticket(ticket)):
         raise Invalid2FaAuthTicket
     code = code.replace("-", "").replace(" ", "")
     user = await User.y.get(mfa.uid)
@@ -93,9 +95,9 @@ async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User 
         raise PasswordDoesNotMatch
     if not user.check_password(password):
         raise PasswordDoesNotMatch
-    nonce = await getCore().generateUserMfaNonce(user)
+    nonce = await user.generate_mfa_nonce()
 
-    code = await getCore().mfaNonceToCode(nonce[0])
+    code = await MFA.nonce_to_code(nonce[0])
     await EmailMsg(
         user.email,
         f"Your one-time verification key is {code}",
@@ -111,19 +113,22 @@ async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User 
 @auth.post("/verify/resend")
 async def resend_verification_email(user: User = DepUser):
     if not user.verified:
-        await getCore().sendVerificationEmail(user)
+        await user.send_verification_email()
     return "", 204
 
 
 @auth.post("/verify", body_cls=VerifyEmail)
 async def verify_email(data: VerifyEmail):
     if not data.token:
-        raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
-    try:
-        email = jloads(b64decode(data.token.split(".")[0]).decode("utf8"))["email"]
-        user = await User.get(email=email, verified=False)
-    except (ValueError, DoesNotExist):
-        raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
-    await getCore().verifyEmail(user, data.token)
+        raise InvalidToken
+
+    if (data := JWT.decode(data.token, b64decode(Config.KEY))) is None:
+        raise InvalidToken
+    if (user := await User.get_or_none(id=data["id"], email=data["email"], verified=False)) is None:
+        raise InvalidToken
+
+    user.verified = True
+    await user.save(update_fields=["verified"])
+
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
     return {"token": (await Session.Y.create(user)).token, "user_id": str(user.id)}

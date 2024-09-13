@@ -26,6 +26,7 @@ import pytest as pt
 import pytest_asyncio
 from tortoise import Tortoise
 
+from yepcord.yepcord.classes.other import MFA
 from yepcord.yepcord.config import Config, ConfigModel
 from yepcord.yepcord.core import Core
 from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType, GuildPermissions, MfaNonceType
@@ -265,8 +266,7 @@ async def test_getMfa():
 
 
 @pt.mark.asyncio
-async def test_getMfaFromTicket_success(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_getMfaFromTicket_success():
     user = await User.y.get(VARS["user_id"])
     settings = await user.settings
     settings.mfa = "b" * 16
@@ -278,31 +278,30 @@ async def test_getMfaFromTicket_success(testCore: Coroutine[Any, Any, Core]):
     except MfaRequiredErr as e:
         ticket = b64encode(dumps([e.uid, "login"])) + f".{e.sid}.{e.sig}"
 
-    mfa = await testCore.getMfaFromTicket(ticket)
+    mfa = await MFA.get_from_ticket(ticket)
     assert mfa is not None
     assert mfa.key.lower() == "b" * 16
 
 
 @pt.mark.asyncio
-async def test_generateUserMfaNonce(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_generateUserMfaNonce():
     user = await User.y.get(VARS["user_id"])
     settings = await user.settings
     settings.mfa = "c" * 16
     await settings.save(update_fields=["mfa"])
     user = await User.y.get(VARS["user_id"])
-    VARS["mfa_nonce"] = await testCore.generateUserMfaNonce(user)
+    VARS["mfa_nonce"] = await user.generate_mfa_nonce()
 
 
 @pt.mark.asyncio
 async def test_verifyUserMfaNonce():
     user = await User.y.get(VARS["user_id"])
     nonce, regenerate_nonce = VARS["mfa_nonce"]
-    await core.verifyUserMfaNonce(user, nonce, MfaNonceType.NORMAL)
-    await core.verifyUserMfaNonce(user, regenerate_nonce, MfaNonceType.REGENERATE)
+    await user.verify_mfa_nonce(nonce, MfaNonceType.NORMAL)
+    await user.verify_mfa_nonce(regenerate_nonce, MfaNonceType.REGENERATE)
     for args in ((nonce, MfaNonceType.REGENERATE), (regenerate_nonce, MfaNonceType.NORMAL)):
         with pt.raises(InvalidDataErr):
-            await core.verifyUserMfaNonce(user, *args)
+            await user.verify_mfa_nonce(*args)
     del VARS["mfa_nonce"]
 
 

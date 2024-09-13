@@ -210,3 +210,8 @@ AlreadyFriends = BadRequest(80007)
 
 Unauthorized = InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
 Error0 = InvalidDataErr(400, Errors.make(0))
+
+InvalidToken = InvalidDataErr(400, Errors.make(50035, {"token": {
+    "code": "TOKEN_INVALID",
+    "message": "Invalid token."
+}}))

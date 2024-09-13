@@ -76,7 +76,7 @@ async def update_me(data: UserUpdate, user: User = DepUser):
         data.new_password = None
     if data.email is not None:
         await user.change_email(data.email)
-        await getCore().sendVerificationEmail(user)
+        await user.send_verification_email()
         data.email = None
     if data.avatar != "" and data.avatar is not None:
         if (img := getImage(data.avatar)) and validImage(img):
@@ -332,8 +332,8 @@ async def get_backup_codes(data: MfaCodesVerification, user: User = DepUser):
             "code": "BASE_TYPE_REQUIRED", "message": "This field is required"
         }}))
     regenerate = data.regenerate
-    await getCore().verifyUserMfaNonce(user, nonce, MfaNonceType.REGENERATE if regenerate else MfaNonceType.NORMAL)
-    if await getCore().mfaNonceToCode(nonce) != key:
+    await user.verify_mfa_nonce(nonce, MfaNonceType.REGENERATE if regenerate else MfaNonceType.NORMAL)
+    if await MFA.nonce_to_code(nonce) != key:
         raise InvalidKey
 
     codes = await user.create_backup_codes() if regenerate else await user.get_backup_codes()
