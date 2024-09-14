@@ -26,7 +26,8 @@ from typing import Optional, cast
 
 from bcrypt import checkpw, hashpw, gensalt
 from tortoise import fields
-from tortoise.expressions import Q
+from tortoise.expressions import Q, Subquery
+from tortoise.functions import Count
 from tortoise.transactions import atomic
 
 import yepcord.yepcord.models as models
@@ -150,8 +151,10 @@ class User(Model):
         mfa = MFA(await self.get_mfa_key(), self.id)
         return mfa if mfa.valid else None
 
-    async def profile_json(self, other_user: User, with_mutual_guilds: bool = False, mutual_friends_count: bool = False,
-                           guild_id: int = None) -> dict:
+    async def profile_json(
+            self, other_user: User, with_mutual_guilds: bool = False, mutual_friends_count: bool = False,
+            guild_id: int = None
+    ) -> dict:
         data = await self.data
         premium_since = self.created_at.strftime("%Y-%m-%dT%H:%M:%SZ")
         connections = await models.ConnectedAccount.filter(user=self, verified=True, visibility=1)
@@ -184,7 +187,21 @@ class User(Model):
         if mutual_friends_count:
             data["mutual_friends_count"] = 0  # TODO: add mutual friends count
         if with_mutual_guilds:
-            data["mutual_guilds"] = await getCore().getMutualGuildsJ(self, other_user)
+            query = Q(user=self)
+            if self != other_user:
+                query &= Q(guild__id__in=Subquery(
+                    models.GuildMember
+                    .filter(user__id__in=[self.id, other_user.id])
+                    .group_by("guild_id")
+                    .annotate(user_count=Count("user__id", distinct=True))
+                    .filter(user_count=2)
+                    .values_list("guild_id", flat=True)
+                ))
+
+            data["mutual_guilds"] = [
+                {"id": str(guild_id), "nick": nick}
+                for nick, guild_id in await models.GuildMember.filter(query).values_list("nick", "guild_id")
+            ]
         if self.is_bot:
             data["user"]["bot"] = True
 
@@ -343,3 +360,9 @@ class User(Model):
     async def send_verification_email(self) -> None:
         token = JWT.encode({"id": self.id, "email": self.email}, b64decode(Config.KEY), expires_after=600)
         await EmailMsg.send_verification(self.email, token)
+
+    async def get_read_states(self) -> list[models.ReadState]:
+        if self.is_bot:
+            return []
+
+        return await models.ReadState.filter(user=self).select_related("channel")

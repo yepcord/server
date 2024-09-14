@@ -24,7 +24,7 @@ import maxminddb
 from . import ctx
 from .classes.singleton import Singleton
 from .config import Config
-from .models import User, ReadState, Guild, GuildMember
+from .models import Guild
 from .storage import getStorage
 from .utils import b64decode
 
@@ -56,31 +56,8 @@ class Core(Singleton):
 
     #    return message
 
-    async def getReadStatesJ(self, user: User) -> list:
-        states = []
-        st: ReadState
-        for st in await ReadState.filter(user=user).select_related("channel", "user"):
-            states.append(await st.ds_json())
-        return states
-
     async def getGuild(self, guild_id: int) -> Optional[Guild]:
         return await Guild.get_or_none(id=guild_id).select_related("owner")
-
-    async def getMutualGuildsJ(self, user: User, current_user: User) -> list[dict[str, str]]:
-        user_guilds_member = await GuildMember.filter(user=user).select_related("guild")
-        user_guild_ids = [member.guild.id for member in user_guilds_member]
-        user_guilds_member = {member.guild.id: member for member in user_guilds_member}
-
-        current_user_guilds_member = await GuildMember.filter(user=current_user).select_related("guild")
-        current_user_guild_ids = [member.guild.id for member in current_user_guilds_member]
-
-        mutual_guilds_ids = set(user_guild_ids) & set(current_user_guild_ids)
-        mutual_guilds_json = []
-        for guild_id in mutual_guilds_ids:
-            member = user_guilds_member[guild_id]
-            mutual_guilds_json.append({"id": str(guild_id), "nick": member.nick})
-
-        return mutual_guilds_json
 
     def getLanguageCode(self, ip: str, default: str = "en-US") -> str:
         cls = self.__class__

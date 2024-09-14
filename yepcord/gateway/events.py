@@ -141,7 +141,10 @@ class ReadyEvent(DispatchEvent):
                 "read_state": {
                     "version": 1,
                     "partial": False,
-                    "entries": await getCore().getReadStatesJ(self.user) if not self.user.is_bot else []
+                    "entries": [
+                        await state.ds_json()
+                        for state in await self.user.get_read_states()
+                    ]
                 },
                 "resume_gateway_url": f"wss://{Config.GATEWAY_HOST}/",
                 "session_type": "normal",
