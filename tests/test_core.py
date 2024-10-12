@@ -25,7 +25,7 @@ import pytest as pt
 import pytest_asyncio
 from tortoise import Tortoise
 
-from yepcord.yepcord.classes.other import MFA
+from yepcord.yepcord.utils.mfa import MFA
 from yepcord.yepcord.config import Config, ConfigModel
 from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType, GuildPermissions, MfaNonceType
 from yepcord.yepcord.errors import InvalidDataErr, MfaRequiredErr

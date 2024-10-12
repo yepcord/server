@@ -8,7 +8,7 @@ from typing import Optional, Union, Awaitable, Callable
 from quart.typing import TestWebsocketConnectionProtocol
 
 from yepcord.rest_api.main import app as _app
-from yepcord.yepcord.classes.other import MFA
+from yepcord.yepcord.utils.mfa import MFA
 from yepcord.yepcord.enums import ChannelType, GatewayOp
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import getImage
@@ -58,7 +58,7 @@ async def create_users(app: TestClientType, count: int = 1) -> list[dict]:
 
 async def enable_mfa(app: TestClientType, user: dict, mfa: MFA) -> None:
     resp = await app.post("/api/v9/users/@me/mfa/totp/enable", headers={"Authorization": user["token"]},
-                          json={"code": mfa.getCode(), "secret": mfa.key, "password": user["password"]})
+                          json={"code": mfa.get_code(), "secret": mfa.key, "password": user["password"]})
     assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     json = await resp.get_json()
     assert json["token"]

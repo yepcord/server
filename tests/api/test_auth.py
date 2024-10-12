@@ -7,7 +7,7 @@ import pytest as pt
 import pytest_asyncio
 
 from yepcord.rest_api.main import app
-from yepcord.yepcord.classes.other import JWT
+from yepcord.yepcord.utils.jwt import JWT
 from yepcord.yepcord.config import Config
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import b64decode, b64encode

@@ -712,7 +712,7 @@ async def delete_guild(data: GuildDelete, user: User = DepUser, guild: Guild = D
     if mfa := await user.mfa:
         if not data.code:
             raise Invalid2FaCode
-        if data.code not in mfa.getCodes():
+        if data.code not in mfa.get_codes():
             if not (len(data.code) == 8 and await user.use_backup_code(data.code)):
                 raise Invalid2FaCode
 

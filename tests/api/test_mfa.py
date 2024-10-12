@@ -2,9 +2,10 @@ import pytest as pt
 import pytest_asyncio
 
 from yepcord.rest_api.main import app
-from yepcord.yepcord.classes.other import MFA, JWT
+from yepcord.yepcord.utils.jwt import JWT
 from yepcord.yepcord.config import Config
 from yepcord.yepcord.utils import b64decode
+from yepcord.yepcord.utils.mfa import MFA
 from .utils import TestClientType, create_users, enable_mfa
 from ..utils import register_app_error_handler
 
@@ -58,21 +59,21 @@ async def test_mfa_enable():
     secret = "a" * 16
     mfa = MFA(secret, 0)
 
-    code = mfa.getCode()
+    code = mfa.get_code()
     invalid_code = (code + str((int(code[-1]) + 1) % 10))[1:]
     resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
                              json={'code': invalid_code, 'secret': secret, 'password': user["password"]})
     assert resp.status_code == 400
 
     resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
-                             json={'code': mfa.getCode(), 'secret': secret, 'password': user["password"]})
+                             json={'code': mfa.get_code(), 'secret': secret, 'password': user["password"]})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"]
     user["token"] = json["token"]
     headers = {"Authorization": user["token"]}
     resp = await client.post("/api/v9/users/@me/mfa/totp/enable", headers=headers,
-                             json={'code': mfa.getCode(), 'secret': secret, 'password': user["password"]})
+                             json={'code': mfa.get_code(), 'secret': secret, 'password': user["password"]})
     assert resp.status_code == 404
 
     check_codes(json["backup_codes"], user_id)
@@ -146,7 +147,7 @@ async def test_login_with_mfa():
     assert json["mfa"]
     assert (ticket := json["ticket"])
 
-    code = mfa.getCode()
+    code = mfa.get_code()
     invalid_code = (code + str((int(code[-1]) + 1) % 10))[1:]
 
     resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": "", "code": ""})  # No ticket
@@ -158,7 +159,7 @@ async def test_login_with_mfa():
     resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": ticket, "code": invalid_code})  # Invalid code
     assert resp.status_code == 400
 
-    resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": ticket, "code": mfa.getCode()})
+    resp = await client.post('/api/v9/auth/mfa/totp', json={"ticket": ticket, "code": mfa.get_code()})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"]
@@ -178,12 +179,12 @@ async def test_disable_mfa():
     resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': ""})
     assert resp.status_code == 400
 
-    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
+    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.get_code()})
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["token"]
     user["token"] = json["token"]
     headers = {"Authorization": user["token"]}
 
-    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.getCode()})
+    resp = await client.post("/api/v9/users/@me/mfa/totp/disable", headers=headers, json={'code': mfa.get_code()})
     assert resp.status_code == 404

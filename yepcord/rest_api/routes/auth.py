@@ -23,7 +23,9 @@ from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmai
 from ..utils import captcha
 from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
-from ...yepcord.classes.other import EmailMsg, MFA, JWT
+from ...yepcord.utils.mfa import MFA
+from ...yepcord.utils.jwt import JWT
+from ...yepcord.utils.email_msg import EmailMsg
 from ...yepcord.config import Config
 from ...yepcord.ctx import getGw
 from ...yepcord.errors import PasswordDoesNotMatch, Invalid2FaCode, Invalid2FaAuthTicket, InvalidToken
@@ -67,7 +69,7 @@ async def login_with_mfa(data: MfaLogin):
         raise Invalid2FaAuthTicket
     code = code.replace("-", "").replace(" ", "")
     user = await User.y.get(mfa.uid)
-    if code not in mfa.getCodes():
+    if code not in mfa.get_codes():
         if not (len(code) == 8 and await user.use_backup_code(code)):
             raise Invalid2FaCode
     sess = await Session.Y.create(user)
@@ -94,14 +96,7 @@ async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User 
     nonce = await user.generate_mfa_nonce()
 
     code = await MFA.nonce_to_code(nonce[0])
-    await EmailMsg(
-        user.email,
-        f"Your one-time verification key is {code}",
-        f"It looks like you're trying to view your account's backup codes.\n"
-        f"This verification key expires in 10 minutes. This key is extremely sensitive, treat it like a "
-        f"password and do not share it with anyone.\n"
-        f"Enter it in the app to unlock your backup codes:\n{code}"
-    ).send()
+    await EmailMsg.send_mfa_code(user.email, code)
 
     return {"nonce": nonce[0], "regenerate_nonce": nonce[1]}
 

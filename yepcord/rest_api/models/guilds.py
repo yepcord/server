@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
 
 from .channels import PermissionOverwriteModel
-from ...yepcord.classes.other import BitFlags
+from ...yepcord.utils.bit_flags import BitFlags
 from ...yepcord.enums import SystemChannelFlags, ChannelType, ScheduledEventEntityType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.utils import getImage, validImage, LOCALES

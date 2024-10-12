@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import warnings
 from json import dumps as jdumps
-from typing import Optional, Union
+from typing import Union
 
 from quart import Websocket
 from redis.asyncio import Redis
@@ -29,7 +29,7 @@ from tortoise.expressions import Q
 from .events import *
 from .presences import Presences, Presence
 from .utils import require_auth, get_token_type, TokenType, init_redis_pool
-from ..yepcord.classes.fakeredis import FakeRedis
+from ..yepcord.utils.fakeredis import FakeRedis
 from ..yepcord.enums import GatewayOp, RelationshipType
 from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember, Guild
 from ..yepcord.mq_broker import getBroker

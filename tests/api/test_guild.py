@@ -2,7 +2,7 @@ import pytest as pt
 import pytest_asyncio
 
 from yepcord.rest_api.main import app
-from yepcord.yepcord.classes.other import MFA
+from yepcord.yepcord.utils.mfa import MFA
 from yepcord.yepcord.enums import ChannelType
 from yepcord.yepcord.snowflake import Snowflake
 from tests.api.utils import TestClientType, create_users, create_guild, create_invite, enable_mfa, create_guild_channel, \
@@ -306,7 +306,7 @@ async def test_delete_guild():
     resp = await client.post(f"/api/v9/guilds/{guild['id']}/delete", headers=headers1, json={"code": "wrong"})
     assert resp.status_code == 400
 
-    resp = await client.post(f"/api/v9/guilds/{guild['id']}/delete", headers=headers1, json={"code": mfa.getCode()})
+    resp = await client.post(f"/api/v9/guilds/{guild['id']}/delete", headers=headers1, json={"code": mfa.get_code()})
     assert resp.status_code == 204
 
 

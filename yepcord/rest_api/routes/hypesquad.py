@@ -20,7 +20,7 @@ from ..dependencies import DepUser
 from ..models.hypesquad import HypesquadHouseChange
 from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
-from ...yepcord.classes.other import BitFlags
+from ...yepcord.utils.bit_flags import BitFlags
 from ...yepcord.ctx import getGw
 from ...yepcord.enums import UserFlags
 from ...yepcord.models import User

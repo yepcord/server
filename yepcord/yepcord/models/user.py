@@ -32,7 +32,9 @@ from tortoise.transactions import atomic
 
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
-from ..classes.other import MFA, JWT, EmailMsg
+from ..utils.mfa import MFA
+from ..utils.jwt import JWT
+from ..utils.email_msg import EmailMsg
 from ..config import Config
 from ..enums import RelationshipType, MfaNonceType
 from ..errors import InvalidDataErr, Errors, MfaRequiredErr, UnknownUser, InvalidKey

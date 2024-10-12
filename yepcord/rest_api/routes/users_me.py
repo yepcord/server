@@ -29,7 +29,7 @@ from ..y_blueprint import YBlueprint
 from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, RelationshipRemoveEvent, UserUpdateEvent, \
     UserNoteUpdateEvent, UserSettingsProtoUpdateEvent, GuildDeleteEvent, GuildMemberRemoveEvent, UserDeleteEvent, \
     UserConnectionsUpdate
-from ...yepcord.classes.other import MFA
+from ...yepcord.utils.mfa import MFA
 from ...yepcord.config import Config
 from ...yepcord.ctx import getGw
 from ...yepcord.enums import RelationshipType, ChannelType, MfaNonceType
@@ -288,7 +288,7 @@ async def enable_mfa(data: MfaEnable, session: Session = DepSession):
     mfa = MFA(secret, user.id)
     if not mfa.valid:
         raise Invalid2FaSecret
-    if not (code := data.code) or code not in mfa.getCodes():
+    if not (code := data.code) or code not in mfa.get_codes():
         raise Invalid2FaCode
     settings.mfa = secret
     await settings.save(update_fields=["mfa"])
@@ -312,7 +312,7 @@ async def disable_mfa(data: MfaDisable, session: Session = DepSession):
         raise NotYet2Fa
     mfa = await user.mfa
     code = code.replace("-", "").replace(" ", "")
-    if code not in mfa.getCodes():
+    if code not in mfa.get_codes():
         if not (len(code) == 8 and await user.use_backup_code(code)):
             raise Invalid2FaCode
     settings.mfa = None

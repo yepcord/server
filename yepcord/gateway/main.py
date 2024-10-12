@@ -20,7 +20,7 @@ from quart import Quart, websocket, Websocket
 from tortoise.contrib.quart import register_tortoise
 
 from ..yepcord.config import Config
-from ..yepcord.classes.other import ZlibCompressor
+from .utils import ZlibCompressor
 from json import loads as jloads
 from asyncio import CancelledError
 from .gateway import Gateway
