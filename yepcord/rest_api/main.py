@@ -26,6 +26,7 @@ from .routes.applications import applications
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.connections import connections
+from .routes.gifs import gifs
 from .routes.guilds import guilds
 from .routes.hypesquad import hypesquad
 from .routes.interactions import interactions
@@ -36,7 +37,7 @@ from .routes.teams import teams
 from .routes.users import users
 from .routes.users_me import users_me
 from .routes.webhooks import webhooks
-from ..yepcord.classes.gifs import Gifs
+from ..yepcord.utils.gifs import Gifs
 from ..yepcord.config import Config
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.gateway_dispatcher import GatewayDispatcher
@@ -52,7 +53,7 @@ app = YEPcord("YEPcord-api")
 QuartSchema(app)
 storage = getStorage()
 gateway = GatewayDispatcher()
-gifs = Gifs(Config.TENOR_KEY)
+gifs_ = Gifs(Config.TENOR_KEY)
 
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 

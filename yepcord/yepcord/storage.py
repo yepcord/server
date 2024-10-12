@@ -31,7 +31,7 @@ from typing import Optional, Tuple, Union
 from PIL import Image, ImageSequence
 from aiofiles import open as aopen
 
-from .classes.singleton import SingletonMeta
+from .utils.singleton import SingletonMeta
 from .config import Config
 from .models import Attachment
 
@@ -92,7 +92,7 @@ async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
         b = BytesIO()
         save_all = True
         if form_.lower() == "jpg":
-            img = img.convert('RGB')
+            img = img.convert("RGB")
             form_ = "JPEG"
             save_all = False
         img.save(b, format=form_, save_all=save_all)

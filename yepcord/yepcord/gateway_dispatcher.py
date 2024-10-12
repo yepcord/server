@@ -24,7 +24,7 @@ from typing import Optional
 from tortoise.expressions import RawSQL
 
 from . import ctx
-from .classes.singleton import Singleton
+from .utils.singleton import Singleton
 from .enums import ChannelType
 from .errors import InvalidDataErr
 from .models import Channel, Guild, Role

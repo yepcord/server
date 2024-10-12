@@ -25,7 +25,7 @@ from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from .classes.singleton import Singleton
+from .utils.singleton import Singleton
 
 
 def _load_config() -> dict:

@@ -28,7 +28,7 @@ gifs = Blueprint("gifs", __name__)
 async def api_gifs_trending_get():
     result = {"gifs": [], "categories": []}
     for category in await Gifs.getInstance().get_categories():
-        result["categories"].append(category.json)
+        result["categories"].append(category.json())
         result["categories"][-1]["src"] = result["categories"][-1]["src"][:-4] + ".mp4"
     return result
 
@@ -46,7 +46,7 @@ async def api_gifs_select_post():
 @gifs.get("/search")
 async def api_gifs_search():
     search = await Gifs.getInstance().search(**request.args)
-    return [gif.json for gif in search.gifs]
+    return [gif.json() for gif in search.gifs]
 
 
 @gifs.get("/suggest")
