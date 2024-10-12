@@ -27,7 +27,7 @@ from magic import from_buffer
 from quart import request, current_app, g
 
 import yepcord.yepcord.models as models
-from ..yepcord.classes.captcha import Captcha
+from ..yepcord.utils.captcha import Captcha
 from ..yepcord.config import Config
 from ..yepcord.enums import MessageType
 from ..yepcord.errors import Errors, InvalidDataErr, UnknownChannel, UnknownMessage, InvalidFormBody, \
