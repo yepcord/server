@@ -29,12 +29,12 @@ from quart import request, current_app, g
 import yepcord.yepcord.models as models
 from ..yepcord.classes.captcha import Captcha
 from ..yepcord.config import Config
-from ..yepcord.ctx import getCore, getCDNStorage
 from ..yepcord.enums import MessageType
 from ..yepcord.errors import Errors, InvalidDataErr, UnknownChannel, UnknownMessage, InvalidFormBody, \
     FileExceedsMaxSize, CannotSendEmptyMessage
 from ..yepcord.models import Session, User, Channel, Attachment, Authorization, Bot, Webhook, Message, Sticker
 from ..yepcord.snowflake import Snowflake
+from ..yepcord.storage import getStorage
 
 if TYPE_CHECKING:  # pragma: no cover
     from .models.channels import MessageCreate
@@ -134,7 +134,7 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                     id=Snowflake.makeId(), channel=channel, message=None, filename=name, size=len(content),
                     content_type=content_type, metadata=metadata
                 )
-                await getCDNStorage().uploadAttachment(content, att)
+                await getStorage().uploadAttachment(content, att)
                 attachments.append(att)
     if not data.get("content") and \
             not data.get("embeds") and \

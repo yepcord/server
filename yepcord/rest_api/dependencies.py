@@ -24,7 +24,6 @@ from quart import request
 from typing_extensions import ParamSpec
 
 from yepcord.rest_api.utils import getSessionFromToken
-from yepcord.yepcord.ctx import getCore
 from yepcord.yepcord.errors import InvalidDataErr, Errors, UnknownApplication, UnknownInvite, UnknownMessage, \
     UnknownRole, UnknownGuildTemplate, MissingAccess, Unauthorized
 from yepcord.yepcord.models import Session, Authorization, Bot, User, Channel, Message, Webhook, Invite, Guild, \
@@ -137,7 +136,7 @@ async def depInvite(invite: Optional[str] = None) -> Invite:
 
 
 async def depGuildO(guild: Optional[int] = None, user: User = Depends(depUser())) -> Optional[Guild]:
-    if (guild := await getCore().getGuild(guild)) is None:
+    if (guild := await Guild.get_or_none(id=guild).select_related("owner")) is None:
         return
     if not await GuildMember.filter(guild=guild, user=user).exists():
         raise MissingAccess

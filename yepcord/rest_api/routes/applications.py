@@ -22,11 +22,11 @@ from ..dependencies import DepApplication, DepUser, DepGuildO
 from ..models.applications import CreateApplication, UpdateApplication, UpdateApplicationBot, GetCommandsQS, \
     CreateCommand
 from ..y_blueprint import YBlueprint
-from ...yepcord.ctx import getCDNStorage
 from ...yepcord.enums import ApplicationCommandType
 from ...yepcord.models import User, UserData, UserSettings, Application, Bot, gen_secret_key, gen_token_secret, \
     ApplicationCommand, Guild
 from ...yepcord.snowflake import Snowflake
+from ...yepcord.storage import getStorage
 from ...yepcord.utils import getImage
 
 # Base path is /api/vX/applications
@@ -71,10 +71,10 @@ async def edit_application(data: UpdateApplication, application: Application = D
     changes = data.model_dump(exclude_defaults=True)
     if "icon" in changes and changes["icon"] is not None:
         img = getImage(changes["icon"])
-        image = await getCDNStorage().setAppIconFromBytesIO(application.id, img)
+        image = await getStorage().setAppIconFromBytesIO(application.id, img)
         changes["icon"] = image
         if bot_data.avatar == application.icon:
-            await bot_data.update(avatar=await getCDNStorage().setAvatarFromBytesIO(application.id, img))
+            await bot_data.update(avatar=await getStorage().setAvatarFromBytesIO(application.id, img))
 
     bot_changes = {}
     if bot is not None and "bot_public" in changes:
@@ -98,7 +98,7 @@ async def edit_application_bot(data: UpdateApplicationBot, application: Applicat
     changes = data.model_dump(exclude_defaults=True)
     if "avatar" in changes and changes["avatar"] is not None:
         img = getImage(changes["avatar"])
-        avatar_hash = await getCDNStorage().setAvatarFromBytesIO(application.id, img)
+        avatar_hash = await getStorage().setAvatarFromBytesIO(application.id, img)
         changes["avatar"] = avatar_hash
 
     if changes:

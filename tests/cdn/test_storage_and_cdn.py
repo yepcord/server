@@ -25,12 +25,11 @@ from PIL import Image
 
 from yepcord.cdn.main import app
 from yepcord.yepcord.config import Config
-from yepcord.yepcord.core import Core
 from yepcord.yepcord.enums import StickerFormat, StickerType, ChannelType
 from yepcord.yepcord.models import User, Sticker, Emoji, Channel, Message, Attachment, Guild
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.storage import getStorage, _Storage
-from yepcord.yepcord.utils import getImage, b64decode
+from yepcord.yepcord.utils import getImage
 from .ftp_server import ftp_server
 from .local_server import local_server
 from .s3_server import s3_server
@@ -39,7 +38,6 @@ from ..yep_image import YEP_IMAGE
 
 register_app_error_handler(app)
 TestClientType = app.test_client_class
-core = Core()
 
 
 @pt.fixture

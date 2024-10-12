@@ -16,33 +16,13 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-import os.path
-from typing import Optional
-
-import maxminddb
-
-from . import ctx
 from .classes.singleton import Singleton
-from .config import Config
-from .models import Guild
-from .storage import getStorage
-from .utils import b64decode
 
 
 # noinspection PyMethodMayBeStatic
 class Core(Singleton):
-    COUNTRY_TO_LANG = {
-        "UA": "uk", "US": "en-US", "BG": "bg", "CZ": "cs", "DK": "da", "DE": "de", "GR": "el", "GB": "en-GB",
-        "ES": "es-ES", "FI": "fi", "FR": "fr", "IN": "hi", "HR": "hr", "HU": "hu", "IT": "it", "JP": "ja",
-        "KR": "ko", "LT": "lt", "NL": "nl", "NO": "no", "PL": "pl", "BR": "pt-BR", "RO": "ro", "RU": "RU",
-        "SE": "sv-SE", "TH": "th", "TR": "tr", "VN": "vi", "CN": "zh-CN", "TW": "zh-TW",
-    }
-    IP_DATABASE: Optional[maxminddb.Reader] = None
-
-    def __init__(self):
-        self.key = b64decode(Config.KEY)
-
-    #async def sendMessage(self, message: Message) -> Message:
+    ...
+    # async def sendMessage(self, message: Message) -> Message:
     #    async def _addToReadStates():  # TODO: recalculate read states when requested by user
     #        users = await self.getRelatedUsersToChannel(message.channel)
     #        if message.author in users:
@@ -53,28 +33,5 @@ class Core(Singleton):
     #            )
     #            read_state.count += 1
     #            await read_state.save(update_fields=["count"])
-
     #    return message
 
-    async def getGuild(self, guild_id: int) -> Optional[Guild]:
-        return await Guild.get_or_none(id=guild_id).select_related("owner")
-
-    def getLanguageCode(self, ip: str, default: str = "en-US") -> str:
-        cls = self.__class__
-
-        if cls.IP_DATABASE is None and not os.path.exists("other/ip_database.mmdb"):
-            return default
-        if cls.IP_DATABASE is None:
-            cls.IP_DATABASE = maxminddb.open_database("other/ip_database.mmdb")
-
-        try:
-            country_code = (cls.IP_DATABASE.get(ip) or {"country": {"iso_code": None}})["country"]["iso_code"] \
-                           or default
-        except (ValueError, KeyError):
-            return default
-
-        return cls.COUNTRY_TO_LANG.get(country_code, default)
-
-
-ctx._get_core = Core.getInstance
-ctx._get_storage = getStorage

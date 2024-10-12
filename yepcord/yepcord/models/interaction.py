@@ -23,7 +23,6 @@ from tortoise import fields
 
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
-from ..ctx import getCore
 from ..enums import InteractionType, ChannelType, InteractionStatus
 from ..utils import b64encode, b64decode
 

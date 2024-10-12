@@ -21,22 +21,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Callable
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .core import Core
-    from .storage import _Storage
     from .gateway_dispatcher import GatewayDispatcher
 
 
-_get_core: Callable[[], Optional[Core]] = lambda: None
-_get_storage: Callable[[], Optional[_Storage]] = lambda: None
 _get_gw: Callable[[], Optional[GatewayDispatcher]] = lambda: None
-
-
-def getCore() -> Core:
-    return _get_core()
-
-
-def getCDNStorage() -> _Storage:
-    return _get_storage()
 
 
 def getGw() -> GatewayDispatcher:

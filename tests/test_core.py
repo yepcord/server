@@ -20,7 +20,6 @@ from asyncio import get_event_loop
 from datetime import date
 from json import dumps
 from random import randint
-from typing import Coroutine, Any
 
 import pytest as pt
 import pytest_asyncio
@@ -28,21 +27,18 @@ from tortoise import Tortoise
 
 from yepcord.yepcord.classes.other import MFA
 from yepcord.yepcord.config import Config, ConfigModel
-from yepcord.yepcord.core import Core
 from yepcord.yepcord.enums import UserFlags as UserFlagsE, RelationshipType, ChannelType, GuildPermissions, MfaNonceType
 from yepcord.yepcord.errors import InvalidDataErr, MfaRequiredErr
 from yepcord.yepcord.gateway_dispatcher import GatewayDispatcher
 from yepcord.yepcord.models import User, UserData, Session, Relationship, Guild, Channel, Role, PermissionOverwrite, \
     GuildMember, Message
 from yepcord.yepcord.snowflake import Snowflake
-from yepcord.yepcord.utils import b64encode
+from yepcord.yepcord.utils import b64encode, GeoIp
 
 EMAIL_ID = Snowflake.makeId()
 VARS = {
     "user_id": Snowflake.makeId()
 }
-
-core = Core()
 
 
 @pt.fixture
@@ -57,11 +53,6 @@ async def setup_db():
     await Tortoise.init(db_url=Config.DB_CONNECT_STRING, modules={"models": ["yepcord.yepcord.models"]})
     yield
     await Tortoise.close_connections()
-
-
-@pt.fixture(name='testCore')
-async def _setup_db():
-    return core
 
 
 @pt.mark.asyncio
@@ -344,17 +335,15 @@ async def test_getChannelMessagesCount_success():
 
 
 @pt.mark.asyncio
-async def test_geoip(testCore: Coroutine[Any, Any, Core]):
-    testCore = await testCore
+async def test_geoip():
+    assert GeoIp.get_language_code("1.1.1.1") == "en-US"
+    assert GeoIp.get_language_code("134.249.127.127") == "uk"
+    assert GeoIp.get_language_code("103.21.236.200") == "de"
+    assert GeoIp.get_language_code("109.241.127.127") == "pl"
+    assert GeoIp.get_language_code("5.65.127.127") == "en-GB"
 
-    assert testCore.getLanguageCode("1.1.1.1") == "en-US"
-    assert testCore.getLanguageCode("134.249.127.127") == "uk"
-    assert testCore.getLanguageCode("103.21.236.200") == "de"
-    assert testCore.getLanguageCode("109.241.127.127") == "pl"
-    assert testCore.getLanguageCode("5.65.127.127") == "en-GB"
-
-    assert testCore.getLanguageCode("255.255.255.255") == "en-US"
-    assert testCore.getLanguageCode("255.255.255.255", "uk") == "uk"
+    assert GeoIp.get_language_code("255.255.255.255") == "en-US"
+    assert GeoIp.get_language_code("255.255.255.255", "uk") == "uk"
 
 
 def test_config():

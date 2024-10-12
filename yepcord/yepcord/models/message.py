@@ -24,7 +24,6 @@ from tortoise import fields
 from tortoise.functions import Count
 
 import yepcord.yepcord.models as models
-from ..ctx import getCore
 from ..enums import MessageType
 from ..models._utils import SnowflakeField, Model
 from ..snowflake import Snowflake

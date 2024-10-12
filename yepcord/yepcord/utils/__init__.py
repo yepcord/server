@@ -24,6 +24,8 @@ from typing import Union, Optional, Any
 
 from magic import from_buffer
 
+from .geoip import GeoIp
+
 
 def b64decode(data: Union[str, bytes]) -> bytes:
     if isinstance(data, str):

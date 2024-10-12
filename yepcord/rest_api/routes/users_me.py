@@ -31,7 +31,7 @@ from ...gateway.events import RelationshipAddEvent, DMChannelCreateEvent, Relati
     UserConnectionsUpdate
 from ...yepcord.classes.other import MFA
 from ...yepcord.config import Config
-from ...yepcord.ctx import getCore, getCDNStorage, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import RelationshipType, ChannelType, MfaNonceType
 from ...yepcord.errors import InvalidDataErr, Errors, UnknownToken, UnknownUser, UnknownConnection, UnknownDiscordTag, \
     AlreadyFriends, MalformedUserSettings, Already2Fa, PasswordDoesNotMatch, Invalid2FaSecret, Invalid2FaCode, \
@@ -40,6 +40,7 @@ from ...yepcord.models import User, UserSettingsProto, FrecencySettings, UserNot
     GuildMember, RemoteAuthSession, Relationship, Authorization, Bot, ConnectedAccount, GuildEvent, Channel
 from ...yepcord.models.remote_auth_session import time_plus_150s
 from ...yepcord.proto import FrecencyUserSettings, PreloadedUserSettings
+from ...yepcord.storage import getStorage
 from ...yepcord.utils import execute_after, validImage, getImage
 
 # Base path is /api/vX/users/@me
@@ -80,7 +81,7 @@ async def update_me(data: UserUpdate, user: User = DepUser):
         data.email = None
     if data.avatar != "" and data.avatar is not None:
         if (img := getImage(data.avatar)) and validImage(img):
-            if avatar := await getCDNStorage().setAvatarFromBytesIO(user.id, img):
+            if avatar := await getStorage().setAvatarFromBytesIO(user.id, img):
                 data.avatar = avatar
 
     await userdata.refresh_from_db()
@@ -96,7 +97,7 @@ async def update_me(data: UserUpdate, user: User = DepUser):
 async def get_my_profile(data: UserProfileUpdate, user: User = DepUser):
     if data.banner != "" and data.banner is not None:
         if (img := getImage(data.banner)) and validImage(img):
-            if banner := await getCDNStorage().setBannerFromBytesIO(user.id, img):
+            if banner := await getStorage().setBannerFromBytesIO(user.id, img):
                 data.banner = banner
 
     userdata = await user.data

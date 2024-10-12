@@ -21,7 +21,7 @@ from ..models.invites import GetInviteQuery
 from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelRecipientAddEvent, GuildCreateEvent, \
     InviteDeleteEvent
-from ...yepcord.ctx import getCore, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import ChannelType, GuildPermissions, MessageType
 from ...yepcord.errors import UnknownInvite, UserBanned, MissingAccess
 from ...yepcord.models import Invite, User, Message, GuildMember, GuildBan, Channel

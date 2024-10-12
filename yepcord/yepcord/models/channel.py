@@ -25,7 +25,7 @@ from tortoise.expressions import Q, Subquery
 from tortoise.fields import SET_NULL
 from tortoise.functions import Count
 
-from ..ctx import getCore, getGw
+from ..ctx import getGw
 from ..enums import ChannelType, GUILD_CHANNELS
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model

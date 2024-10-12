@@ -375,7 +375,10 @@ class FTPStorage(_Storage):
             return await super().getAttachment(channel_id, attachment_id, name)
 
 
-def getStorage() -> _Storage:
+_STORAGE_CACHE: dict[str, _Storage] = {}
+
+
+def getStorageNoCache() -> _Storage:
     storage_type = Config.STORAGE["type"]
     assert storage_type in {"local", "s3", "ftp"}, "STORAGE.type must be one of ('local', 's3', 'ftp')"
     storage = Config.STORAGE[storage_type]
@@ -391,3 +394,11 @@ def getStorage() -> _Storage:
             raise Exception("You must set 'host', 'port', 'user', 'password' variables to use ftp storage type.")
         return FTPStorage(**storage)
     return FileStorage(**storage)
+
+
+def getStorage() -> _Storage:
+    storage_type = Config.STORAGE["type"]
+    if storage_type not in _STORAGE_CACHE:
+        _STORAGE_CACHE[storage_type] = getStorageNoCache()
+
+    return _STORAGE_CACHE[storage_type]

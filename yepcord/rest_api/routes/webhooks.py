@@ -26,10 +26,11 @@ from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessag
 from ..utils import processMessageData, process_stickers, validate_reply, processMessage
 from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent, MessageUpdateEvent
-from ...yepcord.ctx import getCore, getCDNStorage, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, MessageFlags
 from ...yepcord.errors import UnknownWebhook, MissingPermissions, CannotSendEmptyMessage
 from ...yepcord.models import User, Channel, Message, Webhook
+from ...yepcord.storage import getStorage
 from ...yepcord.utils import getImage
 
 # Base path is /api/vX/webhooks
@@ -79,7 +80,7 @@ async def edit_webhook(
     if (img := data.avatar) or img is None:
         if img is not None:
             img = getImage(img)
-            if h := await getCDNStorage().setAvatarFromBytesIO(webhook.id, img):
+            if h := await getStorage().setAvatarFromBytesIO(webhook.id, img):
                 img = h
         data.avatar = img
 

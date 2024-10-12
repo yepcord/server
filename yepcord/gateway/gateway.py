@@ -30,9 +30,8 @@ from .events import *
 from .presences import Presences, Presence
 from .utils import require_auth, get_token_type, TokenType, init_redis_pool
 from ..yepcord.classes.fakeredis import FakeRedis
-from ..yepcord.ctx import getCore
 from ..yepcord.enums import GatewayOp, RelationshipType
-from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember
+from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember, Guild
 from ..yepcord.mq_broker import getBroker
 
 
@@ -144,10 +143,10 @@ class GatewayClient:
     async def handle_LAZY_REQUEST(self, data: dict) -> None:  # TODO: handle ranges
         if not (guild_id := int(data.get("guild_id"))): return
         if not data.get("members", True): return
-        guild = await getCore().getGuild(guild_id)
-        if not await GuildMember.exists(guild=guild, user__id=self.user_id):
+        if not await GuildMember.exists(guild__id=guild_id, user__id=self.user_id):
             return
 
+        guild = await Guild.get_or_none(id=guild_id)
         members = await GuildMember.filter(guild=guild).select_related("user")
         statuses = {}
         for member in members:
@@ -165,8 +164,7 @@ class GatewayClient:
     @require_auth
     async def handle_GUILD_MEMBERS(self, data: dict) -> None:
         if not (guild_id := int(data.get("guild_id")[0])): return
-        guild = await getCore().getGuild(guild_id)
-        if not await GuildMember.exists(guild=guild, user__id=self.user_id):
+        if not await GuildMember.exists(guild__id=guild_id, user__id=self.user_id):
             return
 
         query = data.get("query", "")
@@ -175,7 +173,7 @@ class GatewayClient:
         if limit > 100 or limit < 1:
             limit = 100
 
-        q = Q(guild=guild) & (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))
+        q = Q(guild__id=guild_id) & (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))
         if user_ids:
             q &= Q(user__id__in=user_ids)
         members = await GuildMember.filter(q).select_related("user").limit(limit)

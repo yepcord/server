@@ -23,7 +23,6 @@ from time import time
 from typing import List, TYPE_CHECKING, Optional
 
 from ..yepcord.config import Config
-from ..yepcord.ctx import getCore
 from ..yepcord.enums import GatewayOp
 from ..yepcord.models import Emoji, Application, Integration, ConnectedAccount
 from ..yepcord.models.interaction import Interaction

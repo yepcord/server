@@ -16,10 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from json import loads as jloads
-
 from quart import request
-from tortoise.exceptions import DoesNotExist
 
 from ..dependencies import DepSession, DepUser
 from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmail
@@ -28,11 +25,10 @@ from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
 from ...yepcord.classes.other import EmailMsg, MFA, JWT
 from ...yepcord.config import Config
-from ...yepcord.ctx import getCore, getGw
-from ...yepcord.errors import InvalidDataErr, Errors, PasswordDoesNotMatch, Invalid2FaCode, Invalid2FaAuthTicket, \
-    InvalidToken
+from ...yepcord.ctx import getGw
+from ...yepcord.errors import PasswordDoesNotMatch, Invalid2FaCode, Invalid2FaAuthTicket, InvalidToken
 from ...yepcord.models import Session, User
-from ...yepcord.utils import LOCALES, b64decode
+from ...yepcord.utils import LOCALES, b64decode, GeoIp
 
 # Base path is /api/vX/auth
 auth = YBlueprint('auth', __name__)
@@ -41,7 +37,7 @@ auth = YBlueprint('auth', __name__)
 @auth.post("/register", body_cls=Register)
 @captcha
 async def register(data: Register):
-    locale = getCore().getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
+    locale = GeoIp.get_language_code(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
     user = await User.y.register(data.username, data.email, data.password, data.date_of_birth, locale)
     session = await Session.Y.create(user)
 

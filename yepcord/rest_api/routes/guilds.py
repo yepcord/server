@@ -38,7 +38,7 @@ from ...gateway.events import MessageDeleteEvent, GuildUpdateEvent, ChannelUpdat
     GuildScheduledEventCreateEvent, GuildScheduledEventUpdateEvent, GuildScheduledEventDeleteEvent, \
     ScheduledEventUserAddEvent, ScheduledEventUserRemoveEvent, GuildCreateEvent, GuildAuditLogEntryCreateEvent, \
     IntegrationDeleteEvent, GuildIntegrationsUpdateEvent
-from ...yepcord.ctx import getCore, getCDNStorage, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, StickerType, StickerFormat, ScheduledEventStatus, ChannelType, \
     ScheduledEventEntityType
 from ...yepcord.errors import InvalidDataErr, Errors, UnknownRole, UnknownUser, UnknownGuildTemplate, UnknownSticker, \
@@ -47,6 +47,7 @@ from ...yepcord.errors import InvalidDataErr, Errors, UnknownRole, UnknownUser, 
 from ...yepcord.models import User, Guild, GuildMember, GuildTemplate, Emoji, Channel, PermissionOverwrite, UserData, \
     Role, Invite, Sticker, GuildEvent, AuditLogEntry, Integration, ApplicationCommand, Webhook, GuildBan
 from ...yepcord.snowflake import Snowflake
+from ...yepcord.storage import getStorage
 from ...yepcord.utils import getImage, b64decode, validImage, imageType
 
 # Base path is /api/vX/guilds
@@ -58,7 +59,7 @@ async def create_guild(data: GuildCreate, user: User = DepUser):
     guild = await Guild.Y.create(user, data.name)
     if data.icon:
         img = getImage(data.icon)
-        if icon := await getCDNStorage().setGuildIconFromBytesIO(guild.id, img):
+        if icon := await getStorage().setGuildIconFromBytesIO(guild.id, img):
             guild.icon = icon
             await guild.save(update_fields=["icon"])
 
@@ -79,9 +80,9 @@ async def update_guild(data: GuildUpdate, user: User = DepUser, guild: Guild = D
                        member: GuildMember = DepGuildMember):
     await member.checkPermission(GuildPermissions.MANAGE_GUILD)
     data.owner_id = None  # TODO: make guild ownership transfer
-    for image_type, func in (("icon", getCDNStorage().setGuildIconFromBytesIO),
-                             ("banner", getCDNStorage().setBannerFromBytesIO),
-                             ("splash", getCDNStorage().setGuildSplashFromBytesIO)):
+    for image_type, func in (("icon", getStorage().setGuildIconFromBytesIO),
+                             ("banner", getStorage().setBannerFromBytesIO),
+                             ("splash", getStorage().setGuildSplashFromBytesIO)):
         if img := getattr(data, image_type):
             setattr(data, image_type, "")
             img = getImage(img)
@@ -177,7 +178,7 @@ async def create_guild_emoji(data: EmojiCreate, user: User = DepUser, guild: Gui
     await member.checkPermission(GuildPermissions.MANAGE_EMOJIS_AND_STICKERS)
     img = getImage(data.image)
     emoji_id = Snowflake.makeId()
-    result = await getCDNStorage().setEmojiFromBytesIO(emoji_id, img)
+    result = await getStorage().setEmojiFromBytesIO(emoji_id, img)
     emoji = await Emoji.create(id=emoji_id, name=data.name, user=user, guild=guild, animated=result["animated"])
     await getGw().sendGuildEmojisUpdateEvent(guild)
 
@@ -423,7 +424,7 @@ async def create_role(data: RoleCreate, user: User = DepUser, guild: Guild = Dep
     role_id = Snowflake.makeId()
     if data.icon:
         img = getImage(data.icon)
-        if h := await getCDNStorage().setRoleIconFromBytesIO(role_id, img):
+        if h := await getStorage().setRoleIconFromBytesIO(role_id, img):
             data.icon = h
     role = await Role.create(id=role_id, guild=guild, **data.model_dump())
     await getGw().dispatch(GuildRoleCreateEvent(guild.id, role.ds_json()), guild_id=guild.id,
@@ -445,7 +446,7 @@ async def update_role(data: RoleUpdate, user: User = DepUser, guild: Guild = Dep
     if role.id != guild.id and data.icon != "" and (img := data.icon) is not None:
         data.icon = ""
         img = getImage(img)
-        if h := await getCDNStorage().setRoleIconFromBytesIO(role.id, img):
+        if h := await getStorage().setRoleIconFromBytesIO(role.id, img):
             data.icon = h
     if role.id == guild.id:  # Only allow permissions editing for @everyone role
         changes = {"permissions": data.permissions} if data.permissions is not None else {}
@@ -600,7 +601,7 @@ async def update_member(data: MemberUpdate, target_user: str, user: User = DepUs
         if img is not None:
             img = getImage(img)
             data.avatar = ""
-            if av := await getCDNStorage().setGuildAvatarFromBytesIO(user.id, guild.id, img):
+            if av := await getStorage().setGuildAvatarFromBytesIO(user.id, guild.id, img):
                 data.avatar = av
     changes = data.model_dump(exclude_defaults=True)
     await target_member.update(**changes)
@@ -687,7 +688,7 @@ async def create_from_template(data: GuildCreateFromTemplate, template: str, use
     guild = await Guild.Y.create_from_template(user, template, data.name)
 
     if data.icon and (img := getImage(data.icon)) is not None:
-        if icon := await getCDNStorage().setGuildIconFromBytesIO(guild.id, img):
+        if icon := await getStorage().setGuildIconFromBytesIO(guild.id, img):
             guild.icon = icon
             await guild.save(update_fields=["icon"])
 
@@ -759,7 +760,7 @@ async def upload_guild_stickers(user: User = DepUser, guild: Guild = DepGuild, m
         sticker_type = getattr(StickerFormat, str(imageType(img)).upper(), StickerFormat.PNG)
 
         sticker_id = Snowflake.makeId()
-        await getCDNStorage().setStickerFromBytesIO(sticker_id, img)
+        await getStorage().setStickerFromBytesIO(sticker_id, img)
 
         sticker = await Sticker.create(
             id=sticker_id, guild=guild, user=user, name=data.name, tags=data.tags, type=StickerType.GUILD,
@@ -806,7 +807,7 @@ async def create_scheduled_event(data: CreateEvent, user: User = DepUser, guild:
                 "code": "IMAGE_INVALID", "message": "Invalid image"
             }}))
 
-        img = await getCDNStorage().setGuildEventFromBytesIO(event_id, img)
+        img = await getStorage().setGuildEventFromBytesIO(event_id, img)
         data.image = img
 
     data_dict = data.model_dump()
@@ -859,7 +860,7 @@ async def update_scheduled_event(data: UpdateScheduledEvent, event_id: int, guil
                 raise InvalidDataErr(400, Errors.make(50035, {"image": {
                     "code": "IMAGE_INVALID", "message": "Invalid image"
                 }}))
-            if h := await getCDNStorage().setGuildEventFromBytesIO(event.id, img):
+            if h := await getStorage().setGuildEventFromBytesIO(event.id, img):
                 img = h
         data.image = img
 

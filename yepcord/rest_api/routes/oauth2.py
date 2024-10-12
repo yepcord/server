@@ -27,7 +27,7 @@ from ..y_blueprint import YBlueprint
 from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLogEntryCreateEvent, \
     GuildRoleCreateEvent, IntegrationCreateEvent
 from ...yepcord.config import Config
-from ...yepcord.ctx import getCore, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
 from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownGuild, MissingAccess
 from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry, Application, Bot, Authorization, \
@@ -100,7 +100,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
             return {"location": f"https://{Config.PUBLIC_HOST}/oauth2/error?error=invalid_request&error_description="
                                 f"Guild+not+specified."}
 
-        if (guild := await getCore().getGuild(data.guild_id)) is None:
+        if (guild := await Guild.get_or_none(id=data.guild_id).select_related("owner")) is None:
             raise UnknownGuild
 
         if not (member := await guild.get_member(user.id)):
@@ -130,8 +130,10 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
             await AuditLogEntry.utils.integration_create(user, guild, bot.user),
         ]
         for entry in entries:
-            await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
-                                   permissions=GuildPermissions.VIEW_AUDIT_LOG)
+            await getGw().dispatch(
+                GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
+                permissions=GuildPermissions.VIEW_AUDIT_LOG
+            )
 
         await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=bot.user.id)), user_ids=[bot.user.id])
         if (sys_channel := await Channel.Y.get(guild.system_channel)) is not None:

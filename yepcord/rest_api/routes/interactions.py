@@ -24,7 +24,7 @@ from ..utils import get_multipart_json
 from ..y_blueprint import YBlueprint
 from ...gateway.events import InteractionCreateEvent, InteractionFailureEvent, MessageCreateEvent, \
     InteractionSuccessEvent
-from ...yepcord.ctx import getCore, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, InteractionStatus, MessageFlags, InteractionCallbackType, \
     ApplicationCommandOptionType, MessageType, ApplicationCommandType
 from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownChannel, UnknownGuild, UnknownMessage, \
@@ -125,7 +125,7 @@ async def create_interaction(user: User = DepUser):
     guild = None
     channel = await Channel.Y.get(data.channel_id)
     if data.guild_id:
-        if (guild := await getCore().getGuild(data.guild_id)) is None:
+        if (guild := await Guild.get_or_none(id=data.guild_id)) is None:
             raise UnknownGuild
         if (member := await guild.get_member(user.id)) is None:
             raise MissingAccess

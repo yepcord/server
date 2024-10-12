@@ -27,23 +27,22 @@ from tortoise.expressions import Q
 
 from ..dependencies import DepUser, DepChannel, DepMessage
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS, SearchQuery, \
-    GetMessagesQuery
+    WebhookCreate, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS, SearchQuery, GetMessagesQuery
 from ..utils import _getMessage, processMessage
 from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
     WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
-from ...yepcord.ctx import getCore, getCDNStorage, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS, MessageFlags
-from ...yepcord.errors import UnknownMessage, UnknownUser, UnknownEmoji, UnknownInteraction, \
-    MaxPinsReached, MissingPermissions, CannotSendToThisUser, CannotExecuteOnDM, CannotEditAnotherUserMessage, \
-    MissingAccess
+from ...yepcord.errors import UnknownMessage, UnknownUser, UnknownEmoji, UnknownInteraction, MaxPinsReached, \
+    MissingPermissions, CannotSendToThisUser, CannotExecuteOnDM, CannotEditAnotherUserMessage, MissingAccess
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
     ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot, Role, HiddenDmChannel, Invite, \
     Reaction
 from ...yepcord.snowflake import Snowflake
+from ...yepcord.storage import getStorage
 from ...yepcord.utils import getImage, b64encode, b64decode
 
 # Base path is /api/vX/channels
@@ -70,7 +69,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
             del changes["owner_id"]
         if "icon" in changes and changes["icon"] is not None:
             img = getImage(changes["icon"])
-            image = await getCDNStorage().setChannelIconFromBytesIO(channel.id, img)
+            image = await getStorage().setChannelIconFromBytesIO(channel.id, img)
             changes["icon"] = image
         if "icon" in changes and changes["icon"] != channel.icon: changed.append("icon")
         if "name" in changes and changes["name"] != channel.name: changed.append("name")

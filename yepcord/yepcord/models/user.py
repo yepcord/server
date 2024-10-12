@@ -34,7 +34,6 @@ import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
 from ..classes.other import MFA, JWT, EmailMsg
 from ..config import Config
-from ..ctx import getCore
 from ..enums import RelationshipType, MfaNonceType
 from ..errors import InvalidDataErr, Errors, MfaRequiredErr, UnknownUser, InvalidKey
 from ..snowflake import Snowflake
@@ -96,10 +95,10 @@ class UserUtils:
         email = email.strip().lower()
         user = await User.get_or_none(email=email)
         if not user or not user.check_password(password):
-            raise InvalidDataErr(400, Errors.make(50035, {"login": {"code": "INVALID_LOGIN",
-                                                                    "message": "Invalid login or password."},
-                                                          "password": {"code": "INVALID_LOGIN",
-                                                                       "message": "Invalid login or password."}}))
+            raise InvalidDataErr(400, Errors.make(50035, {
+                "login": {"code": "INVALID_LOGIN", "message": "Invalid login or password."},
+                "password": {"code": "INVALID_LOGIN", "message": "Invalid login or password."},
+            }))
         mfa_key = await user.get_mfa_key()
         if not mfa_key:
             return await models.Session.Y.create(user)
@@ -109,7 +108,7 @@ class UserUtils:
         raise MfaRequiredErr(
             user.id,
             b64encode(sid),
-            b64encode(JWT.encode({"u": user.id, "s": sid_int}, getCore().key, time() + 300)),
+            b64encode(JWT.encode({"u": user.id, "s": sid_int}, b64decode(Config.KEY), time() + 300)),
         )
 
     @staticmethod
@@ -180,7 +179,7 @@ class User(Model):
                 "accent_color": data.accent_color
             }
         }
-        if guild_id and (guild := await getCore().getGuild(guild_id)):
+        if guild_id and (guild := await models.Guild.get_or_none(id=guild_id)):
             if member := await guild.get_member(self.id):
                 data["guild_member_profile"] = {"guild_id": str(guild_id)}
                 data["guild_member"] = await member.ds_json()
