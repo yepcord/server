@@ -23,8 +23,8 @@ class UpdateApplication(BaseModel):
     privacy_policy_url: Optional[str] = ""
     terms_of_service_url: Optional[str] = ""
     role_connections_verification_url: Optional[str] = ""
-    tags: list[str] = Field(default_factory=list, max_items=5)
-    redirect_uris: list[str] = Field(default_factory=list, max_items=9)
+    tags: list[str] = Field(default_factory=list, max_length=5)
+    redirect_uris: list[str] = Field(default_factory=list, max_length=9)
     max_participants: Optional[int] = None
     bot_public: bool = None
     bot_require_code_grant: bool = None
@@ -111,7 +111,7 @@ ChoicesType = Optional[list[Union[str, int, float]]]
 class CommandOption(CommandBase):
     type: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     required: bool = True
-    choices: ChoicesType = Field(default=None, max_items=25)
+    choices: ChoicesType = Field(default=None, max_length=25)
     channel_types: Optional[list[Literal[0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14]]] = None
     min_value: Optional[int] = None
     max_value: Optional[int] = None

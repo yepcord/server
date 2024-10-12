@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from tortoise import fields
@@ -61,7 +61,7 @@ class Invite(Model):
         expires_at = None
         if self.max_age > 0:
             expires_timestamp = int(Snowflake.toTimestamp(self.id) / 1000) + self.max_age
-            expires_at = datetime.utcfromtimestamp(expires_timestamp).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            expires_at = datetime.fromtimestamp(expires_timestamp, UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         data = {
             "code": self.code,
             "inviter": userdata.ds_json,

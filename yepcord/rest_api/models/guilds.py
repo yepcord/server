@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from time import mktime
 from typing import Optional, List
 
@@ -598,7 +598,7 @@ class CreateEvent(BaseModel):
 
     @field_validator("start")
     def validate_start(cls, value: int):
-        if value < datetime.utcnow().timestamp():
+        if value < datetime.now(UTC).timestamp():
             raise InvalidDataErr(400, Errors.make(50035, {"scheduled_start_time": {
                 "code": "BASE_TYPE_BAD_TIME", "message": "Time should be in future."
             }}))
@@ -607,7 +607,7 @@ class CreateEvent(BaseModel):
     @field_validator("end")
     def validate_end(cls, value: Optional[int], info: ValidationInfo):
         if value is not None:
-            if value < datetime.utcnow().timestamp() or value < info.data.get("start", value-1):
+            if value < datetime.now(UTC).timestamp() or value < info.data.get("start", value-1):
                 raise InvalidDataErr(400, Errors.make(50035, {"scheduled_end_time": {
                     "code": "BASE_TYPE_BAD_TIME", "message": "Time should be in future."
                 }}))

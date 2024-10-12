@@ -27,8 +27,8 @@ from ...gateway.events import InteractionCreateEvent, InteractionFailureEvent, M
 from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, InteractionStatus, MessageFlags, InteractionCallbackType, \
     ApplicationCommandOptionType, MessageType, ApplicationCommandType
-from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownChannel, UnknownGuild, UnknownMessage, \
-    UnknownUser, MissingAccess, CannotSendEmptyMessage, InteractionAlreadyAck, Unauthorized
+from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownChannel, UnknownGuild, \
+    UnknownMessage, UnknownUser, MissingAccess, CannotSendEmptyMessage, InteractionAlreadyAck, Unauthorized
 from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild, Channel
 from ...yepcord.models.interaction import Interaction
 from ...yepcord.snowflake import Snowflake

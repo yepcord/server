@@ -531,6 +531,7 @@ async def get_role_member_count(guild: Guild = DepGuild, member: GuildMember = D
     await member.checkPermission(GuildPermissions.MANAGE_ROLES)
     counts = {}
     for role in await Role.filter(guild=guild).select_related("guildmembers").annotate(m=Count("guildmembers")):
+        # noinspection PyUnresolvedReferences
         counts[role.id] = role.m
     return counts
 

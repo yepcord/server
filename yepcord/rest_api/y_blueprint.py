@@ -17,7 +17,7 @@
 """
 
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Awaitable
 
 from fast_depends import inject
 from flask.sansio.scaffold import T_route, setupmethod
