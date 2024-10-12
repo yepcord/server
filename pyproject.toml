@@ -39,8 +39,8 @@ yepcord = "yepcord.cli:main"
 python = "^3.9"
 quart = "0.19.6"
 aiofiles = "^24.1.0"
-websockets = "13.0.1"
-uvicorn = "^0.30.6"
+websockets = "^13.1"
+uvicorn = "^0.31.0"
 python-magic = "^0.4.27"
 pillow = "^10.4.0"
 protobuf = "4.25.3"
@@ -51,7 +51,7 @@ bcrypt = "^4.2.0"
 quart-schema = "0.20.0"
 pydantic = "^2.8.2"
 werkzeug = "3.0.4"
-aioftp = "^0.22.3"
+aioftp = { version = "^0.22.3", optional = true }
 orjson = "^3.10.7"
 mailers = {version = "^3.0.5", extras = ["smtp"]}
 redis = "^5.0.8"
@@ -63,7 +63,7 @@ uvloop = "^0.20.0"
 async-timeout = "^4.0.3"
 aerich = "^0.7.2"
 yc-protobuf3-to-dict = "^0.3.0"
-s3lite = "^0.1.8"
+s3lite = { version = "^0.1.8", optional = true }
 fast-depends = "^2.4.11"
 faststream = {extras = ["kafka", "nats", "rabbit", "redis"], version = "^0.5.20"}
 
@@ -75,7 +75,11 @@ pyftpdlib = "1.5.8"
 fake-s3 = "1.0.2"
 types-protobuf = "^4.24.0.4"
 pytest-httpx = "^0.30.0"
+poethepoet = "^0.29.0"
 
+[tool.poetry.extras]
+s3 = ["s3lite"]
+ftp = ["aioftp"]
 
 [tool.poetry.group.profiling.dependencies]
 viztracer = "^0.16.3"
@@ -83,3 +87,17 @@ viztracer = "^0.16.3"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.coverage.run]
+omit = ["yepcord/yepcord/proto.py"]
+data_file = "coverage.coverage"
+
+[tool.poe.tasks]
+migrate = "yepcord.cli migrate"
+run = "yepcord.cli:main"
+test = "pytest -x --cov-report=xml --cov-append --disable-warnings --cov=yepcord/yepcord"
+i = "poetry install"
+ie = "poetry install --all-extras"
+u = "poetry update"
+a = "poetry add"
+ad = "poetry add --group dev"

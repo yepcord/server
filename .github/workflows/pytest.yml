@@ -17,13 +17,14 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
+      - name: Install Poetry
+        run: pipx install poetry
+
       - name: Setup Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
+          cache: "poetry"
 
       - name: Install dependencies
         run: poetry install --no-interaction
@@ -56,7 +57,7 @@ jobs:
 
       - name: Setup database
         run: |
-          poetry run python app.py migrate
+          poe migrate
         env:
           YEPCORD_CONFIG: .github/settings_test.py
           DB_TYPE: ${{ matrix.database }}
@@ -64,7 +65,7 @@ jobs:
 
       - name: Run test suite for core
         run: |
-          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/yepcord --disable-warnings tests/test_core.py
+          poe test tests/test_core.py
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
@@ -72,7 +73,7 @@ jobs:
 
       - name: Run test suite for http api
         run: |
-          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/rest_api --cov=yepcord/yepcord --cov=yepcord/remote_auth --disable-warnings tests/api/
+          poe test --cov=yepcord/rest_api--cov=yepcord/remote_auth tests/api/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
@@ -82,7 +83,7 @@ jobs:
       - name: Run test suite for cdn/storage
         run: |
           mkdir -p tests/files/yepcord-test
-          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/cdn --cov=yepcord/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
+          poe test --cov=yepcord/cdn tests/cdn/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
