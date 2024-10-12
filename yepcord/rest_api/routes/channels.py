@@ -69,7 +69,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
             del changes["owner_id"]
         if "icon" in changes and changes["icon"] is not None:
             img = getImage(changes["icon"])
-            image = await getStorage().setChannelIconFromBytesIO(channel.id, img)
+            image = await getStorage().setChannelIcon(channel.id, img)
             changes["icon"] = image
         if "icon" in changes and changes["icon"] != channel.icon: changed.append("icon")
         if "name" in changes and changes["name"] != channel.name: changed.append("name")

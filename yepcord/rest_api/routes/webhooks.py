@@ -80,7 +80,7 @@ async def edit_webhook(
     if (img := data.avatar) or img is None:
         if img is not None:
             img = getImage(img)
-            if h := await getStorage().setAvatarFromBytesIO(webhook.id, img):
+            if h := await getStorage().setUserAvatar(webhook.id, img):
                 img = h
         data.avatar = img
 

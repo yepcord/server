@@ -81,7 +81,7 @@ async def update_me(data: UserUpdate, user: User = DepUser):
         data.email = None
     if data.avatar != "" and data.avatar is not None:
         if (img := getImage(data.avatar)) and validImage(img):
-            if avatar := await getStorage().setAvatarFromBytesIO(user.id, img):
+            if avatar := await getStorage().setUserAvatar(user.id, img):
                 data.avatar = avatar
 
     await userdata.refresh_from_db()
@@ -97,7 +97,7 @@ async def update_me(data: UserUpdate, user: User = DepUser):
 async def get_my_profile(data: UserProfileUpdate, user: User = DepUser):
     if data.banner != "" and data.banner is not None:
         if (img := getImage(data.banner)) and validImage(img):
-            if banner := await getStorage().setBannerFromBytesIO(user.id, img):
+            if banner := await getStorage().setGuildBanner(user.id, img):
                 data.banner = banner
 
     userdata = await user.data

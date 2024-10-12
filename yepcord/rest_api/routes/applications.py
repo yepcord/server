@@ -71,10 +71,10 @@ async def edit_application(data: UpdateApplication, application: Application = D
     changes = data.model_dump(exclude_defaults=True)
     if "icon" in changes and changes["icon"] is not None:
         img = getImage(changes["icon"])
-        image = await getStorage().setAppIconFromBytesIO(application.id, img)
+        image = await getStorage().setAppIcon(application.id, img)
         changes["icon"] = image
         if bot_data.avatar == application.icon:
-            await bot_data.update(avatar=await getStorage().setAvatarFromBytesIO(application.id, img))
+            await bot_data.update(avatar=await getStorage().setUserAvatar(application.id, img))
 
     bot_changes = {}
     if bot is not None and "bot_public" in changes:
@@ -98,7 +98,7 @@ async def edit_application_bot(data: UpdateApplicationBot, application: Applicat
     changes = data.model_dump(exclude_defaults=True)
     if "avatar" in changes and changes["avatar"] is not None:
         img = getImage(changes["avatar"])
-        avatar_hash = await getStorage().setAvatarFromBytesIO(application.id, img)
+        avatar_hash = await getStorage().setUserAvatar(application.id, img)
         changes["avatar"] = avatar_hash
 
     if changes:
