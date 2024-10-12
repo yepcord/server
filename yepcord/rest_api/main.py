@@ -26,7 +26,6 @@ from .routes.applications import applications
 from .routes.auth import auth
 from .routes.channels import channels
 from .routes.connections import connections
-from .routes.gifs import gifs
 from .routes.guilds import guilds
 from .routes.hypesquad import hypesquad
 from .routes.interactions import interactions
@@ -46,16 +45,16 @@ from ..yepcord.utils import b64encode
 
 
 class YEPcord(Quart):
-    gifs: Gifs
+    ...
 
 
 app = YEPcord("YEPcord-api")
 QuartSchema(app)
 storage = getStorage()
 gateway = GatewayDispatcher()
-app.gifs = Gifs(Config.TENOR_KEY)
+gifs = Gifs(Config.TENOR_KEY)
 
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
 
 @app.before_serving
