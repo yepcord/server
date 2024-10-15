@@ -29,7 +29,7 @@ from quart import request, current_app, g
 import yepcord.yepcord.models as models
 from ..yepcord.utils.captcha import Captcha
 from ..yepcord.config import Config
-from ..yepcord.enums import MessageType
+from ..yepcord.enums import MessageType, ChannelType, GUILD_CHANNELS
 from ..yepcord.errors import Errors, InvalidDataErr, UnknownChannel, UnknownMessage, InvalidFormBody, \
     FileExceedsMaxSize, CannotSendEmptyMessage
 from ..yepcord.models import Session, User, Channel, Attachment, Authorization, Bot, Webhook, Message, Sticker
@@ -236,7 +236,10 @@ async def processMessage(data: dict, channel: Channel, author: Optional[User], v
         data_json["webhook_id"] = webhook.id
     message = await models.Message.create(
         id=Snowflake.makeId(), channel=channel, author=author, **data_json, **stickers_data, type=message_type,
-        guild=channel.guild, webhook_author=w_author)
+        guild=channel.guild, webhook_author=w_author,
+    )
+    await models.ReadState.update_from_message(message)
+
     message.nonce = data_json.get("nonce")
 
     for attachment in attachments:

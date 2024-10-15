@@ -18,7 +18,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import datetime
+from pytz import UTC
 from typing import Optional
 
 from tortoise import fields

@@ -93,12 +93,18 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
 
     if channel.type == ChannelType.GROUP_DM:
         if "name" in changed:
-            message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user,
-                                           type=MessageType.CHANNEL_NAME_CHANGE, content=channel.name)
+            message = await Message.create(
+                id=Snowflake.makeId(), channel=channel, author=user,
+                type=MessageType.CHANNEL_NAME_CHANGE, content=channel.name,
+            )
+            await ReadState.update_from_message(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
         if "icon" in changed:
-            message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user,
-                                           type=MessageType.CHANNEL_ICON_CHANGE, content="")
+            message = await Message.create(
+                id=Snowflake.makeId(), channel=channel, author=user,
+                type=MessageType.CHANNEL_ICON_CHANGE, content="",
+            )
+            await ReadState.update_from_message(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
     elif channel.type in GUILD_CHANNELS:
         if "parent" in changes:
@@ -283,6 +289,7 @@ async def add_recipient(target_user: int, user: User = DepUser, channel: Channel
                 id=Snowflake.makeId(), author=user, channel=channel, content="", type=MessageType.RECIPIENT_ADD,
                 extra_data={"user": target_user.id}
             )
+            await ReadState.update_from_message(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
             await channel.recipients.add(target_user)
             target_user_data = await target_user.data
@@ -302,9 +309,10 @@ async def delete_recipient(target_user: int, user: User = DepUser, channel: Chan
     target_user = await User.y.get(target_user, False)
     recipients = await channel.recipients.all()
     if target_user in recipients:
-        msg = await Message.create(id=Snowflake.makeId(), author=user, channel=channel, content="",
+        message = await Message.create(id=Snowflake.makeId(), author=user, channel=channel, content="",
                                    type=MessageType.RECIPIENT_REMOVE, extra_data={"user": target_user.id})
-        await getGw().dispatch(MessageCreateEvent(await msg.ds_json()), channel=msg.channel)
+        await ReadState.update_from_message(message)
+        await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
         await channel.recipients.remove(target_user)
         target_user_data = await target_user.data
         await getGw().dispatch(ChannelRecipientRemoveEvent(channel.id, target_user_data.ds_json),
@@ -332,9 +340,11 @@ async def pin_message(user: User = DepUser, channel: Channel = DepChannel, messa
             id=Snowflake.makeId(), author=user, channel=channel, type=MessageType.CHANNEL_PINNED_MESSAGE, content="",
             message_reference=message_ref, guild=channel.guild
         )
+        await ReadState.update_from_message(msg)
 
-        await getGw().dispatch(MessageCreateEvent(await msg.ds_json()), channel=msg.channel,
-                               permissions=GuildPermissions.VIEW_CHANNEL)
+        await getGw().dispatch(
+            MessageCreateEvent(await msg.ds_json()), channel=msg.channel, permissions=GuildPermissions.VIEW_CHANNEL
+        )
     return "", 204
 
 
@@ -565,14 +575,16 @@ async def create_thread(
                                   name=data.name, owner=user, parent=channel, flags=0)
     thread_member = await ThreadMember.create(id=Snowflake.makeId(), user=user, channel=thread,
                                               guild=channel.guild)
-    await Message.create(
+    message_ = await Message.create(
         id=Snowflake.makeId(), channel=thread, author=user, content="", type=MessageType.THREAD_STARTER_MESSAGE,
         message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": channel.guild.id}
     )
-    await Message.create(
+    await ReadState.update_from_message(message_)
+    message_ = await Message.create(
         id=Snowflake.makeId(), channel=channel, author=user, content=thread.name, type=MessageType.THREAD_CREATED,
         message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": channel.guild.id}
     )
+    await ReadState.update_from_message(message_)
     await ThreadMetadata.create(id=thread.id, channel=thread, archive_timestamp=datetime(1970, 1, 1),
                                 auto_archive_duration=data.auto_archive_duration)
 

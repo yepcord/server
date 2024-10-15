@@ -16,10 +16,15 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from __future__ import annotations
+
+from typing import Optional
+
 from tortoise import fields
 
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
+from ..enums import ChannelType, GUILD_CHANNELS
 
 
 class ReadState(Model):
@@ -43,3 +48,26 @@ class ReadState(Model):
             "last_message_id": str(self.last_read_id),
             "id": str(self.channel.id),
         }
+
+    @classmethod
+    async def create_or_add(
+            cls, user: models.User, channel: models.Channel, mentions: int = 1, last_read_id: Optional[int] = None,
+    ) -> ReadState:
+        state, created = await cls.get_or_create(user=user, channel=channel, defaults={
+            "count": mentions,
+            "last_read_id": last_read_id or 0,
+        })
+        if not created:
+            state.count += mentions
+            state.last_read_id = last_read_id or state.last_read_id
+            await state.save(update_fields=["count", "last_read_id"])
+
+        return state
+
+    @classmethod
+    async def update_from_message(cls, message: models.Message) -> None:
+        if message.channel.type in (ChannelType.DM, ChannelType.GROUP_DM):
+            for user in await message.channel.recipients.filter(id__not=message.author.id):
+                await models.ReadState.create_or_add(user, message.channel)
+        elif message.channel.type in GUILD_CHANNELS:
+            ...  # TODO: update read state of mentioned users

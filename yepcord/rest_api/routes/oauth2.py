@@ -31,7 +31,7 @@ from ...yepcord.ctx import getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
 from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownGuild, MissingAccess
 from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry, Application, Bot, Authorization, \
-    Integration, GuildBan, Channel
+    Integration, GuildBan, Channel, ReadState
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import b64decode
 
@@ -141,6 +141,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
                 id=Snowflake.makeId(), author=bot.user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                 guild=guild
             )
+            await ReadState.update_from_message(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel,
                                    permissions=GuildPermissions.VIEW_CHANNEL)
 

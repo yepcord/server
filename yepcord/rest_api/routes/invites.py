@@ -24,7 +24,7 @@ from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelR
 from ...yepcord.ctx import getGw
 from ...yepcord.enums import ChannelType, GuildPermissions, MessageType
 from ...yepcord.errors import UnknownInvite, UserBanned, MissingAccess
-from ...yepcord.models import Invite, User, Message, GuildMember, GuildBan, Channel
+from ...yepcord.models import Invite, User, Message, GuildMember, GuildBan, Channel, ReadState
 from ...yepcord.snowflake import Snowflake
 
 # Base path is /api/vX/invites
@@ -58,6 +58,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
                 id=Snowflake.makeId(), author=channel.owner, channel=channel, content="",
                 type=MessageType.RECIPIENT_ADD, extra_data={"user": user.id}
             )
+            await ReadState.update_from_message(message)
             await channel.recipients.add(user)
             await getGw().dispatch(ChannelRecipientAddEvent(channel.id, (await user.data).ds_json),
                                    user_ids=[recipient.id for recipient in recipients])
@@ -84,6 +85,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
                     id=Snowflake.makeId(), author=user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                     guild=guild
                 )
+                await ReadState.update_from_message(message)
                 await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel,
                                        permissions=GuildPermissions.VIEW_CHANNEL)
             await invite.use()

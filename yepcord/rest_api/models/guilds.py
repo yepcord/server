@@ -16,7 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from datetime import datetime, timezone, UTC
+from datetime import datetime, timezone
+from pytz import UTC
 from time import mktime
 from typing import Optional, List
 

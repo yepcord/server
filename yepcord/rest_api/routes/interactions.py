@@ -29,7 +29,7 @@ from ...yepcord.enums import GuildPermissions, InteractionStatus, MessageFlags, 
     ApplicationCommandOptionType, MessageType, ApplicationCommandType
 from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownChannel, UnknownGuild, \
     UnknownMessage, UnknownUser, MissingAccess, CannotSendEmptyMessage, InteractionAlreadyAck, Unauthorized
-from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild, Channel
+from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild, Channel, ReadState
 from ...yepcord.models.interaction import Interaction
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import execute_after
@@ -201,9 +201,12 @@ async def send_interaction_response(interaction: Interaction, flags: bool, conte
     is_loading = flags & MessageFlags.LOADING == MessageFlags.LOADING
 
     bot_user = await User.y.get(interaction.application.id)
-    message = await Message.create(id=Snowflake.makeId(), author=bot_user, content=content, flags=flags,
-                                   interaction=interaction, channel=interaction.channel, ephemeral=is_ephemeral,
-                                   webhook_id=interaction.id, type=MessageType.CHAT_INPUT_COMMAND)
+    message = await Message.create(
+        id=Snowflake.makeId(), author=bot_user, content=content, flags=flags, interaction=interaction,
+        channel=interaction.channel, ephemeral=is_ephemeral, webhook_id=interaction.id,
+        type=MessageType.CHAT_INPUT_COMMAND
+    )
+    await ReadState.update_from_message(message)
     message_obj = await message.ds_json() | {"nonce": str(interaction.nonce)}
 
     kw = {"session_id": interaction.session_id} if is_ephemeral else {}
