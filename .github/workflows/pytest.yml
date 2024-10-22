@@ -27,7 +27,7 @@ jobs:
           cache: "poetry"
 
       - name: Install dependencies
-        run: poetry install --no-interaction
+        run: poetry install --no-interaction --all-extras
 
       - name: Shutdown Ubuntu MySQL
         if: matrix.database == 'mariadb' || matrix.database == 'mysql'
