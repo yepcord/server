@@ -57,7 +57,7 @@ jobs:
 
       - name: Setup database
         run: |
-          poetry run poe migrate
+          poetry run python app.py migrate
         env:
           YEPCORD_CONFIG: .github/settings_test.py
           DB_TYPE: ${{ matrix.database }}
@@ -65,7 +65,7 @@ jobs:
 
       - name: Run test suite for core
         run: |
-          poetry run poe test tests/test_core.py
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/yepcord --disable-warnings tests/test_core.py
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
@@ -73,7 +73,7 @@ jobs:
 
       - name: Run test suite for http api
         run: |
-          poetry run poe test --cov=yepcord/rest_api--cov=yepcord/remote_auth tests/api/
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/rest_api --cov=yepcord/yepcord --cov=yepcord/remote_auth --disable-warnings tests/api/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
@@ -83,7 +83,7 @@ jobs:
       - name: Run test suite for cdn/storage
         run: |
           mkdir -p tests/files/yepcord-test
-          poetry run poe test --cov=yepcord/cdn tests/cdn/
+          poetry run pytest -x --cov-report=xml --cov-append --cov=yepcord/cdn --cov=yepcord/yepcord --cov-config=.coveragerc --disable-warnings tests/cdn/
         env:
           DB_TYPE: ${{ matrix.database }}
           KEY: ${{ secrets.KEY }}
