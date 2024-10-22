@@ -27,20 +27,22 @@ from tortoise.expressions import Q
 
 from ..dependencies import DepUser, DepChannel, DepMessage
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS, SearchQuery, \
-    GetMessagesQuery
+    WebhookCreate, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS, SearchQuery, GetMessagesQuery
 from ..utils import _getMessage, processMessage
 from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
     WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
-from ...yepcord.ctx import getCore, getCDNStorage, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS, MessageFlags
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import UnknownMessage, UnknownUser, UnknownEmoji, UnknownInteraction, MaxPinsReached, \
+    MissingPermissions, CannotSendToThisUser, CannotExecuteOnDM, CannotEditAnotherUserMessage, MissingAccess
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
-    ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot, Role
+    ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot, Role, HiddenDmChannel, Invite, \
+    Reaction
 from ...yepcord.snowflake import Snowflake
+from ...yepcord.storage import getStorage
 from ...yepcord.utils import getImage, b64encode, b64decode
 
 # Base path is /api/vX/channels
@@ -59,7 +61,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
     if channel.type == ChannelType.GROUP_DM:
         changes = data.to_json(channel.type)
         if "owner_id" in changes and channel.owner != user:
-            raise InvalidDataErr(403, Errors.make(50013))
+            raise MissingPermissions
         elif "owner_id" in changes:
             new_owner = await User.get_or_none(id=changes["owner_id"])
             if new_owner in await channel.recipients.all():
@@ -67,7 +69,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
             del changes["owner_id"]
         if "icon" in changes and changes["icon"] is not None:
             img = getImage(changes["icon"])
-            image = await getCDNStorage().setChannelIconFromBytesIO(channel.id, img)
+            image = await getStorage().setChannelIcon(channel.id, img)
             changes["icon"] = image
         if "icon" in changes and changes["icon"] != channel.icon: changed.append("icon")
         if "name" in changes and changes["name"] != channel.name: changed.append("name")
@@ -75,12 +77,12 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
         await getGw().dispatch(DMChannelUpdateEvent(channel), channel=channel)
     elif channel.type in GUILD_CHANNELS:
         guild = channel.guild
-        member = await getCore().getGuildMember(guild, user.id)
+        member = await guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
         changes = data.to_json(channel.type)
         if "parent_id" in changes:
-            parent = await getCore().getChannel(changes["parent_id"])
+            parent = await Channel.Y.get(changes["parent_id"])
             if (changes["parent_id"] is None or
                     (parent is not None and parent.guild == guild and parent.type == ChannelType.GUILD_CATEGORY)):
                 changes["parent"] = parent
@@ -91,14 +93,18 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
 
     if channel.type == ChannelType.GROUP_DM:
         if "name" in changed:
-            message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user,
-                                           type=MessageType.CHANNEL_NAME_CHANGE, content=channel.name)
-            await getCore().sendMessage(message)
+            message = await Message.create(
+                id=Snowflake.makeId(), channel=channel, author=user,
+                type=MessageType.CHANNEL_NAME_CHANGE, content=channel.name,
+            )
+            await ReadState.update_from_message(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
         if "icon" in changed:
-            message = await Message.create(id=Snowflake.makeId(), channel=channel, author=user,
-                                           type=MessageType.CHANNEL_ICON_CHANGE, content="")
-            await getCore().sendMessage(message)
+            message = await Message.create(
+                id=Snowflake.makeId(), channel=channel, author=user,
+                type=MessageType.CHANNEL_ICON_CHANGE, content="",
+            )
+            await ReadState.update_from_message(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
     elif channel.type in GUILD_CHANNELS:
         if "parent" in changes:
@@ -108,7 +114,7 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
         await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
                                permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-        await getCore().setTemplateDirty(channel.guild)
+        await channel.guild.set_template_dirty()
 
     return await channel.ds_json()
 
@@ -116,13 +122,12 @@ async def update_channel(data: ChannelUpdate, user: User = DepUser, channel: Cha
 @channels.delete("/<int:channel_id>", allow_bots=True)
 async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
     if channel.type == ChannelType.DM:
-        await getCore().hideDmChannel(user, channel)
+        await HiddenDmChannel.get_or_create(user=user, channel=channel)
         await getGw().dispatch(DMChannelDeleteEvent(await channel.ds_json()), user_ids=[user.id])
         return await channel.ds_json()
     elif channel.type == ChannelType.GROUP_DM:
         message = Message(id=Snowflake.makeId(), author=user, channel=channel, content="",
                           type=MessageType.RECIPIENT_REMOVE, extra_data={"user": user.id})
-        await getCore().sendMessage(message)
         await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=channel)
         await channel.recipients.remove(user)
         await getGw().dispatch(ChannelRecipientRemoveEvent(channel.id, (await user.data).ds_json),
@@ -135,7 +140,7 @@ async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
             await channel.save()
             await getGw().dispatch(DMChannelUpdateEvent(channel), channel=channel)
     elif channel.type in GUILD_CHANNELS:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, channel=channel)
 
         entry = await AuditLogEntry.utils.channel_delete(user, channel)
@@ -151,7 +156,7 @@ async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
         await channel.delete()
         await getGw().dispatch(ChannelDeleteEvent(await channel.ds_json()), guild_id=channel.guild.id)
 
-        await getCore().setTemplateDirty(channel.guild)
+        await channel.guild.set_template_dirty()
 
         return await channel.ds_json()
     return "", 204
@@ -160,9 +165,9 @@ async def delete_channel(user: User = DepUser, channel: Channel = DepChannel):
 @channels.get("/<int:channel_id>/messages", qs_cls=GetMessagesQuery, allow_bots=True)
 async def get_messages(query_args: GetMessagesQuery, user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild is not None:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-    messages = await channel.messages(**query_args.model_dump())
+    messages = await channel.get_messages(**query_args.model_dump())
     messages = [await message.ds_json(user_id=user.id) for message in messages]
     return messages
 
@@ -172,9 +177,9 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
     if channel.type == ChannelType.DM:
         oth = await channel.other_user(user)
         if await Relationship.utils.is_blocked(oth, user):
-            raise InvalidDataErr(403, Errors.make(50007))
+            raise CannotSendToThisUser
     elif channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
 
@@ -182,14 +187,13 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
 
     if channel.type == ChannelType.DM:
         other_user = await channel.other_user(user)
-        if await getCore().isDmChannelHidden(other_user, channel):
-            await getCore().unhideDmChannel(other_user, channel)
+        if await channel.dm_is_hidden(other_user):
+            await channel.dm_unhide(other_user)
             await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": other_user.id}),
                                    user_ids=[other_user.id])
-    await getCore().sendMessage(message)
     await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
-    await getCore().setReadState(user, channel, 0, message.id)
+    await user.update_read_state(channel, 0, message.id)
     await getGw().dispatch(MessageAckEvent({"version_id": 1, "message_id": str(message.id),
                                             "channel_id": str(message.channel.id)}), user_ids=[user.id])
     return await message.ds_json()
@@ -198,12 +202,11 @@ async def send_message(user: User = DepUser, channel: Channel = DepChannel):
 @channels.delete("/<int:channel_id>/messages/<int:message>", allow_bots=True)
 async def delete_message(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if message.author != user:
-        if channel.type in GUILD_CHANNELS:
-            member = await getCore().getGuildMember(channel.guild, user.id)
-            await member.checkPermission(GuildPermissions.MANAGE_MESSAGES, GuildPermissions.VIEW_CHANNEL,
-                                         GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
-        else:
-            raise InvalidDataErr(403, Errors.make(50003))
+        if channel.type not in GUILD_CHANNELS:
+            raise CannotExecuteOnDM
+        member = await channel.guild.get_member(user.id)
+        await member.checkPermission(GuildPermissions.MANAGE_MESSAGES, GuildPermissions.VIEW_CHANNEL,
+                                     GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     guild_id = channel.guild.id if channel.guild else None
     await message.delete()
     await getGw().dispatch(MessageDeleteEvent(message.id, channel.id, guild_id), channel=channel,
@@ -215,9 +218,9 @@ async def delete_message(user: User = DepUser, channel: Channel = DepChannel, me
 async def edit_message(data: MessageUpdate, user: User = DepUser, channel: Channel = DepChannel,
                        message: Message = DepMessage):
     if message.author != user:
-        raise InvalidDataErr(403, Errors.make(50005))
+        raise CannotEditAnotherUserMessage
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.SEND_MESSAGES, GuildPermissions.VIEW_CHANNEL,
                                      GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     await message.update(**data.to_json(), edit_timestamp=datetime.now())
@@ -229,10 +232,10 @@ async def edit_message(data: MessageUpdate, user: User = DepUser, channel: Chann
 @channels.get("/<int:channel_id>/messages/<int:message>", allow_bots=True)
 async def get_message(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild is not None:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     if message.ephemeral and message.author != user:
-        raise InvalidDataErr(404, Errors.make(10008))
+        raise UnknownMessage
     return await message.ds_json(user_id=user.id)
 
 
@@ -240,13 +243,16 @@ async def get_message(user: User = DepUser, channel: Channel = DepChannel, messa
 async def send_message_ack(data: MessageAck, message: int, user: User = DepUser, channel: Channel = DepChannel):
     message = await _getMessage(user, channel, message)
     if data.manual and (ct := data.mention_count):
-        await getCore().setReadState(user, channel, ct, message.id)
+        await user.update_read_state(channel, ct, message.id)
         await getGw().sendMessageAck(user.id, channel.id, message.id, ct, True)
     else:
-        ct = len(await getCore().getChannelMessages(channel, 99, channel.last_message_id, message.id))
-        await getCore().setReadState(user, channel, ct, message.id)
-        await getGw().dispatch(MessageAckEvent({"version_id": 1, "message_id": str(message.id),
-                                                "channel_id": str(channel.id)}), user_ids=[user.id])
+        count = await Message.filter(
+            channel=channel, ephemeral=False, id__gt=message.id, id__lt=await channel.get_last_message_id(),
+        ).count()
+        await user.update_read_state(channel, count, message.id)
+        await getGw().dispatch(MessageAckEvent({
+            "version_id": 1, "message_id": str(message.id), "channel_id": str(channel.id),
+        }), user_ids=[user.id])
     return {"token": None}
 
 
@@ -259,7 +265,7 @@ async def delete_message_ack(user: User = DepUser, channel: Channel = DepChannel
 @channels.post("/<int:channel_id>/typing", allow_bots=True)
 async def send_typing_event(user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
     await getGw().dispatch(TypingEvent(user.id, channel.id), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
@@ -268,20 +274,22 @@ async def send_typing_event(user: User = DepUser, channel: Channel = DepChannel)
 @channels.put("/<int:channel_id>/recipients/<int:target_user>")
 async def add_recipient(target_user: int, user: User = DepUser, channel: Channel = DepChannel):
     if (target_user := await User.y.get(target_user, False)) is None:
-        raise InvalidDataErr(404, Errors.make(10013))
+        raise UnknownUser
     if channel.type not in (ChannelType.DM, ChannelType.GROUP_DM):
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     if channel.type == ChannelType.DM:
-        recipients = await channel.recipients.filter(~Q(id=user.id)).all()
+        recipients = await channel.recipients.filter(~Q(id=user.id))
         recipients.append(target_user)
-        ch = await getCore().createDMGroupChannel(user, recipients)
-        await getGw().dispatch(DMChannelCreateEvent(ch), channel=channel)
+        new_channel = await Channel.Y.create_dm_group(user, recipients)
+        await getGw().dispatch(DMChannelCreateEvent(new_channel), channel=channel)
     elif channel.type == ChannelType.GROUP_DM:
         recipients = await channel.recipients.all()
         if target_user not in recipients and len(recipients) < 10:
-            message = await Message.create(id=Snowflake.makeId(), author=user, channel=channel, content="",
-                                           type=MessageType.RECIPIENT_ADD, extra_data={"user": target_user.id})
-            await getCore().sendMessage(message)
+            message = await Message.create(
+                id=Snowflake.makeId(), author=user, channel=channel, content="", type=MessageType.RECIPIENT_ADD,
+                extra_data={"user": target_user.id}
+            )
+            await ReadState.update_from_message(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
             await channel.recipients.add(target_user)
             target_user_data = await target_user.data
@@ -295,16 +303,16 @@ async def add_recipient(target_user: int, user: User = DepUser, channel: Channel
 @channels.delete("/<int:channel_id>/recipients/<int:target_user>")
 async def delete_recipient(target_user: int, user: User = DepUser, channel: Channel = DepChannel):
     if channel.type not in (ChannelType.GROUP_DM,):
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     if channel.owner != user or target_user == user.id:
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
     target_user = await User.y.get(target_user, False)
     recipients = await channel.recipients.all()
     if target_user in recipients:
-        msg = await Message.create(id=Snowflake.makeId(), author=user, channel=channel, content="",
+        message = await Message.create(id=Snowflake.makeId(), author=user, channel=channel, content="",
                                    type=MessageType.RECIPIENT_REMOVE, extra_data={"user": target_user.id})
-        await getCore().sendMessage(msg)
-        await getGw().dispatch(MessageCreateEvent(await msg.ds_json()), channel=msg.channel)
+        await ReadState.update_from_message(message)
+        await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=message.channel)
         await channel.recipients.remove(target_user)
         target_user_data = await target_user.data
         await getGw().dispatch(ChannelRecipientRemoveEvent(channel.id, target_user_data.ds_json),
@@ -316,10 +324,14 @@ async def delete_recipient(target_user: int, user: User = DepUser, channel: Chan
 @channels.put("/<int:channel_id>/pins/<int:message>", allow_bots=True)
 async def pin_message(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
     if not message.pinned:
-        await getCore().pinMessage(message)
+        if await Message.filter(pinned_timestamp__not_isnull=True, channel=message.channel).count() >= 50:
+            raise MaxPinsReached
+        message.pinned_timestamp = datetime.now()
+        await message.save(update_fields=["pinned_timestamp"])
+
         await getGw().sendPinsUpdateEvent(channel)
         message_ref = {"message_id": str(message.id), "channel_id": str(channel.id)}
         if channel.guild:
@@ -328,17 +340,18 @@ async def pin_message(user: User = DepUser, channel: Channel = DepChannel, messa
             id=Snowflake.makeId(), author=user, channel=channel, type=MessageType.CHANNEL_PINNED_MESSAGE, content="",
             message_reference=message_ref, guild=channel.guild
         )
+        await ReadState.update_from_message(msg)
 
-        await getCore().sendMessage(msg)
-        await getGw().dispatch(MessageCreateEvent(await msg.ds_json()), channel=msg.channel,
-                               permissions=GuildPermissions.VIEW_CHANNEL)
+        await getGw().dispatch(
+            MessageCreateEvent(await msg.ds_json()), channel=msg.channel, permissions=GuildPermissions.VIEW_CHANNEL
+        )
     return "", 204
 
 
 @channels.delete("/<int:channel_id>/pins/<int:message>", allow_bots=True)
 async def unpin_message(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(message.guild, user.id)
+        member = await message.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.VIEW_CHANNEL, channel=channel)
     if message.pinned:
         message.pinned_timestamp = None
@@ -350,28 +363,33 @@ async def unpin_message(user: User = DepUser, channel: Channel = DepChannel, mes
 @channels.get("/<int:channel_id>/pins", allow_bots=True)
 async def get_pinned_messages(user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
-        await member.checkPermission(GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY,
-                                     channel=channel)
-    messages = await getCore().getPinnedMessages(channel)
-    messages = [await message.ds_json() for message in messages]
-    return messages
+        member = await channel.guild.get_member(user.id)
+        await member.checkPermission(
+            GuildPermissions.VIEW_CHANNEL, GuildPermissions.READ_MESSAGE_HISTORY,
+            channel=channel,
+        )
+
+    return [
+        await message.ds_json()
+        for message in await Message.filter(pinned_timestamp__not_isnull=True, channel=channel)
+        .select_related("channel", "author", "guild")
+    ]
 
 
 @channels.put("/<int:channel_id>/messages/<int:message>/reactions/<string:reaction>/@me", allow_bots=True)
 async def add_message_reaction(reaction: str, user: User = DepUser, channel: Channel = DepChannel,
                                message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
-    if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, Errors.make(10014))
+    if not is_emoji(reaction) and not (reaction := await Emoji.Y.get_by_reaction(reaction)):
+        raise UnknownEmoji
     emoji = {
         "emoji": None if not isinstance(reaction, Emoji) else reaction,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
     }
-    await getCore().addReaction(message, user, **emoji)
+    await Reaction.get_or_create(user=user, message=message, **emoji)
     await getGw().dispatch(MessageReactionAddEvent(user.id, message.id, channel.id, emoji), channel=channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
@@ -381,16 +399,16 @@ async def add_message_reaction(reaction: str, user: User = DepUser, channel: Cha
 async def remove_message_reaction(reaction: str, user: User = DepUser, channel: Channel = DepChannel,
                                   message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
-    if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, Errors.make(10014))
+    if not is_emoji(reaction) and not (reaction := await Emoji.Y.get_by_reaction(reaction)):
+        raise UnknownEmoji
     emoji = {
         "emoji": None if not isinstance(reaction, Emoji) else reaction,
         "emoji_name": reaction if isinstance(reaction, str) else reaction.name
     }
-    await getCore().removeReaction(message, user, **emoji)
+    await Reaction.filter(user=user, message=message, **emoji).delete()
     await getGw().dispatch(MessageReactionRemoveEvent(user.id, message.id, channel.id, emoji), channel=channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
     return "", 204
@@ -400,25 +418,31 @@ async def remove_message_reaction(reaction: str, user: User = DepUser, channel: 
 async def get_message_reactions(query_args: GetReactionsQuery, reaction: str, user: User = DepUser,
                                 channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.ADD_REACTIONS, GuildPermissions.READ_MESSAGE_HISTORY,
                                      GuildPermissions.VIEW_CHANNEL, channel=channel)
-    if not is_emoji(reaction) and not (reaction := await getCore().getEmojiByReaction(reaction)):
-        raise InvalidDataErr(400, Errors.make(10014))
-    emoji_data = {
-        "emoji": None if not isinstance(reaction, Emoji) else reaction,
-        "emoji_name": reaction if isinstance(reaction, str) else reaction.name
-    }
-    return await getCore().getReactedUsersJ(message, query_args.limit, **emoji_data)
+    if not is_emoji(reaction) and not (reaction := await Emoji.Y.get_by_reaction(reaction)):
+        raise UnknownEmoji
+    emoji = None if not isinstance(reaction, Emoji) else reaction
+    emoji_name = reaction if isinstance(reaction, str) else reaction.name
+
+    reactions = await Reaction.filter(
+        message=message, emoji=emoji, emoji_name=emoji_name
+    ).limit(query_args.limit).select_related("user")
+
+    return [
+        (await reaction.user.data).ds_json
+        for reaction in reactions
+    ]
 
 
 @channels.get("/<int:channel_id>/messages/search", qs_cls=SearchQuery)
 async def search_messages(query_args: SearchQuery, user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL,
                                      channel=channel)
-    messages, total = await getCore().searchMessages(channel, query_args.model_dump(exclude_defaults=True))
+    messages, total = await channel.search_messages(query_args.model_dump(exclude_defaults=True))
     messages = [[await message.ds_json(search=True)] for message in messages]
     for message in messages:
         message[0]["hit"] = True
@@ -428,9 +452,11 @@ async def search_messages(query_args: SearchQuery, user: User = DepUser, channel
 @channels.post("/<int:channel_id>/invites", body_cls=InviteCreate, allow_bots=True)
 async def create_invite(data: InviteCreate, user: User = DepUser, channel: Channel = DepChannel):
     if channel.guild:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.CREATE_INSTANT_INVITE)
-    invite = await getCore().createInvite(channel, user, **data.model_dump())
+    invite = await Invite.create(
+        id=Snowflake.makeId(), channel=channel, inviter=user, **data.model_dump(include={"max_age", "max_uses"}),
+    )
     if channel.guild:
         entry = await AuditLogEntry.utils.invite_create(user, invite)
         await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
@@ -442,14 +468,14 @@ async def create_invite(data: InviteCreate, user: User = DepUser, channel: Chann
 async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, target_id: int, user: User = DepUser,
                                                 channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
-    if not (member := await getCore().getGuildMember(channel.guild, user.id)):
-        raise InvalidDataErr(403, Errors.make(50001))
-    target = await getCore().getRole(target_id) if data.type == 0 else await User.get_or_none(id=target_id)
+        raise CannotExecuteOnDM
+    if not (member := await channel.guild.get_member(user.id)):
+        raise MissingAccess
+    target = await channel.guild.get_role(target_id) if data.type == 0 else await User.get_or_none(id=target_id)
     if target is None or (isinstance(target, Role) and target.guild != channel.guild):
         return "", 204
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
-    old_overwrite = await getCore().getPermissionOverwrite(channel, target)
+    old_overwrite = await channel.get_permission_overwrite(target)
     if old_overwrite is not None:
         await old_overwrite.update(**data.model_dump())
         overwrite = old_overwrite
@@ -465,7 +491,7 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(channel.guild)
+    await channel.guild.set_template_dirty()
 
     return "", 204
 
@@ -473,11 +499,11 @@ async def create_or_update_permission_overwrite(data: PermissionOverwriteModel, 
 @channels.delete("/<int:channel_id>/permissions/<int:target_id>", allow_bots=True)
 async def delete_permission_overwrite(target_id: int, user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
-    if not (member := await getCore().getGuildMember(channel.guild, user.id)):
-        raise InvalidDataErr(403, Errors.make(50001))
+        raise CannotExecuteOnDM
+    if not (member := await channel.guild.get_member(user.id)):
+        raise MissingAccess
     await member.checkPermission(GuildPermissions.MANAGE_CHANNELS, GuildPermissions.MANAGE_ROLES, channel=channel)
-    overwrite = await getCore().getPermissionOverwriteUnk(channel, target_id)
+    overwrite = await channel.get_permission_overwrite(target_id)
 
     if overwrite is None:
         return "", 204
@@ -489,7 +515,7 @@ async def delete_permission_overwrite(target_id: int, user: User = DepUser, chan
     await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=channel.guild.id,
                            permissions=GuildPermissions.VIEW_AUDIT_LOG)
 
-    await getCore().setTemplateDirty(channel.guild)
+    await channel.guild.set_template_dirty()
 
     return "", 204
 
@@ -497,19 +523,22 @@ async def delete_permission_overwrite(target_id: int, user: User = DepUser, chan
 @channels.get("/<int:channel_id>/invites", allow_bots=True)
 async def get_channel_invites(user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
-    if not (member := await getCore().getGuildMember(channel.guild, user.id)):
-        raise InvalidDataErr(403, Errors.make(50001))
+        raise CannotExecuteOnDM
+    if not (member := await channel.guild.get_member(user.id)):
+        raise MissingAccess
     await member.checkPermission(GuildPermissions.VIEW_CHANNEL, channel=channel)
-    invites = await getCore().getChannelInvites(channel)
-    return [await invite.ds_json() for invite in invites]
+    return [
+        await invite.ds_json()
+        for invite in await Invite.filter(channel=channel, vanity_code__isnull=True)
+        .select_related("channel__guild", "inviter")
+    ]
 
 
 @channels.post("/<int:channel_id>/webhooks", body_cls=WebhookCreate, allow_bots=True)
 async def create_webhook(data: WebhookCreate, user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
-    member = await getCore().getGuildMember(channel.guild, user.id)
+        raise CannotExecuteOnDM
+    member = await channel.guild.get_member(user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
     webhook = await Webhook.create(id=Snowflake.makeId(), type=WebhookType.INCOMING, name=data.name,
@@ -523,33 +552,39 @@ async def create_webhook(data: WebhookCreate, user: User = DepUser, channel: Cha
 @channels.get("/<int:channel_id>/webhooks", allow_bots=True)
 async def get_channel_webhooks(user: User = DepUser, channel: Channel = DepChannel):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
-    member = await getCore().getGuildMember(channel.guild, user.id)
+        raise CannotExecuteOnDM
+    member = await channel.guild.get_member(user.id)
     await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
-    return [await webhook.ds_json() for webhook in await getCore().getChannelWebhooks(channel)]
+    return [
+        await webhook.ds_json()
+        for webhook in await Webhook.filter(channel=channel).select_related("channel", "channel__guild", "user")
+    ]
 
 
 @channels.post("/<int:channel_id>/messages/<int:message>/threads", body_cls=CreateThread, allow_bots=True)
-async def create_thread(data: CreateThread, user: User = DepUser, channel: Channel = DepChannel,
-                        message: Message = DepMessage):
+async def create_thread(
+        data: CreateThread, user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage
+):
     if not channel.guild:
-        raise InvalidDataErr(403, Errors.make(50003))
-    member = await getCore().getGuildMember(channel.guild, user.id)
+        raise CannotExecuteOnDM
+    member = await channel.guild.get_member(user.id)
     await member.checkPermission(GuildPermissions.CREATE_PUBLIC_THREADS, channel=channel)
 
     thread = await Channel.create(id=message.id, type=ChannelType.GUILD_PUBLIC_THREAD, guild=channel.guild,
                                   name=data.name, owner=user, parent=channel, flags=0)
     thread_member = await ThreadMember.create(id=Snowflake.makeId(), user=user, channel=thread,
                                               guild=channel.guild)
-    thread_message = await Message.create(
+    message_ = await Message.create(
         id=Snowflake.makeId(), channel=thread, author=user, content="", type=MessageType.THREAD_STARTER_MESSAGE,
         message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": channel.guild.id}
     )
-    thread_create_message = await Message.create(
+    await ReadState.update_from_message(message_)
+    message_ = await Message.create(
         id=Snowflake.makeId(), channel=channel, author=user, content=thread.name, type=MessageType.THREAD_CREATED,
         message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": channel.guild.id}
     )
+    await ReadState.update_from_message(message_)
     await ThreadMetadata.create(id=thread.id, channel=thread, archive_timestamp=datetime(1970, 1, 1),
                                 auto_archive_duration=data.auto_archive_duration)
 
@@ -559,18 +594,18 @@ async def create_thread(data: CreateThread, user: User = DepUser, channel: Chann
     await message.update(thread=thread, flags=message.flags | MessageFlags.HAS_THREAD)
     await getGw().dispatch(MessageUpdateEvent(await message.ds_json()), channel=message.channel,
                            permissions=GuildPermissions.VIEW_CHANNEL)
-    await getCore().sendMessage(thread_message)
-    await getCore().sendMessage(thread_create_message)
 
     return await thread.ds_json()
 
 
 @channels.get("/<int:channel_id>/application-commands/search", qs_cls=CommandsSearchQS)
-async def search_application_commands(query_args: CommandsSearchQS, user: User = DepUser, channel: Channel = DepChannel):
+async def search_application_commands(
+        query_args: CommandsSearchQS, user: User = DepUser, channel: Channel = DepChannel
+):
     dm_user = None
     if (channel.type not in (*GUILD_CHANNELS, ChannelType.DM) or
             (channel.type == ChannelType.DM and not (dm_user := await channel.other_user(user)).is_bot)):
-        raise InvalidDataErr(403, Errors.make(50003))
+        raise CannotExecuteOnDM
 
     try:
         cursor = loads(b64decode(query_args.cursor)) if query_args.cursor else [0]
@@ -630,12 +665,12 @@ async def search_application_commands(query_args: CommandsSearchQS, user: User =
 @channels.get("/<int:channel_id>/messages/<int:message>/interaction-data", allow_bots=True)
 async def get_message_interaction(user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage):
     if channel.guild is not None:
-        member = await getCore().getGuildMember(channel.guild, user.id)
+        member = await channel.guild.get_member(user.id)
         await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, channel=channel)
     if message.ephemeral and message.author != user:
-        raise InvalidDataErr(404, Errors.make(10008))
+        raise UnknownMessage
     if not message.interaction:
-        raise InvalidDataErr(404, Errors.make(10062))
+        raise UnknownInteraction
     return await message.interaction.get_command_info() | {
         "application_command": None,
         "options": (message.interaction.data or {}).get("options", [])

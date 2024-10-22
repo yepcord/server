@@ -23,7 +23,6 @@ from tortoise import fields
 
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
-from ..ctx import getCore
 from ..enums import InteractionType, ChannelType, InteractionStatus
 from ..utils import b64encode, b64decode
 
@@ -68,17 +67,17 @@ class Interaction(Model):
 
         if self.guild is not None:
             data["guild_id"] = str(self.guild.id)
-            member = await getCore().getGuildMember(self.guild, self.user.id)
+            member = await self.guild.get_member(self.user.id)
             data["member"] = await member.ds_json()
 
-            if (bot_member := await getCore().getGuildMember(self.guild, self.application.id)) is not None:
+            if (bot_member := await self.guild.get_member(self.application.id)) is not None:
                 data["app_permissions"] = str(await bot_member.permissions)
 
         if self.channel is not None:
             data["channel_id"] = str(self.channel.id)
             data["channel"] = await self.channel.ds_json()
 
-        if self.message_id is not None and (message := await getCore().getMessage(self.channel, self.message_id)):
+        if self.message_id is not None and (message := await self.channel.get_message(self.message_id)):
             data["message"] = await message.ds_json()
 
         if self.locale is not None:

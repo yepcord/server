@@ -24,11 +24,12 @@ from ..utils import get_multipart_json
 from ..y_blueprint import YBlueprint
 from ...gateway.events import InteractionCreateEvent, InteractionFailureEvent, MessageCreateEvent, \
     InteractionSuccessEvent
-from ...yepcord.ctx import getCore, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, InteractionStatus, MessageFlags, InteractionCallbackType, \
     ApplicationCommandOptionType, MessageType, ApplicationCommandType
-from ...yepcord.errors import Errors, InvalidDataErr
-from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild
+from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownChannel, UnknownGuild, \
+    UnknownMessage, UnknownUser, MissingAccess, CannotSendEmptyMessage, InteractionAlreadyAck, Unauthorized
+from ...yepcord.models import User, Application, ApplicationCommand, Integration, Message, Guild, Channel, ReadState
 from ...yepcord.models.interaction import Interaction
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import execute_after
@@ -48,13 +49,13 @@ async def resolve_options(interaction_options: list[InteractionOption], guild: G
             if "users" not in result:
                 result["users"] = {}
             result["users"][option.value] = (await user.userdata).ds_json
-            if guild is None or not (member := await getCore().getGuildMember(guild, user.id)):
+            if guild is None or not (member := await guild.get_member(user.id)):
                 continue
             if "members" not in result:
                 result["members"] = {}
             result["members"][option.value] = await member.ds_json(False)
         elif option.type == T.CHANNEL:
-            if guild is None or (channel := await getCore().getChannel(option.value)) is None:
+            if guild is None or (channel := await Channel.Y.get(option.value)) is None:
                 continue
             if channel.guild != guild:
                 continue
@@ -62,9 +63,7 @@ async def resolve_options(interaction_options: list[InteractionOption], guild: G
                 result["channels"] = {}
             result["channels"][option.value] = await channel.ds_json()
         elif option.type == T.ROLE:
-            if guild is None or (role := await getCore().getRole(option.value)) is None:
-                continue
-            if role.guild != guild:
+            if guild is None or (role := await guild.get_role(option.value)) is None:
                 continue
             if "roles" not in result:
                 result["roles"] = {}
@@ -122,34 +121,34 @@ def validate_options(user_options: list[InteractionOption], bot_options: list[di
 async def create_interaction(user: User = DepUser):
     data = InteractionCreate(**(await get_multipart_json()))
     if (application := await Application.get_or_none(id=data.application_id, deleted=False)) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
     guild = None
-    channel = await getCore().getChannel(data.channel_id)
+    channel = await Channel.Y.get(data.channel_id)
     if data.guild_id:
-        if (guild := await getCore().getGuild(data.guild_id)) is None:
-            raise InvalidDataErr(404, Errors.make(10004))
-        if (member := await getCore().getGuildMember(guild, user.id)) is None:
-            raise InvalidDataErr(403, Errors.make(50001))
+        if (guild := await Guild.get_or_none(id=data.guild_id)) is None:
+            raise UnknownGuild
+        if (member := await guild.get_member(user.id)) is None:
+            raise MissingAccess
         P = GuildPermissions
         await member.checkPermission(P.VIEW_CHANNEL, P.USE_APPLICATION_COMMANDS, channel=channel)
     if channel.guild != guild:
-        raise InvalidDataErr(404, Errors.make(10003))
-    if not await getCore().getUserByChannel(channel, user.id):
-        raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+        raise UnknownChannel
+    if not await channel.user_can_access(user.id):
+        raise Unauthorized
     if guild is not None:
-        if (await Integration.get_or_none(guild=guild, application=application)) is None:
-            raise InvalidDataErr(404, Errors.make(10002))
+        if not await Integration.exists(guild=guild, application=application):
+            raise UnknownApplication
     command_query = Q(id=data.data.id, application=application) & (Q(guild=guild) | Q(guild=None))
     if (command := await ApplicationCommand.get_or_none(command_query)) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
     message = None
     target_member = None
     if command.type == ApplicationCommandType.MESSAGE and \
-            (message := await getCore().getMessage(channel, data.data.target_id)) is None:
-        raise InvalidDataErr(404, Errors.make(10008))
+            (message := await channel.get_message(data.data.target_id)) is None:
+        raise UnknownMessage
     if command.type == ApplicationCommandType.USER and \
-            (target_member := await getCore().getGuildMember(guild, data.data.target_id)) is None:
-        raise InvalidDataErr(404, Errors.make(10013))
+            (target_member := await guild.get_member(data.data.target_id)) is None:
+        raise UnknownUser
 
     if data.data.version != command.version or data.data.type != command.type or data.data.name != command.name:
         raise InvalidDataErr(400, Errors.make(50035, {"data": {
@@ -202,9 +201,12 @@ async def send_interaction_response(interaction: Interaction, flags: bool, conte
     is_loading = flags & MessageFlags.LOADING == MessageFlags.LOADING
 
     bot_user = await User.y.get(interaction.application.id)
-    message = await Message.create(id=Snowflake.makeId(), author=bot_user, content=content, flags=flags,
-                                   interaction=interaction, channel=interaction.channel, ephemeral=is_ephemeral,
-                                   webhook_id=interaction.id, type=MessageType.CHAT_INPUT_COMMAND)
+    message = await Message.create(
+        id=Snowflake.makeId(), author=bot_user, content=content, flags=flags, interaction=interaction,
+        channel=interaction.channel, ephemeral=is_ephemeral, webhook_id=interaction.id,
+        type=MessageType.CHAT_INPUT_COMMAND
+    )
+    await ReadState.update_from_message(message)
     message_obj = await message.ds_json() | {"nonce": str(interaction.nonce)}
 
     kw = {"session_id": interaction.session_id} if is_ephemeral else {}
@@ -223,10 +225,10 @@ async def respond_to_interaction(data: InteractionRespond, interaction: Interact
     T = InteractionCallbackType
     d = data.data
     if interaction.status != InteractionStatus.PENDING:
-        raise InvalidDataErr(400, Errors.make(40060))
+        raise InteractionAlreadyAck
     if data.type == T.CHANNEL_MESSAGE_WITH_SOURCE:
         if not d.content:
-            raise InvalidDataErr(400, Errors.make(50006))
+            raise CannotSendEmptyMessage
         flags = d.flags & MessageFlags.EPHEMERAL
         await send_interaction_response(interaction, flags, d.content)
     elif data.type == T.DEFFERED_CHANNEL_MESSAGE_WITH_SOURCE:

@@ -20,19 +20,18 @@ from __future__ import annotations
 
 import warnings
 from json import dumps as jdumps
-from typing import Optional, Union
+from typing import Union
 
 from quart import Websocket
 from redis.asyncio import Redis
+from tortoise.expressions import Q
 
 from .events import *
 from .presences import Presences, Presence
 from .utils import require_auth, get_token_type, TokenType, init_redis_pool
-from ..yepcord.classes.fakeredis import FakeRedis
-from ..yepcord.core import Core
-from ..yepcord.ctx import getCore
-from ..yepcord.enums import GatewayOp
-from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember
+from ..yepcord.utils.fakeredis import FakeRedis
+from ..yepcord.enums import GatewayOp, RelationshipType
+from ..yepcord.models import Session, User, UserSettings, Bot, GuildMember, Guild
 from ..yepcord.mq_broker import getBroker
 
 
@@ -91,9 +90,9 @@ class GatewayClient:
             self.cached_presence = Presence(self.user_id, settings.status, settings.custom_status, [])
 
         await self.gateway.authenticated(self, self.cached_presence)
-        await self.esend(ReadyEvent(session.user, self, getCore()))
+        await self.esend(ReadyEvent(session.user, self))
         if not session.user.is_bot:
-            guild_ids = [guild.id for guild in await getCore().getUserGuilds(session.user)]
+            guild_ids = [guild.id for guild in await session.user.get_guilds()]
             await self.esend(ReadySupplementalEvent(await self.gateway.getFriendsPresences(self.user_id), guild_ids))
 
     @require_auth
@@ -141,13 +140,14 @@ class GatewayClient:
         await self.gateway.ev.presence_update(self.user_id, presence)
 
     @require_auth
-    async def handle_LAZY_REQUEST(self, data: dict) -> None:
+    async def handle_LAZY_REQUEST(self, data: dict) -> None:  # TODO: handle ranges
         if not (guild_id := int(data.get("guild_id"))): return
         if not data.get("members", True): return
-        guild = await getCore().getGuild(guild_id)
-        if not await getCore().getGuildMember(guild, self.user_id): return
+        if not await GuildMember.exists(guild__id=guild_id, user__id=self.user_id):
+            return
 
-        members = await getCore().getGuildMembers(guild)
+        guild = await Guild.get_or_none(id=guild_id)
+        members = await GuildMember.filter(guild=guild).select_related("user")
         statuses = {}
         for member in members:
             if presence := await self.gateway.presences.get(member.user.id):
@@ -156,7 +156,7 @@ class GatewayClient:
                 statuses[member.user.id] = Presence(member.user.id, "offline", None)
         await self.esend(GuildMembersListUpdateEvent(
             members,
-            await getCore().getGuildMemberCount(guild),
+            await guild.get_member_count(),
             statuses,
             guild_id
         ))
@@ -164,14 +164,20 @@ class GatewayClient:
     @require_auth
     async def handle_GUILD_MEMBERS(self, data: dict) -> None:
         if not (guild_id := int(data.get("guild_id")[0])): return
-        guild = await getCore().getGuild(guild_id)
-        if not await getCore().getGuildMember(guild, self.user_id): return
+        if not await GuildMember.exists(guild__id=guild_id, user__id=self.user_id):
+            return
 
         query = data.get("query", "")
         limit = data.get("limit", 100)
+        user_ids = data.get("user_ids", [])
         if limit > 100 or limit < 1:
             limit = 100
-        members = await getCore().getGuildMembersGw(guild, query, limit, data.get("user_ids", []))
+
+        q = Q(guild__id=guild_id) & (Q(nick__startswith=query) | Q(user__userdatas__username__istartswith=query))
+        if user_ids:
+            q &= Q(user__id__in=user_ids)
+        members = await GuildMember.filter(q).select_related("user").limit(limit)
+
         presences = []  # TODO: add presences
         await self.esend(GuildMembersChunkEvent(members, presences, guild_id))
 
@@ -182,24 +188,23 @@ class GatewayEvents:
     def __init__(self, gw: Gateway):
         self.gw = gw
         self.send = gw.send
-        self.core = gw.core
 
     async def presence_update(self, user_id: int, presence: Presence):
         user = await User.get(id=user_id)
         userdata = await user.data
-        users = await self.core.getRelatedUsers(user, only_ids=True)
+        user_ids = [user.id for user in await user.get_related_users()]
 
         event = PresenceUpdateEvent(userdata, presence)
 
         await self.gw.broker.publish(channel="yepcord_events", message={
             "data": await event.json(),
             "event": event.NAME,
-            "users": users,
+            "users": user_ids,
             "channel_id": None,
             "guild_id": None,
             "permissions": None,
         })
-        await self.sendToUsers(RawDispatchEventWrapper(event), users, set())
+        await self.sendToUsers(RawDispatchEventWrapper(event), user_ids, set())
 
     async def _send(self, client: GatewayClient, event: RawDispatchEvent) -> None:
         if client.is_bot and event.data.get("t") in self.BOTS_EVENTS_BLACKLIST:
@@ -221,7 +226,9 @@ class GatewayEvents:
             await self._send(client, event)
             sent.add(client)
 
-    async def sendToRoles(self, event: RawDispatchEvent, role_ids: list[int], exclude_users: set[int], sent: set) -> None:
+    async def sendToRoles(
+            self, event: RawDispatchEvent, role_ids: list[int], exclude_users: set[int], sent: set[GatewayClient]
+    ) -> None:
         for role_id in role_ids:
             for client in self.gw.store.get(role_id=role_id):
                 if client.user_id in exclude_users or client in sent:
@@ -286,8 +293,7 @@ class WsStore:
 
 
 class Gateway:
-    def __init__(self, core: Core):
-        self.core = core
+    def __init__(self):
         self.broker = getBroker()
         self.broker.subscriber("yepcord_events")(self.mcl_yepcordEventsCallback)
         self.broker.subscriber("yepcord_sys_events")(self.mcl_yepcordSysEventsCallback)
@@ -409,8 +415,11 @@ class Gateway:
     async def getFriendsPresences(self, uid: int) -> list[dict]:
         presences = []
         user = await User.get(id=uid)
-        friends = await self.core.getRelationships(user)
-        friends = [int(u["user_id"]) for u in friends if u["type"] == 1]
+        friends = [
+            relationship.other_user(user).id
+            for relationship in await user.get_relationships()
+            if relationship.type == RelationshipType.FRIEND
+        ]
         for friend in friends:
             if presence := await self.presences.get(friend):
                 presences.append({

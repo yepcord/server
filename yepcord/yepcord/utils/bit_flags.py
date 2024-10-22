@@ -16,20 +16,33 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from ..dependencies import DepUser
-from ..models.users import UserProfileQuery
-from ..y_blueprint import YBlueprint
-from ...yepcord.models import User
 
-# Base path is /api/vX/users
-users = YBlueprint("users", __name__)
+class BitFlags:
+    __slots__ = ("cls", "value", "parsed",)
 
+    def __init__(self, value: int, cls):
+        self.cls = cls
+        self.value = value
+        self.parsed = self.parse_flags()
 
-@users.get("/<string:target_user>/profile", qs_cls=UserProfileQuery)
-async def get_user_profile(query_args: UserProfileQuery, target_user: str, user: User = DepUser):
-    if target_user == "@me":
-        target_user = user.id
-    target_user = await user.get_another_user(int(target_user))
-    return await target_user.profile_json(
-        user, query_args.with_mutual_guilds, query_args.mutual_friends_count,  query_args.guild_id
-    )
+    def parse_flags(self) -> list:
+        flags = []
+        value = self.value
+        self.value = 0
+        for val in self.cls.values().values():
+            if (value & val) == val:
+                flags.append(val)
+                self.value |= val
+        return flags
+
+    def add(self, val: int):
+        if val not in self.parsed:
+            self.value |= val
+            self.parsed.append(val)
+        return self
+
+    def remove(self, val: int):
+        if val in self.parsed:
+            self.value &= ~val
+            self.parsed.remove(val)
+        return self

@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod, ABCMeta
-from asyncio import get_event_loop, gather
+from asyncio import get_event_loop
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from hashlib import md5
@@ -31,7 +31,7 @@ from typing import Optional, Tuple, Union
 from PIL import Image, ImageSequence
 from aiofiles import open as aopen
 
-from .classes.singleton import SingletonMeta
+from .utils.singleton import SingletonMeta
 from .config import Config
 from .models import Attachment
 
@@ -73,17 +73,17 @@ class FClient(Client):
 
 
 async def resizeAnimImage(img: Image, size: Tuple[int, int], form: str) -> bytes:
-    def _resize() -> bytes:
+    def _resize(form_: str) -> bytes:
         frames = []
         for frame in ImageSequence.Iterator(img):
             frames.append(frame.resize(size))
         b = BytesIO()
-        frames[0].save(b, format=form, save_all=True, append_images=frames[1:], loop=0)
+        frames[0].save(b, format=form_, save_all=True, append_images=frames[1:], loop=0)
         return b.getvalue()
 
     with ThreadPoolExecutor() as pool:
-        res = await gather(get_event_loop().run_in_executor(pool, lambda: _resize()))
-    return res[0]
+        res = await get_event_loop().run_in_executor(pool, _resize, form)
+    return res
 
 
 async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
@@ -92,15 +92,15 @@ async def resizeImage(image: Image, size: Tuple[int, int], form: str) -> bytes:
         b = BytesIO()
         save_all = True
         if form_.lower() == "jpg":
-            img = img.convert('RGB')
+            img = img.convert("RGB")
             form_ = "JPEG"
             save_all = False
         img.save(b, format=form_, save_all=save_all)
         return b.getvalue()
 
     with ThreadPoolExecutor() as pool:
-        res = await gather(get_event_loop().run_in_executor(pool, _resize, form))
-    return res[0]
+        res = await get_event_loop().run_in_executor(pool, _resize, form)
+    return res
 
 
 def imageFrames(img: Image) -> int:
@@ -132,15 +132,15 @@ class _Storage(metaclass=SingletonABCMeta):
                 return data
 
     async def _getImage(
-            self, type: str, id: int, hash: str, size: int, fmt: str, def_size: int, size_f
+            self, type: str, obj_id: int, hash: str, size: int, fmt: str, def_size: int, size_f
     ) -> Optional[bytes]:
         anim = hash.startswith("a_")
         def_fmt = "gif" if anim else "png"
         paths = [f"{hash}_{size}.{fmt}", f"{hash}_{def_size}.{fmt}", f"{hash}_{def_size}.{def_fmt}"]
-        paths = [f"{type}s/{id}/{name}" for name in paths]
+        paths = [f"{type}s/{obj_id}/{name}" for name in paths]
         return await self._getResizeImage(paths, (size, size_f(size)), anim, fmt)
 
-    async def _setImage(self, type: str, id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
+    async def _setImage(self, type: str, obj_id: int, size: int, size_f, image: BytesIO, def_hash: str = None) -> str:
         if def_hash is not None:
             hash = def_hash
         else:
@@ -154,28 +154,28 @@ class _Storage(metaclass=SingletonABCMeta):
         size = (size, size_f(size))
         coro = resizeImage(image, size, form) if not anim else resizeAnimImage(image, size, form)
         data = await coro
-        await self._write(f"{type}s/{id}/{hash}_{size[0]}.{form}", data)
+        await self._write(f"{type}s/{obj_id}/{hash}_{size[0]}.{form}", data)
         return hash
 
-    async def getAvatar(self, uid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
+    async def getAvatar(self, user_id: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = avatar_hash.startswith("a_")
         def_size = 256 if anim else 1024
-        return await self._getImage("avatar", uid, avatar_hash, size, fmt, def_size, lambda s: s)
+        return await self._getImage("avatar", user_id, avatar_hash, size, fmt, def_size, lambda s: s)
 
-    async def getChannelIcon(self, cid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+    async def getChannelIcon(self, channel_id: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = icon_hash.startswith("a_")
         def_size = 256 if anim else 1024
-        return await self._getImage("channel_icon", cid, icon_hash, size, fmt, def_size, lambda s: s)
+        return await self._getImage("channel_icon", channel_id, icon_hash, size, fmt, def_size, lambda s: s)
 
-    async def getGuildIcon(self, gid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+    async def getGuildIcon(self, guild_id: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = icon_hash.startswith("a_")
         def_size = 256 if anim else 1024
-        return await self._getImage("icon", gid, icon_hash, size, fmt, def_size, lambda s: s)
+        return await self._getImage("icon", guild_id, icon_hash, size, fmt, def_size, lambda s: s)
 
-    async def getGuildAvatar(self, uid: int, gid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
+    async def getGuildAvatar(self, user_id: int, gid: int, avatar_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = avatar_hash.startswith("a_")
         def_size = 256 if anim else 1024
-        return await self._getImage(f"guild/{gid}/avatar", uid, avatar_hash, size, fmt, def_size, lambda s: s)
+        return await self._getImage(f"guild/{gid}/avatar", user_id, avatar_hash, size, fmt, def_size, lambda s: s)
 
     async def getSticker(self, sticker_id: int, size: int, fmt: str, animated: bool) -> Optional[bytes]:
         sticker_hash = "a_sticker" if animated else "sticker"
@@ -190,63 +190,63 @@ class _Storage(metaclass=SingletonABCMeta):
         paths = [f"emojis/{'/'.join(name)}" for name in paths]
         return await self._getResizeImage(paths, (size, size), anim, fmt)
 
-    async def getRoleIcon(self, rid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+    async def getRoleIcon(self, role_id: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = icon_hash.startswith("a_")
         def_size = 256 if anim else 1024
-        return await self._getImage("role_icon", rid, icon_hash, size, fmt, def_size, lambda s: s)
+        return await self._getImage("role_icon", role_id, icon_hash, size, fmt, def_size, lambda s: s)
 
-    async def getBanner(self, uid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
+    async def getBanner(self, user_id: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = banner_hash.startswith("a_")
         def_size = 480 if anim else 600
-        return await self._getImage("banner", uid, banner_hash, size, fmt, def_size, lambda s: int(9 * s / 16))
+        return await self._getImage("banner", user_id, banner_hash, size, fmt, def_size, lambda s: int(9 * s / 16))
 
-    async def getGuildSplash(self, gid: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
+    async def getGuildSplash(self, guild_id: int, banner_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = banner_hash.startswith("a_")
         def_size = 480 if anim else 600
-        return await self._getImage("splash", gid, banner_hash, size, fmt, def_size, lambda s: int(9 * s / 16))
+        return await self._getImage("splash", guild_id, banner_hash, size, fmt, def_size, lambda s: int(9 * s / 16))
 
-    async def getAppIcon(self, aid: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
+    async def getAppIcon(self, app_id: int, icon_hash: str, size: int, fmt: str) -> Optional[bytes]:
         anim = icon_hash.startswith("a_")
         def_size = 256 if anim else 1024
-        return await self._getImage("app-icon", aid, icon_hash, size, fmt, def_size, lambda s: s)
+        return await self._getImage("app-icon", app_id, icon_hash, size, fmt, def_size, lambda s: s)
 
-    async def setAvatarFromBytesIO(self, uid: int, image: BytesIO) -> str:
+    async def setUserAvatar(self, user_id: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
-        return await self._setImage("avatar", uid, size, lambda s: s, image)
+        return await self._setImage("avatar", user_id, size, lambda s: s, image)
 
-    async def setBannerFromBytesIO(self, uid: int, image: BytesIO) -> str:
+    async def setGuildBanner(self, guild_id: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 480 if a else 600
-        return await self._setImage("banner", uid, size, lambda s: int(9 * s / 16), image)
+        return await self._setImage("banner", guild_id, size, lambda s: int(9 * s / 16), image)
 
-    async def setGuildSplashFromBytesIO(self, gid: int, image: BytesIO) -> str:
+    async def setGuildSplash(self, guild_id: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 480 if a else 600
-        return await self._setImage("splash", gid, size, lambda s: int(9 * s / 16), image)
+        return await self._setImage("splash", guild_id, size, lambda s: int(9 * s / 16), image)
 
-    async def setChannelIconFromBytesIO(self, cid: int, image: BytesIO) -> str:
+    async def setChannelIcon(self, channel_id: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
-        return await self._setImage("channel_icon", cid, size, lambda s: s, image)
+        return await self._setImage("channel_icon", channel_id, size, lambda s: s, image)
 
-    async def setGuildIconFromBytesIO(self, gid: int, image: BytesIO) -> str:
+    async def setGuildIcon(self, guild_id: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
-        return await self._setImage("icon", gid, size, lambda s: s, image)
+        return await self._setImage("icon", guild_id, size, lambda s: s, image)
 
-    async def setGuildAvatarFromBytesIO(self, uid: int, gid: int, image: BytesIO) -> str:
+    async def setUserGuildAvatar(self, user_id: int, guild_id: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
-        return await self._setImage(f"guild/{gid}/avatar", uid, size, lambda s: s, image)
+        return await self._setImage(f"guild/{guild_id}/avatar", user_id, size, lambda s: s, image)
 
-    async def setStickerFromBytesIO(self, sticker_id: int, image: BytesIO) -> str:
+    async def setSticker(self, sticker_id: int, image: BytesIO) -> str:
         return await self._setImage(f"sticker", sticker_id, 320, lambda s: s, image, def_hash="sticker")
 
-    async def setGuildEventFromBytesIO(self, event_id: int, image: BytesIO) -> str:
+    async def setGuildEventIcon(self, event_id: int, image: BytesIO) -> str:
         return await self._setImage(f"guild_event", event_id, 600, lambda s: int(9 * s / 16), image)
 
-    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
+    async def setEmoji(self, emoji_id: int, image: BytesIO) -> dict:
         image = Image.open(image)
         anim = imageFrames(image) > 1
         form = "gif" if anim else "png"
@@ -255,12 +255,12 @@ class _Storage(metaclass=SingletonABCMeta):
         await self._write(f"emojis/{emoji_id}/56.{form}", data)
         return {"animated": anim}
 
-    async def setRoleIconFromBytesIO(self, rid: int, image: BytesIO) -> str:
+    async def setRoleIcon(self, rid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("role_icon", rid, size, lambda s: s, image)
 
-    async def setAppIconFromBytesIO(self, aid: int, image: BytesIO) -> str:
+    async def setAppIcon(self, aid: int, image: BytesIO) -> str:
         a = imageFrames(Image.open(image)) > 1
         size = 256 if a else 1024
         return await self._setImage("app-icon", aid, size, lambda s: s, image)
@@ -359,10 +359,10 @@ class FTPStorage(_Storage):
             self.session.set(ftp)
             return await super().getEmoji(emoji_id, size, fmt, anim)
 
-    async def setEmojiFromBytesIO(self, emoji_id: int, image: BytesIO) -> dict:
+    async def setEmoji(self, emoji_id: int, image: BytesIO) -> dict:
         async with self._getClient() as ftp:
             self.session.set(ftp)
-            return await super().setEmojiFromBytesIO(emoji_id, image)
+            return await super().setEmoji(emoji_id, image)
 
     async def uploadAttachment(self, data: bytes, attachment: Attachment) -> int:
         async with self._getClient() as ftp:
@@ -375,7 +375,10 @@ class FTPStorage(_Storage):
             return await super().getAttachment(channel_id, attachment_id, name)
 
 
-def getStorage() -> _Storage:
+_STORAGE_CACHE: dict[str, _Storage] = {}
+
+
+def getStorageNoCache() -> _Storage:
     storage_type = Config.STORAGE["type"]
     assert storage_type in {"local", "s3", "ftp"}, "STORAGE.type must be one of ('local', 's3', 'ftp')"
     storage = Config.STORAGE[storage_type]
@@ -391,3 +394,11 @@ def getStorage() -> _Storage:
             raise Exception("You must set 'host', 'port', 'user', 'password' variables to use ftp storage type.")
         return FTPStorage(**storage)
     return FileStorage(**storage)
+
+
+def getStorage() -> _Storage:
+    storage_type = Config.STORAGE["type"]
+    if storage_type not in _STORAGE_CACHE:
+        _STORAGE_CACHE[storage_type] = getStorageNoCache()
+
+    return _STORAGE_CACHE[storage_type]

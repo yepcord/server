@@ -22,10 +22,8 @@ from random import randint
 from time import time
 from typing import Union
 
-from .classes.singleton import Singleton
 
-
-class Snowflake(Singleton):
+class Snowflake:
     EPOCH = 1640995200_000
     MAX_TIMESTAMP = 1 << 42
     _INCREMENT = 0

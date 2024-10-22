@@ -24,14 +24,14 @@ from ..dependencies import DepUser
 from ..models.oauth2 import AppAuthorizeGetQs, ExchangeCode, AppAuthorizePostQs, AppAuthorizePost
 from ..utils import captcha
 from ..y_blueprint import YBlueprint
-from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLogEntryCreateEvent, GuildRoleCreateEvent, \
-    IntegrationCreateEvent
+from ...gateway.events import GuildCreateEvent, MessageCreateEvent, GuildAuditLogEntryCreateEvent, \
+    GuildRoleCreateEvent, IntegrationCreateEvent
 from ...yepcord.config import Config
-from ...yepcord.ctx import getCore, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import ApplicationScope, GuildPermissions, MessageType
-from ...yepcord.errors import Errors, InvalidDataErr
+from ...yepcord.errors import Errors, InvalidDataErr, UnknownApplication, UnknownGuild, MissingAccess
 from ...yepcord.models import User, Guild, GuildMember, Message, Role, AuditLogEntry, Application, Bot, Authorization, \
-    Integration
+    Integration, GuildBan, Channel, ReadState
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.utils import b64decode
 
@@ -47,7 +47,7 @@ async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user
                                               {"scope": {"code": "SCOPE_INVALID", "message": "Invalid scope"}}))
 
     if (application := await Application.get_or_none(id=query_args.client_id, deleted=False)) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
     bot = await Bot.get(id=application.id).select_related("user")
 
     result = {
@@ -68,14 +68,14 @@ async def get_application_authorization_info(query_args: AppAuthorizeGetQs, user
 
     if "bot" in scopes:
         async def guild_ds_json(g: Guild) -> dict:
-            member = await getCore().getGuildMember(g, user.id)
+            member = await g.get_member(user.id)
             return {"id": str(g.id), "name": g.name, "icon": g.icon, "mfa_level": g.mfa_level,
                     "permissions": str(await member.permissions)}
 
         result["bot"] = (await bot.user.userdata).ds_json
         result["application"]["bot_public"] = bot.bot_public
         result["application"]["bot_require_code_grant"] = bot.bot_require_code_grant
-        result["guilds"] = [await guild_ds_json(guild) for guild in await getCore().getUserGuilds(user)]
+        result["guilds"] = [await guild_ds_json(guild) for guild in await user.get_guilds()]
 
     return result
 
@@ -89,7 +89,7 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
                                               {"scope": {"code": "SCOPE_INVALID", "message": "Invalid scope"}}))
 
     if (application := await Application.get_or_none(id=query_args.client_id, deleted=False)) is None:
-        raise InvalidDataErr(404, Errors.make(10002))
+        raise UnknownApplication
 
     if not data.authorize:
         return {"location": f"{query_args.redirect_uri}?error=access_denied&error_description="
@@ -100,15 +100,15 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
             return {"location": f"https://{Config.PUBLIC_HOST}/oauth2/error?error=invalid_request&error_description="
                                 f"Guild+not+specified."}
 
-        if (guild := await getCore().getGuild(data.guild_id)) is None:
-            raise InvalidDataErr(404, Errors.make(10004))
+        if (guild := await Guild.get_or_none(id=data.guild_id).select_related("owner")) is None:
+            raise UnknownGuild
 
-        if not (member := await getCore().getGuildMember(guild, user.id)):
-            raise InvalidDataErr(403, Errors.make(50001))
+        if not (member := await guild.get_member(user.id)):
+            raise MissingAccess
 
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         bot = await Bot.get(id=application.id).select_related("user")
-        if (ban := await getCore().getGuildBan(guild, bot.user.id)) is not None:
+        if (ban := await GuildBan.get_or_none(guild=guild, user=bot.user)) is not None:
             await ban.delete()
 
         bot_userdata = await bot.user.userdata
@@ -130,16 +130,18 @@ async def authorize_application(query_args: AppAuthorizePostQs, data: AppAuthori
             await AuditLogEntry.utils.integration_create(user, guild, bot.user),
         ]
         for entry in entries:
-            await getGw().dispatch(GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
-                                   permissions=GuildPermissions.VIEW_AUDIT_LOG)
+            await getGw().dispatch(
+                GuildAuditLogEntryCreateEvent(entry.ds_json()), guild_id=guild.id,
+                permissions=GuildPermissions.VIEW_AUDIT_LOG
+            )
 
         await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=bot.user.id)), user_ids=[bot.user.id])
-        if (sys_channel := await getCore().getChannel(guild.system_channel)) is not None:
+        if (sys_channel := await Channel.Y.get(guild.system_channel)) is not None:
             message = await Message.create(
                 id=Snowflake.makeId(), author=bot.user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                 guild=guild
             )
-            await getCore().sendMessage(message)
+            await ReadState.update_from_message(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel,
                                    permissions=GuildPermissions.VIEW_CHANNEL)
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from base64 import b64encode
 from time import time
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Optional
 
 from ..yepcord.config import Config
 from ..yepcord.enums import GatewayOp
@@ -30,7 +30,6 @@ from ..yepcord.snowflake import Snowflake
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..yepcord.models import Channel, Invite, GuildMember, UserData, User, UserSettings
-    from ..yepcord.core import Core
     from .gateway import GatewayClient
     from .presences import Presence
 
@@ -47,6 +46,8 @@ class DispatchEvent(Event):
 
 
 class RawDispatchEvent(DispatchEvent):
+    __slots__ = ("data",)
+
     def __init__(self, data: dict):
         self.data = data
 
@@ -66,10 +67,11 @@ class RawDispatchEventWrapper(RawDispatchEvent):
 class ReadyEvent(DispatchEvent):
     NAME = "READY"
 
-    def __init__(self, user: User, client: GatewayClient, core: Core):
+    __slots__ = ("user", "client",)
+
+    def __init__(self, user: User, client: GatewayClient):
         self.user = user
         self.client = client
-        self.core = core
 
     async def json(self) -> dict:
         userdata = await self.user.userdata
@@ -98,16 +100,24 @@ class ReadyEvent(DispatchEvent):
                     "purchased_flags": 0,
                     "nsfw_allowed": userdata.nsfw_allowed,
                     "mobile": True,  # TODO: check
-                    "mfa_enabled": settings.mfa,
+                    "mfa_enabled": bool(settings.mfa),
                     "id": str(self.user.id),
                     "flags": 0,
                 },
-                "users": await self.core.getRelatedUsers(self.user),
-                "guilds": [await guild.ds_json(user_id=self.user.id, for_gateway=True, with_channels=True)
-                           for guild in await self.core.getUserGuilds(self.user)],
+                "users": [
+                    (await user.data).ds_json
+                    for user in await self.user.get_related_users()
+                ],
+                "guilds": [
+                    await guild.ds_json(user_id=self.user.id, for_gateway=True, with_channels=True)
+                    for guild in await self.user.get_guilds()
+                ],
                 "session_id": self.client.sid,
                 "presences": [],  # TODO
-                "relationships": await self.core.getRelationships(self.user),
+                "relationships": [
+                    await relationship.ds_json(self.user)
+                    for relationship in await self.user.get_relationships()
+                ],
                 "connected_accounts": [
                     conn.ds_json() for conn in await ConnectedAccount.filter(user=self.user, verified=True)
                 ],
@@ -123,12 +133,17 @@ class ReadyEvent(DispatchEvent):
                 "guild_experiments": [],  # TODO
                 "guild_join_requests": [],  # TODO
                 "merged_members": [],  # TODO
-                "private_channels": [await channel.ds_json(user_id=self.user.id)
-                                     for channel in await self.core.getPrivateChannels(self.user)],
+                "private_channels": [
+                    await channel.ds_json(user_id=self.user.id)
+                    for channel in await self.user.get_private_channels()
+                ],
                 "read_state": {
                     "version": 1,
                     "partial": False,
-                    "entries": await self.core.getReadStatesJ(self.user) if not self.user.is_bot else []
+                    "entries": [
+                        await state.ds_json()
+                        for state in await self.user.get_read_states()
+                    ]
                 },
                 "resume_gateway_url": f"wss://{Config.GATEWAY_HOST}/",
                 "session_type": "normal",
@@ -168,6 +183,8 @@ class ReadyEvent(DispatchEvent):
 class ReadySupplementalEvent(DispatchEvent):
     NAME = "READY_SUPPLEMENTAL"
 
+    __slots__ = ("friends_presences", "guild_ids",)
+
     def __init__(self, friends_presences: list[dict], guilds_ids: list[int]):
         self.friends_presences = friends_presences
         self.guilds_ids = guilds_ids
@@ -191,6 +208,8 @@ class ReadySupplementalEvent(DispatchEvent):
 class RelationshipAddEvent(DispatchEvent):
     NAME = "RELATIONSHIP_ADD"
 
+    __slots__ = ("user_id", "userdata", "type",)
+
     def __init__(self, user_id: int, userdata: UserData, type_: int):
         self.user_id = user_id
         self.userdata = userdata
@@ -213,6 +232,8 @@ class RelationshipAddEvent(DispatchEvent):
 class DMChannelCreateEvent(DispatchEvent):
     NAME = "CHANNEL_CREATE"
 
+    __slots__ = ("channel", "_channel_kwargs",)
+
     def __init__(self, channel: Channel, *, channel_json_kwargs: dict=None):
         self.channel = channel
         self._channel_kwargs = {} if channel_json_kwargs is None else channel_json_kwargs
@@ -234,6 +255,8 @@ class DMChannelUpdateEvent(DMChannelCreateEvent):
 class RelationshipRemoveEvent(DispatchEvent):
     NAME = "RELATIONSHIP_REMOVE"
 
+    __slots__ = ("user_id", "type",)
+
     def __init__(self, user_id: int, type_: int):
         self.user_id = user_id
         self.type = type_
@@ -251,6 +274,8 @@ class RelationshipRemoveEvent(DispatchEvent):
 
 class UserUpdateEvent(DispatchEvent):
     NAME = "USER_UPDATE"
+
+    __slots__ = ("user", "userdata", "settings",)
 
     def __init__(self, user: User, userdata: UserData, settings: UserSettings):
         self.user = user
@@ -286,6 +311,8 @@ class UserUpdateEvent(DispatchEvent):
 class PresenceUpdateEvent(DispatchEvent):
     NAME = "PRESENCE_UPDATE"
 
+    __slots__ = ("userdata", "presence",)
+
     def __init__(self, userdata: UserData, presence: Presence):
         self.userdata = userdata
         self.presence = presence
@@ -308,6 +335,8 @@ class PresenceUpdateEvent(DispatchEvent):
 class MessageCreateEvent(DispatchEvent):
     NAME = "MESSAGE_CREATE"
 
+    __slots__ = ("message_obj",)
+
     def __init__(self, message_obj: dict):
         self.message_obj = message_obj
 
@@ -321,6 +350,8 @@ class MessageCreateEvent(DispatchEvent):
 
 class TypingEvent(DispatchEvent):
     NAME = "TYPING_START"
+
+    __slots__ = ("user_id", "channel_id",)
 
     def __init__(self, user_id: int, channel_id: int):
         self.user_id = user_id
@@ -345,7 +376,9 @@ class MessageUpdateEvent(MessageCreateEvent):
 class MessageDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE"
 
-    def __init__(self, message_id: int, channel_id: int, guild_id: int):
+    __slots__ = ("message_id", "channel_id", "guild_id",)
+
+    def __init__(self, message_id: int, channel_id: int, guild_id: Optional[int]):
         self.message_id = message_id
         self.channel_id = channel_id
         self.guild_id = guild_id
@@ -367,6 +400,8 @@ class MessageDeleteEvent(DispatchEvent):
 class MessageAckEvent(DispatchEvent):
     NAME = "MESSAGE_ACK"
 
+    __slots__ = ("ack_object",)
+
     def __init__(self, ack_object: dict):
         self.ack_object = ack_object
 
@@ -380,6 +415,8 @@ class MessageAckEvent(DispatchEvent):
 
 class ChannelRecipientAddEvent(DispatchEvent):
     NAME = "CHANNEL_RECIPIENT_ADD"
+
+    __slots__ = ("channel_id", "user_obj",)
 
     def __init__(self, channel_id: int, user_obj: dict):
         self.channel_id = channel_id
@@ -403,6 +440,8 @@ class ChannelRecipientRemoveEvent(ChannelRecipientAddEvent):
 class DMChannelDeleteEvent(DispatchEvent):
     NAME = "CHANNEL_DELETE"
 
+    __slots__ = ("channel_obj",)
+
     def __init__(self, channel_obj: dict):
         self.channel_obj = channel_obj
 
@@ -416,6 +455,8 @@ class DMChannelDeleteEvent(DispatchEvent):
 
 class ChannelPinsUpdateEvent(DispatchEvent):
     NAME = "CHANNEL_PINS_UPDATE"
+
+    __slots__ = ("channel_id", "last_pin_timestamp",)
 
     def __init__(self, channel_id: int, last_pin_timestamp: str):
         self.channel_id = channel_id
@@ -434,6 +475,8 @@ class ChannelPinsUpdateEvent(DispatchEvent):
 
 class MessageReactionAddEvent(DispatchEvent):
     NAME = "MESSAGE_REACTION_ADD"
+
+    __slots__ = ("user_id", "message_id", "channel_id", "emoji",)
 
     def __init__(self, user_id: int, message_id: int, channel_id: int, emoji: dict):
         self.user_id = user_id
@@ -466,6 +509,8 @@ class MessageReactionRemoveEvent(MessageReactionAddEvent):
 class GuildCreateEvent(DispatchEvent):
     NAME = "GUILD_CREATE"
 
+    __slots__ = ("guild_obj",)
+
     def __init__(self, guild_obj: dict):
         self.guild_obj = guild_obj
 
@@ -489,6 +534,8 @@ class GuildUpdateEvent(GuildCreateEvent):
 class GuildDeleteEvent(DispatchEvent):
     NAME = "GUILD_DELETE"
 
+    __slots__ = ("guild_id",)
+
     def __init__(self, guild_id: int):
         self.guild_id = guild_id
 
@@ -504,6 +551,8 @@ class GuildDeleteEvent(DispatchEvent):
 
 class GuildMembersListUpdateEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_LIST_UPDATE"
+
+    __slots__ = ("members", "total_members", "statuses", "groups", "guild_id",)
 
     def __init__(self, members: List[GuildMember], total_members: int, statuses: dict, guild_id: int):
         self.members = members
@@ -564,6 +613,8 @@ class GuildMembersListUpdateEvent(DispatchEvent):
 class UserNoteUpdateEvent(DispatchEvent):
     NAME = "USER_NOTE_UPDATE"
 
+    __slots__ = ("user_id", "note",)
+
     def __init__(self, user_id: int, note: str):
         self.user_id = user_id
         self.note = note
@@ -581,6 +632,8 @@ class UserNoteUpdateEvent(DispatchEvent):
 
 class UserSettingsProtoUpdateEvent(DispatchEvent):
     NAME = "USER_SETTINGS_PROTO_UPDATE"
+
+    __slots__ = ("proto", "type",)
 
     def __init__(self, proto: str, type_: int):
         self.proto = proto
@@ -603,6 +656,8 @@ class UserSettingsProtoUpdateEvent(DispatchEvent):
 class GuildEmojisUpdate(DispatchEvent):
     NAME = "GUILD_EMOJIS_UPDATE"
 
+    __slots__ = ("guild_id", "emojis",)
+
     def __init__(self, guild_id: int, emojis: list[dict]):
         self.guild_id = guild_id
         self.emojis = emojis
@@ -620,6 +675,8 @@ class GuildEmojisUpdate(DispatchEvent):
 
 class ChannelUpdateEvent(DispatchEvent):
     NAME = "CHANNEL_UPDATE"
+
+    __slots__ = ("channel_obj",)
 
     def __init__(self, channel_obj: dict):
         self.channel_obj = channel_obj
@@ -643,6 +700,8 @@ class ChannelDeleteEvent(ChannelUpdateEvent):
 class InviteDeleteEvent(DispatchEvent):
     NAME = "INVITE_DELETE"
 
+    __slots__ = ("invite",)
+
     def __init__(self, invite: Invite):
         self.invite = invite
 
@@ -662,6 +721,8 @@ class InviteDeleteEvent(DispatchEvent):
 class GuildMemberRemoveEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_REMOVE"
 
+    __slots__ = ("guild_id", "user_obj",)
+
     def __init__(self, guild_id: int, user_obj: dict):
         self.guild_id = guild_id
         self.user_obj = user_obj
@@ -680,6 +741,8 @@ class GuildMemberRemoveEvent(DispatchEvent):
 
 class GuildBanAddEvent(DispatchEvent):
     NAME = "GUILD_BAN_ADD"
+
+    __slots__ = ("guild_id", "user_obj",)
 
     def __init__(self, guild_id: int, user_obj: dict):
         self.guild_id = guild_id
@@ -704,6 +767,8 @@ class GuildBanRemoveEvent(GuildBanAddEvent):
 class MessageBulkDeleteEvent(DispatchEvent):
     NAME = "MESSAGE_DELETE_BULK"
 
+    __slots__ = ("guild_id", "channel_id", "message_ids",)
+
     def __init__(self, guild_id: int, channel_id: int, message_ids: list[int]):
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -724,6 +789,8 @@ class MessageBulkDeleteEvent(DispatchEvent):
 
 class GuildRoleCreateEvent(DispatchEvent):
     NAME = "GUILD_ROLE_CREATE"
+
+    __slots__ = ("guild_id", "role_obj",)
 
     def __init__(self, guild_id: int, role_obj: dict):
         self.guild_id = guild_id
@@ -748,6 +815,8 @@ class GuildRoleUpdateEvent(GuildRoleCreateEvent):
 class GuildRoleDeleteEvent(DispatchEvent):
     NAME = "GUILD_ROLE_DELETE"
 
+    __slots__ = ("guild_id", "role_id",)
+
     def __init__(self, guild_id: int, role_id: int):
         self.guild_id = guild_id
         self.role_id = role_id
@@ -767,6 +836,8 @@ class GuildRoleDeleteEvent(DispatchEvent):
 class GuildMemberUpdateEvent(DispatchEvent):
     NAME = "GUILD_MEMBER_UPDATE"
 
+    __slots__ = ("guild_id", "member_obj",)
+
     def __init__(self, guild_id: int, member_obj: dict):
         self.guild_id = guild_id
         self.member_obj = member_obj
@@ -783,6 +854,8 @@ class GuildMemberUpdateEvent(DispatchEvent):
 
 class GuildMembersChunkEvent(DispatchEvent):
     NAME = "GUILD_MEMBERS_CHUNK"
+
+    __slots__ = ("members", "presences", "guild_id",)
 
     def __init__(self, members: List[GuildMember], presences: list, guild_id: int):
         self.members = members
@@ -807,6 +880,8 @@ class GuildMembersChunkEvent(DispatchEvent):
 class GuildAuditLogEntryCreateEvent(DispatchEvent):
     NAME = "GUILD_AUDIT_LOG_ENTRY_CREATE"
 
+    __slots__ = ("entry_obj",)
+
     def __init__(self, entry_obj: dict):
         self.entry_obj = entry_obj
 
@@ -821,6 +896,8 @@ class GuildAuditLogEntryCreateEvent(DispatchEvent):
 
 class WebhooksUpdateEvent(DispatchEvent):
     NAME = "WEBHOOKS_UPDATE"
+
+    __slots__ = ("guild_id", "channel_id",)
 
     def __init__(self, guild_id: int, channel_id: int):
         self.guild_id = guild_id
@@ -841,6 +918,8 @@ class WebhooksUpdateEvent(DispatchEvent):
 class StickersUpdateEvent(DispatchEvent):
     NAME = "GUILD_STICKERS_UPDATE"
 
+    __slots__ = ("guild_id", "stickers",)
+
     def __init__(self, guild_id: int, stickers: list[dict]):
         self.guild_id = guild_id
         self.stickers = stickers
@@ -860,6 +939,8 @@ class StickersUpdateEvent(DispatchEvent):
 class UserDeleteEvent(DispatchEvent):
     NAME = "USER_DELETE"
 
+    __slots__ = ("user_id",)
+
     def __init__(self, user_id: int):
         self.user_id = user_id
 
@@ -875,6 +956,8 @@ class UserDeleteEvent(DispatchEvent):
 
 class GuildScheduledEventCreateEvent(DispatchEvent):
     NAME = "GUILD_SCHEDULED_EVENT_CREATE"
+
+    __slots__ = ("event_obj",)
 
     def __init__(self, event_obj: dict):
         self.event_obj = event_obj
@@ -893,6 +976,8 @@ class GuildScheduledEventUpdateEvent(GuildScheduledEventCreateEvent):
 
 class ScheduledEventUserAddEvent(DispatchEvent):
     NAME = "GUILD_SCHEDULED_EVENT_USER_ADD"
+
+    __slots__ = ("user_id", "event_id", "guild_id",)
 
     def __init__(self, user_id: int, event_id: int, guild_id: int):
         self.user_id = user_id
@@ -922,6 +1007,8 @@ class GuildScheduledEventDeleteEvent(GuildScheduledEventCreateEvent):
 class ThreadCreateEvent(DispatchEvent):
     NAME = "THREAD_CREATE"
 
+    __slots__ = ("thread_obj",)
+
     def __init__(self, thread_obj: dict):
         self.thread_obj = thread_obj
 
@@ -935,6 +1022,8 @@ class ThreadCreateEvent(DispatchEvent):
 
 class ThreadMemberUpdateEvent(DispatchEvent):
     NAME = "THREAD_MEMBER_UPDATE"
+
+    __slots__ = ("member_obj",)
 
     def __init__(self, member_obj: dict):
         self.member_obj = member_obj
@@ -950,6 +1039,8 @@ class ThreadMemberUpdateEvent(DispatchEvent):
 class IntegrationCreateEvent(DispatchEvent):
     NAME = "INTEGRATION_CREATE"
 
+    __slots__ = ("integration",)
+
     def __init__(self, integration: Integration):
         self.integration = integration
 
@@ -963,6 +1054,8 @@ class IntegrationCreateEvent(DispatchEvent):
 
 class IntegrationDeleteEvent(DispatchEvent):
     NAME = "INTEGRATION_DELETE"
+
+    __slots__ = ("guild_id", "application_id",)
 
     def __init__(self, guild_id: int, application_id: int):
         self.guild_id = guild_id
@@ -983,6 +1076,8 @@ class IntegrationDeleteEvent(DispatchEvent):
 class GuildIntegrationsUpdateEvent(DispatchEvent):
     NAME = "GUILD_INTEGRATIONS_UPDATE"
 
+    __slots__ = ("guild_id",)
+
     def __init__(self, guild_id: int):
         self.guild_id = guild_id
 
@@ -998,6 +1093,8 @@ class GuildIntegrationsUpdateEvent(DispatchEvent):
 
 class InteractionCreateEvent(DispatchEvent):
     NAME = "INTERACTION_CREATE"
+
+    __slots__ = ("interaction", "full", "interaction_kwargs",)
 
     def __init__(self, interaction: Interaction, full: bool, **interaction_kwargs):
         self.interaction = interaction
@@ -1021,6 +1118,8 @@ class InteractionCreateEvent(DispatchEvent):
 class InteractionSuccessEvent(DispatchEvent):
     NAME = "INTERACTION_SUCCESS"
 
+    __slots__ = ("interaction",)
+
     def __init__(self, interaction: Interaction):
         self.interaction = interaction
 
@@ -1041,6 +1140,8 @@ class InteractionFailureEvent(InteractionSuccessEvent):
 
 class UserConnectionsUpdate(DispatchEvent):
     NAME = "USER_CONNECTIONS_UPDATE"
+
+    __slots__ = ("connection",)
 
     def __init__(self, connection: ConnectedAccount):
         self.connection = connection

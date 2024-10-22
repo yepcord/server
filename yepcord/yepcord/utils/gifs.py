@@ -16,56 +16,67 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from dataclasses import dataclass, asdict
 from time import time
-from typing import List
 
 from httpx import AsyncClient
 
 from .singleton import Singleton
 
 
-@dataclass
-class _J:
-    @property
+class SlotsToDict:
+    __slots__ = ()
+
     def json(self) -> dict:
-        return asdict(self)
+        return {
+            slot: getattr(self, slot)
+            for slot in self.__slots__
+        }
 
 
-@dataclass
-class GifCategory(_J):
-    name: str
-    src: str
+class GifCategory(SlotsToDict):
+    __slots__ = ("name", "src",)
+
+    def __init__(self, name: str, src: str):
+        self.name = name
+        self.src = src
 
 
-@dataclass
-class Gif(_J):
-    id: str
-    title: str
-    preview: str
-    gif_src: str
-    height: int
-    width: int
-    src: str
-    url: str
+class Gif(SlotsToDict):
+    __slots__ = ("id", "title", "preview", "gif_src", "height", "width", "src", "url",)
+
+    def __init__(self, id_: str, title: str, preview: str, gif_src: str, height: int, width: int, src: str, url: str):
+        self.id = id_
+        self.title = title
+        self.preview = preview
+        self.gif_src = gif_src
+        self.height = height
+        self.width = width
+        self.src = src
+        self.url = url
 
 
-@dataclass
-class GifSearchResult(_J):
-    query: str
-    gifs: List[Gif]
-    time: int
+class GifSearchResult(SlotsToDict):
+    __slots__ = ("query", "gifs", "time",)
+
+    def __init__(self, query: str, gifs: list[Gif], time_: int):
+        self.query = query
+        self.gifs = gifs
+        self.time = time_
 
 
-@dataclass
-class GifSuggestion(_J):
-    query: str
-    tags: List[str]
-    time: int
+class GifSuggestion(SlotsToDict):
+    __slots__ = ("query", "tags", "time",)
+
+    def __init__(self, query: str, tags: list[str], time_: int):
+        self.query = query
+        self.tags = tags
+        self.time = time_
 
 
 # noinspection PyTestUnpassedFixture
 class Gifs(Singleton):
+    __slots__ = ("_key", "_categories", "_last_searches", "_last_suggestions", "_last_update", "_keep_searches",)
+
     def __init__(self, key: str = None, keep_searches: int = 100):
         self._key = key
         self._categories = []
@@ -74,8 +85,7 @@ class Gifs(Singleton):
         self._last_update = 0
         self._keep_searches = keep_searches
 
-    @property
-    async def categories(self) -> List[GifCategory]:
+    async def get_categories(self) -> list[GifCategory]:
         if time() - self._last_update > 60:
             await self._update_categories()
         return self._categories
@@ -92,7 +102,7 @@ class Gifs(Singleton):
         self._categories = categories
         self._last_update = time()
 
-    async def search(self, q: str=None, **kwargs) -> GifSearchResult:
+    async def search(self, q: str = None, **kwargs) -> GifSearchResult:
         if self._key is None or not q:  # pragma: no cover
             return GifSearchResult(q, [], 0)
 
@@ -113,7 +123,7 @@ class Gifs(Singleton):
             resp = await client.get(f"https://tenor.googleapis.com/v2/search", params=_params)
             for gif in resp.json()["results"]:
                 gifs.append(Gif(
-                    id=gif["id"],
+                    id_=gif["id"],
                     title=gif["title"],
                     preview=gif["media_formats"]["gifpreview"]["url"],
                     gif_src=gif["media_formats"]["gif"]["url"],
@@ -132,7 +142,7 @@ class Gifs(Singleton):
 
         return search
 
-    async def suggest(self, q: str=None, limit: int = 5, **kwargs) -> List[str]:
+    async def suggest(self, q: str = None, limit: int = 5, **kwargs) -> list[str]:
         if self._key is None or not q:  # pragma: no cover
             return []
 

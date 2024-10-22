@@ -25,12 +25,11 @@ from PIL import Image
 
 from yepcord.cdn.main import app
 from yepcord.yepcord.config import Config
-from yepcord.yepcord.core import Core
 from yepcord.yepcord.enums import StickerFormat, StickerType, ChannelType
-from yepcord.yepcord.models import User, Sticker, Emoji, Channel, Message, Attachment
+from yepcord.yepcord.models import User, Sticker, Emoji, Channel, Message, Attachment, Guild
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.storage import getStorage, _Storage
-from yepcord.yepcord.utils import getImage, b64decode
+from yepcord.yepcord.utils import getImage
 from .ftp_server import ftp_server
 from .local_server import local_server
 from .s3_server import s3_server
@@ -39,7 +38,6 @@ from ..yep_image import YEP_IMAGE
 
 register_app_error_handler(app)
 TestClientType = app.test_client_class
-core = Core(b64decode(Config.KEY))
 
 
 @pt.fixture
@@ -75,7 +73,7 @@ async def test_avatar(storage: _Storage):
     client: TestClientType = app.test_client()
     user_id = Snowflake.makeId()
 
-    avatar_hash = await storage.setAvatarFromBytesIO(user_id, getImage(YEP_IMAGE))
+    avatar_hash = await storage.setUserAvatar(user_id, getImage(YEP_IMAGE))
     assert avatar_hash is not None and len(avatar_hash) == 32
 
     response = await client.get(f"/avatars/{user_id}/{avatar_hash}.idk?size=240")
@@ -93,7 +91,7 @@ async def test_avatar(storage: _Storage):
     img = BytesIO()
     Image.open(getImage(YEP_IMAGE)).convert("RGB").save(img, format="JPEG")
 
-    avatar_hash = await storage.setAvatarFromBytesIO(user_id, img)
+    avatar_hash = await storage.setUserAvatar(user_id, img)
     assert avatar_hash is not None and len(avatar_hash) == 32
 
     response = await client.get(f"/avatars/{user_id}/{avatar_hash}.jpg?size=128")
@@ -112,7 +110,7 @@ async def test_avatar_animated(storage: _Storage):
     img = BytesIO()
     im1.save(img, format="GIF", save_all=True, append_images=[im2, im3], duration=100, loop=0)
 
-    avatar_hash = await storage.setAvatarFromBytesIO(user_id, img)
+    avatar_hash = await storage.setUserAvatar(user_id, img)
     assert avatar_hash is not None and len(avatar_hash) == 34 and avatar_hash.startswith("a_")
 
     response = await client.get(f"/avatars/{user_id}/{avatar_hash}.gif?size=240")
@@ -133,7 +131,7 @@ async def test_banner(storage: _Storage):
     client: TestClientType = app.test_client()
     user_id = Snowflake.makeId()
 
-    banner_hash = await storage.setBannerFromBytesIO(user_id, getImage(YEP_IMAGE))
+    banner_hash = await storage.setGuildBanner(user_id, getImage(YEP_IMAGE))
     assert banner_hash is not None and len(banner_hash) == 32
 
     response = await client.get(f"/banners/{user_id}/{banner_hash}.idk?size=240")
@@ -154,7 +152,7 @@ async def test_guild_splash(storage: _Storage):
     client: TestClientType = app.test_client()
     guild_id = Snowflake.makeId()
 
-    splash_hash = await storage.setGuildSplashFromBytesIO(guild_id, getImage(YEP_IMAGE))
+    splash_hash = await storage.setGuildSplash(guild_id, getImage(YEP_IMAGE))
     assert splash_hash is not None and len(splash_hash) == 32
 
     response = await client.get(f"/splashes/{guild_id}/{splash_hash}.idk?size=240")
@@ -175,7 +173,7 @@ async def test_channel_icon(storage: _Storage):
     client: TestClientType = app.test_client()
     channel_id = Snowflake.makeId()
 
-    channel_icon_hash = await storage.setChannelIconFromBytesIO(channel_id, getImage(YEP_IMAGE))
+    channel_icon_hash = await storage.setChannelIcon(channel_id, getImage(YEP_IMAGE))
     assert channel_icon_hash is not None and len(channel_icon_hash) == 32
 
     response = await client.get(f"/channel-icons/{channel_id}/{channel_icon_hash}.idk?size=240")
@@ -196,7 +194,7 @@ async def test_guild_icon(storage: _Storage):
     client: TestClientType = app.test_client()
     guild_id = Snowflake.makeId()
 
-    guild_icon_hash = await storage.setGuildIconFromBytesIO(guild_id, getImage(YEP_IMAGE))
+    guild_icon_hash = await storage.setGuildIcon(guild_id, getImage(YEP_IMAGE))
     assert guild_icon_hash is not None and len(guild_icon_hash) == 32
 
     response = await client.get(f"/icons/{guild_id}/{guild_icon_hash}.idk?size=240")
@@ -218,7 +216,7 @@ async def test_guild_avatar(storage: _Storage):
     user_id = Snowflake.makeId()
     guild_id = Snowflake.makeId()
 
-    avatar_hash = await storage.setGuildAvatarFromBytesIO(user_id, guild_id, getImage(YEP_IMAGE))
+    avatar_hash = await storage.setUserGuildAvatar(user_id, guild_id, getImage(YEP_IMAGE))
     assert avatar_hash is not None and len(avatar_hash) == 32
 
     response = await client.get(f"/guilds/{guild_id}/users/{user_id}/avatars/{avatar_hash}.idk?size=240")
@@ -243,10 +241,11 @@ async def test_sticker(storage: _Storage):
     client: TestClientType = app.test_client()
 
     user = await User.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
-    guild = await core.createGuild(Snowflake.makeId(), user, "test")
-    sticker = await Sticker.create(id=Snowflake.makeId(), guild=guild, name="test", user=user,
-                                           type=StickerType.GUILD, format=StickerFormat.PNG)
-    sticker_hash = await storage.setStickerFromBytesIO(sticker.id, getImage(YEP_IMAGE))
+    guild = await Guild.Y.create(user, "test")
+    sticker = await Sticker.create(
+        id=Snowflake.makeId(), guild=guild, name="test", user=user, type=StickerType.GUILD, format=StickerFormat.PNG
+    )
+    sticker_hash = await storage.setSticker(sticker.id, getImage(YEP_IMAGE))
     assert sticker_hash == "sticker"
 
     response = await client.get(f"/stickers/{sticker.id}.idk?size=240")
@@ -272,7 +271,7 @@ async def test_event_image(storage: _Storage):
     client: TestClientType = app.test_client()
     event_id = Snowflake.makeId()
 
-    event_hash = await storage.setGuildEventFromBytesIO(event_id, getImage(YEP_IMAGE))
+    event_hash = await storage.setGuildEventIcon(event_id, getImage(YEP_IMAGE))
     assert event_hash is not None and len(event_hash) == 32
 
     response = await client.get(f"/guild-events/{event_id}/{event_hash}?size=241")
@@ -290,9 +289,9 @@ async def test_emoji(storage: _Storage):
     client: TestClientType = app.test_client()
 
     user = await User.create(id=Snowflake.makeId(), email=f"test_{Snowflake.makeId()}@yepcord.ml", password="")
-    guild = await core.createGuild(Snowflake.makeId(), user, "test")
+    guild = await Guild.Y.create(user, "test")
     emoji = await Emoji.create(id=Snowflake.makeId(), name="test", user=user, guild=guild)
-    emoji_info = await storage.setEmojiFromBytesIO(emoji.id, getImage(YEP_IMAGE))
+    emoji_info = await storage.setEmoji(emoji.id, getImage(YEP_IMAGE))
     assert not emoji_info["animated"]
 
     response = await client.get(f"/emojis/{emoji.id}.idk?size=240")
@@ -318,7 +317,7 @@ async def test_role_icon(storage: _Storage):
     client: TestClientType = app.test_client()
     role_id = Snowflake.makeId()
 
-    role_icon_hash = await storage.setRoleIconFromBytesIO(role_id, getImage(YEP_IMAGE))
+    role_icon_hash = await storage.setRoleIcon(role_id, getImage(YEP_IMAGE))
     assert role_icon_hash is not None and len(role_icon_hash) == 32
 
     response = await client.get(f"/role-icons/{role_id}/{role_icon_hash}.idk?size=240")
@@ -366,7 +365,7 @@ async def test_app_icon(storage: _Storage):
     client: TestClientType = app.test_client()
     app_id = Snowflake.makeId()
 
-    avatar_hash = await storage.setAppIconFromBytesIO(app_id, getImage(YEP_IMAGE))
+    avatar_hash = await storage.setAppIcon(app_id, getImage(YEP_IMAGE))
     assert avatar_hash is not None and len(avatar_hash) == 32
 
     response = await client.get(f"/app-icons/{app_id}/{avatar_hash}.idk?size=240")

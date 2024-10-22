@@ -20,9 +20,7 @@ from quart import Quart, websocket, Websocket
 from tortoise.contrib.quart import register_tortoise
 
 from ..yepcord.config import Config
-from ..yepcord.classes.other import ZlibCompressor
-from ..yepcord.core import Core
-from ..yepcord.utils import b64decode
+from .utils import ZlibCompressor
 from json import loads as jloads
 from asyncio import CancelledError
 from .gateway import Gateway
@@ -33,8 +31,7 @@ class YEPcord(Quart):
 
 
 app = YEPcord("YEPcord-Gateway")
-core = Core(b64decode(Config.KEY))
-gw = Gateway(core)
+gw = Gateway()
 
 
 @app.before_serving

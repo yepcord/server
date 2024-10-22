@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from json import loads as jloads
-
 from quart import request
 
 from ..dependencies import DepSession, DepUser
@@ -25,11 +23,14 @@ from ..models.auth import Register, Login, MfaLogin, ViewBackupCodes, VerifyEmai
 from ..utils import captcha
 from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
-from ...yepcord.ctx import getCore, getGw
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.utils.mfa import MFA
+from ...yepcord.utils.jwt import JWT
+from ...yepcord.utils.email_msg import EmailMsg
+from ...yepcord.config import Config
+from ...yepcord.ctx import getGw
+from ...yepcord.errors import PasswordDoesNotMatch, Invalid2FaCode, Invalid2FaAuthTicket, InvalidToken
 from ...yepcord.models import Session, User
-from ...yepcord.snowflake import Snowflake
-from ...yepcord.utils import LOCALES, b64decode
+from ...yepcord.utils import LOCALES, b64decode, GeoIp
 
 # Base path is /api/vX/auth
 auth = YBlueprint('auth', __name__)
@@ -38,21 +39,22 @@ auth = YBlueprint('auth', __name__)
 @auth.post("/register", body_cls=Register)
 @captcha
 async def register(data: Register):
-    loc = getCore().getLanguageCode(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
-    sess = await getCore().register(Snowflake.makeId(), data.username, data.email, data.password, data.date_of_birth,
-                                    loc)
-    return {"token": sess.token}
+    locale = GeoIp.get_language_code(request.remote_addr, request.accept_languages.best_match(LOCALES, "en-US"))
+    user = await User.y.register(data.username, data.email, data.password, data.date_of_birth, locale)
+    session = await Session.Y.create(user)
+
+    return {"token": session.token}
 
 
 @auth.post("/login", body_cls=Login)
 @captcha
 async def login(data: Login):
-    sess = await getCore().login(data.login, data.password)
-    user = sess.user
-    sett = await user.settings
+    session = await User.y.login(data.login, data.password)
+    user = session.user
+    settings = await user.settings
     return {
-        "token": sess.token,
-        "user_settings": {"locale": sett.locale, "theme": sett.theme},
+        "token": session.token,
+        "user_settings": {"locale": settings.locale, "theme": settings.theme},
         "user_id": str(user.id)
     }
 
@@ -60,17 +62,17 @@ async def login(data: Login):
 @auth.post("/mfa/totp", body_cls=MfaLogin)
 async def login_with_mfa(data: MfaLogin):
     if not (ticket := data.ticket):
-        raise InvalidDataErr(400, Errors.make(60006))
+        raise Invalid2FaAuthTicket
     if not (code := data.code):
-        raise InvalidDataErr(400, Errors.make(60008))
-    if not (mfa := await getCore().getMfaFromTicket(ticket)):
-        raise InvalidDataErr(400, Errors.make(60006))
+        raise Invalid2FaCode
+    if not (mfa := await MFA.get_from_ticket(ticket)):
+        raise Invalid2FaAuthTicket
     code = code.replace("-", "").replace(" ", "")
     user = await User.y.get(mfa.uid)
-    if code not in mfa.getCodes():
-        if not (len(code) == 8 and await getCore().useMfaCode(user, code)):
-            raise InvalidDataErr(400, Errors.make(60008))
-    sess = await getCore().createSession(user.id)
+    if code not in mfa.get_codes():
+        if not (len(code) == 8 and await user.use_backup_code(code)):
+            raise Invalid2FaCode
+    sess = await Session.Y.create(user)
     sett = await user.settings
     return {
         "token": sess.token,
@@ -88,31 +90,36 @@ async def logout(session: Session = DepSession):
 @auth.post("/verify/view-backup-codes-challenge", body_cls=ViewBackupCodes)
 async def request_challenge_to_view_mfa_codes(data: ViewBackupCodes, user: User = DepUser):
     if not (password := data.password):
-        raise InvalidDataErr(400, Errors.make(50018))
-    if not await getCore().checkUserPassword(user, password):
-        raise InvalidDataErr(400, Errors.make(50018))
-    nonce = await getCore().generateUserMfaNonce(user)
-    await getCore().sendMfaChallengeEmail(user, nonce[0])
+        raise PasswordDoesNotMatch
+    if not user.check_password(password):
+        raise PasswordDoesNotMatch
+    nonce = await user.generate_mfa_nonce()
+
+    code = await MFA.nonce_to_code(nonce[0])
+    await EmailMsg.send_mfa_code(user.email, code)
+
     return {"nonce": nonce[0], "regenerate_nonce": nonce[1]}
 
 
 @auth.post("/verify/resend")
 async def resend_verification_email(user: User = DepUser):
     if not user.verified:
-        await getCore().sendVerificationEmail(user)
+        await user.send_verification_email()
     return "", 204
 
 
 @auth.post("/verify", body_cls=VerifyEmail)
 async def verify_email(data: VerifyEmail):
     if not data.token:
-        raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
-    # noinspection PyPep8
-    try:
-        email = jloads(b64decode(data.token.split(".")[0]).decode("utf8"))["email"]
-    except:
-        raise InvalidDataErr(400, Errors.make(50035, {"token": {"code": "TOKEN_INVALID", "message": "Invalid token."}}))
-    user = await getCore().getUserByEmail(email)
-    await getCore().verifyEmail(user, data.token)
+        raise InvalidToken
+
+    if (data := JWT.decode(data.token, b64decode(Config.KEY))) is None:
+        raise InvalidToken
+    if (user := await User.get_or_none(id=data["id"], email=data["email"], verified=False)) is None:
+        raise InvalidToken
+
+    user.verified = True
+    await user.save(update_fields=["verified"])
+
     await getGw().dispatch(UserUpdateEvent(user, await user.data, await user.settings), [user.id])
-    return {"token": (await getCore().createSession(user.id)).token, "user_id": str(user.id)}
+    return {"token": (await Session.Y.create(user)).token, "user_id": str(user.id)}

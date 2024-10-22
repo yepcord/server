@@ -3,18 +3,21 @@ from base64 import urlsafe_b64encode, b64decode
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from hashlib import sha256
-from typing import Optional, Union
+from typing import Optional, Union, Awaitable, Callable
 
 from quart.typing import TestWebsocketConnectionProtocol
 
 from yepcord.rest_api.main import app as _app
-from yepcord.yepcord.classes.other import MFA
+from yepcord.yepcord.utils.mfa import MFA
 from yepcord.yepcord.enums import ChannelType, GatewayOp
 from yepcord.yepcord.snowflake import Snowflake
 from yepcord.yepcord.utils import getImage
 from tests.yep_image import YEP_IMAGE
 
 TestClientType = _app.test_client_class
+
+#User.y.hash_password = lambda password, user_id: password
+#User.check_password = lambda self, password: self.password == password
 
 
 async def create_user(app: TestClientType, email: str, password: str, username: str, *, exp_code: int=200) -> Optional[str]:
@@ -55,7 +58,7 @@ async def create_users(app: TestClientType, count: int = 1) -> list[dict]:
 
 async def enable_mfa(app: TestClientType, user: dict, mfa: MFA) -> None:
     resp = await app.post("/api/v9/users/@me/mfa/totp/enable", headers={"Authorization": user["token"]},
-                          json={"code": mfa.getCode(), "secret": mfa.key, "password": user["password"]})
+                          json={"code": mfa.get_code(), "secret": mfa.key, "password": user["password"]})
     assert resp.status_code == 200, (resp.status_code, await resp.get_json())
     json = await resp.get_json()
     assert json["token"]
@@ -390,7 +393,7 @@ class GatewayClient:
         self.heartbeatTask: Optional[asyncio.Task] = None
         self.mainTask: Optional[asyncio.Task] = None
 
-        self.handlers = {
+        self.handlers: dict[int, Callable[[TestWebsocketConnectionProtocol, Optional[dict]], Awaitable[None]]] = {
             GatewayOp.HELLO: self.handle_hello
         }
         self.listeners: list[GatewayClient.EventListener] = []
@@ -405,7 +408,7 @@ class GatewayClient:
             return
 
         while self.running:
-            msg = await ws.receive_json()
+            msg: dict = await ws.receive_json()
             if msg["op"] in self.handlers:
                 await self.handlers[msg["op"]](ws, msg.get("data"))
 

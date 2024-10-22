@@ -2,7 +2,8 @@ import pytest as pt
 import pytest_asyncio
 
 from yepcord.rest_api.main import app
-from .utils import TestClientType, create_users, create_guild
+from yepcord.yepcord.enums import ChannelType
+from .utils import TestClientType, create_users, create_guild, create_invite
 from ..yep_image import YEP_IMAGE
 from ..utils import register_app_error_handler
 
@@ -67,6 +68,7 @@ async def test_get_my_profile():
     assert resp.status_code == 200
     json = await resp.get_json()
     assert json["user"]["id"] == user_id
+    assert len(json["mutual_guilds"]) > 0
 
 
 @pt.mark.asyncio
@@ -166,3 +168,32 @@ async def test_hypesquad_change_house():
 
     resp = await client.post("/api/v9/hypesquad/online", headers=headers, json={'house_id': 4})
     assert resp.status_code == 400
+
+
+@pt.mark.asyncio
+async def test_get_other_profile():
+    client: TestClientType = app.test_client()
+    user, user2 = await create_users(client, 2)
+    guild = await create_guild(client, user, "Test Guild")
+    headers = {"Authorization": user["token"]}
+    channel = [channel for channel in guild["channels"] if channel["type"] == ChannelType.GUILD_TEXT][0]
+    invite = await create_invite(client, user, channel["id"])
+
+    resp = await client.post(f"/api/v9/invites/{invite['code']}", headers={"Authorization": user2["token"]})
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/{user2['id']}/profile?with_mutual_guilds=true", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["user"]["id"] == user2["id"]
+    assert len(json["mutual_guilds"]) > 0
+    assert json["mutual_guilds"] == [{"id": guild["id"], "nick": None}]
+
+    resp = await client.patch(f"/api/v9/guilds/{guild['id']}/members/{user2['id']}", headers=headers,
+                              json={"nick": "TEST"})
+    assert resp.status_code == 200
+
+    resp = await client.get(f"/api/v9/users/{user2['id']}/profile?with_mutual_guilds=true", headers=headers)
+    assert resp.status_code == 200
+    json = await resp.get_json()
+    assert json["mutual_guilds"] == [{"id": guild["id"], "nick": "TEST"}]

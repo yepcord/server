@@ -7,8 +7,8 @@ from tortoise import connections
 from yepcord.rest_api.main import app
 from yepcord.yepcord.snowflake import Snowflake
 from .utils import TestClientType, create_users, create_application
-from ..yep_image import YEP_IMAGE
 from ..utils import register_app_error_handler
+from ..yep_image import YEP_IMAGE
 
 register_app_error_handler(app)
 

@@ -21,13 +21,11 @@ from typing import Optional, Union
 
 from tortoise import fields
 
-from ..ctx import getCore
-from ..enums import ChannelType
-from ._utils import SnowflakeField, Model
-from ..snowflake import Snowflake
-from ..utils import b64encode, int_size, NoneType
-
 import yepcord.yepcord.models as models
+from ._utils import SnowflakeField, Model
+from ..enums import ChannelType
+from ..snowflake import Snowflake
+from ..utils import b64encode, int_size
 
 
 class GuildTemplate(Model):
@@ -71,13 +69,13 @@ class GuildTemplate(Model):
 
     @staticmethod
     async def serialize_guild(guild: models.Guild) -> dict:
-        replaced_ids: dict[Union[int, NoneType], Union[int, NoneType]] = {None: None}
+        replaced_ids: dict[Union[int, None], Union[int, None]] = {None: None}
         last_replaced_id = 0
         serialized_roles = []
         serialized_channels = []
 
         # Serialize roles
-        roles = await getCore().getRoles(guild)
+        roles = await guild.get_roles()
         roles.sort(key=lambda r: r.id)
         for role in roles:
             if role.managed:
@@ -97,11 +95,11 @@ class GuildTemplate(Model):
             })
 
         # Serialize channels
-        channels = await getCore().getGuildChannels(guild)
+        channels = await guild.get_channels()
         channels.sort(key=lambda ch: (int(ch.type == ChannelType.GUILD_CATEGORY), ch.id), reverse=True)
         for channel in channels:
             serialized_permission_overwrites = []
-            for overwrite in await getCore().getPermissionOverwrites(channel):
+            for overwrite in await channel.get_permission_overwrites():
                 if overwrite.type == 0:  # Overwrite for role
                     role_id = replaced_ids[overwrite.target.id]
                     if role_id is None:

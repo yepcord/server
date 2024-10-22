@@ -17,16 +17,27 @@
 """
 
 from __future__ import annotations
+
+from os import urandom
 from typing import Optional
 
 from tortoise import fields
 
 import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
+from ..snowflake import Snowflake
 from ..utils import b64encode, int_size, b64decode
 
 
+class SessionUtils:
+    @classmethod
+    async def create(cls, user: models.User) -> Optional[models.Session]:
+        return await Session.create(id=Snowflake.makeId(), user=user, signature=b64encode(urandom(32)))
+
+
 class Session(Model):
+    Y = SessionUtils
+
     id: int = SnowflakeField(pk=True)
     user: models.User = fields.ForeignKeyField("models.User")
     signature: str = fields.CharField(max_length=128)
