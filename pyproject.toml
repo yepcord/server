@@ -40,32 +40,32 @@ python = "^3.9"
 quart = "0.19.6"
 aiofiles = "^24.1.0"
 websockets = "^13.1"
-uvicorn = "^0.31.0"
+uvicorn = "^0.32.0"
 python-magic = "^0.4.27"
-pillow = "^10.4.0"
+pillow = "^11.0.0"
 protobuf = "4.25.3"
 python-dateutil = "^2.9.0.post0"
-cryptography = "^43.0.0"
+cryptography = "^43.0.3"
 emoji = "^2.12.1"
 bcrypt = "^4.2.0"
 quart-schema = "0.20.0"
 pydantic = "^2.8.2"
 werkzeug = "3.0.4"
-aioftp = { version = "^0.22.3", optional = true }
-orjson = "^3.10.7"
+aioftp = { version = "^0.23.1", optional = true }
+orjson = "^3.10.9"
 mailers = {version = "^3.0.5", extras = ["smtp"]}
 redis = "^5.0.8"
 click = "^8.1.7"
 maxminddb = "^2.6.2"
 wget = "3.2"
-tortoise-orm = {extras = ["aiosqlite", "asyncmy", "accel"], version = "^0.21.6"}
-uvloop = "^0.20.0"
+tortoise-orm = {extras = ["aiosqlite", "asyncmy", "accel"], version = "^0.21.7"}
+uvloop = "^0.21.0"
 async-timeout = "^4.0.3"
 aerich = "^0.7.2"
 yc-protobuf3-to-dict = "^0.3.0"
 s3lite = { version = "^0.1.8", optional = true }
-fast-depends = "^2.4.11"
-faststream = {extras = ["kafka", "nats", "rabbit", "redis"], version = "^0.5.20"}
+fast-depends = "^2.4.12"
+faststream = {extras = ["kafka", "nats", "rabbit", "redis"], version = "^0.5.28"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
@@ -83,6 +83,7 @@ ftp = ["aioftp"]
 
 [tool.poetry.group.profiling.dependencies]
 viztracer = "^0.16.3"
+pyinstrument = "^5.0.0"
 
 [build-system]
 requires = ["poetry-core"]
