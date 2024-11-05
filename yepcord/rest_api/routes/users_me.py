@@ -170,7 +170,7 @@ async def update_protobuf_settings(data: SettingsProtoUpdate, user: User = DepUs
 @users_me.get("/settings-proto/2")
 async def get_protobuf_frecency_settings(user: User = DepUser):
     proto = await FrecencySettings.get_or_none(id=user.id)
-    return {"settings": proto if proto is not None else ""}
+    return {"settings": proto.settings if proto is not None else ""}
 
 
 @users_me.patch("/settings-proto/2", body_cls=SettingsProtoUpdate)
