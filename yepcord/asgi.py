@@ -41,8 +41,7 @@ from yepcord.yepcord.errors import YDataError
 from yepcord.yepcord.config import Config
 
 app = Quart("YEPCord server")
-app.gifs = rest_api.app.gifs
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 QuartSchema(app)
 
 app.before_serving(rest_api.before_serving)

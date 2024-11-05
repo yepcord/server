@@ -113,3 +113,7 @@ CONNECTIONS = {
         "client_secret": None,
     },
 }
+
+# Use fast_depends.inject() when route function is called instead of when it is created. Speeds up Yepcord launch.
+# May slow down first request to every route by ~50ms.
+LAZY_INJECT = False

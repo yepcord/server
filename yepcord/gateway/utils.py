@@ -17,6 +17,7 @@
 """
 from enum import Enum, auto
 from typing import Optional
+from zlib import compressobj, Z_FULL_FLUSH
 
 from redis.asyncio import Redis
 
@@ -63,3 +64,13 @@ async def init_redis_pool() -> Optional[Redis]:
         encoding="utf-8",
         decode_responses=True,
     )
+
+
+class ZlibCompressor:
+    __slots__ = ("_obj",)
+
+    def __init__(self):
+        self._obj = compressobj()
+
+    def __call__(self, data):
+        return self._obj.compress(data) + self._obj.flush(Z_FULL_FLUSH)

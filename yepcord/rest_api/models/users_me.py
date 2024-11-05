@@ -19,7 +19,7 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import InvalidDataErr, Errors, UnknownToken
 from ...yepcord.utils import b64decode
 
 
@@ -169,7 +169,7 @@ class RemoteAuthLogin(BaseModel):
         try:
             assert len(b64decode(value)) == 32
         except (ValueError, AssertionError):
-            raise InvalidDataErr(404, Errors.make(10012))
+            raise UnknownToken
         return value
 
 
@@ -183,7 +183,7 @@ class RemoteAuthFinish(BaseModel):
         try:
             int(value)
         except ValueError:
-            raise InvalidDataErr(404, Errors.make(10012))
+            raise UnknownToken
         return value
 
 
@@ -196,7 +196,7 @@ class RemoteAuthCancel(BaseModel):
         try:
             int(value)
         except ValueError:
-            raise InvalidDataErr(404, Errors.make(10012))
+            raise UnknownToken
         return value
 
 

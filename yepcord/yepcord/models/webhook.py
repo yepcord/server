@@ -15,7 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from __future__ import annotations
 from typing import Optional
 
 from tortoise import fields
@@ -24,7 +24,15 @@ import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
 
 
+class WebhookUtils:
+    @staticmethod
+    async def get(webhook_id: int) -> Optional[models.Webhook]:
+        return await Webhook.get_or_none(id=webhook_id).select_related("channel", "channel__guild", "user")
+
+
 class Webhook(Model):
+    Y = WebhookUtils
+
     id: int = SnowflakeField(pk=True)
     type: int = fields.IntField()
     name: str = fields.CharField(max_length=128)

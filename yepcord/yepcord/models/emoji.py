@@ -15,7 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-
+from __future__ import annotations
 from typing import Optional
 
 from tortoise import fields
@@ -24,7 +24,23 @@ import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
 
 
+class EmojiUtils:
+    @staticmethod
+    async def get_by_reaction(reaction: str) -> Optional[models.Emoji]:
+        try:
+            name, emoji_id = reaction.split(":")
+            emoji_id = int(emoji_id)
+            if "~" in name:
+                name = name.split("~")[0]
+        except ValueError:
+            return
+
+        return await Emoji.get_or_none(id=emoji_id, name=name).select_related("guild")
+
+
 class Emoji(Model):
+    Y = EmojiUtils
+
     id: int = SnowflakeField(pk=True)
     name: str = fields.CharField(max_length=64)
     user: Optional[models.User] = fields.ForeignKeyField("models.User", on_delete=fields.SET_NULL, null=True)

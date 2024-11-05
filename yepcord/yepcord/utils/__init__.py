@@ -15,6 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+import json
 from asyncio import get_event_loop, sleep as asleep
 from base64 import b64encode as _b64encode, b64decode as _b64decode
 from io import BytesIO
@@ -22,6 +23,8 @@ from re import compile as rcompile
 from typing import Union, Optional, Any
 
 from magic import from_buffer
+
+from .geoip import GeoIp
 
 
 def b64decode(data: Union[str, bytes]) -> bytes:
@@ -33,9 +36,12 @@ def b64decode(data: Union[str, bytes]) -> bytes:
     return _b64decode(data)
 
 
-def b64encode(data: Union[str, bytes]) -> str:
+def b64encode(data: Union[str, bytes, dict, list]) -> str:
+    if isinstance(data, (dict, list)):
+        data = json.dumps(data)
     if isinstance(data, str):
         data = data.encode("utf8")
+
     data = _b64encode(data).decode("utf8")
     for search, replace in (('+', '-'), ('/', '_'), ('=', '')):
         data = data.replace(search, replace)
@@ -76,7 +82,7 @@ async def execute_after(coro, seconds):
         await asleep(seconds_)
         await coro_
 
-    get_event_loop().create_task(_wait_exec(coro, seconds))
+    _ = get_event_loop().create_task(_wait_exec(coro, seconds))
 
 
 ping_regex = rcompile(r'<@((?:!|&)?\d{17,32})>')
@@ -98,10 +104,10 @@ def int_size(i: int) -> int:
     return (i.bit_length() + 7) // 8
 
 
-LOCALES = ["bg", "cs", "da", "de", "el", "en-GB", "es-ES", "fi", "fr", "hi", "hr", "hu", "it", "ja", "ko", "lt", "nl",
-           "no", "pl", "pt-BR", "ro", "ru", "sv-SE", "th", "tr", "uk", "vi", "zh-CN", "zh-TW", "en-US"]
-
-NoneType = type(None)
+LOCALES = [
+    "bg", "cs", "da", "de", "el", "en-GB", "es-ES", "fi", "fr", "hi", "hr", "hu", "it", "ja", "ko", "lt", "nl",
+    "no", "pl", "pt-BR", "ro", "ru", "sv-SE", "th", "tr", "uk", "vi", "zh-CN", "zh-TW", "en-US",
+]
 
 
 def freeze(obj: Any) -> Any:
@@ -118,3 +124,8 @@ def unfreeze(obj: Any) -> Any:
     if isinstance(obj, list):
         return [unfreeze(v) for v in obj]
     return obj
+
+
+def assert_(value: ..., exc: Union[type[BaseException], BaseException] = ValueError) -> None:
+    if not value:
+        raise exc

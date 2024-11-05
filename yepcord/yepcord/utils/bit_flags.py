@@ -16,26 +16,33 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from tortoise import fields
 
-import yepcord.yepcord.models as models
-from ._utils import SnowflakeField, Model
+class BitFlags:
+    __slots__ = ("cls", "value", "parsed",)
 
+    def __init__(self, value: int, cls):
+        self.cls = cls
+        self.value = value
+        self.parsed = self.parse_flags()
 
-class UserNote(Model):
-    id: int = SnowflakeField(pk=True)
-    user: models.User = fields.ForeignKeyField("models.User", related_name="user")
-    target: models.User = fields.ForeignKeyField("models.User", related_name="target")
-    text: str = fields.CharField(null=True, default=None, max_length=256)
+    def parse_flags(self) -> list:
+        flags = []
+        value = self.value
+        self.value = 0
+        for val in self.cls.values().values():
+            if (value & val) == val:
+                flags.append(val)
+                self.value |= val
+        return flags
 
-    class Meta:
-        unique_together = (
-            ("user", "target"),
-        )
+    def add(self, val: int):
+        if val not in self.parsed:
+            self.value |= val
+            self.parsed.append(val)
+        return self
 
-    def ds_json(self) -> dict:
-        return {
-            "user_id": self.user.id,
-            "note_user_id": self.target.id,
-            "note": self.text,
-        }
+    def remove(self, val: int):
+        if val in self.parsed:
+            self.value &= ~val
+            self.parsed.remove(val)
+        return self

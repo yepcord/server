@@ -16,19 +16,20 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from quart import Blueprint, request, current_app
+from quart import Blueprint, request
+
+from yepcord.yepcord.utils.gifs import Gifs
 
 # Base path is 
-gifs = Blueprint('gifs', __name__)
+gifs = Blueprint("gifs", __name__)
 
 
 @gifs.get("/trending")
 async def api_gifs_trending_get():
     result = {"gifs": [], "categories": []}
-    # noinspection PyUnresolvedReferences
-    for category in await current_app.gifs.categories:
-        result["categories"].append(category.json)
-        result["categories"][-1]["src"] = result["categories"][-1]["src"][:-4]+".mp4"
+    for category in await Gifs.getInstance().get_categories():
+        result["categories"].append(category.json())
+        result["categories"][-1]["src"] = result["categories"][-1]["src"][:-4] + ".mp4"
     return result
 
 
@@ -44,14 +45,12 @@ async def api_gifs_select_post():
 
 @gifs.get("/search")
 async def api_gifs_search():
-    # noinspection PyUnresolvedReferences
-    search = await current_app.gifs.search(**request.args)
-    return [gif.json for gif in search.gifs]
+    search = await Gifs.getInstance().search(**request.args)
+    return [gif.json() for gif in search.gifs]
 
 
 @gifs.get("/suggest")
 async def api_gifs_suggest():
     args: dict = {**request.args}
     if "limit" in args: args["limit"] = int(args["limit"])
-    # noinspection PyUnresolvedReferences
-    return await current_app.gifs.suggest(**args)
+    return await Gifs.getInstance().suggest(**args)

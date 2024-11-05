@@ -20,7 +20,7 @@ from ..dependencies import DepUser
 from ..models.hypesquad import HypesquadHouseChange
 from ..y_blueprint import YBlueprint
 from ...gateway.events import UserUpdateEvent
-from ...yepcord.classes.other import BitFlags
+from ...yepcord.utils.bit_flags import BitFlags
 from ...yepcord.ctx import getGw
 from ...yepcord.enums import UserFlags
 from ...yepcord.models import User
@@ -33,7 +33,9 @@ hypesquad = YBlueprint('hypesquad', __name__)
 async def api_hypesquad_online(data: HypesquadHouseChange, user: User = DepUser):
     userdata = await user.data
     flags = BitFlags(userdata.public_flags, UserFlags)
-    for f in (UserFlags.HYPESQUAD_ONLINE_HOUSE_1, UserFlags.HYPESQUAD_ONLINE_HOUSE_2, UserFlags.HYPESQUAD_ONLINE_HOUSE_3):
+    for f in (
+            UserFlags.HYPESQUAD_ONLINE_HOUSE_1, UserFlags.HYPESQUAD_ONLINE_HOUSE_2, UserFlags.HYPESQUAD_ONLINE_HOUSE_3
+    ):
         flags.remove(f)
     flags.add(getattr(UserFlags, f"HYPESQUAD_ONLINE_HOUSE_{data.house_id}"))
     userdata.public_flags = flags.value

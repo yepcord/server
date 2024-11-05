@@ -27,13 +27,14 @@ from magic import from_buffer
 from quart import request, current_app, g
 
 import yepcord.yepcord.models as models
-from ..yepcord.classes.captcha import Captcha
+from ..yepcord.utils.captcha import Captcha
 from ..yepcord.config import Config
-from ..yepcord.ctx import getCore, getCDNStorage
-from ..yepcord.enums import MessageType
-from ..yepcord.errors import Errors, InvalidDataErr
-from ..yepcord.models import Session, User, Channel, Attachment, Authorization, Bot, Webhook, Message
+from ..yepcord.enums import MessageType, ChannelType, GUILD_CHANNELS
+from ..yepcord.errors import Errors, InvalidDataErr, UnknownChannel, UnknownMessage, InvalidFormBody, \
+    FileExceedsMaxSize, CannotSendEmptyMessage
+from ..yepcord.models import Session, User, Channel, Attachment, Authorization, Bot, Webhook, Message, Sticker
 from ..yepcord.snowflake import Snowflake
+from ..yepcord.storage import getStorage
 
 if TYPE_CHECKING:  # pragma: no cover
     from .models.channels import MessageCreate
@@ -58,11 +59,11 @@ async def getSessionFromToken(token: str) -> Optional[Union[Session, Authorizati
 
 async def _getMessage(user: User, channel: Channel, message_id: int) -> Message:
     if not channel:
-        raise InvalidDataErr(404, Errors.make(10003))
+        raise UnknownChannel
     if not user:
         raise InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
-    if not message_id or not (message := await getCore().getMessage(channel, message_id)):
-        raise InvalidDataErr(404, Errors.make(10008))
+    if not message_id or not (message := await channel.get_message(message_id)):
+        raise UnknownMessage
     return message
 
 
@@ -96,14 +97,14 @@ async def get_multipart_json() -> dict:
             raise ValueError
         return loads(form["payload_json"])
     except (ValueError, KeyError):
-        raise InvalidDataErr(400, Errors.make(50035))
+        raise InvalidFormBody
 
 
 async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[dict, list[Attachment]]:
     attachments = []
     if data is None:  # Multipart request
         if request.content_length is not None and request.content_length > 1024 * 1024 * 100:
-            raise InvalidDataErr(400, Errors.make(50045))
+            raise FileExceedsMaxSize
         async with timeout(current_app.config["BODY_TIMEOUT"]):
             files = list((await request.files).values())
             data = await get_multipart_json()
@@ -120,8 +121,10 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                 get_content = getattr(file, "getvalue", file.read)
                 content = get_content()
                 total_size += len(content)
-                if total_size > 1024 * 1024 * 100: raise InvalidDataErr(400, Errors.make(50045))
-                content_type = file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
+                if total_size > 1024 * 1024 * 100: raise FileExceedsMaxSize
+                content_type = (
+                    file.content_type.strip() if file.content_type else from_buffer(content[:1024], mime=True)
+                )
                 metadata = {}
                 if content_type.startswith("image/"):
                     img = Image.open(file)
@@ -131,13 +134,13 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
                     id=Snowflake.makeId(), channel=channel, message=None, filename=name, size=len(content),
                     content_type=content_type, metadata=metadata
                 )
-                await getCDNStorage().uploadAttachment(content, att)
+                await getStorage().uploadAttachment(content, att)
                 attachments.append(att)
     if not data.get("content") and \
             not data.get("embeds") and \
             not data.get("attachments") and \
             not data.get("sticker_ids"):
-        raise InvalidDataErr(400, Errors.make(50006))
+        raise CannotSendEmptyMessage
     return data, attachments
 
 
@@ -185,7 +188,7 @@ def makeEmbedError(code, path=None, replaces=None):
 
 
 async def process_stickers(sticker_ids: list[int]):
-    stickers = [await getCore().getSticker(sticker_id) for sticker_id in sticker_ids]
+    stickers = await Sticker.filter(id__in=sticker_ids).select_related("guild")
     stickers_data = {"sticker_items": [], "stickers": []}
     for sticker in stickers:
         if sticker is None:
@@ -202,7 +205,7 @@ async def process_stickers(sticker_ids: list[int]):
 async def validate_reply(data: MessageCreate, channel: Channel) -> int:
     message_type = MessageType.DEFAULT
     if data.message_reference:
-        data.validate_reply(channel, await getCore().getMessage(channel, data.message_reference.message_id))
+        data.validate_reply(channel, await channel.get_message(data.message_reference.message_id))
     if data.message_reference:
         message_type = MessageType.REPLY
     return message_type
@@ -226,14 +229,17 @@ async def processMessage(data: dict, channel: Channel, author: Optional[User], v
     message_type = await validate_reply(data, channel)
     stickers_data = await process_stickers(data.sticker_ids)
     if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
-        raise InvalidDataErr(400, Errors.make(50006))
+        raise CannotSendEmptyMessage
 
     data_json = data.to_json()
     if webhook is not None:
         data_json["webhook_id"] = webhook.id
     message = await models.Message.create(
         id=Snowflake.makeId(), channel=channel, author=author, **data_json, **stickers_data, type=message_type,
-        guild=channel.guild, webhook_author=w_author)
+        guild=channel.guild, webhook_author=w_author,
+    )
+    await models.ReadState.update_from_message(message)
+
     message.nonce = data_json.get("nonce")
 
     for attachment in attachments:

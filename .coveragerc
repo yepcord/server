@@ -1,4 +1,0 @@
-[run]
-omit =
-    yepcord/yepcord/proto.py
-data_file = coverage.coverage

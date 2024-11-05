@@ -46,7 +46,9 @@ def migrate(config: str, location: str = None) -> None:
     async def _migrate():
         command = Command({
             "connections": {"default": Config.DB_CONNECT_STRING},
-            "apps": {"models": {"models": ["yepcord.yepcord.models", "aerich.models"], "default_connection": "default"}},
+            "apps": {"models": {
+                "models": ["yepcord.yepcord.models", "aerich.models"], "default_connection": "default",
+            }},
         }, location=location or Config.MIGRATIONS_DIR)
         await command.init()
         if Path(command.location).exists():

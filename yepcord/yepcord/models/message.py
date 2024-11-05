@@ -21,16 +21,25 @@ from datetime import datetime
 from typing import Optional
 
 from tortoise import fields
+from tortoise.functions import Count
 
 import yepcord.yepcord.models as models
-from ..ctx import getCore
 from ..enums import MessageType
 from ..models._utils import SnowflakeField, Model
 from ..snowflake import Snowflake
 from ..utils import ping_regex
 
 
+class MessageUtils:
+    @staticmethod
+    async def get(channel: models.Channel, message_id: int) -> Optional[Message]:
+        if not message_id: return
+        return await Message.get_or_none(channel=channel, id=message_id).select_related(*Message.DEFAULT_RELATED)
+
+
 class Message(Model):
+    Y = MessageUtils
+
     id: int = SnowflakeField(pk=True)
     channel: models.Channel = fields.ForeignKeyField("models.Channel", on_delete=fields.SET_NULL, null=True,
                                                      related_name="channel")
@@ -90,7 +99,10 @@ class Message(Model):
             "stickers": self.stickers,
             "tts": False,
             "sticker_ids": [sticker["id"] for sticker in self.stickers],
-            "attachments": [attachment.ds_json() for attachment in await getCore().getAttachments(self)],
+            "attachments": [
+                attachment.ds_json()
+                for attachment in await models.Attachment.filter(message=self).select_related("channel")
+            ],
         }
         if self.guild: data["guild_id"] = str(self.guild.id)
         data["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None
@@ -103,12 +115,10 @@ class Message(Model):
                 if ping.startswith("&"):
                     data["mention_roles"].append(ping[1:])
                     continue
-                if not (member := await getCore().getUserByChannelId(self.channel.id, int(ping))):
+                if not await self.channel.user_can_access(int(ping)):
                     continue
-                if isinstance(member, (models.GuildMember, models.ThreadMember)):
-                    member = member.user
-                mdata = await member.data
-                data["mentions"].append(mdata.ds_json)
+                pinged_data = await models.UserData.get(user__id=int(ping)).select_related("user")
+                data["mentions"].append(pinged_data.ds_json)
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
             if (userid := self.extra_data.get("user")) \
                     and (udata := await models.UserData.get_or_none(id=userid).select_related("user")):
@@ -121,15 +131,15 @@ class Message(Model):
             if "guild_id" in self.message_reference:
                 data["message_reference"]["guild_id"] = str(self.message_reference["guild_id"])
             if self.type in (MessageType.REPLY, MessageType.THREAD_STARTER_MESSAGE):
-                ref_channel = await getCore().getChannel(int(self.message_reference["channel_id"]))
+                ref_channel = await models.Channel.Y.get(int(self.message_reference["channel_id"]))
                 ref_message = None
                 if ref_channel:
-                    ref_message = await getCore().getMessage(ref_channel, int(self.message_reference["message_id"]))
+                    ref_message = await ref_channel.get_message(int(self.message_reference["message_id"]))
                 if ref_message: ref_message.message_reference = {}
                 data["referenced_message"] = await ref_message.ds_json() if ref_message else None
         if self.nonce is not None:
             data["nonce"] = self.nonce
-        if not search and (reactions := await getCore().getMessageReactionsJ(self, user_id)):
+        if not search and (reactions := await self._get_reactions_json(user_id)):
             data["reactions"] = reactions
 
         if self.interaction:
@@ -141,3 +151,23 @@ class Message(Model):
                 "user": userdata,
             }
         return data
+
+    async def _get_reactions_json(self, user_id: int) -> list:
+        result = await (models.Reaction.filter(message=self)
+                        .group_by("emoji_name", "emoji__id")
+                        .annotate(count=Count("id"))
+                        .values("id", "emoji_name", "emoji__id", "count"))
+
+        me_results = set(await models.Reaction.filter(message=self, user__id=user_id).values_list("id", flat=True))
+
+        return [
+            {
+                "emoji": {
+                    "id": str(reaction["emoji__id"]) if reaction["emoji__id"] else None,
+                    "name": reaction["emoji_name"]
+                },
+                "count": reaction["count"],
+                "me": reaction["id"] in me_results,
+            }
+            for reaction in result
+        ]

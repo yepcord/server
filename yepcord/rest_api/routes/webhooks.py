@@ -26,42 +26,50 @@ from ..models.webhooks import WebhookUpdate, WebhookMessageCreate, WebhookMessag
 from ..utils import processMessageData, process_stickers, validate_reply, processMessage
 from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, WebhooksUpdateEvent, MessageUpdateEvent
-from ...yepcord.ctx import getCore, getCDNStorage, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, MessageFlags
-from ...yepcord.errors import InvalidDataErr, Errors
+from ...yepcord.errors import UnknownWebhook, MissingPermissions, CannotSendEmptyMessage
 from ...yepcord.models import User, Channel, Message, Webhook
+from ...yepcord.storage import getStorage
 from ...yepcord.utils import getImage
 
 # Base path is /api/vX/webhooks
 webhooks = YBlueprint('webhooks', __name__)
 
 
-@webhooks.delete("/<int:webhook>")
-@webhooks.delete("/<int:webhook>/<string:token>", allow_bots=True)
-async def delete_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
-    if webhook := await getCore().getWebhook(webhook):
-        if webhook.token != token:
-            guild = webhook.channel.guild
-            if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
-                raise InvalidDataErr(403, Errors.make(50013))
-            await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
-        await webhook.delete()
-        await getGw().dispatch(WebhooksUpdateEvent(webhook.channel.guild.id, webhook.channel.id),
-                               guild_id=webhook.channel.guild.id, permissions=GuildPermissions.MANAGE_WEBHOOKS)
+@webhooks.delete("/<int:webhook_id>")
+@webhooks.delete("/<int:webhook_id>/<string:token>", allow_bots=True)
+async def delete_webhook(webhook_id: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
+    if (webhook := await Webhook.Y.get(webhook_id)) is None:
+        return "", 204
+
+    if webhook.token != token:
+        guild = webhook.channel.guild
+        if user is None or not (member := await guild.get_member(user.id)):
+            raise MissingPermissions
+        await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
+    await webhook.delete()
+    await getGw().dispatch(
+        WebhooksUpdateEvent(webhook.channel.guild.id, webhook.channel.id),
+        guild_id=webhook.channel.guild.id,
+        permissions=GuildPermissions.MANAGE_WEBHOOKS
+    )
 
     return "", 204
 
 
-@webhooks.patch("/<int:webhook>")
-@webhooks.patch("/<int:webhook>/<string:token>", body_cls=WebhookUpdate, allow_bots=True)
-async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
-    if not (webhook := await getCore().getWebhook(webhook)):
-        raise InvalidDataErr(404, Errors.make(10015))
+@webhooks.patch("/<int:webhook_id>")
+@webhooks.patch("/<int:webhook_id>/<string:token>", body_cls=WebhookUpdate, allow_bots=True)
+async def edit_webhook(
+        data: WebhookUpdate, webhook_id: int, user: Optional[User] = DepUserO, token: Optional[str] = None
+):
+    if (webhook := await Webhook.Y.get(webhook_id)) is None:
+        raise UnknownWebhook
     channel = webhook.channel
     guild = channel.guild
     if webhook.token != token:
-        if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
-            raise InvalidDataErr(403, Errors.make(50013))
+        if user is None or not (member := await guild.get_member(user.id)):
+            raise MissingPermissions
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
     if data.channel_id:
         if user is None:
@@ -72,7 +80,7 @@ async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] =
     if (img := data.avatar) or img is None:
         if img is not None:
             img = getImage(img)
-            if h := await getCDNStorage().setAvatarFromBytesIO(webhook.id, img):
+            if h := await getStorage().setUserAvatar(webhook.id, img):
                 img = h
         data.avatar = img
 
@@ -88,32 +96,31 @@ async def edit_webhook(data: WebhookUpdate, webhook: int, user: Optional[User] =
     return await webhook.ds_json()
 
 
-@webhooks.get("/<int:webhook>")
-@webhooks.get("/<int:webhook>/<string:token>", allow_bots=True)
-async def get_webhook(webhook: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
-    if not (webhook := await getCore().getWebhook(webhook)):
-        raise InvalidDataErr(404, Errors.make(10015))
+@webhooks.get("/<int:webhook_id>")
+@webhooks.get("/<int:webhook_id>/<string:token>", allow_bots=True)
+async def get_webhook(webhook_id: int, user: Optional[User] = DepUserO, token: Optional[str]=None):
+    if (webhook := await Webhook.Y.get(webhook_id)) is None:
+        raise UnknownWebhook
     if webhook.token != token:
         guild = webhook.channel.guild
-        if user is None or not (member := await getCore().getGuildMember(guild, user.id)):
-            raise InvalidDataErr(403, Errors.make(50013))
+        if user is None or not (member := await guild.get_member(user.id)):
+            raise MissingPermissions
         await member.checkPermission(GuildPermissions.MANAGE_WEBHOOKS)
 
     return await webhook.ds_json()
 
 
-@webhooks.post("/<int:webhook>/<string:token>", qs_cls=WebhookMessageCreateQuery)
-async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook: int, token: str):
-    if not (webhook := await getCore().getWebhook(webhook)):
-        raise InvalidDataErr(404, Errors.make(10015))
+@webhooks.post("/<int:webhook_id>/<string:token>", qs_cls=WebhookMessageCreateQuery)
+async def post_webhook_message(query_args: WebhookMessageCreateQuery, webhook_id: int, token: str):
+    if (webhook := await Webhook.Y.get(webhook_id)) is None:
+        raise UnknownWebhook
     if webhook.token != token:
-        raise InvalidDataErr(403, Errors.make(50013))
+        raise MissingPermissions
 
     channel = webhook.channel
     message = await processMessage(await request.get_json(), channel, None, WebhookMessageCreate, webhook)
 
     message_json = await message.ds_json()
-    await getCore().sendMessage(message)
     await getGw().dispatch(MessageCreateEvent(message_json), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL)
 
     if query_args.wait:
@@ -153,7 +160,7 @@ async def interaction_followup_create(message: Message = DepInteractionW):
     await validate_reply(data, channel)
     stickers_data = await process_stickers(data.sticker_ids)
     if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
-        raise InvalidDataErr(400, Errors.make(50006))
+        raise CannotSendEmptyMessage
 
     data_json = data.to_json() | stickers_data | {"flags": message.flags & ~MessageFlags.LOADING}
     await message.update(**data_json)

@@ -21,6 +21,7 @@ import warnings
 from json import dumps, loads
 from typing import Union, Optional, Callable, Coroutine
 
+import websockets.exceptions
 from async_timeout import timeout
 from faststream.rabbit import RabbitBroker
 from faststream.redis import RedisBroker
@@ -74,7 +75,7 @@ class WsServer:
         self._server = None  # pragma: no cover
 
     async def run(self):
-        asyncio.get_event_loop().create_task(self._run())
+        _ = asyncio.get_event_loop().create_task(self._run())
         async with timeout(5):
             await self._run_event.wait()
         self._run_event.clear()
@@ -114,6 +115,7 @@ class WsBroker:
 
     async def _run_client(self) -> None:
         for _ in range(5):
+            # noinspection PyBroadException,PyPep8
             try:
                 await self._real_run_client()
                 break
@@ -126,7 +128,7 @@ class WsBroker:
             return
         channel = data["channel"]
         for handler in self._handlers.get(channel, []):
-            asyncio.get_running_loop().create_task(handler(data["message"]))
+            _ = asyncio.get_running_loop().create_task(handler(data["message"]))
 
     async def start(self) -> None:
         if self._connection is not None and not self._connection.closed:  # pragma: no cover
@@ -134,7 +136,7 @@ class WsBroker:
         self._reinitialize()
 
         await self._try_run_server()
-        asyncio.get_running_loop().create_task(self._run_client())
+        _ = asyncio.get_running_loop().create_task(self._run_client())
         await self._run_event.wait()
         self._run_event.clear()
 
@@ -149,10 +151,15 @@ class WsBroker:
     async def publish(self, message: dict, channel: str) -> None:
         if self._connection is None or self._connection.closed:  # pragma: no cover
             await self.start()
-        await self._connection.send(dumps({
-            "channel": channel,
-            "message": message,
-        }))
+        for _ in range(5):
+            try:
+                await self._connection.send(dumps({
+                    "channel": channel,
+                    "message": message,
+                }))
+                return
+            except websockets.ConnectionClosed:
+                await self.start()
 
     def subscriber(self, channel: str) -> Callable:  # pragma: no cover
         def _handle(func):

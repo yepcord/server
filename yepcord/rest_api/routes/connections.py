@@ -20,7 +20,7 @@ from ..dependencies import DepUser
 from ..models.connections import ConnectionCallback
 from ..y_blueprint import YBlueprint
 from ...gateway.events import UserConnectionsUpdate
-from ...yepcord.classes.connections import ConnectionGithub, ConnectionReddit, ConnectionTwitch, BaseConnection, \
+from ...yepcord.utils.connections import ConnectionGithub, ConnectionReddit, ConnectionTwitch, BaseConnection, \
     ConnectionSpotify
 from ...yepcord.ctx import getGw
 from ...yepcord.models import User, ConnectedAccount
@@ -29,8 +29,9 @@ from ...yepcord.models import User, ConnectedAccount
 connections = YBlueprint("connections", __name__)
 
 
-async def unified_callback(connection_cls: type[BaseConnection], data: ConnectionCallback,
-                           user_login_field: str = "login"):
+async def unified_callback(
+        connection_cls: type[BaseConnection], data: ConnectionCallback, user_login_field: str = "login"
+):
     if (conn := await connection_cls.get_connection_from_state(data.state)) is None:
         return "", 204
 
@@ -40,8 +41,9 @@ async def unified_callback(connection_cls: type[BaseConnection], data: Connectio
     if await ConnectedAccount.filter(type=connection_cls.SERVICE_NAME, service_id=user_info["id"]).exists():
         return "", 204
 
-    await conn.update(service_id=user_info["id"], name=user_info[user_login_field], access_token=access_token,
-                      verified=True)
+    await conn.update(
+        service_id=user_info["id"], name=user_info[user_login_field], access_token=access_token, verified=True
+    )
     await getGw().dispatch(UserConnectionsUpdate(conn), user_ids=[int(data.state.split(".")[0])])
     return "", 204
 

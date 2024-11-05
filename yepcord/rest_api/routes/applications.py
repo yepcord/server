@@ -22,11 +22,11 @@ from ..dependencies import DepApplication, DepUser, DepGuildO
 from ..models.applications import CreateApplication, UpdateApplication, UpdateApplicationBot, GetCommandsQS, \
     CreateCommand
 from ..y_blueprint import YBlueprint
-from ...yepcord.ctx import getCore, getCDNStorage
 from ...yepcord.enums import ApplicationCommandType
 from ...yepcord.models import User, UserData, UserSettings, Application, Bot, gen_secret_key, gen_token_secret, \
     ApplicationCommand, Guild
 from ...yepcord.snowflake import Snowflake
+from ...yepcord.storage import getStorage
 from ...yepcord.utils import getImage
 
 # Base path is /api/vX/applications
@@ -35,23 +35,25 @@ applications = YBlueprint('applications', __name__)
 
 @applications.get("/", strict_slashes=False)
 async def get_applications(user: User = DepUser):
-    apps = await getCore().getApplications(user)
-    return [await app.ds_json() for app in apps]
+    return [
+        await app.ds_json()
+        for app in await Application.filter(owner=user, deleted=False).select_related("owner")
+    ]
 
 
 @applications.post("/", strict_slashes=False, body_cls=CreateApplication)
 async def create_application(data: CreateApplication, user: User = DepUser):
     app_id = Snowflake.makeId()
     name = username = data.name
-    disc = await getCore().getRandomDiscriminator(username)
+    disc = await User.y.get_free_discriminator(username)
     if disc is None:
         username = f"{username}{app_id}"
-        disc = await getCore().getRandomDiscriminator(username)
+        disc = await User.y.get_free_discriminator(username)
 
     app = await Application.create(id=app_id, owner=user, name=name)
     bot_user = await User.create(id=app_id, email=f"bot_{app_id}", password="", is_bot=True)
     await UserData.create(id=app_id, user=bot_user, birth=datetime.now(), username=username, discriminator=disc)
-    await UserSettings.create(id=app_id, user=user, locale=(await user.settings).locale)
+    await UserSettings.create(id=app_id, user=bot_user, locale=(await user.settings).locale)
     await Bot.create(id=app_id, application=app, user=bot_user)
     return await app.ds_json()
 
@@ -69,10 +71,10 @@ async def edit_application(data: UpdateApplication, application: Application = D
     changes = data.model_dump(exclude_defaults=True)
     if "icon" in changes and changes["icon"] is not None:
         img = getImage(changes["icon"])
-        image = await getCDNStorage().setAppIconFromBytesIO(application.id, img)
+        image = await getStorage().setAppIcon(application.id, img)
         changes["icon"] = image
         if bot_data.avatar == application.icon:
-            await bot_data.update(avatar=await getCDNStorage().setAvatarFromBytesIO(application.id, img))
+            await bot_data.update(avatar=await getStorage().setUserAvatar(application.id, img))
 
     bot_changes = {}
     if bot is not None and "bot_public" in changes:
@@ -96,7 +98,7 @@ async def edit_application_bot(data: UpdateApplicationBot, application: Applicat
     changes = data.model_dump(exclude_defaults=True)
     if "avatar" in changes and changes["avatar"] is not None:
         img = getImage(changes["avatar"])
-        avatar_hash = await getCDNStorage().setAvatarFromBytesIO(application.id, img)
+        avatar_hash = await getStorage().setUserAvatar(application.id, img)
         changes["avatar"] = avatar_hash
 
     if changes:

@@ -35,7 +35,7 @@ from ..utils import dict_get, freeze, unfreeze
 
 class UserSettings(Model):
     id: int = SnowflakeField(pk=True)
-    user: models.User = fields.ForeignKeyField("models.User")
+    user: models.User = fields.OneToOneField("models.User")
     inline_attachment_media: bool = fields.BooleanField(default=True)
     show_current_game: bool = fields.BooleanField(default=True)
     view_nsfw_guilds: bool = fields.BooleanField(default=False)

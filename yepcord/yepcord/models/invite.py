@@ -16,20 +16,30 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
+from pytz import UTC
 from typing import Optional
 
 from tortoise import fields
 
-from ..ctx import getCore
-from ..enums import ChannelType
+import yepcord.yepcord.models as models
 from ._utils import SnowflakeField, Model
+from ..enums import ChannelType
 from ..snowflake import Snowflake
 from ..utils import b64encode, int_size
-import yepcord.yepcord.models as models
+
+
+class InviteUtils:
+    @staticmethod
+    async def get_from_vanity_code(code: str) -> Optional[Invite]:
+        return await Invite.get_or_none(vanity_code=code) if code else None
 
 
 class Invite(Model):
+    Y = InviteUtils
+
     id: int = SnowflakeField(pk=True)
     type: int = fields.IntField(default=1)
     channel: models.Channel = fields.ForeignKeyField("models.Channel")
@@ -52,7 +62,7 @@ class Invite(Model):
         expires_at = None
         if self.max_age > 0:
             expires_timestamp = int(Snowflake.toTimestamp(self.id) / 1000) + self.max_age
-            expires_at = datetime.utcfromtimestamp(expires_timestamp).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            expires_at = datetime.fromtimestamp(expires_timestamp, UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         data = {
             "code": self.code,
             "inviter": userdata.ds_json,
@@ -67,12 +77,11 @@ class Invite(Model):
         }
 
         if with_counts:
-            related_users = await getCore().getRelatedUsersToChannel(self.channel.id, ids=False)
-            data["approximate_member_count"] = len(related_users)
+            data["approximate_member_count"] = await self.channel.get_related_users_count()
             if self.channel.type == ChannelType.GROUP_DM:
                 data["channel"]["recipients"] = [
-                    {"username": (await rel_user.data).username}
-                    for rel_user in related_users
+                    {"username": (await recipient.data).username}
+                    for recipient in await self.channel.recipients.all()
                 ]
 
         if self.channel.type == ChannelType.GROUP_DM:
@@ -111,3 +120,10 @@ class Invite(Model):
                 data["code"] = self.vanity_code
 
         return data
+
+    async def use(self) -> None:
+        if 0 < self.max_uses <= self.uses + 1:
+            await self.delete()
+        else:
+            self.uses += 1
+            await self.save(update_fields=["uses"])

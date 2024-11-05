@@ -15,18 +15,14 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-import traceback
 from asyncio import CancelledError, shield, create_task
-from json import loads as jloads
 
 from quart import Quart, websocket, Websocket
 from tortoise.contrib.quart import register_tortoise
 
 from .compression import WsCompressor
-from .gateway import Gateway
 from ..yepcord.config import Config
-from ..yepcord.core import Core
-from ..yepcord.utils import b64decode
+from .gateway import Gateway
 
 
 class YEPcord(Quart):
@@ -34,8 +30,7 @@ class YEPcord(Quart):
 
 
 app = YEPcord("YEPcord-Gateway")
-core = Core(b64decode(Config.KEY))
-gw = Gateway(core)
+gw = Gateway()
 
 
 @app.before_serving

@@ -23,9 +23,8 @@ from typing import Optional
 
 from tortoise import fields
 
-from ..ctx import getCore
 from ..enums import GuildPermissions
-from ..errors import InvalidDataErr, Errors
+from ..errors import MissingPermissions
 from ._utils import SnowflakeField, Model
 from ..snowflake import Snowflake
 import yepcord.yepcord.models as models
@@ -45,14 +44,13 @@ class PermissionsChecker:
         if _check(permissions, GuildPermissions.ADMINISTRATOR):
             return
         if channel:
-            overwrites = await getCore().getOverwritesForMember(channel, self.member)
-            for overwrite in overwrites:
+            for overwrite in await channel.get_permission_overwrites(self.member):
                 permissions &= ~overwrite.deny
                 permissions |= overwrite.allow
 
         for permission in check_permissions:
             if not _check(permissions, permission):
-                raise InvalidDataErr(403, Errors.make(50013))
+                raise MissingPermissions
 
     async def canKickOrBan(self, target_member: GuildMember) -> bool:
         if self.member == target_member:
@@ -97,6 +95,11 @@ class GuildMember(Model):
 
     guildevents: fields.ReverseRelation[models.GuildEvent]
 
+    class Meta:
+        unique_together = (
+            ("user", "guild"),
+        )
+
     @property
     def joined_at(self) -> datetime:
         return Snowflake.toDatetime(self.id)
@@ -111,7 +114,7 @@ class GuildMember(Model):
             "is_pending": False,
             "pending": False,
             "premium_since": self.user.created_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
-            "roles": [str(role) for role in await getCore().getMemberRolesIds(self)],
+            "roles": [str(role_id) for role_id in await self.roles.all().values_list("id", flat=True)],
             "mute": self.mute,
             "deaf": self.deaf
         }
@@ -125,13 +128,16 @@ class GuildMember(Model):
     def perm_checker(self) -> PermissionsChecker:
         return PermissionsChecker(self)
 
-    @property
-    async def roles_w_default(self) -> list[models.Role]:
-        return await getCore().getMemberRoles(self, True)
+    async def get_roles(self, with_default: bool = True) -> list[models.Role]:
+        roles = await self.roles.all()
+        if with_default:
+            roles.append(await models.Role.get(id=self.guild.id))
+
+        return sorted(roles, key=lambda r: r.position)
 
     @property
     async def top_role(self) -> models.Role:
-        roles = await self.roles_w_default
+        roles = await self.get_roles()
         return roles[-1]
 
     async def checkPermission(self, *check_permissions, channel: Optional[models.Channel] = None) -> None:
@@ -142,6 +148,21 @@ class GuildMember(Model):
         if self.user == self.guild.owner:
             return 562949953421311
         permissions = 0
-        for role in await self.roles_w_default:
+        for role in await self.get_roles():
             permissions |= role.permissions
         return permissions
+
+    async def set_roles_from_list(self, roles: list[models.Role]) -> tuple[list[int], list[int]]:
+        current_roles = await self.roles.all()
+        added = []
+        removed = []
+        for role in roles:
+            if role not in current_roles and not role.managed:
+                added.append(role.id)
+                await self.roles.add(role)
+        for role in current_roles:
+            if role not in roles and not role.managed:
+                removed.append(role.id)
+                await self.roles.remove(role)
+
+        return added, removed

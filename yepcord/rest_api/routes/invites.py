@@ -21,10 +21,10 @@ from ..models.invites import GetInviteQuery
 from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, DMChannelCreateEvent, ChannelRecipientAddEvent, GuildCreateEvent, \
     InviteDeleteEvent
-from ...yepcord.ctx import getCore, getGw
+from ...yepcord.ctx import getGw
 from ...yepcord.enums import ChannelType, GuildPermissions, MessageType
-from ...yepcord.errors import InvalidDataErr, Errors
-from ...yepcord.models import Invite, User, Message, GuildMember
+from ...yepcord.errors import UnknownInvite, UserBanned, MissingAccess
+from ...yepcord.models import Invite, User, Message, GuildMember, GuildBan, Channel, ReadState
 from ...yepcord.snowflake import Snowflake
 
 # Base path is /api/vX/invites
@@ -47,7 +47,7 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
     if channel.type == ChannelType.GROUP_DM:
         recipients = await channel.recipients.all()
         if user not in recipients and len(recipients) >= 10:
-            raise InvalidDataErr(404, Errors.make(10006))
+            raise UnknownInvite
         inv = await invite.ds_json()
         for excl in ["max_age", "created_at"]:  # Remove excluded fields
             if excl in inv:
@@ -58,37 +58,37 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
                 id=Snowflake.makeId(), author=channel.owner, channel=channel, content="",
                 type=MessageType.RECIPIENT_ADD, extra_data={"user": user.id}
             )
+            await ReadState.update_from_message(message)
             await channel.recipients.add(user)
             await getGw().dispatch(ChannelRecipientAddEvent(channel.id, (await user.data).ds_json),
                                    user_ids=[recipient.id for recipient in recipients])
-            await getCore().sendMessage(message)
             await getGw().dispatch(MessageCreateEvent(await message.ds_json()),
                                    user_ids=[recipient.id for recipient in recipients])
         await getGw().dispatch(DMChannelCreateEvent(channel, channel_json_kwargs={"user_id": user.id}),
                                user_ids=[user.id])
-        await getCore().useInvite(invite)
+        await invite.use()
     elif channel.type in (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_NEWS):
         inv = await invite.ds_json()
         for excl in ["max_age", "max_uses", "created_at"]:  # Remove excluded fields
             if excl in inv:
                 del inv[excl]
-        if not await getCore().getGuildMember(channel.guild, user.id):
+        if not await GuildMember.exists(guild=channel.guild, user=user):
             guild = channel.guild
-            if await getCore().getGuildBan(guild, user.id) is not None:
-                raise InvalidDataErr(403, Errors.make(40007))
+            if await GuildBan.exists(guild=guild, user=user):
+                raise UserBanned
             inv["new_member"] = True
             await GuildMember.create(id=Snowflake.makeId(), user=user, guild=guild)
             await getGw().dispatch(GuildCreateEvent(await guild.ds_json(user_id=user.id)), user_ids=[user.id])
             if guild.system_channel:
-                sys_channel = await getCore().getChannel(guild.system_channel)
+                sys_channel = await Channel.Y.get(guild.system_channel)
                 message = await Message.create(
                     id=Snowflake.makeId(), author=user, channel=sys_channel, content="", type=MessageType.USER_JOIN,
                     guild=guild
                 )
-                await getCore().sendMessage(message)
+                await ReadState.update_from_message(message)
                 await getGw().dispatch(MessageCreateEvent(await message.ds_json()), channel=sys_channel,
                                        permissions=GuildPermissions.VIEW_CHANNEL)
-            await getCore().useInvite(invite)
+            await invite.use()
             await getGw().dispatchSub([user.id], guild_id=guild.id)
     return inv
 
@@ -96,8 +96,8 @@ async def use_invite(user: User = DepUser, invite: Invite = DepInvite):
 @invites.delete("/<string:invite>", allow_bots=True)
 async def delete_invite(user: User = DepUser, invite: Invite = DepInvite):
     if invite.channel.guild:
-        if (member := await getCore().getGuildMember(invite.channel.guild, user.id)) is None:
-            raise InvalidDataErr(403, Errors.make(50001))
+        if (member := await invite.channel.guild.get_member(user.id)) is None:
+            raise MissingAccess
         await member.checkPermission(GuildPermissions.MANAGE_GUILD)
         await invite.delete()
         await getGw().dispatch(InviteDeleteEvent(invite), guild_id=invite.channel.guild.id)

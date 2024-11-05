@@ -37,27 +37,25 @@ from .routes.teams import teams
 from .routes.users import users
 from .routes.users_me import users_me
 from .routes.webhooks import webhooks
-from ..yepcord.classes.gifs import Gifs
+from ..yepcord.utils.gifs import Gifs
 from ..yepcord.config import Config
-from ..yepcord.core import Core
 from ..yepcord.errors import InvalidDataErr, MfaRequiredErr, YDataError, EmbedErr, Errors
 from ..yepcord.gateway_dispatcher import GatewayDispatcher
 from ..yepcord.storage import getStorage
-from ..yepcord.utils import b64decode, b64encode
+from ..yepcord.utils import b64encode
 
 
 class YEPcord(Quart):
-    gifs: Gifs
+    ...
 
 
 app = YEPcord("YEPcord-api")
 QuartSchema(app)
-core = Core(b64decode(Config.KEY))
 storage = getStorage()
 gateway = GatewayDispatcher()
-app.gifs = Gifs(Config.TENOR_KEY)
+gifs_ = Gifs(Config.TENOR_KEY)
 
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
 
 @app.before_serving

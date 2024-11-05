@@ -70,6 +70,7 @@ class _Errors:
 
     err_40007 = "The user is banned from this guild."
     err_40011 = "You must transfer ownership of any owned guilds before deleting your account"
+    err_40060 = "Interaction has already been acknowledged"
 
     err_50001 = "Missing Access"
     err_50003 = "Cannot execute action on a DM channel"
@@ -140,3 +141,77 @@ class _Errors:
 
 
 Errors = _Errors()
+
+
+class UnknownX(InvalidDataErr):
+    def __init__(self, error_code: int):
+        super().__init__(404, Errors.make(error_code))
+
+
+class BadRequest(InvalidDataErr):
+    def __init__(self, error_code: int):
+        super().__init__(400, Errors.make(error_code))
+
+
+class Forbidden(InvalidDataErr):
+    def __init__(self, error_code: int):
+        super().__init__(403, Errors.make(error_code))
+
+
+UnknownApplication = UnknownX(10002)
+UnknownChannel = UnknownX(10003)
+UnknownGuild = UnknownX(10004)
+UnknownInvite = UnknownX(10006)
+UnknownMessage = UnknownX(10008)
+UnknownRole = UnknownX(10011)
+UnknownToken = UnknownX(10012)
+UnknownUser = UnknownX(10013)
+UnknownEmoji = BadRequest(10014)
+UnknownWebhook = UnknownX(10015)
+UnknownConnection = UnknownX(10017)
+UnknownGuildTemplate = UnknownX(10057)
+UnknownSticker = UnknownX(10060)
+UnknownInteraction = UnknownX(10062)
+UnknownGuildEvent = UnknownX(10070)
+
+MaxPinsReached = BadRequest(30003)
+MaxEmojisReached = BadRequest(30008)
+CanHaveOneTemplate = BadRequest(30031)
+
+UserBanned = Forbidden(40007)
+MustTransferGuildsBeforeDelete = BadRequest(40011)
+InteractionAlreadyAck = BadRequest(40060)
+
+MissingAccess = Forbidden(50001)
+CannotExecuteOnDM = Forbidden(50003)
+CannotEditAnotherUserMessage = Forbidden(50005)
+CannotSendEmptyMessage = BadRequest(50006)
+CannotSendToThisUser = Forbidden(50007)
+MissingPermissions = Forbidden(50013)
+PasswordDoesNotMatch = BadRequest(50018)
+InvalidRole = BadRequest(50028)
+InvalidRecipient = BadRequest(50033)
+InvalidFormBody = BadRequest(50035)
+FileExceedsMaxSize = BadRequest(50045)
+InvalidAsset = BadRequest(50046)
+InvalidGuild = BadRequest(50055)
+MalformedUserSettings = BadRequest(50104)
+
+Already2Fa = UnknownX(60001)
+NotYet2Fa = UnknownX(60002)
+Invalid2FaSecret = BadRequest(60005)
+Invalid2FaAuthTicket = BadRequest(60006)
+Invalid2FaCode = BadRequest(60008)
+InvalidKey = BadRequest(60011)
+
+FriendRequestsDisabled = Forbidden(80000)
+UnknownDiscordTag = BadRequest(80004)
+AlreadyFriends = BadRequest(80007)
+
+Unauthorized = InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
+Error0 = InvalidDataErr(400, Errors.make(0))
+
+InvalidToken = InvalidDataErr(400, Errors.make(50035, {"token": {
+    "code": "TOKEN_INVALID",
+    "message": "Invalid token."
+}}))

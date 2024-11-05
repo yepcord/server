@@ -31,7 +31,7 @@ class UserData(Model):
         unique_together = (("username", "discriminator"),)
 
     id: int = SnowflakeField(pk=True)
-    user: models.User = fields.ForeignKeyField("models.User")
+    user: models.User = fields.OneToOneField("models.User")
     birth: date = fields.DateField()
     username: str = fields.CharField(max_length=128)
     discriminator: int = fields.IntField(validators=[MinValueValidator(0), MaxValueValidator(9999)])
@@ -52,8 +52,8 @@ class UserData(Model):
 
     @property
     def nsfw_allowed(self) -> bool:
-        dn = date.today()
-        return dn - self.birth > timedelta(days=18 * 365 + 4)
+        today = date.today()
+        return today - self.birth > timedelta(days=18 * 365 + 4)
 
     @property
     def ds_json(self) -> dict:
@@ -71,7 +71,7 @@ class UserData(Model):
         return data
 
     async def ds_json_full(self, without_email: bool = False) -> dict:
-        settings = await self.user.settings
+        locale, mfa = await models.UserSettings.get(user=self.user).values_list("locale", "mfa")
         data = {
             "id": str(self.id),
             "username": self.username,
@@ -84,9 +84,9 @@ class UserData(Model):
             "banner_color": self.banner_color if not self.user.is_bot else None,
             "accent_color": self.accent_color if not self.user.is_bot else None,
             "bio": self.bio,
-            "locale": settings.locale,
+            "locale": locale,
             "nsfw_allowed": self.nsfw_allowed,
-            "mfa_enabled": settings.mfa,
+            "mfa_enabled": bool(mfa),
             "email": self.user.email if not self.user.is_bot else None,
             "verified": self.user.verified,
             "phone": self.phone

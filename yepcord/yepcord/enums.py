@@ -92,7 +92,7 @@ class ChannelType(E):
     GUILD_DIRECTORY = 14
 
 
-GUILD_CHANNELS = (ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY, ChannelType.GUILD_NEWS)
+GUILD_CHANNELS = {ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE, ChannelType.GUILD_CATEGORY, ChannelType.GUILD_NEWS}
 
 
 class MessageType(E):
@@ -419,3 +419,8 @@ class InteractionCallbackType:
     APPLICATION_COMMAND_AUTOCOMPLETE_RESULT = 8
     MODAL = 9
     PREMIUM_REQUIRED = 10
+
+
+class MfaNonceType(E):
+    NORMAL = 1
+    REGENERATE = 2

@@ -21,7 +21,7 @@ from hmac import new
 from json import dumps
 from time import time
 
-from yepcord.yepcord.classes.other import JWT
+from yepcord.yepcord.utils.jwt import JWT
 from yepcord.yepcord.utils import b64encode, b64decode
 
 

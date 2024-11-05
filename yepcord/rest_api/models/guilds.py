@@ -17,6 +17,7 @@
 """
 
 from datetime import datetime, timezone
+from pytz import UTC
 from time import mktime
 from typing import Optional, List
 
@@ -25,7 +26,7 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo
 
 from .channels import PermissionOverwriteModel
-from ...yepcord.classes.other import BitFlags
+from ...yepcord.utils.bit_flags import BitFlags
 from ...yepcord.enums import SystemChannelFlags, ChannelType, ScheduledEventEntityType, GUILD_CHANNELS
 from ...yepcord.errors import InvalidDataErr, Errors
 from ...yepcord.utils import getImage, validImage, LOCALES
@@ -307,8 +308,11 @@ class ChannelCreate(BaseModel):
             return self.model_dump(include={"name", "type", "position"}, exclude_defaults=True)
         elif channel_type == ChannelType.GUILD_TEXT:
             return self.model_dump(
-                include={"name", "type", "position", "topic", "nsfw", "rate_limit", "parent_id", "default_auto_archive"},
-                exclude_defaults=True)
+                include={
+                    "name", "type", "position", "topic", "nsfw", "rate_limit", "parent_id", "default_auto_archive"
+                },
+                exclude_defaults=True
+            )
         elif channel_type == ChannelType.GUILD_VOICE:
             return self.model_dump(include={"name", "type", "position", "nsfw", "bitrate", "user_limit", "parent_id",
                                             "video_quality_mode"}, exclude_defaults=True)
@@ -595,7 +599,7 @@ class CreateEvent(BaseModel):
 
     @field_validator("start")
     def validate_start(cls, value: int):
-        if value < datetime.utcnow().timestamp():
+        if value < datetime.now(UTC).timestamp():
             raise InvalidDataErr(400, Errors.make(50035, {"scheduled_start_time": {
                 "code": "BASE_TYPE_BAD_TIME", "message": "Time should be in future."
             }}))
@@ -604,7 +608,7 @@ class CreateEvent(BaseModel):
     @field_validator("end")
     def validate_end(cls, value: Optional[int], info: ValidationInfo):
         if value is not None:
-            if value < datetime.utcnow().timestamp() or value < info.data.get("start", value-1):
+            if value < datetime.now(UTC).timestamp() or value < info.data.get("start", value-1):
                 raise InvalidDataErr(400, Errors.make(50035, {"scheduled_end_time": {
                     "code": "BASE_TYPE_BAD_TIME", "message": "Time should be in future."
                 }}))
