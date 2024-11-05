@@ -19,7 +19,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from zlib import compressobj, Z_FULL_FLUSH
+import zlib
+
+import zstandard
 
 
 class WsCompressor(ABC):
@@ -38,11 +40,21 @@ class ZlibCompressor(WsCompressor):
     __slots__ = ("_obj",)
 
     def __init__(self):
-        self._obj = compressobj()
+        self._obj = zlib.compressobj()
 
     def __call__(self, data: bytes) -> bytes:
-        return self._obj.compress(data) + self._obj.flush(Z_FULL_FLUSH)
+        return self._obj.compress(data) + self._obj.flush(zlib.Z_FULL_FLUSH)
+
+
+class ZstdCompressor(WsCompressor):
+    __slots__ = ("_obj",)
+
+    def __init__(self):
+        self._obj = zstandard.ZstdCompressor().compressobj()
+
+    def __call__(self, data: bytes) -> bytes:
+        return self._obj.compress(data)# + self._obj.flush(zlib.Z_FULL_FLUSH)
 
 
 WsCompressor.CLSs["zlib-stream"] = ZlibCompressor
-# TODO: add zstd-stream
+WsCompressor.CLSs["zstd-stream"] = ZstdCompressor

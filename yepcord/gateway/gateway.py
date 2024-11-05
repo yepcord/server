@@ -401,9 +401,10 @@ class Gateway:
             kwargs["new_client"] = client
             client = _client[0]
 
-        func = getattr(client, f"handle_{GatewayOp.reversed()[op]}", None)
-        if func:
-            return await func(data.get("d"), **kwargs)
+        if op in GatewayOp.reversed():
+            func = getattr(client, f"handle_{GatewayOp.reversed()[op]}", None)
+            if func:
+                return await func(data.get("d"), **kwargs)
 
         print("-" * 16)
         print(f"  Unknown op code: {op}")

@@ -73,7 +73,7 @@ class UserSettings(Model):
     mfa: str = fields.CharField(max_length=64, null=True, default=None)
     render_spoilers: str = fields.CharField(max_length=16, default="ON_CLICK",
                                             validators=[ChoicesValidator({"ALWAYS", "ON_CLICK", "IF_MODERATOR"})])
-    dismissed_contents: str = fields.CharField(max_length=64, default="510109000002000080")
+    dismissed_contents: str = fields.CharField(max_length=128, default="510109000002000080")
     status: str = fields.CharField(max_length=32, default="online",
                                    validators=[ChoicesValidator({"online", "idle", "dnd", "offline", "invisible"})])
     custom_status: Optional[dict] = fields.JSONField(null=True, default=None)
@@ -286,7 +286,7 @@ class UserSettingsProto:
         else:
             changes["friend_source_flags"] = {"all": False, "mutual_friends": False, "mutual_guilds": False}
         if (dismissed_contents := dict_get(proto_d, "user_content.dismissed_contents")) is not None:
-            changes["dismissed_contents"] = dismissed_contents[:128].hex()
+            changes["dismissed_contents"] = dismissed_contents[:64].hex()
         if guild_folders := dict_get(proto_d, "guild_folders.folders"):
             folders = []
             for folder in guild_folders:

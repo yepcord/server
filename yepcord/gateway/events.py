@@ -150,7 +150,10 @@ class ReadyEvent(DispatchEvent):
                 },
                 "user_settings": settings.ds_json() if not self.user.is_bot else {},
                 "user_settings_proto": b64encode(proto.SerializeToString()).decode("utf8") if not self.user.is_bot
-                else None
+                else None,
+                "notification_settings": {  # What?
+                    "flags": 0,
+                }
             }
         }
         if self.user.is_bot:
