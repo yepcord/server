@@ -944,3 +944,6 @@ async def get_guild_integration_commands(application_id: int, guild: Guild = Dep
     ).select_related("application", "guild").all()
 
     return {"application_commands": [command.ds_json() for command in commands], "permissions": []}
+
+
+# TODO: route GET /<int:guild>/application-command-index

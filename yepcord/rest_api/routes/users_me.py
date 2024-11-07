@@ -545,3 +545,11 @@ async def get_guilds(user: User = DepUser):
         }
 
     return [await ds_json(guild) for guild in await user.get_guilds()]
+
+
+@users_me.get("/mfa/webauthn/credentials")
+async def get_webauthn_credentials(user: User = DepUser):
+    return []  # TODO
+
+
+# TODO: route GET /application-command-index

@@ -199,6 +199,47 @@ async def api_users_me_settingsproto_type(t):
     }}))
 
 
+@other.get("/api/v9/users/@me/affinities/users")
+async def users_affinities():
+    return {"user_affinities": [], "inverse_user_affinities": []}
+
+
+@other.get("/api/v9/users/@me/entitlements")
+async def user_entitlements():
+    return []
+
+
+@other.get("/api/v9/users/@me/collectibles-marketing")
+async def user_collectibles_marketing():
+    return {"marketings": {}}
+
+
+# noinspection PyUnusedLocal
+@other.get("/api/v9/users/@me/referrals/<int:something_id>/preview")
+async def user_referrals_preview(something_id: int):
+    return {"is_eligible": False}
+
+
+@other.get("/api/v9/users/@me/collectibles-purchases")
+async def user_collectibles_purchases():
+    return []
+
+
+@other.get("/api/v9/user-profile-effects")
+async def user_profile_effects():
+    return {"profile_effect_configs": []}
+
+
+@other.get("/api/v9/collectibles-categories")
+async def collectibles_categories():
+    return []
+
+
+@other.get("/__development/build_overrides")
+async def build_overrides():
+    return {}
+
+
 # noinspection PyUnusedLocal
 @other.get("/api/v9/applications/<int:app_id>/skus")
 async def application_skus(app_id: int):
@@ -215,6 +256,18 @@ async def application_sub_group_list(app_id: int):
 @other.get("/api/v9/applications/<int:app_id>/listings")
 async def application_listings(app_id: int):
     return []
+
+
+# noinspection PyUnusedLocal
+@other.get("/api/v9/guilds/<int:guild_id>/entitlements")
+async def guild_entitlements(guild_id: int):
+    return []
+
+
+# noinspection PyUnusedLocal
+@other.post("/api/v9/guilds/<int:guild_id>/migrate-command-scope")
+async def guild_migrate_command_scope(guild_id: int):
+    return {"integration_ids_with_app_commands": []}
 
 
 # OAuth

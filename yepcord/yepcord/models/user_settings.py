@@ -286,7 +286,7 @@ class UserSettingsProto:
         else:
             changes["friend_source_flags"] = {"all": False, "mutual_friends": False, "mutual_guilds": False}
         if (dismissed_contents := dict_get(proto_d, "user_content.dismissed_contents")) is not None:
-            changes["dismissed_contents"] = dismissed_contents[:64].hex()
+            changes["dismissed_contents"] = dismissed_contents[:32].hex()
         if guild_folders := dict_get(proto_d, "guild_folders.folders"):
             folders = []
             for folder in guild_folders:

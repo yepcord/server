@@ -168,3 +168,6 @@ async def delete_application_command(command_id: int, application: Application =
                                      guild: Optional[Guild] = DepGuildO):
     await ApplicationCommand.filter(application=application, id=command_id, guild=guild).delete()
     return "", 204
+
+
+# TODO: route GET /<int:application_id>/public?application_ids=...
