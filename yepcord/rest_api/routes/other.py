@@ -35,6 +35,7 @@ async def api_auth_locationmetadata():
 
 
 @other.post("/api/v9/science")
+@other.post("/api/v9/metrics/v2")
 async def api_science():
     return "", 204
 

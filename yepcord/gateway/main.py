@@ -15,14 +15,13 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+from asyncio import CancelledError, shield, create_task
 
 from quart import Quart, websocket, Websocket
 from tortoise.contrib.quart import register_tortoise
 
+from .compression import WsCompressor
 from ..yepcord.config import Config
-from .utils import ZlibCompressor
-from json import loads as jloads
-from asyncio import CancelledError
 from .gateway import Gateway
 
 
@@ -58,12 +57,12 @@ async def set_cors_headers(response):
 async def ws_gateway():
     # noinspection PyProtectedMember,PyUnresolvedReferences
     ws: Websocket = websocket._get_current_object()
-    setattr(ws, "zlib", ZlibCompressor() if websocket.args.get("compress") == "zlib-stream" else None)
+    setattr(ws, "compressor", WsCompressor.create_compressor(websocket.args.get("compress")))
     await gw.add_client(ws)
     while True:
         try:
-            data = await ws.receive()
-            await gw.process(ws, jloads(data))
+            data = await ws.receive_json()
+            await shield(create_task(gw.process(ws, data)))
         except CancelledError:
             await gw.disconnect(ws)
             raise

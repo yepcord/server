@@ -66,6 +66,7 @@ yc-protobuf3-to-dict = "^0.3.0"
 s3lite = { version = "^0.1.8", optional = true }
 fast-depends = "^2.4.12"
 faststream = {extras = ["kafka", "nats", "rabbit", "redis"], version = "^0.5.28"}
+zstandard = "^0.23.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
@@ -84,6 +85,7 @@ ftp = ["aioftp"]
 [tool.poetry.group.profiling.dependencies]
 viztracer = "^0.16.3"
 pyinstrument = "^5.0.0"
+tuna = "^0.5.11"
 
 [build-system]
 requires = ["poetry-core"]
