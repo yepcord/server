@@ -344,9 +344,9 @@ class MessagePollAnswerModel(BaseModel):
 
 class MessagePollModel(BaseModel):
     question: MessagePollQuestionContentModel
-    answers: list[MessagePollAnswerModel] = Field(max_length=10)  # TODO: is it 10?
+    answers: list[MessagePollAnswerModel] = Field(max_length=10)
     allow_multiselect: bool = False
-    duration: int = 24  # In hours, TODO: add validation for max and min
+    duration: int = Field(default=24, ge=1, le=24 * 7)
     layout_type: int = 1
 
 
