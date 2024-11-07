@@ -79,10 +79,12 @@ class Message(Model):
 
     async def ds_json(self, user_id: int = None, search: bool = False) -> dict:
         edit_timestamp = self.edit_timestamp.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00") if self.edit_timestamp else None
+        author_userdata = (await self.author.data).ds_json if self.author else self.webhook_author
+
         data = {
             "id": str(self.id),
             "channel_id": str(self.channel.id),
-            "author": (await self.author.data).ds_json if self.author else self.webhook_author,
+            "author": author_userdata,
             "content": self.content,
             "timestamp": self.created_at.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00"),
             "edit_timestamp": edit_timestamp,
@@ -108,6 +110,7 @@ class Message(Model):
         data["mention_everyone"] = ("@everyone" in self.content or "@here" in self.content) if self.content else None
         data["mentions"] = []
         data["mention_roles"] = []
+
         if self.content:
             for ping in ping_regex.findall(self.content):
                 if ping.startswith("!"):
@@ -119,10 +122,15 @@ class Message(Model):
                     continue
                 pinged_data = await models.UserData.get(user__id=int(ping)).select_related("user")
                 data["mentions"].append(pinged_data.ds_json)
+
         if self.type in (MessageType.RECIPIENT_ADD, MessageType.RECIPIENT_REMOVE):
             if (userid := self.extra_data.get("user")) \
                     and (udata := await models.UserData.get_or_none(id=userid).select_related("user")):
                 data["mentions"].append(udata.ds_json)
+        elif self.type == MessageType.POLL_RESULT:
+            # TODO: it mentions only poll creator or all participants of the poll?
+            data["mentions"].append(author_userdata)
+
         if self.message_reference:
             data["message_reference"] = {
                 "message_id": str(self.message_reference["message_id"]),

@@ -40,10 +40,10 @@ class Poll(Model):
         counts = []
         for answer in answers:
             count = await models.PollVote.filter(answer=answer).count()
-            if not count:
+            if not count and not self.is_expired():
                 continue
             me = await models.PollVote.exists(answer=answer, user__id=user_id) \
-                if user_id is not None  else 0
+                if user_id is not None and count > 0 else 0
             counts.append({
                 "id": answer.local_id,
                 "count": count,

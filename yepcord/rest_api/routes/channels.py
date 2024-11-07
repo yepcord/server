@@ -15,15 +15,17 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from json import loads, dumps
 from os import urandom
 from random import choice
 from typing import Any
 
 from emoji import is_emoji
+from pytz import UTC
 from quart import request
 from tortoise.expressions import Q
+from tortoise.functions import Count
 
 from ..dependencies import DepUser, DepChannel, DepMessage
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
@@ -40,7 +42,7 @@ from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS, MessageFlags
 from ...yepcord.errors import UnknownMessage, UnknownUser, UnknownEmoji, UnknownInteraction, MaxPinsReached, \
     MissingPermissions, CannotSendToThisUser, CannotExecuteOnDM, CannotEditAnotherUserMessage, MissingAccess, Errors, \
-    InvalidDataErr, UnknowPoll
+    InvalidDataErr, UnknowPoll, PollExpired
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
     ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot, Role, HiddenDmChannel, Invite, \
     Reaction, PollVote, Poll, PollAnswer
@@ -691,6 +693,9 @@ async def set_poll_answers(
     if (poll := await Poll.get_or_none(message=message)) is None:
         raise UnknowPoll
 
+    if poll.is_expired():
+        raise PollExpired
+
     guild_id = channel.guild.id if channel.guild else None
 
     answer_ids = set(data.answer_ids)
@@ -728,3 +733,50 @@ async def set_poll_answers(
         )
     return "", 204
 
+
+@channels.post("/<int:channel_id>/polls/<int:message>/expire")
+async def expire_poll(
+        user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage
+):
+    if channel.guild:
+        member = await channel.guild.get_member(user.id)
+        await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL, channel=channel)
+
+    if message.author != user:
+        raise CannotEditAnotherUserMessage  # TODO: check if this is correct error
+    if (poll := await Poll.get_or_none(message=message)) is None:
+        raise UnknowPoll
+
+    if not poll.is_expired():
+        poll.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await poll.save(update_fields=["expires_at"])
+
+    total_votes = await PollVote.filter(answer__poll=poll).count()
+    fields = [
+        {"value": poll.question, "name": "poll_question_text", "inline": False},
+        {"value": "0", "name": "victor_answer_votes", "inline": False},
+        {"value": str(total_votes), "name": "total_votes", "inline": False},
+    ]
+    victor_answer = await PollVote.annotate(count=Count("id")).group_by("answer__id").order_by("count").limit(1).values(
+        "answer__text", "answer__local_id", "count"
+    )
+    if victor_answer:
+        victor_answer = victor_answer[0]
+        fields[1]["value"] = str(victor_answer["count"])
+        fields.append({"value": victor_answer["answer__local_id"], "name": "victor_answer_id", "inline": False})
+        fields.append({"value": victor_answer["answer__text"], "name": "victor_answer_text", "inline": False})
+
+    result_message = await Message.create(
+        id=Snowflake.makeId(), channel=channel, author=user, content="", type=MessageType.POLL_RESULT,
+        embeds=[{"type": "poll_result", "fields": fields, "content_scan_version": 0}],
+        message_reference={"message_id": message.id, "channel_id": channel.id, "guild_id": channel.guild.id}
+    )
+    await ReadState.update_from_message(result_message)
+
+    await getGw().dispatch(
+        MessageUpdateEvent(await message.ds_json()), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL
+    )
+    await getGw().dispatch(
+        MessageCreateEvent(await result_message.ds_json()), channel=channel, permissions=GuildPermissions.VIEW_CHANNEL
+    )
+    return await message.ds_json(user.id)

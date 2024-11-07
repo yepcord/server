@@ -99,6 +99,8 @@ class _Errors:
     err_80004 = "No users with DiscordTag exist"
     err_80007 = "You are already friends with that user."
 
+    err_520001 = "Poll expired"
+
     def __new__(cls, *args, **kwargs):
         if not isinstance(cls._instance, cls):
             cls._instance = super(_Errors, cls).__new__(cls)
@@ -209,6 +211,8 @@ InvalidKey = BadRequest(60011)
 FriendRequestsDisabled = Forbidden(80000)
 UnknownDiscordTag = BadRequest(80004)
 AlreadyFriends = BadRequest(80007)
+
+PollExpired = BadRequest(520001)
 
 Unauthorized = InvalidDataErr(401, Errors.make(0, message="401: Unauthorized"))
 Error0 = InvalidDataErr(400, Errors.make(0))
