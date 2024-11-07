@@ -1158,3 +1158,36 @@ class UserConnectionsUpdate(DispatchEvent):
                 "token_data": None,
             }
         }
+
+
+class MessagePollVoteAddEvent(DispatchEvent):
+    NAME = "MESSAGE_POLL_VOTE_ADD"
+
+    __slots__ = ("user_id", "message_id", "channel_id", "answer_id", "guild_id",)
+
+    def __init__(self, user_id: int, message_id: int, channel_id: int, answer_id: int, guild_id: int | None):
+        self.user_id = user_id
+        self.message_id = message_id
+        self.channel_id = channel_id
+        self.answer_id = answer_id
+        self.guild_id = guild_id
+
+    async def json(self) -> dict:
+        data = {
+            "t": self.NAME,
+            "op": self.OP,
+            "d": {
+                "user_id": str(self.user_id),
+                "channel_id": str(self.channel_id),
+                "message_id": str(self.message_id),
+                "answer_id": self.answer_id,
+            }
+        }
+        if self.guild_id is not None:
+            data["d"]["guild_id"] = str(self.guild_id)
+
+        return data
+
+
+class MessagePollVoteRemoveEvent(MessagePollVoteAddEvent):
+    NAME = "MESSAGE_POLL_VOTE_REMOVE"

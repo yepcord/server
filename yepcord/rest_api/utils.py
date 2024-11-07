@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from functools import wraps
 from json import loads
 from typing import Optional, Union, TYPE_CHECKING
@@ -24,6 +25,7 @@ from typing import Optional, Union, TYPE_CHECKING
 from PIL import Image
 from async_timeout import timeout
 from magic import from_buffer
+from pytz import UTC
 from quart import request, current_app, g
 
 import yepcord.yepcord.models as models
@@ -139,7 +141,8 @@ async def processMessageData(data: Optional[dict], channel: Channel) -> tuple[di
     if not data.get("content") and \
             not data.get("embeds") and \
             not data.get("attachments") and \
-            not data.get("sticker_ids"):
+            not data.get("sticker_ids") and \
+            not data.get("poll"):
         raise CannotSendEmptyMessage
     return data, attachments
 
@@ -228,7 +231,7 @@ async def processMessage(data: dict, channel: Channel, author: Optional[User], v
 
     message_type = await validate_reply(data, channel)
     stickers_data = await process_stickers(data.sticker_ids)
-    if not data.content and not data.embeds and not attachments and not stickers_data["stickers"]:
+    if not data.content and not data.embeds and not attachments and not stickers_data["stickers"] and not data.poll:
         raise CannotSendEmptyMessage
 
     data_json = data.to_json()
@@ -239,6 +242,18 @@ async def processMessage(data: dict, channel: Channel, author: Optional[User], v
         guild=channel.guild, webhook_author=w_author,
     )
     await models.ReadState.update_from_message(message)
+
+    if data.poll:
+        poll = await models.Poll.create(
+            message=message,
+            question=data.poll.question.text,
+            expires_at=datetime.now(UTC) + timedelta(hours=data.poll.duration),
+            multiselect=data.poll.allow_multiselect,
+        )
+        await models.PollAnswer.bulk_create([
+            models.PollAnswer(poll=poll, local_id=idx+1, text=answer.poll_media.text)
+            for idx, answer in enumerate(data.poll.answers)
+        ])
 
     message.nonce = data_json.get("nonce")
 

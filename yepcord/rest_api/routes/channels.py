@@ -27,20 +27,23 @@ from tortoise.expressions import Q
 
 from ..dependencies import DepUser, DepChannel, DepMessage
 from ..models.channels import ChannelUpdate, MessageCreate, MessageUpdate, InviteCreate, PermissionOverwriteModel, \
-    WebhookCreate, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS, SearchQuery, GetMessagesQuery
+    WebhookCreate, GetReactionsQuery, MessageAck, CreateThread, CommandsSearchQS, SearchQuery, GetMessagesQuery, \
+    AnswerPoll
 from ..utils import _getMessage, processMessage
 from ..y_blueprint import YBlueprint
 from ...gateway.events import MessageCreateEvent, TypingEvent, MessageDeleteEvent, MessageUpdateEvent, \
     DMChannelCreateEvent, DMChannelUpdateEvent, ChannelRecipientAddEvent, ChannelRecipientRemoveEvent, \
     DMChannelDeleteEvent, MessageReactionAddEvent, MessageReactionRemoveEvent, ChannelUpdateEvent, ChannelDeleteEvent, \
-    WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent
+    WebhooksUpdateEvent, ThreadCreateEvent, ThreadMemberUpdateEvent, MessageAckEvent, GuildAuditLogEntryCreateEvent, \
+    MessagePollVoteAddEvent, MessagePollVoteRemoveEvent
 from ...yepcord.ctx import getGw
 from ...yepcord.enums import GuildPermissions, MessageType, ChannelType, WebhookType, GUILD_CHANNELS, MessageFlags
 from ...yepcord.errors import UnknownMessage, UnknownUser, UnknownEmoji, UnknownInteraction, MaxPinsReached, \
-    MissingPermissions, CannotSendToThisUser, CannotExecuteOnDM, CannotEditAnotherUserMessage, MissingAccess
+    MissingPermissions, CannotSendToThisUser, CannotExecuteOnDM, CannotEditAnotherUserMessage, MissingAccess, Errors, \
+    InvalidDataErr, UnknowPoll
 from ...yepcord.models import User, Channel, Message, ReadState, Emoji, PermissionOverwrite, Webhook, ThreadMember, \
     ThreadMetadata, AuditLogEntry, Relationship, ApplicationCommand, Integration, Bot, Role, HiddenDmChannel, Invite, \
-    Reaction
+    Reaction, PollVote, Poll, PollAnswer
 from ...yepcord.snowflake import Snowflake
 from ...yepcord.storage import getStorage
 from ...yepcord.utils import getImage, b64encode, b64decode
@@ -675,3 +678,53 @@ async def get_message_interaction(user: User = DepUser, channel: Channel = DepCh
         "application_command": None,
         "options": (message.interaction.data or {}).get("options", [])
     }
+
+
+@channels.put("/<int:channel_id>/polls/<int:message>/answers/@me", body_cls=AnswerPoll)
+async def set_poll_answers(
+        data: AnswerPoll, user: User = DepUser, channel: Channel = DepChannel, message: Message = DepMessage
+):
+    if channel.guild:
+        member = await channel.guild.get_member(user.id)
+        await member.checkPermission(GuildPermissions.READ_MESSAGE_HISTORY, GuildPermissions.VIEW_CHANNEL, channel=channel)
+
+    if (poll := await Poll.get_or_none(message=message)) is None:
+        raise UnknowPoll
+
+    guild_id = channel.guild.id if channel.guild else None
+
+    answer_ids = set(data.answer_ids)
+    if len(answer_ids) > 1 and not poll.multiselect:
+        raise InvalidDataErr(400, Errors.make(50035, {"answer_ids": {
+            "code": "CANNOT_ADD_MULTIPLE_POLL_ANSWERS", "message": "Multiple votes are not allowed for this poll."
+        }}))
+
+    existing_votes = {
+        vote.answer.local_id: vote
+        for vote in await PollVote.filter(answer__poll=poll, user=user).select_related("answer")
+    }
+    remove_votes = {answer_id: vote for answer_id, vote in existing_votes.items() if answer_id not in answer_ids}
+    add_votes = answer_ids - remove_votes.keys()
+    add_answers = await PollAnswer.filter(poll=poll, local_id__in=add_votes)
+
+    for to_remove in remove_votes.values():
+        await to_remove.delete()
+        await getGw().dispatch(
+            MessagePollVoteRemoveEvent(user.id, message.id, channel.id, to_remove.answer.local_id, guild_id),
+            channel=channel,
+            permissions=GuildPermissions.VIEW_CHANNEL,
+        )
+
+    await PollVote.bulk_create([
+        PollVote(answer=answer, user=user)
+        for answer in add_answers
+    ])
+
+    for answer in add_answers:
+        await getGw().dispatch(
+            MessagePollVoteAddEvent(user.id, message.id, channel.id, answer.local_id, guild_id),
+            channel=channel,
+            permissions=GuildPermissions.VIEW_CHANNEL,
+        )
+    return "", 204
+

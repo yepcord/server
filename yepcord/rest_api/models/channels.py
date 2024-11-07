@@ -326,7 +326,30 @@ class MessageReferenceModel(BaseModel):
         return super().model_dump(*args, **kwargs)
 
 
-# noinspection PyMethodParameters
+class MessagePollContentModel(BaseModel):
+    text: str
+
+
+class MessagePollQuestionContentModel(MessagePollContentModel):
+    text: str = Field(max_length=300)
+
+
+class MessagePollAnswerContentModel(MessagePollContentModel):
+    text: str = Field(max_length=55)
+
+
+class MessagePollAnswerModel(BaseModel):
+    poll_media: MessagePollAnswerContentModel
+
+
+class MessagePollModel(BaseModel):
+    question: MessagePollQuestionContentModel
+    answers: list[MessagePollAnswerModel] = Field(max_length=10)  # TODO: is it 10?
+    allow_multiselect: bool = False
+    duration: int = 24  # In hours, TODO: add validation for max and min
+    layout_type: int = 1
+
+
 class MessageCreate(BaseModel):
     content: Optional[str] = None
     nonce: Optional[str] = None
@@ -334,6 +357,7 @@ class MessageCreate(BaseModel):
     sticker_ids: list[int] = Field(default_factory=list)
     message_reference: Optional[MessageReferenceModel] = None
     flags: Optional[int] = None
+    poll: Optional[MessagePollModel] = None
 
     @field_validator("content")
     def validate_content(cls, value: Optional[str]):
@@ -392,7 +416,6 @@ class MessageCreate(BaseModel):
         return data
 
 
-# noinspection PyMethodParameters
 class MessageUpdate(BaseModel):
     content: Optional[str] = None
     embeds: list[EmbedModel] = Field(default_factory=list)
@@ -503,3 +526,7 @@ class CommandsSearchQS(BaseModel):
         if value > 10:
             value = 10
         return value
+
+
+class AnswerPoll(BaseModel):
+    answer_ids: list[int]

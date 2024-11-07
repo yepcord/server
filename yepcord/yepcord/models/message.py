@@ -150,6 +150,10 @@ class Message(Model):
                 "id": str(self.interaction.id),
                 "user": userdata,
             }
+
+        if (poll := await models.Poll.get_or_none(message=self)) is not None:
+            data["poll"] = await poll.ds_json(user_id)
+
         return data
 
     async def _get_reactions_json(self, user_id: int) -> list:

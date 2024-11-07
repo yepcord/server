@@ -63,6 +63,7 @@ class _Errors:
     err_10060 = "Unknown Sticker"
     err_10062 = "Unknown Interaction"
     err_10070 = "Unknown Guild Scheduled Event"
+    err_10102 = "Unknown poll"
 
     err_30003 = "Maximum number of pins reached (50)"
     err_30008 = "Maximum number of emojis reached"
@@ -173,6 +174,7 @@ UnknownGuildTemplate = UnknownX(10057)
 UnknownSticker = UnknownX(10060)
 UnknownInteraction = UnknownX(10062)
 UnknownGuildEvent = UnknownX(10070)
+UnknowPoll = UnknownX(10102)
 
 MaxPinsReached = BadRequest(30003)
 MaxEmojisReached = BadRequest(30008)
